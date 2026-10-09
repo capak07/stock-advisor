@@ -1,0 +1,8 @@
+ACT Symbol|Security Name|Exchange|CQS Symbol|ETF|Round Lot Size|Test Issue|NASDAQ Symbol
+BRK.B|Berkshire Hathaway Inc. Class B Common Stock|N|BRK.B|N|100|N|BRK=B
+JPM|JPMorgan Chase & Co. Common Stock|N|JPM|N|100|N|JPM
+JPM$D|JPMorgan Chase & Co. Depositary Shares Series DD Preferred|N|JPMpD|N|100|N|JPM-D
+SPY|SPDR S&P 500 ETF Trust|P|SPY|Y|100|N|SPY
+TSM|Taiwan Semiconductor Manufacturing Company Ltd. American Depositary Shares|N|TSM|N|100|N|TSM
+AAPL|Apple Inc. duplicate listing|N|AAPL|N|100|N|AAPL
+File Creation Time: 1009202608:00|||||||

@@ -1,0 +1,90 @@
+"""US-listed common stocks from the NASDAQ Trader symbol directory (source 1)."""
+
+import csv
+import io
+import re
+from collections.abc import Sequence
+from datetime import datetime, timedelta
+
+import httpx
+
+from advisor.collectors.base import Cadence, Category, RateLimiter, get_with_retries
+from advisor.models import AssetType, SymbolInfo
+
+NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
+OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+OTHER_EXCHANGES = {
+    "A": "NYSE American",
+    "N": "NYSE",
+    "P": "NYSE Arca",
+    "Z": "Cboe BZX",
+    "V": "IEX",
+}
+# Plain tickers plus one-letter share classes (BRK.B). Excludes JPM$D, ABC.WS, etc.
+SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
+# Whole-word matches only, so "United" and "Preferred Bank" survive.
+EXCLUDED_NAME = re.compile(
+    r"\b(warrants?|units?|rights?|notes due|debentures?)\b"
+    r"|\bpreferred (stock|shares|securities)\b"
+    r"|\bdepositary shares\b.*\bpreferred\b",
+    re.IGNORECASE,
+)
+
+
+def _rows(text: str) -> list[dict[str, str]]:
+    lines = [
+        line for line in text.splitlines() if line and not line.startswith("File Creation Time")
+    ]
+    return list(csv.DictReader(io.StringIO("\n".join(lines)), delimiter="|"))
+
+
+def _keep(symbol: str, name: str, etf: str, test_issue: str) -> bool:
+    return (
+        etf == "N"
+        and test_issue == "N"
+        and SYMBOL_PATTERN.match(symbol) is not None
+        and EXCLUDED_NAME.search(name) is None
+    )
+
+
+def parse_nasdaq_listed(text: str) -> list[SymbolInfo]:
+    return [
+        SymbolInfo(symbol=row["Symbol"], name=row["Security Name"], exchange="NASDAQ")
+        for row in _rows(text)
+        if _keep(row["Symbol"], row["Security Name"], row["ETF"], row["Test Issue"])
+    ]
+
+
+def parse_other_listed(text: str) -> list[SymbolInfo]:
+    return [
+        SymbolInfo(
+            symbol=row["ACT Symbol"],
+            name=row["Security Name"],
+            exchange=OTHER_EXCHANGES.get(row["Exchange"], row["Exchange"]),
+        )
+        for row in _rows(text)
+        if _keep(row["ACT Symbol"], row["Security Name"], row["ETF"], row["Test Issue"])
+    ]
+
+
+class NasdaqSymbols:
+    name = "nasdaq_symbols"
+    category = Category.PRICES
+    core = True
+    best_effort = False
+    cadence = Cadence.DAILY
+    asset_types = frozenset({AssetType.STOCK})
+    record_type = SymbolInfo
+    freshness = timedelta(days=3)
+
+    def __init__(self, client: httpx.Client, limiter: RateLimiter | None = None) -> None:
+        self._client = client
+        self._limiter = limiter
+
+    def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[SymbolInfo]:
+        nasdaq = get_with_retries(self._client, NASDAQ_LISTED_URL, limiter=self._limiter).text
+        other = get_with_retries(self._client, OTHER_LISTED_URL, limiter=self._limiter).text
+        merged: dict[str, SymbolInfo] = {}
+        for record in parse_nasdaq_listed(nasdaq) + parse_other_listed(other):
+            merged.setdefault(record.symbol, record)
+        return sorted(merged.values(), key=lambda record: record.symbol)

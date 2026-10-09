@@ -1,0 +1,10 @@
+Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares
+AAPL|Apple Inc. - Common Stock|Q|N|N|100|N|N
+UAL|United Airlines Holdings, Inc. - Common Stock|Q|N|N|100|N|N
+PFBC|Preferred Bank - Common Stock|Q|N|N|100|N|N
+ABCDW|ABCD Acquisition Corp - Warrant|G|N|N|100|N|N
+ABCDU|ABCD Acquisition Corp - Units|G|N|N|100|N|N
+ABCDR|ABCD Acquisition Corp - Rights|G|N|N|100|N|N
+ZZZT|Test Company - Common Stock|Q|Y|N|100|N|N
+QQQ|Invesco QQQ Trust, Series 1|G|N|N|100|Y|N
+File Creation Time: 1009202608:00|||||||

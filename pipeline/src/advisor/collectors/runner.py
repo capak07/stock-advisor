@@ -64,5 +64,9 @@ def run_collector(
 
     latency = int((time.perf_counter() - started) * 1000)
     if collector.freshness is not None:
-        cache.put(collector.name, key, records)
+        try:
+            cache.put(collector.name, key, records)
+        except (OSError, TypeError, ValueError):
+            # cache is a fallback; a failed write must not lose a good fetch
+            pass
     return CollectorResult(collector.name, CollectorStatus.OK, records, latency)

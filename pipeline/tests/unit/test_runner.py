@@ -76,3 +76,14 @@ def test_next_failures_counts_consecutive_failures():
     assert next_failures(state, result(CollectorStatus.FAILED)) == 3
     assert next_failures(state, result(CollectorStatus.STALE)) == 3
     assert next_failures(state, result(CollectorStatus.SKIPPED)) == 2
+
+
+def test_cache_write_failure_still_returns_ok(tmp_path):
+    class FailingCache(DiskCache):
+        def put(self, source: str, key: str, records) -> None:
+            raise OSError("disk full")
+
+    cache = FailingCache(tmp_path, clock=lambda: NOW)
+    result = run_collector(universe_collector(), [], NOW, cache=cache, state=SourceState())
+    assert result.status is CollectorStatus.OK
+    assert [r.symbol for r in result.records] == ["AAPL"]

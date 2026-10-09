@@ -34,3 +34,18 @@ def test_as_features_is_json_friendly():
         "history_days": 60,
         "last_day": "2026-07-30",
     }
+
+
+def test_hard_filter_excludes_rows_whose_last_bar_is_older_than_fresh_since():
+    universe = {"STALE": history("STALE", 60)}  # last bar 2026-07-30
+    assert hard_filter(universe, fresh_since=date(2026, 7, 31)) == []
+    assert [row.symbol for row in hard_filter(universe, fresh_since=date(2026, 7, 30))] == [
+        "STALE"
+    ]
+    assert [row.symbol for row in hard_filter(universe, fresh_since=None)] == ["STALE"]
+
+
+def test_is_fresh_compares_last_day_with_floor():
+    row = price_stats("X", history("X", 60))  # last bar 2026-07-30
+    assert row.is_fresh(date(2026, 7, 30)) is True
+    assert row.is_fresh(date(2026, 7, 31)) is False

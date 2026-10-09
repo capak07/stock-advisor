@@ -30,6 +30,9 @@ class ScreenRow:
             and self.history_days >= MIN_HISTORY_DAYS
         )
 
+    def is_fresh(self, floor: date) -> bool:
+        return self.last_day >= floor
+
     def as_features(self) -> dict[str, float | int | str]:
         return {
             "last_close": self.last_close,
@@ -45,6 +48,15 @@ def price_stats(symbol: str, bars: Sequence[DailyBar]) -> ScreenRow:
     return ScreenRow(symbol, bars[-1].close, adv, len(bars), bars[-1].day)
 
 
-def hard_filter(bars_by_symbol: Mapping[str, Sequence[DailyBar]]) -> list[ScreenRow]:
+def hard_filter(
+    bars_by_symbol: Mapping[str, Sequence[DailyBar]], fresh_since: date | None = None
+) -> list[ScreenRow]:
+    """Rows passing every threshold; with `fresh_since`, rows with an older last bar drop out."""
     rows = (price_stats(s, bars) for s, bars in bars_by_symbol.items() if bars)
-    return sorted((row for row in rows if row.passes()), key=lambda row: row.symbol)
+    return sorted(
+        (
+            row for row in rows
+            if row.passes() and (fresh_since is None or row.is_fresh(fresh_since))
+        ),
+        key=lambda row: row.symbol,
+    )

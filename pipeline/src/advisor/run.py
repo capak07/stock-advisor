@@ -20,7 +20,7 @@ from advisor.collectors.runner import next_failures, run_collector
 from advisor.config import Settings
 from advisor.models import ET, AssetRef, AssetType, RunKind, RunStatus, SymbolInfo
 from advisor.prices import fetch_daily_bars
-from advisor.schedule import resolve_run_kind
+from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
 from advisor.store import repo
 from advisor.store.db import connect
 
@@ -66,6 +66,7 @@ def execute_run(
     deps: RunDeps, kind: RunKind, now_utc: datetime, *, min_universe: int = MIN_UNIVERSE
 ) -> RunOutcome:
     conn = deps.conn
+    floor = freshness_floor(kind, now_utc)  # spec §10: older last bars count as missing
     run_id = repo.create_run(conn, kind, now_utc.astimezone(ET).date())
     results: list[CollectorResult] = []
 
@@ -100,24 +101,39 @@ def execute_run(
         repo.write_features_live(
             conn,
             run_id,
-            [(AssetRef(r.symbol, AssetType.STOCK), r.as_features()) for r in priority_rows],
+            [
+                (
+                    AssetRef(r.symbol, AssetType.STOCK),
+                    {**r.as_features(), "stale": not r.is_fresh(floor)},
+                )
+                for r in priority_rows
+            ],
             now_utc,
         )
 
-        passed = screener.hard_filter(prices.bars)
+        passed = screener.hard_filter(prices.bars, fresh_since=floor)
+        fresh = sum(1 for bars in prices.bars.values() if bars[-1].day >= floor)
         summary = {
             "universe": len(universe),
             "priced": len(prices.bars),
             "passed_filters": len(passed),
             "priority": len(priority),
             "priority_unpriced": sorted(priority - prices.bars.keys()),
+            "fresh": fresh,
+            "fresh_since": floor.isoformat(),
         }
+        universe_ok = len(universe) >= min_universe
+        prices_ok = bool(symbols) and fresh >= MIN_PRICED_FRACTION * len(symbols)
         status = decide_status(
-            results,
-            deps.collectors,
-            universe_ok=len(universe) >= min_universe,
-            prices_ok=bool(symbols) and len(prices.bars) >= MIN_PRICED_FRACTION * len(symbols),
+            results, deps.collectors, universe_ok=universe_ok, prices_ok=prices_ok
         )
+        if status is RunStatus.FAILED:
+            reasons = []
+            if not universe_ok:
+                reasons.append(f"universe too small ({len(universe)} < {min_universe})")
+            if not prices_ok:
+                reasons.append(f"too few fresh priced symbols ({fresh} of {len(symbols)})")
+            summary["failed_reason"] = reasons
     except Exception as exc:
         repo.finish_run(
             conn, run_id, RunStatus.FAILED,
@@ -151,6 +167,13 @@ def main(argv: list[str] | None = None) -> int:
 
     kind = RunKind(args.force_kind) if args.force_kind else resolve_run_kind(now)
     if kind is None:
+        missed = missed_run_kind(now)
+        if missed is not None:  # exit 1 fails the GitHub job, so the owner gets an email
+            print(
+                f"{now.isoformat()}: {missed.value} run window missed"
+                " (trigger arrived too late); no run."
+            )
+            return 1
         print(f"{now.isoformat()}: outside every run window or market closed; nothing to do.")
         return 0
 

@@ -1,11 +1,13 @@
 from datetime import UTC, datetime
 
 import httpx
+import pytest
 
 from advisor.collectors.nasdaq_symbols import (
     NASDAQ_LISTED_URL,
     OTHER_LISTED_URL,
     NasdaqSymbols,
+    is_excluded_name,
     parse_nasdaq_listed,
     parse_other_listed,
 )
@@ -29,6 +31,9 @@ def test_parse_other_listed_maps_exchanges_and_excludes_etfs_and_preferreds(fixt
         ("JPM", "NYSE"),
         ("TSM", "NYSE"),  # ADRs are kept
         ("AAPL", "NYSE"),
+        ("ET", "NYSE"),  # LP units with "units representing" are kept
+        ("ITUB", "NYSE"),  # ADRs are kept even with preferred in the name
+        ("PBR.A", "NYSE"),  # ADRs are kept even with preferred in the name
     ]
 
 
@@ -46,8 +51,40 @@ def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
     assert [(r.symbol, r.exchange) for r in records] == [
         ("AAPL", "NASDAQ"),  # the NASDAQ listing wins over the duplicate
         ("BRK.B", "NYSE"),
+        ("ET", "NYSE"),
+        ("ITUB", "NYSE"),
         ("JPM", "NYSE"),
+        ("PBR.A", "NYSE"),
         ("PFBC", "NASDAQ"),
         ("TSM", "NYSE"),
         ("UAL", "NASDAQ"),
     ]
+
+
+@pytest.mark.parametrize(
+    "name,excluded",
+    [
+        # Excluded: warrants, rights, SPAC units
+        ("ABCD Acquisition Corp - Warrant", True),
+        ("ABCD Acquisition Corp - Units", True),
+        ("ABCD Acquisition Corp - Rights", True),
+        # Excluded: preferred and debt
+        ("JPMorgan Chase & Co. Depositary Shares Series DD Preferred", True),
+        ("XYZ Corp 5.75% Series A Preferred Stock", True),
+        ("Xcel Energy Inc. - 6.25% Junior Subordinated Notes", True),
+        ("Cadiz Inc. Depositary Shares", True),
+        # Kept: common stocks despite "preferred" or "united" in name
+        ("United Airlines Holdings, Inc. - Common Stock", False),
+        ("Preferred Bank - Common Stock", False),
+        # Kept: LP units, trust units, and ADRs
+        ("Energy Transfer LP Common Units representing limited partner interests", False),
+        ("Brookfield Renewable Partners L.P. Limited Partnership Units", False),
+        (
+            "Itau Unibanco Banco Holding SA American Depositary Shares (Each repstg 500 Preferred shares)",
+            False,
+        ),
+        ("Taiwan Semiconductor Manufacturing Company Ltd. American Depositary Shares", False),
+    ],
+)
+def test_is_excluded_name(name, excluded):
+    assert is_excluded_name(name) is excluded

@@ -5,4 +5,10 @@ JPM$D|JPMorgan Chase & Co. Depositary Shares Series DD Preferred|N|JPMpD|N|100|N
 SPY|SPDR S&P 500 ETF Trust|P|SPY|Y|100|N|SPY
 TSM|Taiwan Semiconductor Manufacturing Company Ltd. American Depositary Shares|N|TSM|N|100|N|TSM
 AAPL|Apple Inc. duplicate listing|N|AAPL|N|100|N|AAPL
+ET|Energy Transfer LP Common Units representing limited partner interests|N|ET|N|100|N|ET
+ITUB|Itau Unibanco Banco Holding SA American Depositary Shares (Each repstg 500 Preferred shares)|N|ITUB|N|100|N|ITUB
+PBR.A|Petroleo Brasileiro S.A.- Petrobras American Depositary Shares, each representing 2 Preferred Shares|N|PBR.A|N|100|N|PBR=A
+EAI|Entergy Arkansas, LLC First Mortgage Bonds, 4.875% Series due September 1, 2066|N|EAI|N|100|N|EAI
+CCIXU|Churchill Capital Corp IX Units, each consisting of one Class A ordinary share and one-fourth of one redeemable warrant|N|CCIX.U|N|100|N|CCIXU
+CDZIP|Cadiz Inc. Depositary Shares|N|CDZIP|N|100|N|CDZIP
 File Creation Time: 1009202608:00|||||||

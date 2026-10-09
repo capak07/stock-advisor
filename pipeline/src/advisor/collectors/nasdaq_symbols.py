@@ -22,13 +22,28 @@ OTHER_EXCHANGES = {
 }
 # Plain tickers plus one-letter share classes (BRK.B). Excludes JPM$D, ABC.WS, etc.
 SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
-# Whole-word matches only, so "United" and "Preferred Bank" survive.
-EXCLUDED_NAME = re.compile(
-    r"\b(warrants?|units?|rights?|notes due|debentures?)\b"
-    r"|\bpreferred (stock|shares|securities)\b"
-    r"|\bdepositary shares\b.*\bpreferred\b",
+WARRANT_OR_RIGHT = re.compile(r"\b(warrants?|rights?)\b", re.IGNORECASE)
+UNITS = re.compile(r"\bunits?\b", re.IGNORECASE)
+EQUITY_UNITS = re.compile(
+    r"\bcommon units?\b|\bunits? representing\b|\bunits? of beneficial interest\b|\blimited partner",
     re.IGNORECASE,
 )
+PREFERRED = re.compile(r"\bpreferred (stock|shares?|securities)\b|\bpreference shares?\b", re.IGNORECASE)
+FRACTIONAL_PREFERRED = re.compile(r"\binterest in a share\b.*\bpreferred\b", re.IGNORECASE)
+DEBT = re.compile(r"\b(notes?|debentures?|bonds?)\b", re.IGNORECASE)
+BARE_DEPOSITARY = re.compile(r"\bdepositary shares?\s*$", re.IGNORECASE)
+DEPOSITARY_PREFERRED = re.compile(r"\bdepositary shares?\b.*\bpreferred\b", re.IGNORECASE)
+ADR = re.compile(r"\bamerican depositary\b", re.IGNORECASE)
+
+
+def is_excluded_name(name: str) -> bool:
+    """True for warrants, rights, SPAC units, preferreds, and debt; ADRs and LP/trust units stay."""
+    if WARRANT_OR_RIGHT.search(name) or DEBT.search(name) or FRACTIONAL_PREFERRED.search(name):
+        return True
+    if UNITS.search(name) and not EQUITY_UNITS.search(name):
+        return True
+    is_adr = ADR.search(name) is not None
+    return not is_adr and any(p.search(name) for p in (PREFERRED, BARE_DEPOSITARY, DEPOSITARY_PREFERRED))
 
 
 def _rows(text: str) -> list[dict[str, str]]:
@@ -43,7 +58,7 @@ def _keep(symbol: str, name: str, etf: str, test_issue: str) -> bool:
         etf == "N"
         and test_issue == "N"
         and SYMBOL_PATTERN.match(symbol) is not None
-        and EXCLUDED_NAME.search(name) is None
+        and not is_excluded_name(name)
     )
 
 

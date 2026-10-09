@@ -36,14 +36,23 @@ def _has_jump(bars: Sequence[DailyBar]) -> bool:
 
 
 def find_unconfirmed_jumps(bars: Sequence[DailyBar], reference: Sequence[DailyBar]) -> set[date]:
+    """Days whose close jumps >50% vs both the last accepted and the previous raw close, unconfirmed."""
     ref_close = {b.day: b.close for b in reference}
     bad: set[date] = set()
+    if not bars:
+        return bad
+    last_accepted = bars[0].close
     for prev, cur in pairwise(bars):
-        if abs(cur.close / prev.close - 1) <= JUMP_LIMIT:
-            continue
+        jumped = (
+            abs(cur.close / last_accepted - 1) > JUMP_LIMIT
+            and abs(cur.close / prev.close - 1) > JUMP_LIMIT
+        )
         other = ref_close.get(cur.day)
-        if other is None or abs(other / cur.close - 1) > CONFIRM_TOLERANCE:
+        confirmed = other is not None and abs(other / cur.close - 1) <= CONFIRM_TOLERANCE
+        if jumped and not confirmed:
             bad.add(cur.day)
+        else:
+            last_accepted = cur.close
     return bad
 
 

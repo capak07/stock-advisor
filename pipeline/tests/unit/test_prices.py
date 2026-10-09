@@ -88,3 +88,22 @@ def test_find_unconfirmed_jumps_uses_two_percent_tolerance():
     assert find_unconfirmed_jumps(bars, near) == set()
     assert find_unconfirmed_jumps(bars, far) == {date(2026, 10, 13)}
     assert find_unconfirmed_jumps(bars, []) == {date(2026, 10, 13)}
+
+
+def test_reversion_after_dropped_spike_is_kept():
+    bars = [
+        bar("X", date(2026, 10, 12), 10.0, source="alpaca"),
+        bar("X", date(2026, 10, 13), 30.0, source="alpaca"),
+        bar("X", date(2026, 10, 14), 10.0, source="alpaca"),
+    ]
+    assert find_unconfirmed_jumps(bars, []) == {date(2026, 10, 13)}
+
+
+def test_persistent_move_loses_only_the_jump_day():
+    bars = [
+        bar("X", date(2026, 10, 12), 10.0, source="alpaca"),
+        bar("X", date(2026, 10, 13), 16.0, source="alpaca"),
+        bar("X", date(2026, 10, 14), 16.2, source="alpaca"),
+        bar("X", date(2026, 10, 15), 16.5, source="alpaca"),
+    ]
+    assert find_unconfirmed_jumps(bars, []) == {date(2026, 10, 13)}

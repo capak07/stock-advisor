@@ -22,7 +22,8 @@ OTHER_EXCHANGES = {
 }
 # Plain tickers plus one-letter share classes (BRK.B). Excludes JPM$D, ABC.WS, etc.
 SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?$")
-WARRANT_OR_RIGHT = re.compile(r"\b(warrants?|rights?)\b", re.IGNORECASE)
+WARRANT = re.compile(r"\bwarrants?\b", re.IGNORECASE)
+RIGHT = re.compile(r"\brights?\b", re.IGNORECASE)
 UNITS = re.compile(r"\bunits?\b", re.IGNORECASE)
 EQUITY_UNITS = re.compile(
     r"\bcommon units?\b|\bunits? representing\b|\bunits? of beneficial interest\b|\blimited partner",
@@ -38,11 +39,11 @@ ADR = re.compile(r"\bamerican depositary\b", re.IGNORECASE)
 
 def is_excluded_name(name: str) -> bool:
     """True for warrants, rights, SPAC units, preferreds, and debt; ADRs and LP/trust units stay."""
-    if FRACTIONAL_PREFERRED.search(name):
+    if FRACTIONAL_PREFERRED.search(name) or WARRANT.search(name):
         return True
     if ADR.search(name):
         return False
-    if WARRANT_OR_RIGHT.search(name) or DEBT.search(name):
+    if RIGHT.search(name) or DEBT.search(name):
         return True
     if UNITS.search(name) and not EQUITY_UNITS.search(name):
         return True

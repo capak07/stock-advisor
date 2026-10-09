@@ -68,6 +68,7 @@ def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
         ("ABCD Acquisition Corp - Warrant", True),
         ("ABCD Acquisition Corp - Units", True),
         ("ABCD Acquisition Corp - Rights", True),
+        ("IQM Quantum Computers Oyj - Warrants to purchase American Depositary Shares", True),
         # Excluded: preferred and debt
         ("JPMorgan Chase & Co. Depositary Shares Series DD Preferred", True),
         ("XYZ Corp 5.75% Series A Preferred Stock", True),

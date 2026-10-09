@@ -1,0 +1,53 @@
+name: run
+
+# Each run has an EDT and an EST cron (GitHub cron is UTC). advisor.run checks the NYSE
+# calendar and the current ET time, then does nothing unless this is the right slot.
+on:
+  schedule:
+    - cron: "15 12 * * 1-5"  # pre-open, EDT
+    - cron: "15 13 * * 1-5"  # pre-open, EST
+    - cron: "15 16 * * 1-5"  # early-close days, EDT
+    - cron: "15 17 * * 1-5"  # early-close days, EST
+    - cron: "15 19 * * 1-5"  # pre-close, EDT
+    - cron: "15 20 * * 1-5"  # pre-close, EST
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: Run kind to force (ignores the schedule guard)
+        type: choice
+        options: [pre_open, pre_close, early_close]
+        default: pre_open
+
+concurrency:
+  group: pipeline-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --no-dev
+      - uses: actions/cache@v4
+        with:
+          path: pipeline/.cache
+          key: advisor-cache-${{ github.run_id }}
+          restore-keys: advisor-cache-
+      - name: Run pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ADVISOR_CACHE_DIR: .cache
+          FORCE_KIND: ${{ inputs.kind }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            uv run python -m advisor.run --force-kind "$FORCE_KIND"
+          else
+            uv run python -m advisor.run
+          fi

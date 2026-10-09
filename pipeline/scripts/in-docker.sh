@@ -11,5 +11,6 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   -v advisor-venv:/opt/venv -v advisor-uv-cache:/root/.cache/uv \
   -e UV_PROJECT_ENVIRONMENT=/opt/venv -e UV_LINK_MODE=copy \
   -e TEST_DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:54329/advisor_test \
+  -e DATABASE_URL -e ALPACA_KEY_ID -e ALPACA_SECRET_KEY -e ADVISOR_CACHE_DIR \
   ghcr.io/astral-sh/uv:python3.12-bookworm-slim \
   sh -c 'uv sync --locked -q && exec "$@"' sh "$@"

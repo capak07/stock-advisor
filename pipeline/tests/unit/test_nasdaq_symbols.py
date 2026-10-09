@@ -84,6 +84,20 @@ def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
             False,
         ),
         ("Taiwan Semiconductor Manufacturing Company Ltd. American Depositary Shares", False),
+        # Kept: ADRs with units in the name
+        ("Banco Santander (Brasil) S.A. American Depositary Shares, each representing one unit", False),
+        ("Coca-Cola FEMSA S.A.B. de C.V. American Depositary Shares, each representing 10 Units", False),
+        (
+            "America Movil S.A.B. de C.V. American Depositary Shares, each representing the right to receive twenty (20) Series B Shares",
+            False,
+        ),
+        # Kept: common stocks with "bond" in the name (not debt context)
+        ("Our Bond, Inc. - Common Stock", False),
+        ("BlackRock Core Bond Trust Common Shares of Beneficial Interest", False),
+        # Excluded: debt with context
+        ("Entergy Arkansas, LLC First Mortgage Bonds, 4.875% Series due September 1, 2066", True),
+        # Excluded: fractional preferred
+        ("Example Corp Depositary Shares, each representing a 1/40th interest in a share of Series A Cumulative Preferred", True),
     ],
 )
 def test_is_excluded_name(name, excluded):

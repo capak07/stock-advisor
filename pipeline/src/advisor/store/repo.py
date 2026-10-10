@@ -1,7 +1,7 @@
 """Every SQL statement the pipeline runs. Functions take an open autocommit connection."""
 
-from collections.abc import Sequence
-from datetime import date, datetime
+from collections.abc import Iterable, Sequence
+from datetime import date, datetime, timedelta
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -56,17 +56,21 @@ def has_published_run(conn: psycopg.Connection, kind: RunKind, et_date: date) ->
 
 def record_source_health(
     conn: psycopg.Connection,
-    run_id: int,
+    run_id: int | None,
     result: CollectorResult,
     consecutive_failures: int,
     attempted_at: datetime,
+    *,
+    context: str = "run",
 ) -> None:
+    """One row per source per run (context 'run') or per daily check (context 'health', no run)."""
     conn.execute(
         "insert into source_health (run_id, source, status, latency_ms, records, error,"
-        " consecutive_failures, attempted_at) values (%s, %s, %s, %s, %s, %s, %s, %s)",
+        " consecutive_failures, attempted_at, context)"
+        " values (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             run_id, result.name, result.status.value, result.latency_ms, len(result.records),
-            result.error, consecutive_failures, attempted_at,
+            result.error, consecutive_failures, attempted_at, context,
         ),
     )
 
@@ -85,6 +89,29 @@ def load_source_state(conn: psycopg.Connection, source: str) -> SourceState:
         consecutive_failures=row["failures"] or 0,
         last_attempt_et_date=last_attempt.astimezone(ET).date() if last_attempt else None,
     )
+
+
+def load_source_states(conn: psycopg.Connection, sources: Iterable[str]) -> dict[str, SourceState]:
+    return {source: load_source_state(conn, source) for source in sources}
+
+
+ABANDONED_AFTER = timedelta(hours=2)  # far beyond the 40-minute job timeout
+
+
+def sweep_abandoned_runs(
+    conn: psycopg.Connection, now: datetime, older_than: timedelta = ABANDONED_AFTER
+) -> int:
+    """Mark runs still 'running' long after they started (job killed or timed out) as failed."""
+    cursor = conn.execute(
+        "update runs set status = 'failed', finished_at = %s, summary = summary || %s"
+        " where status = 'running' and started_at < %s",
+        (
+            now,
+            Jsonb({"error": "abandoned: no finish was recorded (job killed or timed out)"}),
+            now - older_than,
+        ),
+    )
+    return cursor.rowcount
 
 
 def upsert_symbols(conn: psycopg.Connection, symbols: Sequence[SymbolInfo]) -> None:

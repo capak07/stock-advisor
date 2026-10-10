@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime
 
+import psycopg
 import pytest
 
 from advisor.collectors.base import CollectorResult, CollectorStatus
@@ -133,3 +134,34 @@ def test_write_features_live(db):
     assert (row["symbol"], row["asset_type"], row["features"]) == (
         "AAPL", "stock", {"last_close": 150.0},
     )
+
+
+def test_record_source_health_supports_health_context(db):
+    ok = CollectorResult("alpaca_bars", CollectorStatus.OK, [], 7)
+    repo.record_source_health(db, None, ok, 0, NOW, context="health")
+    row = db.execute("select run_id, context from source_health").fetchone()
+    assert (row["run_id"], row["context"]) == (None, "health")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        repo.record_source_health(db, None, ok, 0, NOW)  # context defaults to "run"
+
+
+def test_load_source_states_returns_one_state_per_source(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    failed = CollectorResult("alpaca_bars", CollectorStatus.FAILED, [], 1, "down")
+    repo.record_source_health(db, run_id, failed, 2, NOW)
+    states = repo.load_source_states(db, ["alpaca_bars", "yfinance_bars"])
+    assert states["alpaca_bars"].consecutive_failures == 2
+    assert states["yfinance_bars"].consecutive_failures == 0
+
+
+def test_sweep_marks_only_old_running_runs_abandoned(db):
+    db.execute(
+        "insert into runs (kind, et_date, started_at) values"
+        " ('pre_close', '2026-10-13', '2026-10-14 08:00+00'),"
+        " ('pre_open', '2026-10-14', '2026-10-14 11:30+00')"
+    )
+    assert repo.sweep_abandoned_runs(db, NOW) == 1  # NOW is 2026-10-14 12:15 UTC
+    rows = db.execute("select kind, status, summary from runs order by started_at").fetchall()
+    assert rows[0]["status"] == "failed"
+    assert rows[0]["summary"]["error"].startswith("abandoned")
+    assert rows[1]["status"] == "running"

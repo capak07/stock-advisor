@@ -119,3 +119,45 @@ def test_owner_cannot_write_picks(owned_db):
                 " values (%s, 'AAPL', 'swing', 10, '2026-10-28', 10, 9, 'low', 0.1, 5, 1)",
                 (run_id,),
             )
+
+
+def test_pipeline_role_writes_pipeline_tables_but_only_reads_holdings(db):
+    db.execute(
+        "insert into lots (symbol, asset_type, qty, price, bought_at)"
+        " values ('AAPL', 'stock', 1, 100, '2026-10-01')"
+    )
+    with acting_as(db, "pipeline_rw"):
+        db.execute("insert into runs (kind, et_date) values ('pre_open', '2026-10-14')")
+        assert len(db.execute("select * from lots").fetchall()) == 1
+        for statement in (
+            "insert into lots (symbol, asset_type, qty, price, bought_at)"
+            " values ('MSFT', 'stock', 1, 100, '2026-10-01')",
+            "insert into watchlist (symbol, asset_type) values ('NVDA', 'stock')",
+            "update app_config set owner_id = owner_id",
+            "create table sneaky (i int)",
+            "select * from schema_migrations",
+        ):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                db.execute(statement)
+
+
+def test_every_table_except_migrations_has_a_pipeline_policy(db):
+    missing = db.execute(
+        "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace"
+        " where n.nspname = 'public' and c.relkind = 'r' and c.relname <> 'schema_migrations'"
+        " and not exists (select 1 from pg_policies p where p.schemaname = 'public'"
+        "   and p.tablename = c.relname and 'pipeline_rw' = any(p.roles))"
+    ).fetchall()
+    assert missing == []
+
+
+def test_health_rows_have_no_run_and_run_rows_need_one(db):
+    db.execute(
+        "insert into source_health (run_id, source, status, latency_ms, records,"
+        " consecutive_failures, context) values (null, 'alpaca_bars', 'partial', 5, 1, 0, 'health')"
+    )
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            "insert into source_health (run_id, source, status, latency_ms, records,"
+            " consecutive_failures, context) values (null, 'alpaca_bars', 'ok', 5, 1, 0, 'run')"
+        )

@@ -88,20 +88,23 @@ def load_source_state(conn: psycopg.Connection, source: str) -> SourceState:
 
 
 def upsert_symbols(conn: psycopg.Connection, symbols: Sequence[SymbolInfo]) -> None:
-    with conn.cursor() as cur:
-        cur.executemany(
-            "insert into symbols (symbol, asset_type, name, exchange, active, updated_at)"
-            " values (%s, %s, %s, %s, true, now())"
-            " on conflict (symbol, asset_type) do update set name = excluded.name,"
-            " exchange = excluded.exchange, active = true, updated_at = now()",
-            [(s.symbol, s.asset_type.value, s.name, s.exchange) for s in symbols],
-        )
     stock_symbols = [s.symbol for s in symbols if s.asset_type is AssetType.STOCK]
-    conn.execute(
-        "update symbols set active = false, updated_at = now()"
-        " where asset_type = 'stock' and active and not (symbol = any(%s))",
-        (stock_symbols,),
-    )
+    if not stock_symbols:  # would deactivate every stock
+        raise ValueError("refusing to upsert an empty stock universe")
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.executemany(
+                "insert into symbols (symbol, asset_type, name, exchange, active, updated_at)"
+                " values (%s, %s, %s, %s, true, now())"
+                " on conflict (symbol, asset_type) do update set name = excluded.name,"
+                " exchange = excluded.exchange, active = true, updated_at = now()",
+                [(s.symbol, s.asset_type.value, s.name, s.exchange) for s in symbols],
+            )
+        conn.execute(
+            "update symbols set active = false, updated_at = now()"
+            " where asset_type = 'stock' and active and not (symbol = any(%s))",
+            (stock_symbols,),
+        )
 
 
 def load_held_symbols(conn: psycopg.Connection) -> set[AssetRef]:

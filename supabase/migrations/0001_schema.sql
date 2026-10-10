@@ -92,7 +92,7 @@ create table picks (
 
 create table pick_outcomes (
   pick_id bigint primary key references picks (id) on delete cascade,
-  exit_price numeric not null,
+  exit_price numeric not null check (exit_price > 0),
   exit_reason text not null,
   ret double precision not null,
   bench_ret double precision not null,
@@ -106,6 +106,10 @@ create table watchlist (
   symbol text not null,
   asset_type text not null check (asset_type in ('stock', 'crypto')),
   added_at timestamptz not null default now(),
+  constraint watchlist_symbol_format check (
+    (asset_type = 'stock' and symbol ~ '^[A-Z]{1,5}(\.[A-Z])?$')
+    or (asset_type = 'crypto' and symbol ~ '^[A-Z0-9]{2,10}$')
+  ),
   primary key (symbol, asset_type)
 );
 
@@ -128,7 +132,11 @@ create table lots (
   bought_at date not null,
   pick_id bigint references picks (id) on delete set null,
   notes text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint lots_symbol_format check (
+    (asset_type = 'stock' and symbol ~ '^[A-Z]{1,5}(\.[A-Z])?$')
+    or (asset_type = 'crypto' and symbol ~ '^[A-Z0-9]{2,10}$')
+  )
 );
 
 create table sells (
@@ -138,7 +146,11 @@ create table sells (
   qty numeric not null check (qty > 0),
   price numeric not null check (price > 0),
   sold_at date not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint sells_symbol_format check (
+    (asset_type = 'stock' and symbol ~ '^[A-Z]{1,5}(\.[A-Z])?$')
+    or (asset_type = 'crypto' and symbol ~ '^[A-Z0-9]{2,10}$')
+  )
 );
 
 create table holding_actions (
@@ -148,7 +160,7 @@ create table holding_actions (
   action text not null check (action in ('sell', 'trim', 'add', 'hold', 'data_conflict')),
   review boolean not null default false,
   reasons jsonb not null default '[]'::jsonb,
-  trailing_stop numeric,
+  trailing_stop numeric check (trailing_stop > 0),
   q10 double precision,
   q50 double precision,
   q90 double precision,

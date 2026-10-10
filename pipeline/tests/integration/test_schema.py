@@ -65,3 +65,57 @@ def test_only_one_published_run_per_kind_and_day(db):
         db.execute(
             "insert into runs (kind, et_date, published) values ('pre_open', '2026-10-14', true)"
         )
+
+
+@pytest.mark.parametrize("symbol", ["aapl", "BRK-B", " TSLA", "$TSLA"])
+def test_malformed_stock_symbols_are_rejected(db, symbol):
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute("insert into watchlist (symbol, asset_type) values (%s, 'stock')", (symbol,))
+
+
+def test_well_formed_stock_and_crypto_symbols_are_accepted(db):
+    db.execute("insert into watchlist (symbol, asset_type) values ('BRK.B', 'stock')")
+    db.execute("insert into watchlist (symbol, asset_type) values ('BTC', 'crypto')")
+    assert db.execute("select count(*) as n from watchlist").fetchone()["n"] == 2
+
+
+def test_every_public_table_has_row_level_security(db):
+    rows = db.execute(
+        "select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace"
+        " where n.nspname = 'public' and c.relkind = 'r' and not c.relrowsecurity"
+    ).fetchall()
+    assert rows == []
+
+
+def test_owner_can_update_and_delete_lots(owned_db):
+    owned_db.execute(
+        "insert into lots (symbol, asset_type, qty, price, bought_at)"
+        " values ('AAPL', 'stock', 1, 100, '2026-10-01')"
+    )
+    with acting_as(owned_db, "authenticated", OWNER):
+        updated = owned_db.execute("update lots set qty = 2 where symbol = 'AAPL'")
+        assert updated.rowcount == 1
+        deleted = owned_db.execute("delete from lots where symbol = 'AAPL'")
+        assert deleted.rowcount == 1
+    assert owned_db.execute("select count(*) as n from lots").fetchone()["n"] == 0
+
+
+def test_anon_cannot_write_lots(owned_db):
+    with acting_as(owned_db, "anon"):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute(
+                "insert into lots (symbol, asset_type, qty, price, bought_at)"
+                " values ('AAPL', 'stock', 1, 100, '2026-10-01')"
+            )
+
+
+def test_owner_cannot_write_picks(owned_db):
+    run_id = owned_db.execute("select id from runs").fetchone()["id"]
+    with acting_as(owned_db, "authenticated", OWNER):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute(
+                "insert into picks (run_id, symbol, style, horizon_days, exit_by,"
+                " entry_ref_price, stop, risk_level, risk_score, max_position_pct, rank)"
+                " values (%s, 'AAPL', 'swing', 10, '2026-10-28', 10, 9, 'low', 0.1, 5, 1)",
+                (run_id,),
+            )

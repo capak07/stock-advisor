@@ -1,7 +1,9 @@
 from datetime import UTC, date, datetime
 
+import pytest
+
 from advisor.collectors.base import CollectorResult, CollectorStatus
-from advisor.models import AssetRef, AssetType, RunKind, RunStatus
+from advisor.models import AssetRef, AssetType, RunKind, RunStatus, SymbolInfo
 from advisor.store import repo
 from fakes import info
 
@@ -40,6 +42,15 @@ def test_rerun_replaces_the_published_run_for_the_same_slot(db):
     assert [r["id"] for r in published] == [second]
 
 
+def test_failed_rerun_keeps_the_published_run_for_the_same_slot(db):
+    first = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    finish(db, first, RunStatus.SUCCESS)
+    second = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    finish(db, second, RunStatus.FAILED)
+    published = db.execute("select id from runs where published").fetchall()
+    assert [r["id"] for r in published] == [first]
+
+
 def test_has_published_run(db):
     assert repo.has_published_run(db, RunKind.PRE_OPEN, DAY) is False
     run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
@@ -75,6 +86,16 @@ def test_upsert_symbols_inserts_updates_and_deactivates(db):
         ("GONE", "NYSE", False),
         ("MSFT", "NYSE", True),
     ]
+
+
+def test_upsert_symbols_refuses_an_empty_stock_universe(db):
+    repo.upsert_symbols(db, [info("AAPL")])
+    crypto = SymbolInfo(symbol="BTC", asset_type=AssetType.CRYPTO, name="Bitcoin", exchange="-")
+    for symbols in ([], [crypto]):
+        with pytest.raises(ValueError, match="refusing to upsert an empty stock universe"):
+            repo.upsert_symbols(db, symbols)
+    rows = db.execute("select symbol, active from symbols").fetchall()
+    assert [(r["symbol"], r["active"]) for r in rows] == [("AAPL", True)]
 
 
 def test_load_held_symbols_nets_sells(db):

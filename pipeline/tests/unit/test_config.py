@@ -27,3 +27,14 @@ def test_from_env_honours_cache_dir_override():
 def test_from_env_lists_every_missing_variable():
     with pytest.raises(ConfigError, match="ALPACA_KEY_ID, ALPACA_SECRET_KEY"):
         Settings.from_env({"DATABASE_URL": "x"})
+
+
+def test_repr_hides_database_url_and_alpaca_secret():
+    settings = Settings.from_env({
+        "DATABASE_URL": "postgresql://u:db-password-123@h/db",
+        "ALPACA_KEY_ID": "k",
+        "ALPACA_SECRET_KEY": "alpaca-secret-456",
+    })
+    text = repr(settings)
+    assert "db-password-123" not in text
+    assert "alpaca-secret-456" not in text

@@ -2,7 +2,7 @@
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
@@ -15,9 +15,9 @@ class ConfigError(RuntimeError):
 
 @dataclass(frozen=True)
 class Settings:
-    database_url: str
+    database_url: str = field(repr=False)  # holds the database password
     alpaca_key_id: str
-    alpaca_secret_key: str
+    alpaca_secret_key: str = field(repr=False)
     cache_dir: Path
 
     @classmethod

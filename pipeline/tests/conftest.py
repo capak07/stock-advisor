@@ -40,6 +40,8 @@ def fixtures_dir() -> Path:
 def db():
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:
+        if os.environ.get("CI"):  # a CI run must never pass by skipping every DB test
+            pytest.fail("TEST_DATABASE_URL must be set in CI")
         pytest.skip("TEST_DATABASE_URL not set")
     require_test_database(url)
     with psycopg.connect(url, autocommit=True, row_factory=dict_row) as conn:

@@ -37,7 +37,8 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
    up". Add your user under Authentication → Users, then run:
    `insert into app_config (id, owner_id) values (1, '<your user uuid>');`
 3. **Connection string**: under Connect → **Session pooler**, copy the URI (GitHub runners need
-   the IPv4 pooler) and put in your database password.
+   the IPv4 pooler) and put in your database password. Percent-encode special characters in the
+   password (for example `@` → `%40`).
 4. **Alpaca**: create a free account and generate API keys (paper-trading keys work for market
    data).
 5. **GitHub** (private repo): Settings → Secrets and variables → Actions. Add `DATABASE_URL`,
@@ -50,4 +51,12 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
 cd pipeline
 DATABASE_URL=... ALPACA_KEY_ID=... ALPACA_SECRET_KEY=... \
   scripts/in-docker.sh uv run python -m advisor.run --force-kind pre_open
+```
+
+To keep secrets out of shell history, load them from a git-ignored file instead (from `pipeline/`):
+
+```bash
+# put DATABASE_URL=..., ALPACA_KEY_ID=..., ALPACA_SECRET_KEY=... in pipeline/.env.local (git-ignored)
+set -a; . ./.env.local; set +a
+scripts/in-docker.sh uv run python -m advisor.run --force-kind pre_open
 ```

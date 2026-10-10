@@ -57,9 +57,15 @@ class SourceTracker:
         return self._states.get(name, SourceState())
 
     def run(self, name: str, symbols: Sequence[str]) -> CollectorResult:
-        result = run_collector(
-            self._collectors[name], symbols, self._as_of, cache=self._cache, state=self._state(name)
-        )
+        collector = self._collectors[name]  # an unknown name is a caller bug: let it raise
+        try:
+            result = run_collector(
+                collector, symbols, self._as_of, cache=self._cache, state=self._state(name)
+            )
+        except Exception as exc:  # one collector must never fail the whole run
+            result = CollectorResult(
+                name, CollectorStatus.FAILED, [], 0, f"{type(exc).__name__}: {exc}"[:500]
+            )
         with self._lock:
             self._calls.setdefault(name, []).append(result)
         return result

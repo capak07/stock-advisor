@@ -100,6 +100,7 @@ class NasdaqSymbols:
     freshness = timedelta(days=3)
     scope = Scope.UNIVERSE
     canary: tuple[str, ...] = ()
+    canary_requires_records = True
 
     def __init__(
         self,

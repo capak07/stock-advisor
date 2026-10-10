@@ -36,8 +36,9 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
    `postgres` user (GitHub runners need the IPv4 pooler). Percent-encode special characters in
    the password (for example `@` → `%40`). This is your **admin** URL: keep it local and never put
    it in GitHub.
-2. **Schema**: from `pipeline/`, run
-   `ADMIN_DATABASE_URL='<admin url>' scripts/in-docker.sh uv run python -m advisor.store.migrate`.
+2. **Schema**: from `pipeline/`, put `ADMIN_DATABASE_URL='<admin url>'` in a git-ignored
+   `pipeline/.env.admin`, then run
+   `set -a; . ./.env.admin; set +a; scripts/in-docker.sh uv run python -m advisor.store.migrate`.
    If you already pasted `0001`/`0002` into the SQL editor by hand, run it once with
    `--baseline 0002_rls.sql` added.
 3. **Auth**: under Authentication → Sign In / Providers → Email, turn off "Allow new users to sign
@@ -48,6 +49,8 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
    create role advisor_pipeline login password '<generate a long random password>';
    grant pipeline_rw to advisor_pipeline;
    ```
+   Use a long password of letters and digits only (no URL encoding needed), and don't save that
+   query as a snippet in the SQL editor.
    The pipeline's `DATABASE_URL` is the session-pooler URI with the user
    `advisor_pipeline.<project-ref>` and that password. If the pooler rejects the custom role,
    resolve that first: the `postgres` user has full DDL rights and should not run the pipeline.

@@ -79,6 +79,7 @@ class Collector(Protocol):
     freshness: timedelta | None  # max cache age used as a failure fallback; None = never cache
     scope: Scope
     canary: tuple[str, ...]  # symbols the daily health check fetches; () unless scope is SYMBOLS
+    canary_requires_records: bool  # health check fails an empty canary answer only when True
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[BaseModel]: ...
 
@@ -130,6 +131,12 @@ def _retry_after(response: httpx.Response) -> float | None:
     return min(max(seconds, 0.0), MAX_RETRY_AFTER)
 
 
+def _safe_url(url: str) -> str:
+    """Scheme, host and path only: query strings can carry API keys and must never be logged."""
+    parsed = httpx.URL(url)
+    return str(parsed.copy_with(query=None, fragment=None))
+
+
 def get_with_retries(
     client: httpx.Client,
     url: str,
@@ -153,11 +160,16 @@ def get_with_retries(
             last_error = exc
         else:
             if response.status_code not in RETRY_STATUS:
-                response.raise_for_status()
+                if response.is_error:
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code} from {_safe_url(url)}: {response.text[:200]}",
+                        request=response.request,
+                        response=response,
+                    )
                 return response
             retry_after = _retry_after(response)
             last_error = httpx.HTTPStatusError(
-                f"HTTP {response.status_code} from {url}",
+                f"HTTP {response.status_code} from {_safe_url(url)}",
                 request=response.request,
                 response=response,
             )

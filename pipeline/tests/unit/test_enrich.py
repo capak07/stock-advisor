@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from advisor.collectors.base import Scope
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.tracker import SourceTracker
-from advisor.enrich import EnrichTargets, run_enrichment, shortlist, symbols_for
+from advisor.enrich import EnrichTargets, ranked_shortlist, run_enrichment, shortlist, symbols_for
 from advisor.models import AssetType
 from advisor.screener import ScreenRow
 from fakes import FakeCollector
@@ -25,7 +25,13 @@ def test_shortlist_with_no_priority_and_a_small_size():
     assert shortlist([row("A", 1e6), row("B", 2e6)], [], size=1) == ["B"]
 
 
-TARGETS = EnrichTargets(stocks=["OTCX", "AAA"], crypto=["BTC"])
+def test_ranked_shortlist_excludes_priority_respects_size_and_breaks_ties_by_symbol():
+    passed = [row("LOW", 2e6), row("HIGH", 9e6), row("MID", 5e6), row("OTCX", 8e6), row("TIE", 5e6)]
+    assert ranked_shortlist(passed, ["OTCX"], size=3) == ["HIGH", "MID", "TIE"]
+    assert ranked_shortlist(passed, ["OTCX"], size=2) == ["HIGH", "MID"]
+
+
+TARGETS = EnrichTargets(priority_stocks=["OTCX"], crypto=["BTC"], ranked_stocks=["AAA"])
 
 
 def test_symbols_for_routes_by_scope_and_asset_type():
@@ -35,7 +41,7 @@ def test_symbols_for_routes_by_scope_and_asset_type():
     market = FakeCollector("market", scope=Scope.MARKET)
     assert symbols_for(stock, TARGETS) == ["OTCX", "AAA"]
     assert symbols_for(crypto, TARGETS) == ["BTC"]
-    assert symbols_for(both, TARGETS) == ["OTCX", "AAA", "BTC"]
+    assert symbols_for(both, TARGETS) == ["OTCX", "BTC", "AAA"]
     assert symbols_for(market, TARGETS) == []
 
 
@@ -46,7 +52,7 @@ def test_run_enrichment_runs_each_collector_once_and_skips_ones_with_no_targets(
         "crypto": FakeCollector("crypto", asset_types=frozenset({AssetType.CRYPTO})),
     }
     tracker = SourceTracker(collectors, DiskCache(tmp_path), NOW, {})
-    targets = EnrichTargets(stocks=["OTCX", "AAA"], crypto=[])
+    targets = EnrichTargets(priority_stocks=["OTCX"], crypto=[], ranked_stocks=["AAA"])
     results = run_enrichment(tracker, collectors, list(collectors), targets)
     assert sorted(results) == ["market", "stock"]
     assert collectors["stock"].calls == [["OTCX", "AAA"]]

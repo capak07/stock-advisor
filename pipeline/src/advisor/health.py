@@ -2,7 +2,8 @@
 
 Usage: python -m advisor.health
 Exit 1 when a core source fails, so the GitHub job fails and the owner gets an email.
-This check is also the daily retry for sources whose circuit breaker is open.
+This check is also the daily retry for sources whose circuit breaker is open: a passing check
+resets a source's breaker, and a failing check never adds to its failure count.
 """
 
 import json
@@ -26,17 +27,30 @@ def check_sources(
     states: Mapping[str, SourceState],
     now: datetime,
 ) -> list[tuple[CollectorResult, int]]:
-    """Fetch every collector's canary once, ignoring the breaker; an empty answer is a failure."""
+    """Fetch every collector's canary once, ignoring the breaker.
+
+    An empty answer fails the check only for collectors that must return records.
+    """
     rows = []
     for name, collector in collectors.items():
         result = run_collector(
             collector, list(collector.canary), now, cache=cache, state=SourceState()
         )
-        if result.status is CollectorStatus.OK and not result.records:
+        if (
+            collector.canary_requires_records
+            and result.status is CollectorStatus.OK
+            and not result.records
+        ):
             result = replace(
                 result, status=CollectorStatus.FAILED, error="canary returned no records"
             )
-        rows.append((result, next_failures(states.get(name, SourceState()), result)))
+        state = states.get(name, SourceState())
+        failures = (
+            next_failures(state, result)
+            if result.status in (CollectorStatus.OK, CollectorStatus.PARTIAL)
+            else state.consecutive_failures  # spec §4.1 counts failing runs; a failed check only records the attempt
+        )
+        rows.append((result, failures))
     return rows
 
 

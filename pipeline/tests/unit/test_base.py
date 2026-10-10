@@ -90,3 +90,20 @@ def test_retry_after_header_sets_the_wait(header, expected_sleep):
     sleeps = []
     assert get_with_retries(client, "https://example.test/x", sleep=sleeps.append).text == "ok"
     assert sleeps == [expected_sleep]
+
+
+def test_error_text_never_contains_query_strings():
+    url = "https://x.test/ratios/AAPL?token=ABC"
+    client, _ = scripted_client([httpx.Response(401, text='{"error":"Invalid API KEY"}')])
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        get_with_retries(client, url, params={"apikey": "SECRET123"}, sleep=lambda _: None)
+    text = str(caught.value)
+    assert "SECRET123" not in text and "ABC" not in text
+    assert "HTTP 401 from https://x.test/ratios/AAPL" in text and "Invalid API KEY" in text
+
+    client, _ = scripted_client([httpx.Response(503)] * 4)
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        get_with_retries(client, url, params={"apikey": "SECRET123"}, sleep=lambda _: None)
+    text = str(caught.value)
+    assert "SECRET123" not in text and "ABC" not in text
+    assert "HTTP 503 from https://x.test/ratios/AAPL" in text

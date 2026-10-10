@@ -39,6 +39,7 @@ class FakeCollector:
     freshness: timedelta | None = None
     scope: Scope = Scope.SYMBOLS
     canary: tuple[str, ...] = ()
+    canary_requires_records: bool = False
     calls: list[list[str]] = field(default_factory=list)
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[BaseModel]:

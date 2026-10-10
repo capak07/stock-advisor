@@ -25,3 +25,9 @@ def test_registry_lists_foundation_collectors_with_core_flags():
     }
     for collector in registry.values():  # SYMBOLS collectors need canaries for the health check
         assert bool(collector.canary) == (collector.scope is Scope.SYMBOLS)
+    assert all(c.canary_requires_records is True for c in registry.values())
+    for collector in registry.values():
+        if collector.scope is Scope.SYMBOLS:
+            field = collector.record_type.model_fields["symbol"]
+            assert field.annotation is str
+            assert field.is_required()

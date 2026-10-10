@@ -68,11 +68,17 @@ def _store(collector: Collector, records: Sequence[BaseModel], cache: DiskCache)
         return
     groups: dict[str, list[BaseModel]] = defaultdict(list)
     for record in records:
-        groups[record.symbol if collector.scope is Scope.SYMBOLS else WHOLE].append(record)
+        if collector.scope is Scope.SYMBOLS:
+            key = getattr(record, "symbol", None)
+            if not isinstance(key, str) or not key:
+                continue  # unkeyable records are returned to the caller but never cached
+        else:
+            key = WHOLE
+        groups[key].append(record)
     for key, group in groups.items():
         try:
             cache.put(collector.name, key, group)
-        except (OSError, TypeError, ValueError):
+        except Exception:
             pass  # cache is a fallback; a failed write must not lose a good fetch
 
 
@@ -112,5 +118,6 @@ def run_collector(
         return CollectorResult(collector.name, CollectorStatus.FAILED, [], latency, error)
 
     latency = int((time.perf_counter() - started) * 1000)
-    _store(collector, records, cache)
+    if status is CollectorStatus.OK or collector.scope is Scope.SYMBOLS:
+        _store(collector, records, cache)  # a partial whole-list answer must not replace a fuller one
     return CollectorResult(collector.name, status, records, latency, error)

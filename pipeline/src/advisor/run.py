@@ -19,7 +19,7 @@ from advisor.collectors.cache import DiskCache
 from advisor.collectors.registry import build_registry
 from advisor.collectors.tracker import SourceTracker
 from advisor.config import Settings
-from advisor.enrich import EnrichTargets, run_enrichment, shortlist
+from advisor.enrich import EnrichTargets, ranked_shortlist, run_enrichment
 from advisor.models import ET, AssetRef, AssetType, RunKind, RunStatus, SymbolInfo
 from advisor.prices import PriceFetch, fetch_daily_bars
 from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
@@ -129,8 +129,11 @@ def execute_run(
         prices_ok = bool(symbols) and fresh >= MIN_PRICED_FRACTION * len(symbols)
 
         # Phase 3: enrichment, only for a run that can still publish.
-        targets = EnrichTargets(stocks=shortlist(passed, priority), crypto=crypto)
-        if universe_ok and prices_ok:
+        targets = EnrichTargets(
+            priority_stocks=priority, crypto=crypto, ranked_stocks=ranked_shortlist(passed, priority)
+        )
+        enriched = universe_ok and prices_ok
+        if enriched:
             run_enrichment(
                 tracker,
                 deps.collectors,
@@ -146,7 +149,7 @@ def execute_run(
             "priority_unpriced": sorted(set(priority) - bars.keys()),
             "fresh": fresh,
             "fresh_since": floor.isoformat(),
-            "shortlist": len(targets.stocks),
+            "shortlist": len(targets.stocks) if enriched else 0,
         }
         status = decide_status(
             tracker.merged(), deps.collectors, universe_ok=universe_ok, prices_ok=prices_ok

@@ -72,6 +72,7 @@ class YFinanceBars:
     freshness = None
     scope = Scope.SYMBOLS
     canary = ("AAPL", "MSFT")
+    canary_requires_records = True
 
     def __init__(self, download: Downloader | None = None) -> None:
         self._download = download or _yahoo_download

@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
+from pydantic import BaseModel
 
 from advisor.collectors.base import Cadence, CollectorResult, CollectorStatus, PartialFetch, Scope
 from advisor.collectors.cache import DiskCache
@@ -155,3 +156,42 @@ def test_empty_partial_fetch_is_a_failure(tmp_path):
     stale = run_collector(empty, ["AAA"], NOW, cache=cache, state=SourceState())
     assert stale.status is CollectorStatus.STALE
     assert [r.symbol for r in stale.records] == ["AAA"]
+
+
+class Loose(BaseModel):
+    symbol: str | None = None
+
+
+def test_records_without_a_symbol_are_returned_but_not_cached(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    loose = FakeCollector(
+        "loose",
+        records_for=lambda symbols: [Loose(symbol=None), Loose(symbol="AAA")],
+        record_type=Loose,
+        freshness=timedelta(days=1),
+    )
+    result = run_collector(loose, ["AAA"], NOW, cache=cache, state=SourceState())
+    assert result.status is CollectorStatus.OK and len(result.records) == 2
+    loose.error = httpx.ConnectError("down")
+    stale = run_collector(loose, ["AAA"], NOW, cache=cache, state=SourceState())
+    assert stale.status is CollectorStatus.STALE
+    assert [r.symbol for r in stale.records] == ["AAA"]
+
+
+def test_partial_market_result_does_not_replace_cache(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    market = FakeCollector(
+        "market",
+        records_for=lambda symbols: [info("A"), info("B")],
+        record_type=SymbolInfo,
+        freshness=timedelta(days=1),
+        scope=Scope.MARKET,
+    )
+    run_collector(market, [], NOW, cache=cache, state=SourceState())
+    market.error = PartialFetch([info("A")], "1 of 2")
+    partial = run_collector(market, [], NOW, cache=cache, state=SourceState())
+    assert partial.status is CollectorStatus.PARTIAL and len(partial.records) == 1
+    market.error = httpx.ConnectError("down")
+    stale = run_collector(market, [], NOW, cache=cache, state=SourceState())
+    assert stale.status is CollectorStatus.STALE
+    assert [r.symbol for r in stale.records] == ["A", "B"]

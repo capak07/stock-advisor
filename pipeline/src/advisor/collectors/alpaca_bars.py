@@ -54,6 +54,7 @@ class AlpacaBars:
     freshness = None
     scope = Scope.SYMBOLS
     canary = ("AAPL", "MSFT")
+    canary_requires_records = True
 
     def __init__(
         self,

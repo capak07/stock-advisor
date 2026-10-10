@@ -76,3 +76,16 @@ def test_concurrent_runs_of_many_sources_are_all_recorded(tmp_path):
     with ThreadPoolExecutor(max_workers=8) as pool:
         list(pool.map(lambda name: tracker.run(name, ["AAA"]), collectors))
     assert sorted(r.name for r in tracker.merged()) == sorted(collectors)
+
+
+def test_tracker_contains_unexpected_errors(tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("advisor.collectors.tracker.run_collector", boom)
+    tracker = tracker_with({"x": FakeCollector("x")}, tmp_path)
+    got = tracker.run("x", ["AAA"])
+    assert got.status is S.FAILED and got.error == "RuntimeError: boom"
+    assert [r.error for r in tracker.merged()] == ["RuntimeError: boom"]
+    with pytest.raises(KeyError):
+        tracker.run("unknown", [])

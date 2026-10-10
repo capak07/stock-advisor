@@ -17,36 +17,51 @@ SHORTLIST_SIZE = 300
 ENRICH_WORKERS = 8
 
 
-def shortlist(
-    passed: Sequence[ScreenRow], priority: Sequence[str], size: int = SHORTLIST_SIZE
+def ranked_shortlist(
+    passed: Sequence[ScreenRow], exclude: Sequence[str], size: int = SHORTLIST_SIZE
 ) -> list[str]:
-    """Priority symbols first (as given), then up to `size` passing symbols by dollar volume.
+    """Up to `size` passing symbols not in `exclude`, by dollar volume then symbol.
 
     Interim ranking: Plan 3's screener model replaces 20-day dollar volume as the sort key.
     """
-    chosen = set(priority)
+    skip = set(exclude)
     ranked = [
         r.symbol
         for r in sorted(passed, key=lambda r: (-r.adv20, r.symbol))
-        if r.symbol not in chosen
+        if r.symbol not in skip
     ]
-    return list(priority) + ranked[:size]
+    return ranked[:size]
+
+
+def shortlist(
+    passed: Sequence[ScreenRow], priority: Sequence[str], size: int = SHORTLIST_SIZE
+) -> list[str]:
+    """Priority symbols first (as given), then up to `size` passing symbols by dollar volume."""
+    return list(priority) + ranked_shortlist(passed, priority, size)
 
 
 @dataclass(frozen=True)
 class EnrichTargets:
-    stocks: list[str]  # priority stocks first, then the shortlist
-    crypto: list[str]  # held and watchlist crypto, holdings first
+    priority_stocks: list[str]  # holdings, then watchlist-only stocks
+    crypto: list[str]  # held, then watchlist-only crypto (every crypto symbol is priority)
+    ranked_stocks: list[str]  # the rest of the shortlist, best first
+
+    @property
+    def stocks(self) -> list[str]:
+        return self.priority_stocks + self.ranked_stocks
 
 
 def symbols_for(collector: Collector, targets: EnrichTargets) -> list[str]:
     if collector.scope is not Scope.SYMBOLS:
         return []
     symbols: list[str] = []
-    if AssetType.STOCK in collector.asset_types:
-        symbols += targets.stocks
+    stocks = AssetType.STOCK in collector.asset_types
+    if stocks:
+        symbols += targets.priority_stocks
     if AssetType.CRYPTO in collector.asset_types:
-        symbols += targets.crypto
+        symbols += targets.crypto  # held and watched crypto outrank the stock shortlist
+    if stocks:
+        symbols += targets.ranked_stocks
     return symbols
 
 

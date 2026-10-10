@@ -136,6 +136,11 @@ def test_pipeline_role_writes_pipeline_tables_but_only_reads_holdings(db):
             "update app_config set owner_id = owner_id",
             "create table sneaky (i int)",
             "select * from schema_migrations",
+            "update lots set qty = qty",
+            "delete from lots",
+            "update sells set qty = qty",
+            "delete from sells",
+            "delete from watchlist",
         ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 db.execute(statement)

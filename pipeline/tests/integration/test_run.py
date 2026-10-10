@@ -117,6 +117,26 @@ def test_partial_primary_prices_degrade_the_run_and_fall_back_for_the_rest(db, t
     assert outcome.summary["priced"] == 3
 
 
+def test_a_source_failing_in_one_phase_reports_one_partial_row(db, tmp_path):
+    hold(db)
+
+    def records_for(symbols):
+        if list(symbols) != ["OTCX"]:
+            raise httpx.ConnectError("down")
+        return history("OTCX", 70, start=FRESH_START)
+
+    alpaca = FakeCollector("alpaca_bars", records_for=records_for)
+    outcome = execute_run(
+        make_deps(db, tmp_path, alpaca=alpaca), RunKind.PRE_OPEN, NOW, min_universe=3
+    )
+    rows = health(db, outcome.run_id)
+    assert rows.count(("alpaca_bars", "partial")) == 1
+    assert len([s for s, _ in rows if s == "alpaca_bars"]) == 1
+    assert ("yfinance_bars", "ok") in rows
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["priced"] == 4
+
+
 def test_enrichment_collectors_get_priority_first_then_the_shortlist(db, tmp_path):
     hold(db)
     db.execute("insert into watchlist (symbol, asset_type) values ('BTC', 'crypto')")
@@ -159,6 +179,7 @@ def test_truncated_universe_fails_the_run_and_stays_unpublished(db, tmp_path):
     old = db.execute("select active from symbols where symbol = 'OLD'").fetchone()
     assert old["active"] is True
     assert db.execute("select count(*) as n from symbols").fetchone()["n"] == 1
+    assert outcome.summary["shortlist"] == 0
     assert extra["news"].calls == []  # a run that cannot publish spends no enrichment calls
 
 
@@ -189,6 +210,7 @@ def test_unexpected_error_marks_run_failed_and_propagates(db, tmp_path):
     assert row["status"] == "failed"
     assert row["published"] is False
     assert row["summary"]["error"].startswith("AttributeError")
+    assert ("nasdaq_symbols", "ok") in health(db, row["id"])
 
 
 def test_abandoned_runs_are_swept_when_a_run_starts(db, tmp_path):

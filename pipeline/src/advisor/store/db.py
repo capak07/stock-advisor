@@ -19,12 +19,3 @@ def connect(url: str) -> psycopg.Connection:
         keepalives_interval=10,
         keepalives_count=5,
     )
-
-
-def apply_migrations(conn: psycopg.Connection, directory: Path = MIGRATIONS_DIR) -> list[str]:
-    """Run every *.sql file in name order. Used for test databases; Supabase is migrated by hand."""
-    applied = []
-    for path in sorted(directory.glob("*.sql")):
-        conn.execute(path.read_text(encoding="utf-8"))
-        applied.append(path.name)
-    return applied

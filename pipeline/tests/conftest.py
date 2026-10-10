@@ -5,7 +5,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
-from advisor.store.db import apply_migrations
+from advisor.store.migrate import migrate
 from dbguard import require_test_database
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -49,6 +49,6 @@ def db():
         conn.execute("drop schema if exists auth cascade")
         conn.execute("create schema public")
         conn.execute(SUPABASE_STUB)
-        apply_migrations(conn)
+        migrate(conn)
         conn.execute(SUPABASE_GRANTS)
         yield conn

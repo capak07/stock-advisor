@@ -71,9 +71,9 @@ def test_non_retryable_status_raises_immediately():
 
 def test_transport_errors_exhaust_attempts_with_backoff():
     boom = httpx.ConnectError("down")
-    client, calls = scripted_client([boom, boom, boom])
+    client, calls = scripted_client([boom, boom, boom, boom])
     sleeps = []
     with pytest.raises(httpx.ConnectError):
         get_with_retries(client, "https://example.test/x", sleep=sleeps.append)
-    assert len(calls) == 3
-    assert sleeps == [1.0, 2.0]
+    assert len(calls) == 4  # spec §4.1: 3 retries
+    assert sleeps == [1.0, 2.0, 4.0]

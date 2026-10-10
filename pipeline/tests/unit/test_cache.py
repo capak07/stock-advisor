@@ -29,3 +29,11 @@ def test_get_returns_none_for_missing_or_corrupt_entries(tmp_path):
     for path in tmp_path.rglob("*.json"):
         path.write_text("{not json", encoding="utf-8")
     assert cache.get("s", "k", SymbolInfo, timedelta(days=1)) is None
+
+
+def test_get_returns_none_for_valid_json_of_the_wrong_shape(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: T0)
+    cache.put("s", "k", [info("AAPL")])
+    for path in tmp_path.rglob("*.json"):
+        path.write_text("[]", encoding="utf-8")
+    assert cache.get("s", "k", SymbolInfo, timedelta(days=1)) is None

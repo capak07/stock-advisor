@@ -76,3 +76,23 @@ def test_fetch_with_no_symbols_makes_no_requests():
         httpx.Client(transport=httpx.MockTransport(handler)), "key", "secret", limiter=FAST
     )
     assert collector.fetch([], AS_OF) == []
+
+
+def test_fetch_drops_rows_with_null_fields_and_symbols_with_null_rows():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "bars": {
+                "AAPL": [
+                    {**raw("2026-10-12T04:00:00Z", 1.5), "t": None},
+                    raw("2026-10-13T04:00:00Z", 1.6),
+                ],
+                "MSFT": None,
+            },
+            "next_page_token": None,
+        })
+
+    collector = AlpacaBars(
+        httpx.Client(transport=httpx.MockTransport(handler)), "key", "secret", limiter=FAST
+    )
+    bars = collector.fetch(["AAPL", "MSFT"], AS_OF)
+    assert [(b.symbol, b.day, b.close) for b in bars] == [("AAPL", date(2026, 10, 13), 1.6)]

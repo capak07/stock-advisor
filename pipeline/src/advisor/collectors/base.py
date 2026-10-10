@@ -110,7 +110,7 @@ def get_with_retries(
     params: Mapping[str, Any] | None = None,
     headers: Mapping[str, str] | None = None,
     limiter: RateLimiter | None = None,
-    attempts: int = 3,
+    attempts: int = 4,  # spec §4.1: 3 retries
     base_delay: float = 1.0,
     sleep: Callable[[float], None] = time.sleep,
 ) -> httpx.Response:

@@ -41,5 +41,5 @@ class DiskCache:
             if self._clock() - saved_at > max_age:
                 return None
             return [record_type.model_validate(raw) for raw in payload["records"]]
-        except (OSError, ValueError, KeyError):  # missing, corrupt, or schema-changed entries
+        except (OSError, ValueError, KeyError, TypeError):  # missing, corrupt, or wrong-shape
             return None

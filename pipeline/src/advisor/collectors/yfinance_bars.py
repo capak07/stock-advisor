@@ -11,6 +11,8 @@ from advisor.models import ET, AssetType, DailyBar
 Downloader = Callable[[list[str], date, date], pd.DataFrame]
 SYMBOLS_PER_DOWNLOAD = 100
 LOOKBACK = timedelta(days=100)
+# yf.download never raises: blocked or rate-limited requests come back as empty frames.
+MIN_SYMBOLS_FOR_EMPTY_CHECK = 5
 
 
 def to_yahoo(symbol: str) -> str:
@@ -80,4 +82,8 @@ class YFinanceBars:
         for i in range(0, len(unique), SYMBOLS_PER_DOWNLOAD):
             mapping = {to_yahoo(s): s for s in unique[i : i + SYMBOLS_PER_DOWNLOAD]}
             bars.extend(parse_frame(self._download(list(mapping), start, end), mapping))
+        if len(unique) >= MIN_SYMBOLS_FOR_EMPTY_CHECK and not bars:
+            raise RuntimeError(
+                f"yfinance returned no bars for {len(unique)} symbols (blocked or rate-limited?)"
+            )
         return bars

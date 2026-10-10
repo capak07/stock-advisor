@@ -87,3 +87,15 @@ def test_cache_write_failure_still_returns_ok(tmp_path):
     result = run_collector(universe_collector(), [], NOW, cache=cache, state=SourceState())
     assert result.status is CollectorStatus.OK
     assert [r.symbol for r in result.records] == ["AAPL"]
+
+
+def test_open_breaker_serves_fresh_cache_without_fetching(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    cache.put("universe", "", [info("MSFT")])
+    collector = universe_collector()
+    state = SourceState(consecutive_failures=3, last_attempt_et_date=TODAY)
+    result = run_collector(collector, [], NOW, cache=cache, state=state)
+    assert result.status is CollectorStatus.SKIPPED
+    assert [r.symbol for r in result.records] == ["MSFT"]
+    assert result.error == "circuit breaker open"
+    assert collector.calls == []

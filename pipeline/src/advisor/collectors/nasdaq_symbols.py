@@ -3,7 +3,7 @@
 import csv
 import io
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 
 import httpx
@@ -13,6 +13,9 @@ from advisor.models import AssetType, SymbolInfo
 
 NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
 OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+FOOTER = "File Creation Time"
+# Each real file keeps several thousand symbols; fewer means a truncated or empty download.
+MIN_KEPT_PER_FILE = 1000
 OTHER_EXCHANGES = {
     "A": "NYSE American",
     "N": "NYSE",
@@ -52,7 +55,7 @@ def is_excluded_name(name: str) -> bool:
 
 def _rows(text: str) -> list[dict[str, str]]:
     lines = [
-        line for line in text.splitlines() if line and not line.startswith("File Creation Time")
+        line for line in text.splitlines() if line and not line.startswith(FOOTER)
     ]
     return list(csv.DictReader(io.StringIO("\n".join(lines)), delimiter="|"))
 
@@ -96,14 +99,33 @@ class NasdaqSymbols:
     record_type = SymbolInfo
     freshness = timedelta(days=3)
 
-    def __init__(self, client: httpx.Client, limiter: RateLimiter | None = None) -> None:
+    def __init__(
+        self,
+        client: httpx.Client,
+        limiter: RateLimiter | None = None,
+        *,
+        min_per_file: int = MIN_KEPT_PER_FILE,
+    ) -> None:
         self._client = client
         self._limiter = limiter
+        self._min_per_file = min_per_file
+
+    def _download(self, url: str, parse: Callable[[str], list[SymbolInfo]]) -> list[SymbolInfo]:
+        """One file's kept symbols; raises on a truncated or shrunken file so it is never cached."""
+        text = get_with_retries(self._client, url, limiter=self._limiter).text
+        if FOOTER not in text:
+            raise ValueError(f"{url}: missing 'File Creation Time' footer (truncated download?)")
+        records = parse(text)
+        if len(records) < self._min_per_file:
+            raise ValueError(
+                f"{url}: only {len(records)} symbols kept, expected at least {self._min_per_file}"
+            )
+        return records
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[SymbolInfo]:
-        nasdaq = get_with_retries(self._client, NASDAQ_LISTED_URL, limiter=self._limiter).text
-        other = get_with_retries(self._client, OTHER_LISTED_URL, limiter=self._limiter).text
+        nasdaq = self._download(NASDAQ_LISTED_URL, parse_nasdaq_listed)
+        other = self._download(OTHER_LISTED_URL, parse_other_listed)
         merged: dict[str, SymbolInfo] = {}
-        for record in parse_nasdaq_listed(nasdaq) + parse_other_listed(other):
+        for record in nasdaq + other:
             merged.setdefault(record.symbol, record)
         return sorted(merged.values(), key=lambda record: record.symbol)

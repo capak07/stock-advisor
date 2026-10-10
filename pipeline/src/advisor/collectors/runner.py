@@ -46,10 +46,15 @@ def run_collector(
     cache: DiskCache,
     state: SourceState,
 ) -> CollectorResult:
-    if breaker_open(state, as_of.astimezone(ET).date()):
-        return CollectorResult(collector.name, CollectorStatus.SKIPPED, [], 0, "circuit breaker open")
-
     key = cache_key(symbols)
+    if breaker_open(state, as_of.astimezone(ET).date()):
+        cached = None
+        if collector.freshness is not None:
+            cached = cache.get(collector.name, key, collector.record_type, collector.freshness)
+        return CollectorResult(
+            collector.name, CollectorStatus.SKIPPED, cached or [], 0, "circuit breaker open"
+        )
+
     started = time.perf_counter()
     try:
         records = list(collector.fetch(symbols, as_of))

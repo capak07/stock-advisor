@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 
 import pandas as pd
+import pytest
 
 from advisor.collectors.yfinance_bars import YFinanceBars, parse_frame, to_yahoo
 
@@ -53,3 +54,14 @@ def test_parse_frame_accepts_single_level_columns_for_one_ticker():
 
 def test_parse_frame_handles_empty_frames():
     assert parse_frame(pd.DataFrame(), {"AAPL": "AAPL"}) == []
+
+
+def test_fetch_raises_when_five_or_more_symbols_all_come_back_empty():
+    collector = YFinanceBars(download=lambda tickers, start, end: pd.DataFrame())
+    with pytest.raises(RuntimeError, match="yfinance returned no bars for 5 symbols"):
+        collector.fetch(["A", "B", "C", "D", "E"], AS_OF)
+
+
+def test_fetch_allows_empty_results_for_fewer_than_five_symbols():
+    collector = YFinanceBars(download=lambda tickers, start, end: pd.DataFrame())
+    assert collector.fetch(["A", "B"], AS_OF) == []

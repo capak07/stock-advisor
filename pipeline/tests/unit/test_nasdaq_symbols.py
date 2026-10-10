@@ -37,16 +37,22 @@ def test_parse_other_listed_maps_exchanges_and_excludes_etfs_and_preferreds(fixt
     ]
 
 
-def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
-    files = {
+def fixture_files(fixtures_dir) -> dict[str, str]:
+    return {
         NASDAQ_LISTED_URL: (fixtures_dir / "nasdaqlisted.txt").read_text(encoding="utf-8"),
         OTHER_LISTED_URL: (fixtures_dir / "otherlisted.txt").read_text(encoding="utf-8"),
     }
 
+
+def serving(files: dict[str, str], **kwargs) -> NasdaqSymbols:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=files[str(request.url)])
 
-    collector = NasdaqSymbols(httpx.Client(transport=httpx.MockTransport(handler)))
+    return NasdaqSymbols(httpx.Client(transport=httpx.MockTransport(handler)), **kwargs)
+
+
+def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
+    collector = serving(fixture_files(fixtures_dir), min_per_file=1)
     records = collector.fetch([], NOW)
     assert [(r.symbol, r.exchange) for r in records] == [
         ("AAPL", "NASDAQ"),  # the NASDAQ listing wins over the duplicate
@@ -59,6 +65,35 @@ def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
         ("TSM", "NYSE"),
         ("UAL", "NASDAQ"),
     ]
+
+
+def test_fetch_rejects_other_listed_with_header_and_footer_only(fixtures_dir):
+    files = fixture_files(fixtures_dir)
+    header, *_, footer = files[OTHER_LISTED_URL].splitlines()
+    files[OTHER_LISTED_URL] = f"{header}\n{footer}\n"
+    with pytest.raises(ValueError, match=r"otherlisted\.txt: only 0 symbols kept, expected at least 1"):
+        serving(files, min_per_file=1).fetch([], NOW)
+
+
+def test_fetch_rejects_empty_other_listed(fixtures_dir):
+    files = {**fixture_files(fixtures_dir), OTHER_LISTED_URL: ""}
+    with pytest.raises(ValueError, match=r"otherlisted\.txt: missing 'File Creation Time' footer"):
+        serving(files, min_per_file=1).fetch([], NOW)
+
+
+def test_fetch_rejects_nasdaq_listed_without_footer(fixtures_dir):
+    files = fixture_files(fixtures_dir)
+    files[NASDAQ_LISTED_URL] = "".join(
+        line for line in files[NASDAQ_LISTED_URL].splitlines(keepends=True)
+        if not line.startswith("File Creation Time")
+    )
+    with pytest.raises(ValueError, match=r"nasdaqlisted\.txt: missing 'File Creation Time' footer"):
+        serving(files, min_per_file=1).fetch([], NOW)
+
+
+def test_fetch_requires_a_thousand_symbols_per_file_by_default(fixtures_dir):
+    with pytest.raises(ValueError, match="only 3 symbols kept, expected at least 1000"):
+        serving(fixture_files(fixtures_dir)).fetch([], NOW)
 
 
 @pytest.mark.parametrize(

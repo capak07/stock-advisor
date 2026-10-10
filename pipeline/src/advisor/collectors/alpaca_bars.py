@@ -31,7 +31,7 @@ def _to_bar(symbol: str, raw: dict) -> DailyBar | None:
             volume=raw["v"],
             source="alpaca",
         )
-    except (KeyError, ValueError):  # pydantic ValidationError is a ValueError
+    except (KeyError, TypeError, ValueError):  # pydantic ValidationError is a ValueError
         return None
 
 
@@ -79,7 +79,8 @@ class AlpacaBars:
                     limiter=self._limiter,
                 ).json()
                 for symbol, rows in (payload.get("bars") or {}).items():
-                    bars.extend(b for b in (_to_bar(symbol, r) for r in rows) if b is not None)
+                    parsed = (_to_bar(symbol, r) for r in rows or [])
+                    bars.extend(b for b in parsed if b is not None)
                 page_token = payload.get("next_page_token")
                 if not page_token:
                     break

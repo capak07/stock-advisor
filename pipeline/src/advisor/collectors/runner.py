@@ -96,10 +96,13 @@ def run_collector(
     started = time.perf_counter()
     status, error = CollectorStatus.OK, None
     try:
-        records = list(collector.fetch(symbols, as_of))
-    except PartialFetch as exc:
-        records = exc.records
-        status, error = CollectorStatus.PARTIAL, f"PartialFetch: {exc}"[:500]
+        try:
+            records = list(collector.fetch(symbols, as_of))
+        except PartialFetch as exc:
+            if not exc.records:
+                raise  # nothing usable came back: a plain failure
+            records = exc.records
+            status, error = CollectorStatus.PARTIAL, f"PartialFetch: {exc}"[:500]
     except Exception as exc:  # any source failure is contained here
         latency = int((time.perf_counter() - started) * 1000)
         error = f"{type(exc).__name__}: {exc}"[:500]

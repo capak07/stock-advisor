@@ -142,3 +142,16 @@ def test_partial_fetch_keeps_records_and_caches_them(tmp_path):
     failing = bars_collector(error=httpx.ConnectError("down"))
     stale = run_collector(failing, ["AAA"], NOW, cache=cache, state=SourceState())
     assert [r.symbol for r in stale.records] == ["AAA"]
+
+
+def test_empty_partial_fetch_is_a_failure(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    empty = bars_collector(error=PartialFetch([], "all 2 requests failed"))
+    result = run_collector(empty, ["AAA", "BBB"], NOW, cache=cache, state=SourceState())
+    assert result.status is CollectorStatus.FAILED
+    assert result.error == "PartialFetch: all 2 requests failed"
+    assert next_failures(SourceState(1), result) == 2
+    run_collector(bars_collector(), ["AAA"], NOW, cache=cache, state=SourceState())
+    stale = run_collector(empty, ["AAA"], NOW, cache=cache, state=SourceState())
+    assert stale.status is CollectorStatus.STALE
+    assert [r.symbol for r in stale.records] == ["AAA"]

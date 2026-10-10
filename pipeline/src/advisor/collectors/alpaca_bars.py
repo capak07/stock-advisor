@@ -17,6 +17,7 @@ from advisor.models import ET, AssetType, DailyBar
 
 ALPACA_BARS_URL = "https://data.alpaca.markets/v2/stocks/bars"
 SYMBOLS_PER_REQUEST = 200
+MAX_FAILED_REQUESTS = 5  # stop hammering a failing API; the yfinance fallback prices what's left
 PAGE_LIMIT = 10_000
 SIP_DELAY = timedelta(minutes=16)  # free plan: SIP data must be at least 15 minutes old
 LOOKBACK = timedelta(days=100)  # about 68 trading days, enough for the 60-day history filter
@@ -80,16 +81,23 @@ class AlpacaBars:
         ]
         bars: list[DailyBar] = []
         errors: list[str] = []
-        for chunk in chunks:
+        succeeded = 0
+        skipped = 0
+        for index, chunk in enumerate(chunks):
+            if len(errors) >= MAX_FAILED_REQUESTS:
+                skipped = len(chunks) - index
+                break
             try:
                 bars.extend(self._fetch_chunk(chunk, base_params))
+                succeeded += 1
             except (httpx.HTTPError, ValueError) as exc:  # one bad request must not lose the rest
                 errors.append(f"{chunk[0]}..{chunk[-1]}: {type(exc).__name__}: {exc}")
-        if errors and not bars:
-            raise RuntimeError(f"all {len(chunks)} Alpaca requests failed; first: {errors[0]}")
+        note = f" (stopped after {MAX_FAILED_REQUESTS} failures; {skipped} not tried)" if skipped else ""
+        if errors and not succeeded:
+            raise RuntimeError(f"all {len(errors)} Alpaca requests failed{note}; first: {errors[0]}")
         if errors:
             raise PartialFetch(
-                bars, f"{len(errors)} of {len(chunks)} Alpaca requests failed; first: {errors[0]}"
+                bars, f"{len(errors)} of {len(chunks)} Alpaca requests failed{note}; first: {errors[0]}"
             )
         return bars
 

@@ -146,3 +146,34 @@ def test_a_chunk_failing_on_a_later_page_contributes_no_bars():
     with pytest.raises(PartialFetch) as caught:
         collector.fetch([f"S{i:03d}" for i in range(250)], AS_OF)
     assert [b.symbol for b in caught.value.records] == ["S200"]
+
+
+def test_an_empty_successful_chunk_plus_a_failed_one_is_partial_not_all_failed():
+    def handler(request: httpx.Request) -> httpx.Response:
+        symbols = request.url.params["symbols"].split(",")
+        if "S200" in symbols:
+            return httpx.Response(400, json={"message": "invalid symbol"})
+        return httpx.Response(200, json={"bars": {}, "next_page_token": None})
+
+    collector = AlpacaBars(
+        httpx.Client(transport=httpx.MockTransport(handler)), "key", "secret", limiter=FAST
+    )
+    with pytest.raises(PartialFetch, match="1 of 2 Alpaca requests failed") as caught:
+        collector.fetch([f"S{i:03d}" for i in range(250)], AS_OF)
+    assert caught.value.records == []
+
+
+def test_requests_stop_after_five_failures():
+    sent = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal sent
+        sent += 1
+        return httpx.Response(400, json={"message": "bad"})
+
+    collector = AlpacaBars(
+        httpx.Client(transport=httpx.MockTransport(handler)), "key", "secret", limiter=FAST
+    )
+    with pytest.raises(RuntimeError, match=r"all 5 Alpaca requests failed \(stopped after 5 failures; 2 not tried\)"):
+        collector.fetch([f"S{i:04d}" for i in range(1400)], AS_OF)
+    assert sent == 5

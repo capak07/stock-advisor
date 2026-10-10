@@ -70,3 +70,32 @@ def history(
     start: date = date(2026, 6, 1),
 ) -> list[DailyBar]:
     return [bar(symbol, start + timedelta(days=i), close, volume, source) for i in range(days)]
+
+
+FRESH_START = date(2026, 8, 5)  # 70 daily bars from here end 2026-10-13, fresh for a 2026-10-14 run
+
+
+def fake_price_collectors(universe: Sequence[str] = ("AAA", "BBB", "CCC")) -> dict[str, FakeCollector]:
+    """Universe, primary and fallback price fakes that return fresh 70-day histories."""
+    return {
+        "nasdaq_symbols": FakeCollector(
+            "nasdaq_symbols",
+            records_for=lambda _: [info(s) for s in universe],
+            record_type=SymbolInfo,
+            cadence=Cadence.DAILY,
+            scope=Scope.UNIVERSE,
+            freshness=timedelta(days=3),
+        ),
+        "alpaca_bars": FakeCollector(
+            "alpaca_bars",
+            records_for=lambda syms: [b for s in syms for b in history(s, 70, start=FRESH_START)],
+        ),
+        "yfinance_bars": FakeCollector(
+            "yfinance_bars",
+            core=False,
+            best_effort=True,
+            records_for=lambda syms: [
+                b for s in syms for b in history(s, 70, source="yfinance", start=FRESH_START)
+            ],
+        ),
+    }

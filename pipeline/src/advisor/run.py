@@ -4,6 +4,7 @@ Usage: python -m advisor.run [--force-kind pre_open|pre_close|early_close] [--no
 """
 
 import argparse
+import contextlib
 import json
 import sys
 from collections.abc import Mapping, Sequence
@@ -16,17 +17,21 @@ from advisor import screener
 from advisor.collectors.base import Collector, CollectorResult, CollectorStatus, make_client
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.registry import build_registry
-from advisor.collectors.runner import next_failures, run_collector
+from advisor.collectors.tracker import SourceTracker
 from advisor.config import Settings
+from advisor.enrich import EnrichTargets, run_enrichment, shortlist
 from advisor.models import ET, AssetRef, AssetType, RunKind, RunStatus, SymbolInfo
-from advisor.prices import fetch_daily_bars
+from advisor.prices import PriceFetch, fetch_daily_bars
 from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
 from advisor.store import repo
 from advisor.store.db import connect
 
 MIN_UNIVERSE = 1000  # fewer listed stocks than this means the symbol files were truncated
 MIN_PRICED_FRACTION = 0.5
-UNHEALTHY = frozenset({CollectorStatus.FAILED, CollectorStatus.STALE, CollectorStatus.SKIPPED})
+UNIVERSE_SOURCE = "nasdaq_symbols"
+PRIMARY_PRICES = "alpaca_bars"
+FALLBACK_PRICES = "yfinance_bars"
+PRICE_STAGE = frozenset({UNIVERSE_SOURCE, PRIMARY_PRICES, FALLBACK_PRICES})
 
 
 @dataclass(frozen=True)
@@ -57,9 +62,13 @@ def decide_status(
     return RunStatus.SUCCESS
 
 
-def count_healthy(results: Sequence[CollectorResult], collectors: Mapping[str, Collector]) -> int:
-    unhealthy = {r.name for r in results if r.status in UNHEALTHY}
-    return len(collectors) - len(unhealthy)
+def priority_order(held: set[AssetRef], watch: set[AssetRef], asset_type: AssetType) -> list[str]:
+    """Holdings first, then watchlist-only symbols, each alphabetical (spec §7.2)."""
+    held_symbols = sorted(ref.symbol for ref in held if ref.asset_type is asset_type)
+    watch_only = sorted(
+        {ref.symbol for ref in watch if ref.asset_type is asset_type} - set(held_symbols)
+    )
+    return held_symbols + watch_only
 
 
 def execute_run(
@@ -67,37 +76,31 @@ def execute_run(
 ) -> RunOutcome:
     conn = deps.conn
     floor = freshness_floor(kind, now_utc)  # spec §10: older last bars count as missing
+    repo.sweep_abandoned_runs(conn, now_utc)
     run_id = repo.create_run(conn, kind, now_utc.astimezone(ET).date())
-    results: list[CollectorResult] = []
+    tracker = SourceTracker(
+        deps.collectors, deps.cache, now_utc, repo.load_source_states(conn, deps.collectors)
+    )
 
-    def run(name: str, symbols: Sequence[str]) -> CollectorResult:
-        state = repo.load_source_state(conn, name)
-        result = run_collector(
-            deps.collectors[name], symbols, now_utc, cache=deps.cache, state=state
+    def fetch_prices(symbols: Sequence[str]) -> PriceFetch:
+        return fetch_daily_bars(
+            symbols,
+            primary_run=lambda s: tracker.run(PRIMARY_PRICES, s),
+            fallback_run=lambda s: tracker.run(FALLBACK_PRICES, s),
         )
-        repo.record_source_health(conn, run_id, result, next_failures(state, result), now_utc)
-        results.append(result)
-        return result
+
+    def record_health() -> None:
+        for result, failures in tracker.health_rows():
+            repo.record_source_health(conn, run_id, result, failures, now_utc)
 
     try:
-        priority_refs = repo.load_held_symbols(conn) | repo.load_watchlist(conn)
-        priority = {ref.symbol for ref in priority_refs if ref.asset_type is AssetType.STOCK}
+        held, watch = repo.load_held_symbols(conn), repo.load_watchlist(conn)
+        priority = priority_order(held, watch, AssetType.STOCK)
+        crypto = priority_order(held, watch, AssetType.CRYPTO)
 
-        universe: list[SymbolInfo] = list(run("nasdaq_symbols", []).records)
-        if len(universe) >= min_universe:
-            repo.upsert_symbols(conn, universe)
-        symbols = sorted({record.symbol for record in universe} | priority)
-
-        prices = fetch_daily_bars(
-            symbols,
-            primary_run=lambda s: run("alpaca_bars", s),
-            fallback_run=lambda s: run("yfinance_bars", s),
-        )
-
-        # Holdings and watchlist first, so their data is saved before anything else can fail.
-        priority_rows = [
-            screener.price_stats(s, prices.bars[s]) for s in sorted(priority) if s in prices.bars
-        ]
+        # Phase 1: holdings and watchlist are priced and saved before anything else can fail.
+        bars = fetch_prices(priority).bars if priority else {}
+        priority_rows = [screener.price_stats(s, bars[s]) for s in priority if s in bars]
         repo.write_features_live(
             conn,
             run_id,
@@ -111,21 +114,42 @@ def execute_run(
             now_utc,
         )
 
-        passed = screener.hard_filter(prices.bars, fresh_since=floor)
-        fresh = sum(1 for bars in prices.bars.values() if bars[-1].day >= floor)
+        # Phase 2: the rest of the market.
+        universe: list[SymbolInfo] = list(tracker.run(UNIVERSE_SOURCE, []).records)
+        universe_ok = len(universe) >= min_universe
+        if universe_ok:
+            repo.upsert_symbols(conn, universe)
+        rest = sorted({record.symbol for record in universe} - set(priority))
+        if rest:
+            bars = {**fetch_prices(rest).bars, **bars}
+        symbols = sorted(set(priority) | set(rest))
+
+        passed = screener.hard_filter(bars, fresh_since=floor)
+        fresh = sum(1 for history in bars.values() if history[-1].day >= floor)
+        prices_ok = bool(symbols) and fresh >= MIN_PRICED_FRACTION * len(symbols)
+
+        # Phase 3: enrichment, only for a run that can still publish.
+        targets = EnrichTargets(stocks=shortlist(passed, priority), crypto=crypto)
+        if universe_ok and prices_ok:
+            run_enrichment(
+                tracker,
+                deps.collectors,
+                [name for name in deps.collectors if name not in PRICE_STAGE],
+                targets,
+            )
+
         summary = {
             "universe": len(universe),
-            "priced": len(prices.bars),
+            "priced": len(bars),
             "passed_filters": len(passed),
             "priority": len(priority),
-            "priority_unpriced": sorted(priority - prices.bars.keys()),
+            "priority_unpriced": sorted(set(priority) - bars.keys()),
             "fresh": fresh,
             "fresh_since": floor.isoformat(),
+            "shortlist": len(targets.stocks),
         }
-        universe_ok = len(universe) >= min_universe
-        prices_ok = bool(symbols) and fresh >= MIN_PRICED_FRACTION * len(symbols)
         status = decide_status(
-            results, deps.collectors, universe_ok=universe_ok, prices_ok=prices_ok
+            tracker.merged(), deps.collectors, universe_ok=universe_ok, prices_ok=prices_ok
         )
         if status is RunStatus.FAILED:
             reasons = []
@@ -135,17 +159,20 @@ def execute_run(
                 reasons.append(f"too few fresh priced symbols ({fresh} of {len(symbols)})")
             summary["failed_reason"] = reasons
     except Exception as exc:
+        with contextlib.suppress(Exception):  # never let bookkeeping hide the real error
+            record_health()
         repo.finish_run(
             conn, run_id, RunStatus.FAILED,
-            sources_ok=count_healthy(results, deps.collectors),
+            sources_ok=tracker.count_healthy(),
             sources_total=len(deps.collectors),
             summary={"error": f"{type(exc).__name__}: {exc}"[:500]},
         )
         raise
 
+    record_health()
     repo.finish_run(
         conn, run_id, status,
-        sources_ok=count_healthy(results, deps.collectors),
+        sources_ok=tracker.count_healthy(),
         sources_total=len(deps.collectors),
         summary=summary,
     )

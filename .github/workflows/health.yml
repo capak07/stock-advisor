@@ -1,0 +1,44 @@
+name: health
+
+# Daily live check of every data source (spec §11). It also retries sources whose circuit
+# breaker is open. A failing core source fails this job, so GitHub emails the owner.
+on:
+  schedule:
+    - cron: "30 10 * * *"  # every day, before the pre-open run
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pipeline-run  # never overlaps a pipeline run (shared cache and database)
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --locked --no-dev
+      - uses: actions/cache/restore@v4
+        with:
+          path: pipeline/.cache
+          key: advisor-cache-${{ github.run_id }}
+          restore-keys: advisor-cache-
+      - name: Check sources
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ADVISOR_CACHE_DIR: .cache
+        run: uv run python -m advisor.health
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: pipeline/.cache
+          key: advisor-cache-${{ github.run_id }}

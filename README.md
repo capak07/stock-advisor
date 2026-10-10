@@ -10,8 +10,9 @@ Plans: `docs/superpowers/plans/`
 ## Layout
 
 - `pipeline/` — Python 3.12 data pipeline (uv)
-- `supabase/migrations/` — Postgres schema and row-level security
-- `.github/workflows/` — `ci.yml` (tests on push), `run.yml` (scheduled pipeline runs)
+- `supabase/migrations/` — Postgres schema, row-level security, and roles (append-only)
+- `.github/workflows/` — `ci.yml` (tests on push), `run.yml` (scheduled pipeline runs),
+  `health.yml` (daily live check of every data source)
 
 ## Local development
 
@@ -31,32 +32,38 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
 
 ## Deployment (free tiers)
 
-1. **Supabase**: create a project. In the SQL editor, run `supabase/migrations/0001_schema.sql`
-   and then `0002_rls.sql`.
-2. **Auth**: under Authentication → Sign In / Providers → Email, turn off "Allow new users to sign
-   up". Add your user under Authentication → Users, then run:
+1. **Supabase**: create a project. Under Connect → **Session pooler**, copy the URI for the
+   `postgres` user (GitHub runners need the IPv4 pooler). Percent-encode special characters in
+   the password (for example `@` → `%40`). This is your **admin** URL: keep it local and never put
+   it in GitHub.
+2. **Schema**: from `pipeline/`, run
+   `ADMIN_DATABASE_URL='<admin url>' scripts/in-docker.sh uv run python -m advisor.store.migrate`.
+   If you already pasted `0001`/`0002` into the SQL editor by hand, run it once with
+   `--baseline 0002_rls.sql` added.
+3. **Auth**: under Authentication → Sign In / Providers → Email, turn off "Allow new users to sign
+   up". Add your user under Authentication → Users, then in the SQL editor run:
    `insert into app_config (id, owner_id) values (1, '<your user uuid>');`
-3. **Connection string**: under Connect → **Session pooler**, copy the URI (GitHub runners need
-   the IPv4 pooler) and put in your database password. Percent-encode special characters in the
-   password (for example `@` → `%40`).
-4. **Alpaca**: create a free account and generate API keys (paper-trading keys work for market
+4. **Pipeline login** (least privilege: no DDL, cannot edit your holdings). In the SQL editor:
+   ```sql
+   create role advisor_pipeline login password '<generate a long random password>';
+   grant pipeline_rw to advisor_pipeline;
+   ```
+   The pipeline's `DATABASE_URL` is the session-pooler URI with the user
+   `advisor_pipeline.<project-ref>` and that password. If the pooler rejects the custom role,
+   resolve that first: the `postgres` user has full DDL rights and should not run the pipeline.
+5. **Alpaca**: create a free account and generate API keys (paper-trading keys work for market
    data).
-5. **GitHub** (private repo): Settings → Secrets and variables → Actions. Add `DATABASE_URL`,
-   `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY`.
-6. Actions → `run` → Run workflow → `pre_open` to test end to end.
+6. **GitHub** (private repo): Settings → Secrets and variables → Actions. Add `DATABASE_URL`
+   (the pipeline login from step 4), `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY`.
+7. Actions → `health` → Run workflow, then `run` → Run workflow → `pre_open`.
 
 ## Manual run
 
-```bash
-cd pipeline
-DATABASE_URL=... ALPACA_KEY_ID=... ALPACA_SECRET_KEY=... \
-  scripts/in-docker.sh uv run python -m advisor.run --force-kind pre_open
-```
-
-To keep secrets out of shell history, load them from a git-ignored file instead (from `pipeline/`):
+From `pipeline/`, with secrets in a git-ignored `pipeline/.env.local`
+(`DATABASE_URL=...`, `ALPACA_KEY_ID=...`, `ALPACA_SECRET_KEY=...`):
 
 ```bash
-# put DATABASE_URL=..., ALPACA_KEY_ID=..., ALPACA_SECRET_KEY=... in pipeline/.env.local (git-ignored)
 set -a; . ./.env.local; set +a
-scripts/in-docker.sh uv run python -m advisor.run --force-kind pre_open
+scripts/in-docker.sh uv run python -m advisor.health                       # check every source
+scripts/in-docker.sh uv run python -m advisor.run --force-kind pre_open    # one pipeline run
 ```

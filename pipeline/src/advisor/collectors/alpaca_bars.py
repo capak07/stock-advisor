@@ -5,7 +5,14 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, get_with_retries
+from advisor.collectors.base import (
+    Cadence,
+    Category,
+    PartialFetch,
+    RateLimiter,
+    Scope,
+    get_with_retries,
+)
 from advisor.models import ET, AssetType, DailyBar
 
 ALPACA_BARS_URL = "https://data.alpaca.markets/v2/stocks/bars"
@@ -68,22 +75,39 @@ class AlpacaBars:
             "adjustment": "all",
             "feed": "sip",
         }
+        chunks = [
+            unique[i : i + SYMBOLS_PER_REQUEST] for i in range(0, len(unique), SYMBOLS_PER_REQUEST)
+        ]
         bars: list[DailyBar] = []
-        for i in range(0, len(unique), SYMBOLS_PER_REQUEST):
-            chunk = unique[i : i + SYMBOLS_PER_REQUEST]
-            page_token: str | None = None
-            while True:
-                params = {**base_params, "symbols": ",".join(chunk)}
-                if page_token:
-                    params["page_token"] = page_token
-                payload = get_with_retries(
-                    self._client, ALPACA_BARS_URL, params=params, headers=self._headers,
-                    limiter=self._limiter,
-                ).json()
-                for symbol, rows in (payload.get("bars") or {}).items():
-                    parsed = (_to_bar(symbol, r) for r in rows or [])
-                    bars.extend(b for b in parsed if b is not None)
-                page_token = payload.get("next_page_token")
-                if not page_token:
-                    break
+        errors: list[str] = []
+        for chunk in chunks:
+            try:
+                bars.extend(self._fetch_chunk(chunk, base_params))
+            except (httpx.HTTPError, ValueError) as exc:  # one bad request must not lose the rest
+                errors.append(f"{chunk[0]}..{chunk[-1]}: {type(exc).__name__}: {exc}")
+        if errors and not bars:
+            raise RuntimeError(f"all {len(chunks)} Alpaca requests failed; first: {errors[0]}")
+        if errors:
+            raise PartialFetch(
+                bars, f"{len(errors)} of {len(chunks)} Alpaca requests failed; first: {errors[0]}"
+            )
         return bars
+
+    def _fetch_chunk(self, chunk: list[str], base_params: dict) -> list[DailyBar]:
+        """Every page for one chunk; any failing page raises, so a chunk is all-or-nothing."""
+        bars: list[DailyBar] = []
+        page_token: str | None = None
+        while True:
+            params = {**base_params, "symbols": ",".join(chunk)}
+            if page_token:
+                params["page_token"] = page_token
+            payload = get_with_retries(
+                self._client, ALPACA_BARS_URL, params=params, headers=self._headers,
+                limiter=self._limiter,
+            ).json()
+            for symbol, rows in (payload.get("bars") or {}).items():
+                parsed = (_to_bar(symbol, r) for r in rows or [])
+                bars.extend(b for b in parsed if b is not None)
+            page_token = payload.get("next_page_token")
+            if not page_token:
+                return bars

@@ -15,6 +15,7 @@ from advisor.models import AssetType
 
 USER_AGENT = "stock-advisor/0.1 (personal research)"
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+MAX_RETRY_AFTER = 60.0  # never let a server park a run for longer than this per retry
 
 
 class Category(StrEnum):
@@ -120,6 +121,15 @@ def make_client(timeout: float = 20.0) -> httpx.Client:
     )
 
 
+def _retry_after(response: httpx.Response) -> float | None:
+    """Seconds from a numeric Retry-After header, clamped to [0, MAX_RETRY_AFTER]; else None."""
+    try:
+        seconds = float(response.headers.get("Retry-After", "").strip())
+    except ValueError:
+        return None
+    return min(max(seconds, 0.0), MAX_RETRY_AFTER)
+
+
 def get_with_retries(
     client: httpx.Client,
     url: str,
@@ -134,6 +144,7 @@ def get_with_retries(
     """GET with exponential backoff on transport errors and 429/5xx; other errors raise at once."""
     last_error: Exception | None = None
     for attempt in range(attempts):
+        retry_after: float | None = None
         if limiter is not None:
             limiter.acquire()
         try:
@@ -144,12 +155,14 @@ def get_with_retries(
             if response.status_code not in RETRY_STATUS:
                 response.raise_for_status()
                 return response
+            retry_after = _retry_after(response)
             last_error = httpx.HTTPStatusError(
                 f"HTTP {response.status_code} from {url}",
                 request=response.request,
                 response=response,
             )
         if attempt < attempts - 1:
-            sleep(base_delay * 2**attempt)
+            backoff = base_delay * 2**attempt
+            sleep(backoff if retry_after is None else max(backoff, retry_after))
     assert last_error is not None
     raise last_error

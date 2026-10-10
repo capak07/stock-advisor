@@ -1,9 +1,10 @@
 from datetime import UTC, date, datetime
 
 import httpx
+import pytest
 
 from advisor.collectors.alpaca_bars import ALPACA_BARS_URL, AlpacaBars
-from advisor.collectors.base import RateLimiter
+from advisor.collectors.base import PartialFetch, RateLimiter
 
 AS_OF = datetime(2026, 10, 14, 19, 15, tzinfo=UTC)  # 15:15 ET
 FAST = RateLimiter(per_minute=60_000, burst=1_000)
@@ -96,3 +97,52 @@ def test_fetch_drops_rows_with_null_fields_and_symbols_with_null_rows():
     )
     bars = collector.fetch(["AAPL", "MSFT"], AS_OF)
     assert [(b.symbol, b.day, b.close) for b in bars] == [("AAPL", date(2026, 10, 13), 1.6)]
+
+
+def test_a_rejected_chunk_is_a_partial_result_and_other_chunks_are_kept():
+    def handler(request: httpx.Request) -> httpx.Response:
+        symbols = request.url.params["symbols"].split(",")
+        if "S210" in symbols:  # second chunk contains a symbol Alpaca rejects
+            return httpx.Response(400, json={"message": "invalid symbol: S210"})
+        return httpx.Response(200, json={
+            "bars": {"S000": [raw("2026-10-13T04:00:00Z", 5.0)]}, "next_page_token": None,
+        })
+
+    collector = AlpacaBars(
+        httpx.Client(transport=httpx.MockTransport(handler)), "key", "secret", limiter=FAST
+    )
+    with pytest.raises(PartialFetch, match="1 of 2 Alpaca requests failed") as caught:
+        collector.fetch([f"S{i:03d}" for i in range(250)], AS_OF)
+    assert [b.symbol for b in caught.value.records] == ["S000"]
+
+
+def test_every_chunk_failing_raises_with_the_first_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"message": "unauthorized"})
+
+    collector = AlpacaBars(
+        httpx.Client(transport=httpx.MockTransport(handler)), "key", "secret", limiter=FAST
+    )
+    with pytest.raises(RuntimeError, match="all 2 Alpaca requests failed"):
+        collector.fetch([f"S{i:03d}" for i in range(250)], AS_OF)
+
+
+def test_a_chunk_failing_on_a_later_page_contributes_no_bars():
+    def handler(request: httpx.Request) -> httpx.Response:
+        symbols = request.url.params["symbols"].split(",")
+        first_chunk = "S000" in symbols
+        if first_chunk and request.url.params.get("page_token") == "p2":
+            return httpx.Response(400, json={"message": "bad page"})
+        rows = {"S000": [raw("2026-10-12T04:00:00Z", 5.0)]} if first_chunk else {
+            "S200": [raw("2026-10-12T04:00:00Z", 6.0)]
+        }
+        return httpx.Response(200, json={
+            "bars": rows, "next_page_token": "p2" if first_chunk else None,
+        })
+
+    collector = AlpacaBars(
+        httpx.Client(transport=httpx.MockTransport(handler)), "key", "secret", limiter=FAST
+    )
+    with pytest.raises(PartialFetch) as caught:
+        collector.fetch([f"S{i:03d}" for i in range(250)], AS_OF)
+    assert [b.symbol for b in caught.value.records] == ["S200"]

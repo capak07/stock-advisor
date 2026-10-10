@@ -77,3 +77,16 @@ def test_transport_errors_exhaust_attempts_with_backoff():
         get_with_retries(client, "https://example.test/x", sleep=sleeps.append)
     assert len(calls) == 4  # spec §4.1: 3 retries
     assert sleeps == [1.0, 2.0, 4.0]
+
+
+@pytest.mark.parametrize(
+    ("header", "expected_sleep"),
+    [("7", 7.0), ("120", 60.0), ("0", 1.0), ("Wed, 21 Oct 2026 07:28:00 GMT", 1.0)],
+)
+def test_retry_after_header_sets_the_wait(header, expected_sleep):
+    client, _ = scripted_client(
+        [httpx.Response(429, headers={"Retry-After": header}), httpx.Response(200, text="ok")]
+    )
+    sleeps = []
+    assert get_with_retries(client, "https://example.test/x", sleep=sleeps.append).text == "ok"
+    assert sleeps == [expected_sleep]

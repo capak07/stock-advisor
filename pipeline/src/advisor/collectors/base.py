@@ -34,8 +34,15 @@ class Cadence(StrEnum):
     WEEKLY = "weekly"
 
 
+class Scope(StrEnum):
+    UNIVERSE = "universe"  # returns the symbol universe; `symbols` is ignored
+    SYMBOLS = "symbols"  # records per requested symbol; every record has a `symbol` field
+    MARKET = "market"  # market-wide data (macro, sentiment); `symbols` is ignored
+
+
 class CollectorStatus(StrEnum):
     OK = "ok"
+    PARTIAL = "partial"
     STALE = "stale"
     FAILED = "failed"
     SKIPPED = "skipped"
@@ -50,6 +57,14 @@ class CollectorResult:
     error: str | None = None
 
 
+class PartialFetch(Exception):
+    """Raised by `fetch` when some requests failed but others returned usable records."""
+
+    def __init__(self, records: Sequence[BaseModel], error: str) -> None:
+        super().__init__(error)
+        self.records = list(records)
+
+
 class Collector(Protocol):
     """One data source. `fetch` returns validated records or raises; `run_collector` wraps it."""
 
@@ -61,6 +76,8 @@ class Collector(Protocol):
     asset_types: frozenset[AssetType]
     record_type: type[BaseModel]
     freshness: timedelta | None  # max cache age used as a failure fallback; None = never cache
+    scope: Scope
+    canary: tuple[str, ...]  # symbols the daily health check fetches; () unless scope is SYMBOLS
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[BaseModel]: ...
 

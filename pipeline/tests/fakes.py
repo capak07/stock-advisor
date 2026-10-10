@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel
 
-from advisor.collectors.base import Cadence, Category
+from advisor.collectors.base import Cadence, Category, Scope
 from advisor.models import AssetType, DailyBar, SymbolInfo
 
 
@@ -37,6 +37,8 @@ class FakeCollector:
     asset_types: frozenset[AssetType] = frozenset({AssetType.STOCK})
     record_type: type[BaseModel] = DailyBar
     freshness: timedelta | None = None
+    scope: Scope = Scope.SYMBOLS
+    canary: tuple[str, ...] = ()
     calls: list[list[str]] = field(default_factory=list)
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[BaseModel]:

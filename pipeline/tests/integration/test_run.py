@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime, timedelta
 import httpx
 import pytest
 
-from advisor.collectors.base import Cadence
+from advisor.collectors.base import Cadence, Scope
 from advisor.collectors.cache import DiskCache
 from advisor.models import RunKind, RunStatus, SymbolInfo
 from advisor.run import RunDeps, execute_run
@@ -22,6 +22,7 @@ def make_deps(db, tmp_path, *, universe=UNIVERSE, alpaca=None, universe_records=
             record_type=SymbolInfo,
             cadence=Cadence.DAILY,
             freshness=timedelta(days=3),
+            scope=Scope.UNIVERSE,
         ),
         "alpaca_bars": alpaca or FakeCollector(
             "alpaca_bars",

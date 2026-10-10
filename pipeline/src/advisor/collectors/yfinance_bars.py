@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-from advisor.collectors.base import Cadence, Category
+from advisor.collectors.base import Cadence, Category, Scope
 from advisor.models import ET, AssetType, DailyBar
 
 Downloader = Callable[[list[str], date, date], pd.DataFrame]
@@ -70,6 +70,8 @@ class YFinanceBars:
     asset_types = frozenset({AssetType.STOCK})
     record_type = DailyBar
     freshness = None
+    scope = Scope.SYMBOLS
+    canary = ("AAPL", "MSFT")
 
     def __init__(self, download: Downloader | None = None) -> None:
         self._download = download or _yahoo_download

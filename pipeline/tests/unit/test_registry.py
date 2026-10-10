@@ -2,6 +2,7 @@ from pathlib import Path
 
 import httpx
 
+from advisor.collectors.base import Scope
 from advisor.collectors.registry import build_registry
 from advisor.config import Settings
 
@@ -17,3 +18,10 @@ def test_registry_lists_foundation_collectors_with_core_flags():
         "yfinance_bars": False,
     }
     assert all(registry[name].name == name for name in registry)
+    assert {name: c.scope for name, c in registry.items()} == {
+        "alpaca_bars": Scope.SYMBOLS,
+        "nasdaq_symbols": Scope.UNIVERSE,
+        "yfinance_bars": Scope.SYMBOLS,
+    }
+    for collector in registry.values():  # SYMBOLS collectors need canaries for the health check
+        assert bool(collector.canary) == (collector.scope is Scope.SYMBOLS)

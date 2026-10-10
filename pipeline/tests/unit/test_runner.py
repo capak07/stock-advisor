@@ -2,11 +2,11 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 
-from advisor.collectors.base import Cadence, CollectorResult, CollectorStatus
+from advisor.collectors.base import Cadence, CollectorResult, CollectorStatus, PartialFetch, Scope
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.runner import SourceState, breaker_open, next_failures, run_collector
 from advisor.models import SymbolInfo
-from fakes import FakeCollector, info
+from fakes import FakeCollector, bar, info
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)  # 08:15 ET
 TODAY = date(2026, 10, 14)
@@ -19,6 +19,7 @@ def universe_collector(**kwargs) -> FakeCollector:
         record_type=SymbolInfo,
         cadence=Cadence.DAILY,
         freshness=timedelta(days=3),
+        scope=Scope.UNIVERSE,
     )
     return FakeCollector(**{**defaults, **kwargs})
 
@@ -75,6 +76,7 @@ def test_next_failures_counts_consecutive_failures():
     assert next_failures(state, result(CollectorStatus.OK)) == 0
     assert next_failures(state, result(CollectorStatus.FAILED)) == 3
     assert next_failures(state, result(CollectorStatus.STALE)) == 3
+    assert next_failures(state, result(CollectorStatus.PARTIAL)) == 0
     assert next_failures(state, result(CollectorStatus.SKIPPED)) == 2
 
 
@@ -99,3 +101,44 @@ def test_open_breaker_serves_fresh_cache_without_fetching(tmp_path):
     assert [r.symbol for r in result.records] == ["MSFT"]
     assert result.error == "circuit breaker open"
     assert collector.calls == []
+
+
+def bars_collector(**kwargs) -> FakeCollector:
+    defaults = dict(
+        name="bars",
+        records_for=lambda symbols: [bar(s, TODAY, 10.0) for s in symbols],
+        freshness=timedelta(days=1),
+    )
+    return FakeCollector(**{**defaults, **kwargs})
+
+
+def test_symbols_scope_caches_per_symbol_and_serves_requested_symbols_on_failure(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    run_collector(bars_collector(), ["AAA", "BBB"], NOW, cache=cache, state=SourceState())
+    failing = bars_collector(error=httpx.ConnectError("down"))
+    result = run_collector(failing, ["BBB", "CCC"], NOW, cache=cache, state=SourceState())
+    assert result.status is CollectorStatus.STALE
+    assert [r.symbol for r in result.records] == ["BBB"]
+
+
+def test_empty_results_never_overwrite_a_good_cache_entry(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    run_collector(universe_collector(), [], NOW, cache=cache, state=SourceState())
+    empty = universe_collector(records_for=lambda symbols: [])
+    assert run_collector(empty, [], NOW, cache=cache, state=SourceState()).records == []
+    failing = universe_collector(error=httpx.ConnectError("down"))
+    result = run_collector(failing, [], NOW, cache=cache, state=SourceState())
+    assert result.status is CollectorStatus.STALE
+    assert [r.symbol for r in result.records] == ["AAPL"]
+
+
+def test_partial_fetch_keeps_records_and_caches_them(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    partial = bars_collector(error=PartialFetch([bar("AAA", TODAY, 10.0)], "1 of 2 requests failed"))
+    result = run_collector(partial, ["AAA", "BBB"], NOW, cache=cache, state=SourceState())
+    assert result.status is CollectorStatus.PARTIAL
+    assert [r.symbol for r in result.records] == ["AAA"]
+    assert result.error == "PartialFetch: 1 of 2 requests failed"
+    failing = bars_collector(error=httpx.ConnectError("down"))
+    stale = run_collector(failing, ["AAA"], NOW, cache=cache, state=SourceState())
+    assert [r.symbol for r in stale.records] == ["AAA"]

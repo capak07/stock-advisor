@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
-from advisor.collectors.base import Cadence, Category, RateLimiter, get_with_retries
+from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, get_with_retries
 from advisor.models import AssetType, SymbolInfo
 
 NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
@@ -98,6 +98,8 @@ class NasdaqSymbols:
     asset_types = frozenset({AssetType.STOCK})
     record_type = SymbolInfo
     freshness = timedelta(days=3)
+    scope = Scope.UNIVERSE
+    canary: tuple[str, ...] = ()
 
     def __init__(
         self,

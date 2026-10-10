@@ -1,15 +1,25 @@
 """Runs one collector safely: circuit breaker, timing, error capture, cache fallback."""
 
 import time
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from advisor.collectors.base import Collector, CollectorResult, CollectorStatus
+from pydantic import BaseModel
+
+from advisor.collectors.base import (
+    Collector,
+    CollectorResult,
+    CollectorStatus,
+    PartialFetch,
+    Scope,
+)
 from advisor.collectors.cache import DiskCache
 from advisor.models import ET
 
 BREAKER_THRESHOLD = 3
+WHOLE = ""  # cache key for UNIVERSE and MARKET collectors, which return one list per call
 
 
 @dataclass(frozen=True)
@@ -29,13 +39,41 @@ def breaker_open(state: SourceState, today_et: date) -> bool:
 def next_failures(state: SourceState, result: CollectorResult) -> int:
     if result.status is CollectorStatus.SKIPPED:
         return state.consecutive_failures
-    if result.status is CollectorStatus.OK:
-        return 0
+    if result.status in (CollectorStatus.OK, CollectorStatus.PARTIAL):
+        return 0  # the source answered; gaps in a partial result don't trip the breaker
     return state.consecutive_failures + 1
 
 
-def cache_key(symbols: Sequence[str]) -> str:
-    return ",".join(sorted(symbols))
+def _cache_keys(collector: Collector, symbols: Sequence[str]) -> list[str]:
+    return list(dict.fromkeys(symbols)) if collector.scope is Scope.SYMBOLS else [WHOLE]
+
+
+def _cached(
+    collector: Collector, symbols: Sequence[str], cache: DiskCache
+) -> list[BaseModel] | None:
+    """Fresh cached records for this request (per symbol for SYMBOLS scope), or None."""
+    if collector.freshness is None:
+        return None
+    found: list[BaseModel] = []
+    for key in _cache_keys(collector, symbols):
+        found.extend(
+            cache.get(collector.name, key, collector.record_type, collector.freshness) or []
+        )
+    return found or None
+
+
+def _store(collector: Collector, records: Sequence[BaseModel], cache: DiskCache) -> None:
+    """Cache non-empty results only, so an empty answer never replaces good data."""
+    if collector.freshness is None or not records:
+        return
+    groups: dict[str, list[BaseModel]] = defaultdict(list)
+    for record in records:
+        groups[record.symbol if collector.scope is Scope.SYMBOLS else WHOLE].append(record)
+    for key, group in groups.items():
+        try:
+            cache.put(collector.name, key, group)
+        except (OSError, TypeError, ValueError):
+            pass  # cache is a fallback; a failed write must not lose a good fetch
 
 
 def run_collector(
@@ -46,32 +84,30 @@ def run_collector(
     cache: DiskCache,
     state: SourceState,
 ) -> CollectorResult:
-    key = cache_key(symbols)
     if breaker_open(state, as_of.astimezone(ET).date()):
-        cached = None
-        if collector.freshness is not None:
-            cached = cache.get(collector.name, key, collector.record_type, collector.freshness)
         return CollectorResult(
-            collector.name, CollectorStatus.SKIPPED, cached or [], 0, "circuit breaker open"
+            collector.name,
+            CollectorStatus.SKIPPED,
+            _cached(collector, symbols, cache) or [],
+            0,
+            "circuit breaker open",
         )
 
     started = time.perf_counter()
+    status, error = CollectorStatus.OK, None
     try:
         records = list(collector.fetch(symbols, as_of))
+    except PartialFetch as exc:
+        records = exc.records
+        status, error = CollectorStatus.PARTIAL, f"PartialFetch: {exc}"[:500]
     except Exception as exc:  # any source failure is contained here
         latency = int((time.perf_counter() - started) * 1000)
         error = f"{type(exc).__name__}: {exc}"[:500]
-        if collector.freshness is not None:
-            cached = cache.get(collector.name, key, collector.record_type, collector.freshness)
-            if cached is not None:
-                return CollectorResult(collector.name, CollectorStatus.STALE, cached, latency, error)
+        cached = _cached(collector, symbols, cache)
+        if cached is not None:
+            return CollectorResult(collector.name, CollectorStatus.STALE, cached, latency, error)
         return CollectorResult(collector.name, CollectorStatus.FAILED, [], latency, error)
 
     latency = int((time.perf_counter() - started) * 1000)
-    if collector.freshness is not None:
-        try:
-            cache.put(collector.name, key, records)
-        except (OSError, TypeError, ValueError):
-            # cache is a fallback; a failed write must not lose a good fetch
-            pass
-    return CollectorResult(collector.name, CollectorStatus.OK, records, latency)
+    _store(collector, records, cache)
+    return CollectorResult(collector.name, status, records, latency, error)

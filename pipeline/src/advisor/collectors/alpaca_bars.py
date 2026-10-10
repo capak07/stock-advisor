@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
-from advisor.collectors.base import Cadence, Category, RateLimiter, get_with_retries
+from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, get_with_retries
 from advisor.models import ET, AssetType, DailyBar
 
 ALPACA_BARS_URL = "https://data.alpaca.markets/v2/stocks/bars"
@@ -44,6 +44,8 @@ class AlpacaBars:
     asset_types = frozenset({AssetType.STOCK})
     record_type = DailyBar
     freshness = None
+    scope = Scope.SYMBOLS
+    canary = ("AAPL", "MSFT")
 
     def __init__(
         self,

@@ -96,13 +96,13 @@ Next.js dashboard on Vercel (web/), Supabase Auth login (single user)
 
 ### Design rules
 
-1. **The pipeline writes and the dashboard reads.** The dashboard writes only the watchlist, lots and sells.
+1. **The pipeline writes and the dashboard reads.** The dashboard writes only the watchlist, lots, sells and the settings row.
 2. **Each source is one module** that implements the `Collector` protocol (§4.1). Sources never call each other.
 3. **Point-in-time data everywhere.** Every record is tied to the run's `as_of`. Features for a given date only use records that were knowable at or before that date.
 4. **Atomic publish.** Results are written under a `run_id`. `runs.published` flips to true only when the whole run succeeds or is degraded. The dashboard only reads published runs.
 5. **Holdings first.** Holdings and the watchlist are priced and saved before the rest of the market. They come first in every collector's symbol list, so capped sources spend their quota on them.
 6. **Least privilege.**
-   - At runtime the pipeline connects as a login role that is a member of `pipeline_rw`. That role can read and write data but has no DDL rights, and it can only read holdings, the watchlist and the owner config.
+   - At runtime the pipeline connects as a login role that is a member of `pipeline_rw`. That role can read and write data but has no DDL rights, and it can only read holdings, the watchlist, settings and the owner config.
    - Migrations are append-only and run only through `python -m advisor.store.migrate` with an admin URL that is never stored in GitHub.
 
 ### Markets
@@ -118,7 +118,7 @@ Next.js dashboard on Vercel (web/), Supabase Auth login (single user)
 | Shortlist | top 300 | top 100 |
 | Round-trip cost | **2 × USD conversion fee** (default 1.5% each way) plus spread | spread only: 0.10% for large caps, 0.30% when average daily volume is under C$10M |
 
-Crypto's round-trip cost is 2 × the crypto spread (default 2.0% each way). Fees are owner-editable settings in `app_config`.
+Crypto's round-trip cost is 2 × the crypto spread (default 2.0% each way). Fees are owner-editable, in the one-row `settings` table.
 
 ### Scheduling
 
@@ -444,7 +444,8 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 
 | Table | Key columns |
 |---|---|
-| `app_config` | owner_id; settings: usd_fx_fee_pct (1.5), crypto_fee_pct (2.0), tfsa_round_trips_warn (24), tfsa_short_hold_share_warn (0.5) |
+| `app_config` | owner_id |
+| `settings` | One row: usd_fx_fee_pct (1.5), crypto_fee_pct (2.0), tfsa_round_trips_warn (24), tfsa_short_hold_share_warn (0.5), updated_at. Kept apart from `app_config` so the owner can edit fees without write access to owner_id |
 | `schema_migrations` | name, applied_at (RLS on, no policies) |
 | `runs` | id, kind (pre_open / pre_close / early_close), et_date, started_at, finished_at, status (running / success / degraded / failed), published, sources_ok, sources_total, model_version, summary (jsonb) |
 | `source_health` | run_id (null for health checks), context (run / health), source, status (ok / partial / stale / failed / skipped), latency_ms, records, error, consecutive_failures, attempted_at |
@@ -467,8 +468,8 @@ Informational only, labeled "not tax advice". These rules add warnings and never
   - crypto: `^[A-Z0-9]{2,10}$`
 - **Row-level security:**
   - Every table is readable only by the owner (`public.is_owner()`).
-  - The owner can write only `watchlist`, `lots` and `sells`.
-  - `pipeline_rw` has explicit policies on every table: read-only on owner-written tables and `app_config`, and no access to `schema_migrations`. Tests enforce both.
+  - The owner can write only `watchlist`, `lots` and `sells`, and can update (never add or delete) the `settings` row.
+  - `pipeline_rw` has explicit policies on every table: read-only on owner-written tables, `settings` and `app_config`, and no access to `schema_migrations`. Tests enforce both.
 - **Storage:** training Parquet (prices, fundamentals) goes in a private Supabase Storage bucket, kept under about 600 MB.
 
 ## 9. Dashboard (web/)

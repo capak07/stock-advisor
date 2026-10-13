@@ -1,4 +1,10 @@
-# Stock Advisor — Plan 2b: Collector Contract and Market-Data Sources Implementation Plan
+# Stock Advisor — Plan 2c: Collector Contract and Market-Data Sources Implementation Plan
+
+> **Status: draft from before spec rev 2. Do not execute until it has been revised.** It was written as Plan 2b and renamed after spec rev 2. The revision must:
+> - drop the Finnhub and FMP tasks (8–10) and every key-based credential;
+> - add Yahoo earnings dates (source 17, core) and Bank of Canada FX (source 7);
+> - make collectors market-aware, building on Plan 2b's `advisor.markets`;
+> - keep the deadline, cadence cache, concurrent health check, contract, FINRA and Yahoo analyst tasks.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

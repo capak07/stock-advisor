@@ -71,14 +71,14 @@ class MarketPass:
     def prices_ok(self) -> bool:
         return self.symbols > 0 and self.fresh >= MIN_PRICED_FRACTION * self.symbols
 
-    def failed_reasons(self) -> list[str]:
+    def failed_reasons(self, *, prices_checked: bool = True) -> list[str]:
         reasons = []
         if not self.universe_ok:
             reasons.append(
                 f"{self.market}: universe too small ({self.universe} < {self.min_universe})"
             )
         empty = self.symbols == 0  # an empty market has no prices to report on
-        if not self.prices_ok and not (empty and not self.universe_ok):
+        if prices_checked and not self.prices_ok and not (empty and not self.universe_ok):
             reasons.append(
                 f"{self.market}: too few fresh priced symbols ({self.fresh} of {self.symbols})"
             )
@@ -198,7 +198,14 @@ def execute_run(
             universes[market] = list(tracker.run(MARKETS[market].universe_source, []).records)
             if len(universes[market]) >= limits[market]:
                 repo.upsert_symbols(conn, market, universes[market])
-        rest = sorted({r.symbol for u in universes.values() for r in u} - set(priority))
+        # A run that cannot publish skips the bulk fetch (about 7,400 Yahoo requests during a
+        # TMX outage) but still retries the owner's unpriced holdings.
+        universe_ok = all(len(universes[m]) >= limits[m] for m in Market)
+        rest = (
+            sorted({r.symbol for u in universes.values() for r in u} - set(priority))
+            if universe_ok
+            else []
+        )
         # A priority symbol phase 1 left unpriced (Yahoo can miss silently) gets a second try.
         retry = [s for s in priority if s not in bars]
         if rest or retry:
@@ -213,7 +220,6 @@ def execute_run(
         passes = {
             m: check_market(m, universes[m], limits[m], priority, bars, floors[m]) for m in Market
         }
-        universe_ok = all(p.universe_ok for p in passes.values())
         prices_ok = all(p.prices_ok for p in passes.values())
 
         # Phase 3: enrichment, only for a run that can still publish.
@@ -264,7 +270,9 @@ def execute_run(
         )
         if status is RunStatus.FAILED:
             summary["failed_reason"] = [
-                reason for p in passes.values() for reason in p.failed_reasons()
+                reason
+                for p in passes.values()
+                for reason in p.failed_reasons(prices_checked=universe_ok)
             ]
     except Exception as exc:
         with contextlib.suppress(Exception):  # never let bookkeeping hide the real error

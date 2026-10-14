@@ -253,8 +253,9 @@ def test_a_truncated_universe_fails_the_run_and_keeps_that_markets_symbols(db, t
         " values ('OLD.TO', 'stock', 'TSX', 'Old Co', 'TSX')"
     )
     extra = {"news": FakeCollector("news")}
+    deps = make_deps(db, tmp_path, extra=extra)
     outcome = execute_run(
-        make_deps(db, tmp_path, extra=extra),
+        deps,
         RunKind.PRE_OPEN,
         NOW,
         min_universe={Market.US: 3, Market.TSX: 300},
@@ -271,6 +272,28 @@ def test_a_truncated_universe_fails_the_run_and_keeps_that_markets_symbols(db, t
     assert outcome.summary["markets"]["TSX"]["shortlist"] == 0
     assert outcome.summary["shortlist"] == 0
     assert extra["news"].calls == []  # a run that cannot publish spends no enrichment calls
+    assert deps.collectors["yfinance_bars"].calls == []  # no bulk Yahoo fetch for a run that cannot publish
+
+
+def test_a_run_that_cannot_publish_still_retries_unpriced_holdings(db, tmp_path):
+    hold(db)
+
+    def records_for(symbols):  # phase 1 misses the holding; the retry finds it
+        if list(symbols) == ["OTCX"] and not prices.calls[:-1]:
+            return []
+        return [b for s in symbols for b in history(s, 70, start=FRESH_START)]
+
+    prices = FakeCollector("yfinance_bars", best_effort=True, records_for=records_for)
+    deps = make_deps(db, tmp_path, prices=prices)
+    outcome = execute_run(
+        deps, RunKind.PRE_OPEN, NOW, min_universe={Market.US: 3, Market.TSX: 300}
+    )
+
+    assert prices.calls == [["OTCX"], ["OTCX"]]  # the retry, but no bulk fetch
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.summary["failed_reason"] == ["TSX: universe too small (2 < 300)"]
+    assert outcome.summary["priority_unpriced"] == []
+    assert "OTCX" in market_features(db, outcome.run_id)
 
 
 def test_default_minimums_come_from_the_markets_table(db, tmp_path):

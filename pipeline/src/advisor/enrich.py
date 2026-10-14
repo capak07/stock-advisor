@@ -7,6 +7,7 @@ the owner's positions before the rest of the shortlist (spec §7.2).
 from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from itertools import zip_longest
 
 from advisor.collectors.base import Collector, CollectorResult, Scope
 from advisor.collectors.tracker import SourceTracker
@@ -38,6 +39,11 @@ def shortlist(
 ) -> list[str]:
     """Priority symbols first (as given), then up to `size` passing symbols by dollar volume."""
     return list(priority) + ranked_shortlist(passed, priority, size)
+
+
+def interleave(*lists: Sequence[str]) -> list[str]:
+    """Round-robin merge (a1, b1, a2, b2, ...), so capped collectors reach every market's best."""
+    return [symbol for group in zip_longest(*lists) for symbol in group if symbol is not None]
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,14 @@ from datetime import UTC, date, datetime
 from advisor.collectors.base import Scope
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.tracker import SourceTracker
-from advisor.enrich import EnrichTargets, ranked_shortlist, run_enrichment, shortlist, symbols_for
+from advisor.enrich import (
+    EnrichTargets,
+    interleave,
+    ranked_shortlist,
+    run_enrichment,
+    shortlist,
+    symbols_for,
+)
 from advisor.models import AssetType
 from advisor.screener import ScreenRow
 from fakes import FakeCollector
@@ -63,3 +70,9 @@ def test_run_enrichment_runs_each_collector_once_and_skips_ones_with_no_targets(
 def test_run_enrichment_with_nothing_to_do_returns_empty(tmp_path):
     tracker = SourceTracker({}, DiskCache(tmp_path), NOW, {})
     assert run_enrichment(tracker, {}, [], TARGETS) == {}
+
+
+def test_interleave_alternates_markets_and_keeps_the_longer_tail():
+    assert interleave(["A1", "A2", "A3"], ["B1"]) == ["A1", "B1", "A2", "A3"]
+    assert interleave([], ["B1", "B2"]) == ["B1", "B2"]
+    assert interleave() == []

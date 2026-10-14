@@ -1,7 +1,7 @@
 # Stock Advisor
 
 Personal decision-support tool: twice each trading day it gathers data from free sources,
-forecasts likely ranges for US stocks and watchlist crypto, and suggests buys, hold times, and
+forecasts likely ranges for US and TSX stocks and watchlist crypto, and suggests buys, hold times, and
 risk levels — and grades every suggestion against reality. **Not financial advice.**
 
 Design: `docs/superpowers/specs/2026-10-09-stock-advisor-design.md`

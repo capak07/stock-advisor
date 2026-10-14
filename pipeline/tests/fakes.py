@@ -84,17 +84,24 @@ def history(
 FRESH_START = date(2026, 8, 5)  # 70 daily bars from here end 2026-10-13, fresh for a 2026-10-14 run
 
 
-def fake_price_collectors(universe: Sequence[str] = ("AAA", "BBB", "CCC")) -> dict[str, FakeCollector]:
-    """Universe and Yahoo price fakes; prices are fresh 70-day histories."""
-    return {
-        "nasdaq_symbols": FakeCollector(
-            "nasdaq_symbols",
-            records_for=lambda _: [info(s) for s in universe],
+def fake_price_collectors(
+    universe: Sequence[str] = ("AAA", "BBB", "CCC"), tsx: Sequence[str] = ("RY.TO", "TD.TO")
+) -> dict[str, FakeCollector]:
+    """US and TSX universe fakes plus a Yahoo price fake returning fresh 70-day histories."""
+
+    def directory(name: str, symbols: Sequence[str]) -> FakeCollector:
+        return FakeCollector(
+            name,
+            records_for=lambda _: [info(s) for s in symbols],
             record_type=SymbolInfo,
             cadence=Cadence.DAILY,
             scope=Scope.UNIVERSE,
             freshness=timedelta(days=3),
-        ),
+        )
+
+    return {
+        "nasdaq_symbols": directory("nasdaq_symbols", universe),
+        "tmx_symbols": directory("tmx_symbols", tsx),
         "yfinance_bars": FakeCollector(
             "yfinance_bars",
             best_effort=True,

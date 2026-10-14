@@ -31,6 +31,6 @@ def test_force_kind_runs_anyway_and_a_failed_run_exits_1(cli_env, monkeypatch, c
     monkeypatch.setattr(
         "advisor.run.build_registry", lambda settings, client: fake_price_collectors()
     )
-    assert main(["--force-kind", "pre_open", *NOW_ARG]) == 1  # 3-symbol universe < 1000
+    assert main(["--force-kind", "pre_open", *NOW_ARG]) == 1  # tiny fake universes are below both minimums
     assert '"status": "failed"' in capsys.readouterr().out
     assert cli_env.execute("select count(*) as n from runs").fetchone()["n"] == 2

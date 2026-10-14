@@ -5,18 +5,21 @@ import pytest
 
 from advisor.collectors.base import PartialFetch, Scope
 from advisor.collectors.cache import DiskCache
-from advisor.models import AssetType, RunKind, RunStatus
+from advisor.models import AssetType, Market, RunKind, RunStatus
 from advisor.run import RunDeps, execute_run
 from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
-UNIVERSE = ["AAA", "BBB", "CCC"]
+US = ["AAA", "BBB", "CCC"]
+TSX = ["RY.TO", "TD.TO"]
+SMALL = {Market.US: 3, Market.TSX: 2}
+EVERYONE = ["AAA", "BBB", "CCC", "RY.TO", "TD.TO"]
 
 
-def make_deps(db, tmp_path, *, universe=UNIVERSE, prices=None, universe_records=None, extra=None):
-    collectors = fake_price_collectors(universe)
-    if universe_records is not None:
-        collectors["nasdaq_symbols"].records_for = universe_records
+def make_deps(db, tmp_path, *, prices=None, us_records=None, extra=None):
+    collectors = fake_price_collectors(US, TSX)
+    if us_records is not None:
+        collectors["nasdaq_symbols"].records_for = us_records
     if prices is not None:
         collectors["yfinance_bars"] = prices
     collectors.update(extra or {})
@@ -35,86 +38,136 @@ def health(db, run_id):
 
 
 def hold(db, symbol="OTCX"):
+    tsx = symbol.endswith(".TO")
     db.execute(
         "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"
-        " values ('tfsa', %s, 'stock', 10, 5, 'USD', 1.37, '2026-09-01')",
-        (symbol,),
+        " values ('tfsa', %s, 'stock', 10, 5, %s, %s, '2026-09-01')",
+        (symbol, "CAD" if tsx else "USD", None if tsx else 1.37),
     )
 
 
-def test_successful_run_is_published_with_summary(db, tmp_path):
+def market_features(db, run_id):
+    rows = db.execute(
+        "select symbol, features from features_live where run_id = %s order by symbol", (run_id,)
+    ).fetchall()
+    return {r["symbol"]: r["features"] for r in rows}
+
+
+def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
     deps = make_deps(db, tmp_path)
-    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=3)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
 
     assert outcome.status is RunStatus.SUCCESS
     row = run_row(db, outcome.run_id)
     assert row["published"] is True
-    assert (row["sources_ok"], row["sources_total"]) == (2, 2)
+    assert (row["sources_ok"], row["sources_total"]) == (3, 3)
     assert row["summary"] == {
-        "universe": 3, "priced": 3, "passed_filters": 3, "priority": 0, "priority_unpriced": [],
-        "fresh": 3, "fresh_since": "2026-10-12", "shortlist": 3, "unconfirmed_jumps": 0,
+        "markets": {
+            "US": {
+                "universe": 3, "priced": 3, "passed_filters": 3, "fresh": 3,
+                "fresh_since": "2026-10-12", "shortlist": 3,
+            },
+            "TSX": {  # the TSX was closed on 2026-10-12, so its floor is 10-09
+                "universe": 2, "priced": 2, "passed_filters": 2, "fresh": 2,
+                "fresh_since": "2026-10-09", "shortlist": 2,
+            },
+        },
+        "priority": 0, "priority_unpriced": [], "unconfirmed_jumps": 0, "shortlist": 5,
     }
-    assert deps.collectors["yfinance_bars"].calls == [["AAA", "BBB", "CCC"]]
-    assert health(db, outcome.run_id) == [("nasdaq_symbols", "ok"), ("yfinance_bars", "ok")]
-    assert db.execute("select count(*) as n from symbols where active").fetchone()["n"] == 3
+    assert deps.collectors["yfinance_bars"].calls == [EVERYONE]  # one call for both markets
+    assert health(db, outcome.run_id) == [
+        ("nasdaq_symbols", "ok"), ("tmx_symbols", "ok"), ("yfinance_bars", "ok"),
+    ]
+    markets = db.execute(
+        "select market, count(*) as n from symbols where active group by market order by market"
+    ).fetchall()
+    assert [(r["market"], r["n"]) for r in markets] == [("TSX", 2), ("US", 3)]
 
 
-def test_holdings_are_priced_first_and_get_features(db, tmp_path):
+def test_holdings_of_both_markets_are_priced_first_and_get_features(db, tmp_path):
     hold(db)
+    hold(db, "SHOP.TO")
     db.execute("insert into watchlist (symbol, asset_type) values ('BTC', 'crypto')")
     deps = make_deps(db, tmp_path)
-    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=3)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
 
-    assert deps.collectors["yfinance_bars"].calls == [["OTCX"], ["AAA", "BBB", "CCC"]]
-    assert health(db, outcome.run_id) == [("nasdaq_symbols", "ok"), ("yfinance_bars", "ok")]
-    features = db.execute(
-        "select symbol, features from features_live where run_id = %s", (outcome.run_id,)
-    ).fetchall()
-    assert [f["symbol"] for f in features] == ["OTCX"]
-    assert features[0]["features"] == {
+    assert deps.collectors["yfinance_bars"].calls == [["OTCX", "SHOP.TO"], EVERYONE]
+    features = market_features(db, outcome.run_id)
+    assert sorted(features) == ["OTCX", "SHOP.TO"]
+    assert features["OTCX"] == {
         "last_close": 10.0, "adv20": 2_000_000.0, "history_days": 70, "last_day": "2026-10-13",
         "stale": False, "unconfirmed_jump": False,
     }
-    assert outcome.summary["priority"] == 1
-    assert outcome.summary["priced"] == 4
+    assert outcome.summary["priority"] == 2
+    assert outcome.summary["markets"]["US"]["priced"] == 4
+    assert outcome.summary["markets"]["TSX"]["priced"] == 3
+
+
+def test_each_market_is_judged_against_its_own_calendar(db, tmp_path):
+    # Pre-open on 2026-10-13: the NYSE traded 10-12 (floor 10-09); the TSX was closed for
+    # Thanksgiving (last session 10-09, floor 10-08). Bars ending 10-08 are fresh only on the TSX.
+    hold(db)
+    hold(db, "SHOP.TO")
+    prices = FakeCollector(
+        "yfinance_bars",
+        records_for=lambda syms: [b for s in syms for b in history(s, 70, start=date(2026, 7, 31))],
+    )
+    outcome = execute_run(
+        make_deps(db, tmp_path, prices=prices),
+        RunKind.PRE_OPEN,
+        datetime(2026, 10, 13, 12, 15, tzinfo=UTC),
+        min_universe=SMALL,
+    )
+
+    features = market_features(db, outcome.run_id)
+    assert {s: f["stale"] for s, f in features.items()} == {"OTCX": True, "SHOP.TO": False}
+    us, tsx = outcome.summary["markets"]["US"], outcome.summary["markets"]["TSX"]
+    assert (us["fresh_since"], us["fresh"]) == ("2026-10-09", 0)
+    assert (tsx["fresh_since"], tsx["fresh"]) == ("2026-10-08", 3)
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.summary["failed_reason"] == ["US: too few fresh priced symbols (0 of 4)"]
 
 
 def test_holdings_are_saved_even_when_a_later_stage_fails(db, tmp_path):
     hold(db)
-    deps = make_deps(db, tmp_path, universe_records=lambda _: [object()])
+    deps = make_deps(db, tmp_path, us_records=lambda _: [object()])
     with pytest.raises(AttributeError):
-        execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=1)
+        execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe={Market.US: 1, Market.TSX: 1})
     assert db.execute("select symbol from features_live").fetchone()["symbol"] == "OTCX"
     row = db.execute("select * from runs").fetchone()
     assert (row["status"], row["published"]) == ("failed", False)
     assert row["summary"]["error"].startswith("AttributeError")
 
 
-def test_price_outage_fails_the_run(db, tmp_path):
+def test_price_outage_fails_the_run_for_both_markets(db, tmp_path):
     prices = FakeCollector("yfinance_bars", error=httpx.ConnectError("down"))
     outcome = execute_run(
-        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
     )
 
     assert outcome.status is RunStatus.FAILED
     assert run_row(db, outcome.run_id)["published"] is False
-    assert outcome.summary["failed_reason"] == ["too few fresh priced symbols (0 of 3)"]
+    assert outcome.summary["failed_reason"] == [
+        "US: too few fresh priced symbols (0 of 3)",
+        "TSX: too few fresh priced symbols (0 of 2)",
+    ]
     assert ("yfinance_bars", "failed") in health(db, outcome.run_id)
 
 
 def test_partial_prices_degrade_the_run(db, tmp_path):
-    some = [b for s in ("AAA", "BBB") for b in history(s, 70, start=FRESH_START)]
+    some = [b for s in ("AAA", "BBB", "RY.TO") for b in history(s, 70, start=FRESH_START)]
     prices = FakeCollector(
         "yfinance_bars", error=PartialFetch(some, "1 of 2 Yahoo downloads returned no bars")
     )
     outcome = execute_run(
-        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
     )
 
     assert outcome.status is RunStatus.DEGRADED
     assert run_row(db, outcome.run_id)["published"] is True
-    assert health(db, outcome.run_id) == [("nasdaq_symbols", "ok"), ("yfinance_bars", "partial")]
-    assert outcome.summary["priced"] == 2
+    assert ("yfinance_bars", "partial") in health(db, outcome.run_id)
+    assert outcome.summary["markets"]["US"]["priced"] == 2
+    assert outcome.summary["markets"]["TSX"]["priced"] == 1
 
 
 def test_a_source_failing_in_one_phase_reports_one_partial_row(db, tmp_path):
@@ -127,83 +180,100 @@ def test_a_source_failing_in_one_phase_reports_one_partial_row(db, tmp_path):
 
     prices = FakeCollector("yfinance_bars", records_for=records_for)
     outcome = execute_run(
-        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
     )
     rows = health(db, outcome.run_id)
     assert rows.count(("yfinance_bars", "partial")) == 1
     assert len([s for s, _ in rows if s == "yfinance_bars"]) == 1
-    assert outcome.status is RunStatus.FAILED  # the rest of the market went unpriced
-    assert outcome.summary["priced"] == 1
+    assert outcome.status is RunStatus.FAILED
+    assert market_features(db, outcome.run_id)["OTCX"]["stale"] is False
 
 
 def test_an_unconfirmed_jump_is_kept_and_flagged(db, tmp_path):
-    hold(db)
+    hold(db, "SHOP.TO")
 
     def records_for(symbols):
         bars = [b for s in symbols for b in history(s, 70, start=FRESH_START)]
-        return [  # OTCX jumps 10 -> 16 (+60%) on its latest bar
-            bar(b.symbol, b.day, 16.0) if (b.symbol, b.day) == ("OTCX", date(2026, 10, 13)) else b
-            for b in bars
+        jumps = {("SHOP.TO", date(2026, 10, 13)), ("RY.TO", date(2026, 10, 13))}
+        return [  # both jump 10 -> 16 (+60%) on their latest bar
+            bar(b.symbol, b.day, 16.0) if (b.symbol, b.day) in jumps else b for b in bars
         ]
 
     prices = FakeCollector("yfinance_bars", records_for=records_for)
     outcome = execute_run(
-        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
     )
 
     assert outcome.status is RunStatus.SUCCESS
-    assert outcome.summary["unconfirmed_jumps"] == 1
-    features = db.execute(
-        "select features from features_live where run_id = %s and symbol = 'OTCX'",
-        (outcome.run_id,),
-    ).fetchone()["features"]
+    assert outcome.summary["unconfirmed_jumps"] == 2  # SHOP.TO from phase 1, RY.TO from phase 2
+    features = market_features(db, outcome.run_id)["SHOP.TO"]
     assert (features["last_close"], features["unconfirmed_jump"]) == (16.0, True)
 
 
-def test_enrichment_collectors_get_priority_first_then_the_shortlist(db, tmp_path):
+def test_enrichment_gets_priority_then_crypto_then_both_markets_interleaved(db, tmp_path):
     hold(db)
     db.execute("insert into watchlist (symbol, asset_type) values ('BTC', 'crypto')")
     extra = {
         "news": FakeCollector("news", core=False),
         "macro": FakeCollector("macro", scope=Scope.MARKET),
         "coins": FakeCollector("coins", asset_types=frozenset({AssetType.CRYPTO})),
+        "mixed": FakeCollector("mixed", asset_types=frozenset({AssetType.STOCK, AssetType.CRYPTO})),
     }
-    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=3)
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
 
     assert outcome.status is RunStatus.SUCCESS
-    assert extra["news"].calls == [["OTCX", "AAA", "BBB", "CCC"]]
+    assert extra["news"].calls == [["OTCX", "AAA", "RY.TO", "BBB", "TD.TO", "CCC"]]
+    assert extra["mixed"].calls == [["OTCX", "BTC", "AAA", "RY.TO", "BBB", "TD.TO", "CCC"]]
     assert extra["macro"].calls == [[]]
     assert extra["coins"].calls == [["BTC"]]
-    assert outcome.summary["shortlist"] == 4
+    assert outcome.summary["shortlist"] == 6
     assert [s for s, _ in health(db, outcome.run_id)] == [
-        "coins", "macro", "nasdaq_symbols", "news", "yfinance_bars",
+        "coins", "macro", "mixed", "nasdaq_symbols", "news", "tmx_symbols", "yfinance_bars",
     ]
 
 
 def test_a_failing_core_enrichment_source_degrades_the_run(db, tmp_path):
     extra = {"filings": FakeCollector("filings", core=True, error=httpx.ConnectError("down"))}
-    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=3)
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
     assert outcome.status is RunStatus.DEGRADED
     assert ("filings", "failed") in health(db, outcome.run_id)
 
 
-def test_truncated_universe_fails_the_run_and_stays_unpublished(db, tmp_path):
+def test_a_truncated_universe_fails_the_run_and_keeps_that_markets_symbols(db, tmp_path):
     db.execute(
         "insert into symbols (symbol, asset_type, market, name, exchange)"
-        " values ('OLD', 'stock', 'US', 'Old Co', 'NYSE')"
+        " values ('OLD.TO', 'stock', 'TSX', 'Old Co', 'TSX')"
     )
     extra = {"news": FakeCollector("news")}
     outcome = execute_run(
-        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=1000
+        make_deps(db, tmp_path, extra=extra),
+        RunKind.PRE_OPEN,
+        NOW,
+        min_universe={Market.US: 3, Market.TSX: 300},
     )
+
     assert outcome.status is RunStatus.FAILED
-    assert outcome.summary["failed_reason"] == ["universe too small (3 < 1000)"]
+    assert outcome.summary["failed_reason"] == ["TSX: universe too small (2 < 300)"]
     assert run_row(db, outcome.run_id)["published"] is False
-    old = db.execute("select active from symbols where symbol = 'OLD'").fetchone()
-    assert old["active"] is True
-    assert db.execute("select count(*) as n from symbols").fetchone()["n"] == 1
+    rows = db.execute("select symbol, market, active from symbols order by symbol").fetchall()
+    assert [(r["symbol"], r["market"], r["active"]) for r in rows] == [
+        ("AAA", "US", True), ("BBB", "US", True), ("CCC", "US", True),  # US saved independently
+        ("OLD.TO", "TSX", True),  # a truncated TSX universe deactivates nothing
+    ]
+    assert outcome.summary["markets"]["TSX"]["shortlist"] == 0
     assert outcome.summary["shortlist"] == 0
     assert extra["news"].calls == []  # a run that cannot publish spends no enrichment calls
+
+
+def test_default_minimums_come_from_the_markets_table(db, tmp_path):
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW)
+    assert outcome.summary["failed_reason"] == [
+        "US: universe too small (3 < 1000)", "TSX: universe too small (2 < 300)",
+    ]
 
 
 def test_stale_prices_fail_the_run_and_flag_holding_features(db, tmp_path):
@@ -212,23 +282,22 @@ def test_stale_prices_fail_the_run_and_flag_holding_features(db, tmp_path):
         "yfinance_bars", records_for=lambda syms: [b for s in syms for b in history(s, 70)]
     )
     outcome = execute_run(
-        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
     )
 
     assert outcome.status is RunStatus.FAILED
     assert run_row(db, outcome.run_id)["published"] is False
-    assert outcome.summary["failed_reason"] == ["too few fresh priced symbols (0 of 4)"]
-    features = db.execute(
-        "select features from features_live where run_id = %s and symbol = 'OTCX'",
-        (outcome.run_id,),
-    ).fetchone()["features"]
-    assert features["stale"] is True
+    assert outcome.summary["failed_reason"] == [
+        "US: too few fresh priced symbols (0 of 4)",
+        "TSX: too few fresh priced symbols (0 of 2)",
+    ]
+    assert market_features(db, outcome.run_id)["OTCX"]["stale"] is True
 
 
 def test_unexpected_error_marks_run_failed_and_propagates(db, tmp_path):
-    deps = make_deps(db, tmp_path, universe_records=lambda _: [object()])
+    deps = make_deps(db, tmp_path, us_records=lambda _: [object()])
     with pytest.raises(AttributeError):
-        execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=1)
+        execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe={Market.US: 1, Market.TSX: 1})
     row = db.execute("select * from runs").fetchone()
     assert row["status"] == "failed"
     assert row["published"] is False
@@ -241,6 +310,6 @@ def test_abandoned_runs_are_swept_when_a_run_starts(db, tmp_path):
         "insert into runs (kind, et_date, started_at)"
         " values ('pre_close', '2026-10-13', '2026-10-14 09:00+00')"
     )
-    execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=3)
+    execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     old = db.execute("select status from runs where kind = 'pre_close'").fetchone()
     assert old["status"] == "failed"

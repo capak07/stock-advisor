@@ -1,7 +1,7 @@
 name: run
 
-# Each run has an EDT and an EST cron (GitHub cron is UTC). advisor.run checks the NYSE
-# calendar and the current ET time, then does nothing unless this is the right slot.
+# Each run has an EDT and an EST cron (GitHub cron is UTC). advisor.run checks the NYSE and
+# TSX calendars and the current ET time, then does nothing unless this is the right slot.
 on:
   schedule:
     - cron: "15 12 * * 1-5"  # pre-open, EDT

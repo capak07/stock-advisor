@@ -1,12 +1,13 @@
 # Deferred work
 
-These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
+These are items that the Plan 1, Plan 2a and Plan 2b reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2c, Task 0: must land before the first real enrichment source
 
 - **Run deadline.**
   - Bound the enrichment stage and the health check, with cooperative cancellation: `get_with_retries` stops retrying past the deadline, and unfinished sources are recorded as FAILED "deadline exceeded".
   - Today a single source can take about 4 minutes in the worst case (4 × 20 s timeout plus 3 × 60 s Retry-After waits). The job is killed at 40 minutes, which leaves an abandoned, unpublished run.
+  - The deadline must also bound the Yahoo price stage. yfinance uses about a 10 s timeout per ticker, so a slow Yahoo can push a run past the 40-minute job limit.
 - **Cadence-window cache.**
   - DAILY and WEEKLY sources serve per-symbol records cached within the current window (ET date, or ISO week) as OK, and fetch only the missing symbols.
   - A PARTIAL result is backfilled from the cache.
@@ -19,6 +20,11 @@ These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later
   - `PartialFetch` is for per-request failures, and an empty one counts as a failure;
   - `canary_requires_records` is True only for sources that must always return data.
 
+## Plan 2c
+
+- **Recorded fixtures:** the FINRA, SEC and Yahoo-analyst fixtures were moved out of the test tree to `.superpowers/research/plan-2c-fixtures/` (git-ignored). Restore the ones the revised plan uses. The Finnhub and FMP fixtures there are obsolete.
+- **Small-universe runs:** when one market's universe is already too small, phase 2 still prices every other symbol. During a multi-day TMX outage that is about 7,400 wasted Yahoo requests per failed run. Skip the bulk fetch for a run that cannot publish, but keep pricing holdings.
+
 ## Plans 2c to 2e
 
 - **Collectors covering both stocks and crypto** (LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector.
@@ -26,6 +32,8 @@ These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later
 
 ## Plan 3: model and features
 
+- **Unconfirmed jumps in the wild:** the first live run flagged an unconfirmed jump somewhere in the 100-day window for about 4.7% of priced symbols. Check what they are (microcaps, biotech, bad data) before building the jump feature.
+- **TSX universe size:** the live TMX filter keeps about 675 TSX symbols, while spec §4.3 says about 1,500. Update the spec's number.
 - **Jump indicator feature** (spec §10). Plan 2b keeps flagged bars and records `unconfirmed_jump` for the latest bar of each priority symbol. Plan 3 turns flagged days into the jump feature and blocks a Buy on them (§6.1). A bad first bar in a window is never flagged, because there is no earlier close to compare.
 - **Exclude non-common instruments before any pick exists:**
   - ETNs with `ETF=N` (AMUB, BDCZ, DGP and others);
@@ -45,8 +53,14 @@ These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later
 - A `published_runs` view, so the dashboard never reads unpublished rows.
 - Show missed or dropped schedule slots on the dashboard.
 - Indexes on `picks.run_id` and `source_health.run_id`, added with their first readers.
+- **Old USD lots and sells:** pre-rev-2 USD lots and sells have no `fx_rate_cad`, and the `*_usd_needs_fx_rate` check (NOT VALID) still applies on UPDATE. Editing such a row fails until a rate is backfilled. Backfill from Bank of Canada rates first.
+- **`settings.updated_at`** has no trigger. The Settings page must set it, or add a trigger.
+- **`runs.summary` shape:** it changed in Plan 2b, from flat keys to `{"markets": {"US": …, "TSX": …}, …}`. The dashboard must read both shapes, or ignore runs from before the change.
+- **Run summary `shortlist`:** the per-market `shortlist` excludes priority symbols but the top-level `shortlist` includes them. Rename one before the dashboard shows them side by side.
 
 ## Operational and minor
+
+- **Old shortlist default:** remove the `SHORTLIST_SIZE = 300` default and the unused `shortlist()` helper in `enrich.py`, or require an explicit size.
 
 - **Deploy-time probe:** check that the `advisor_pipeline` login really cannot write holdings or run DDL on Supabase, and that Supavisor accepts the `advisor_pipeline.<project-ref>` user.
 - **Run sweep:** sweep abandoned runs using SQL `now()` instead of the Python clock or `--now`, and move the sweep and state loading inside `execute_run`'s try.

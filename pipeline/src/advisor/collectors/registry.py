@@ -3,6 +3,7 @@
 import httpx
 
 from advisor.collectors.base import Collector, RateLimiter
+from advisor.collectors.finra_short_interest import FinraShortInterest
 from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.tmx_symbols import TmxSymbols
@@ -19,5 +20,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         TmxSymbols(client),
         YFinanceBars(),
         FinraShortVolume(client, finra),
+        FinraShortInterest(client, finra),
     ]
     return {collector.name: collector for collector in collectors}

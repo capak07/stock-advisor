@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 import httpx
 import pytest
 
-from advisor.collectors.base import PartialFetch, Scope
+from advisor.collectors.base import PartialFetch, Scope, check_deadline
 from advisor.collectors.cache import DiskCache
 from advisor.models import AssetType, Market, RunKind, RunStatus
 from advisor.run import RunDeps, execute_run
@@ -382,3 +382,15 @@ def test_an_empty_market_reports_only_its_universe_reason(db, tmp_path):
 
     assert outcome.status is RunStatus.FAILED
     assert outcome.summary["failed_reason"] == ["TSX: universe too small (0 < 2)"]
+
+
+def test_a_source_past_the_run_budget_fails_and_the_run_still_publishes(db, tmp_path):
+    extra = {
+        "slow": FakeCollector("slow", core=False, records_for=lambda syms: (check_deadline(), [])[1])
+    }
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL, run_budget=0
+    )
+    assert outcome.status is RunStatus.SUCCESS  # the price fakes never consult the deadline
+    assert run_row(db, outcome.run_id)["published"] is True
+    assert ("slow", "failed") in health(db, outcome.run_id)

@@ -1,10 +1,11 @@
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 
 import httpx
 import pytest
 
-from advisor.collectors.base import CollectorResult, CollectorStatus
+from advisor.collectors.base import CollectorResult, CollectorStatus, check_deadline
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.runner import SourceState
 from advisor.collectors.tracker import SourceTracker, merge_results
@@ -89,3 +90,13 @@ def test_tracker_contains_unexpected_errors(tmp_path, monkeypatch):
     assert [r.error for r in tracker.merged()] == ["RuntimeError: boom"]
     with pytest.raises(KeyError):
         tracker.run("unknown", [])
+
+
+def test_tracker_applies_its_deadline_to_every_call(tmp_path):
+    slow = FakeCollector("slow", records_for=lambda syms: (check_deadline(), [])[1])
+    tracker = SourceTracker(
+        {"slow": slow}, DiskCache(tmp_path), NOW, {}, deadline_at=time.monotonic() - 1
+    )
+    result = tracker.run("slow", ["AAA"])
+    assert result.status is CollectorStatus.FAILED
+    assert result.error == "DeadlineExceeded: run time budget exhausted"

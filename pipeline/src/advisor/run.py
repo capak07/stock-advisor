@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import json
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -29,6 +30,7 @@ from advisor.store import repo
 from advisor.store.db import connect
 
 MIN_PRICED_FRACTION = 0.5
+RUN_BUDGET_SECONDS = 30 * 60  # spec §3; GitHub kills the job at 40 minutes
 PRICES = "yfinance_bars"
 PRICE_STAGE = frozenset({PRICES, *(spec.universe_source for spec in MARKETS.values())})
 
@@ -153,6 +155,7 @@ def execute_run(
     now_utc: datetime,
     *,
     min_universe: Mapping[Market, int] | None = None,
+    run_budget: float = RUN_BUDGET_SECONDS,
 ) -> RunOutcome:
     conn = deps.conn
     limits = {m: MARKETS[m].min_universe for m in Market} | dict(min_universe or {})
@@ -161,7 +164,11 @@ def execute_run(
     repo.sweep_abandoned_runs(conn, now_utc)
     run_id = repo.create_run(conn, kind, now_utc.astimezone(ET).date())
     tracker = SourceTracker(
-        deps.collectors, deps.cache, now_utc, repo.load_source_states(conn, deps.collectors)
+        deps.collectors,
+        deps.cache,
+        now_utc,
+        repo.load_source_states(conn, deps.collectors),
+        deadline_at=time.monotonic() + run_budget,
     )
 
     def fetch_prices(symbols: Sequence[str]) -> PriceFetch:

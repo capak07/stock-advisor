@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 import pandas as pd
 import pytest
 
-from advisor.collectors.base import PartialFetch
+from advisor.collectors.base import DeadlineExceeded, PartialFetch
 from advisor.collectors.yfinance_bars import YFinanceBars, parse_frame, to_yahoo
 
 AS_OF = datetime(2026, 10, 14, 19, 15, tzinfo=UTC)
@@ -120,3 +120,30 @@ def test_fetch_stopping_with_no_bars_at_all_raises_runtime_error(monkeypatch):
                        "3 of 6 not tried"):
         YFinanceBars(download=fake_download).fetch(symbols, AS_OF)
     assert len(calls) == 3
+
+
+def test_fetch_stops_at_the_run_deadline_with_what_it_has(monkeypatch):
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.SYMBOLS_PER_DOWNLOAD", 5)
+    lefts = iter([60.0, 0.0])  # time left before the first and the second download
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.time_left", lambda: next(lefts))
+    calls = []
+
+    def fake_download(tickers, start, end):
+        calls.append(tickers)
+        return two_ticker_frame()
+
+    symbols = ["AAPL", "BRK.B", "C", "D", "E", "F", "G", "H", "I", "J"]
+    with pytest.raises(PartialFetch, match="run time budget exhausted; 1 of 2 not tried") as caught:
+        YFinanceBars(download=fake_download).fetch(symbols, AS_OF)
+    assert len(calls) == 1
+    assert {b.symbol for b in caught.value.records} == {"AAPL", "BRK.B"}
+
+
+def test_fetch_past_the_deadline_before_any_download_raises(monkeypatch):
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.time_left", lambda: 0.0)
+
+    def must_not_download(tickers, start, end):
+        raise AssertionError("downloaded past the deadline")
+
+    with pytest.raises(DeadlineExceeded, match="run time budget exhausted; 1 of 1 not tried"):
+        YFinanceBars(download=must_not_download).fetch(["AAPL"], AS_OF)

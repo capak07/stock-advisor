@@ -1,8 +1,10 @@
 """Shared building blocks for collectors: the interface, rate limiting, and HTTP retries."""
 
+import contextlib
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -64,6 +66,37 @@ class PartialFetch(Exception):
     def __init__(self, records: Sequence[BaseModel], error: str) -> None:
         super().__init__(error)
         self.records = list(records)
+
+
+BUDGET_EXHAUSTED = "run time budget exhausted"
+_DEADLINE: ContextVar[float | None] = ContextVar("collector_deadline", default=None)
+
+
+class DeadlineExceeded(Exception):
+    """The run's time budget ran out before this source finished."""
+
+
+@contextlib.contextmanager
+def deadline(at: float | None) -> Iterator[None]:
+    """Inside this block, collectors stop once time.monotonic() passes `at` (None = no limit)."""
+    token = _DEADLINE.set(at)
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(token)
+
+
+def time_left(clock: Callable[[], float] = time.monotonic) -> float | None:
+    """Seconds until the current deadline, or None when there is none."""
+    at = _DEADLINE.get()
+    return None if at is None else at - clock()
+
+
+def check_deadline(clock: Callable[[], float] = time.monotonic) -> None:
+    """Raise DeadlineExceeded once the current deadline has passed; long loops call this per item."""
+    left = time_left(clock)
+    if left is not None and left <= 0:
+        raise DeadlineExceeded(BUDGET_EXHAUSTED)
 
 
 class Collector(Protocol):
@@ -147,13 +180,16 @@ def get_with_retries(
     attempts: int = 4,  # spec §4.1: 3 retries
     base_delay: float = 1.0,
     sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
 ) -> httpx.Response:
     """GET with exponential backoff on transport errors and 429/5xx; other errors raise at once."""
     last_error: Exception | None = None
     for attempt in range(attempts):
         retry_after: float | None = None
+        check_deadline(clock)
         if limiter is not None:
             limiter.acquire()
+            check_deadline(clock)  # a busy shared limiter may have slept past the deadline
         try:
             response = client.get(url, params=params, headers=headers)
         except httpx.TransportError as exc:
@@ -175,6 +211,12 @@ def get_with_retries(
             )
         if attempt < attempts - 1:
             backoff = base_delay * 2**attempt
-            sleep(backoff if retry_after is None else max(backoff, retry_after))
+            wait = backoff if retry_after is None else max(backoff, retry_after)
+            left = time_left(clock)
+            if left is not None and wait >= left:
+                raise DeadlineExceeded(
+                    f"{BUDGET_EXHAUSTED} while retrying {_safe_url(url)}"
+                ) from last_error
+            sleep(wait)
     assert last_error is not None
     raise last_error

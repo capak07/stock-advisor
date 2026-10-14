@@ -8,7 +8,7 @@ import threading
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 
-from advisor.collectors.base import Collector, CollectorResult, CollectorStatus
+from advisor.collectors.base import Collector, CollectorResult, CollectorStatus, deadline
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.runner import SourceState, next_failures, run_collector
 
@@ -45,11 +45,14 @@ class SourceTracker:
         cache: DiskCache,
         as_of: datetime,
         states: Mapping[str, SourceState],
+        *,
+        deadline_at: float | None = None,
     ) -> None:
         self._collectors = collectors
         self._cache = cache
         self._as_of = as_of
         self._states = dict(states)
+        self._deadline_at = deadline_at
         self._calls: dict[str, list[CollectorResult]] = {}
         self._lock = threading.Lock()
 
@@ -59,9 +62,10 @@ class SourceTracker:
     def run(self, name: str, symbols: Sequence[str]) -> CollectorResult:
         collector = self._collectors[name]  # an unknown name is a caller bug: let it raise
         try:
-            result = run_collector(
-                collector, symbols, self._as_of, cache=self._cache, state=self._state(name)
-            )
+            with deadline(self._deadline_at):
+                result = run_collector(
+                    collector, symbols, self._as_of, cache=self._cache, state=self._state(name)
+                )
         except Exception as exc:  # one collector must never fail the whole run
             result = CollectorResult(
                 name, CollectorStatus.FAILED, [], 0, f"{type(exc).__name__}: {exc}"[:500]

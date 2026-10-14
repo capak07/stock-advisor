@@ -1,7 +1,13 @@
 import httpx
 import pytest
 
-from advisor.collectors.base import RateLimiter, get_with_retries
+from advisor.collectors.base import (
+    DeadlineExceeded,
+    RateLimiter,
+    check_deadline,
+    deadline,
+    get_with_retries,
+)
 from fakes import FakeClock
 
 
@@ -107,3 +113,46 @@ def test_error_text_never_contains_query_strings():
     text = str(caught.value)
     assert "SECRET123" not in text and "ABC" not in text
     assert "HTTP 503 from https://x.test/ratios/AAPL" in text
+
+
+def test_check_deadline_is_a_no_op_without_a_deadline():
+    check_deadline()
+
+
+def test_deadline_applies_only_inside_its_block():
+    clock = FakeClock()
+    clock.now = 100.0
+    with deadline(50.0):
+        with pytest.raises(DeadlineExceeded, match="run time budget exhausted"):
+            check_deadline(clock)
+    check_deadline(clock)
+
+
+def test_requests_stop_once_the_deadline_has_passed():
+    client, calls = scripted_client([httpx.Response(200, text="ok")])
+    clock = FakeClock()
+    clock.now = 10.0
+    with deadline(5.0), pytest.raises(DeadlineExceeded):
+        get_with_retries(client, "https://example.test/x", clock=clock, sleep=clock.sleep)
+    assert calls == []
+
+
+def test_a_retry_wait_that_would_overrun_the_deadline_stops_early():
+    client, calls = scripted_client([httpx.Response(503), httpx.Response(200, text="ok")])
+    clock = FakeClock()
+    with deadline(0.5), pytest.raises(DeadlineExceeded) as caught:
+        get_with_retries(
+            client, "https://example.test/x?token=SECRET", clock=clock, sleep=clock.sleep
+        )
+    assert len(calls) == 1
+    assert clock.sleeps == []
+    assert "SECRET" not in str(caught.value)
+
+
+def test_a_retry_that_fits_the_deadline_still_happens():
+    client, _ = scripted_client([httpx.Response(503), httpx.Response(200, text="ok")])
+    clock = FakeClock()
+    with deadline(1.5):
+        response = get_with_retries(client, "https://example.test/x", clock=clock, sleep=clock.sleep)
+    assert response.text == "ok"
+    assert clock.sleeps == [1.0]

@@ -9,7 +9,15 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-from advisor.collectors.base import Cadence, Category, PartialFetch, Scope
+from advisor.collectors.base import (
+    BUDGET_EXHAUSTED,
+    Cadence,
+    Category,
+    DeadlineExceeded,
+    PartialFetch,
+    Scope,
+    time_left,
+)
 from advisor.markets import market_of
 from advisor.models import ET, AssetType, DailyBar, Market
 
@@ -96,7 +104,12 @@ class YFinanceBars:
         ]
         bars: list[DailyBar] = []
         empty = streak = not_tried = 0
-        for done, chunk in enumerate(chunks, start=1):
+        stopped = ""
+        for done, chunk in enumerate(chunks):
+            left = time_left()
+            if left is not None and left <= 0:  # yfinance sends one request per ticker
+                stopped, not_tried = BUDGET_EXHAUSTED, len(chunks) - done
+                break
             mapping = {to_yahoo(s): s for s in chunk}
             got = parse_frame(self._download(list(mapping), start, end), mapping)
             if got:
@@ -105,16 +118,16 @@ class YFinanceBars:
                 empty += 1
                 streak += 1
             bars.extend(got)
-            if streak >= MAX_CONSECUTIVE_EMPTY:
-                not_tried = len(chunks) - done
+            if streak >= MAX_CONSECUTIVE_EMPTY and done + 1 < len(chunks):
+                stopped = f"stopped after {MAX_CONSECUTIVE_EMPTY} consecutive empty Yahoo downloads"
+                not_tried = len(chunks) - done - 1
                 break
-        if not_tried:
-            message = (
-                f"stopped after {MAX_CONSECUTIVE_EMPTY} consecutive empty Yahoo downloads;"
-                f" {not_tried} of {len(chunks)} not tried"
-            )
+        if stopped:
+            message = f"{stopped}; {not_tried} of {len(chunks)} not tried"
             if bars:
                 raise PartialFetch(bars, message)
+            if stopped == BUDGET_EXHAUSTED:
+                raise DeadlineExceeded(message)
             raise RuntimeError(message)
         if empty and not bars:
             raise RuntimeError(

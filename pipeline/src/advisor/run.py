@@ -75,7 +75,8 @@ class MarketPass:
             reasons.append(
                 f"{self.market}: universe too small ({self.universe} < {self.min_universe})"
             )
-        if not self.prices_ok:
+        empty = self.symbols == 0  # an empty market has no prices to report on
+        if not self.prices_ok and not (empty and not self.universe_ok):
             reasons.append(
                 f"{self.market}: too few fresh priced symbols ({self.fresh} of {self.symbols})"
             )
@@ -110,12 +111,31 @@ def decide_status(
     *,
     universe_ok: bool,
     prices_ok: bool,
+    holdings_ok: bool = True,
 ) -> RunStatus:
     if not (universe_ok and prices_ok):
         return RunStatus.FAILED
+    if not holdings_ok:  # a held stock without a price is missing from the owner's advice
+        return RunStatus.DEGRADED
     if any(collectors[r.name].core and r.status is not CollectorStatus.OK for r in results):
         return RunStatus.DEGRADED
     return RunStatus.SUCCESS
+
+
+def live_feature_rows(
+    rows: Sequence[ScreenRow], flagged: Mapping[str, set[date]], floors: Mapping[Market, date]
+) -> list[tuple[AssetRef, dict]]:
+    return [
+        (
+            AssetRef(r.symbol, AssetType.STOCK),
+            {
+                **r.as_features(),
+                "stale": not r.is_fresh(floors[market_of(r.symbol)]),
+                "unconfirmed_jump": r.last_day in flagged.get(r.symbol, ()),
+            },
+        )
+        for r in rows
+    ]
 
 
 def priority_order(held: set[AssetRef], watch: set[AssetRef], asset_type: AssetType) -> list[str]:
@@ -162,20 +182,7 @@ def execute_run(
         bars, flagged = dict(first.bars), dict(first.flagged)
         priority_rows = [screener.price_stats(s, bars[s]) for s in priority if s in bars]
         repo.write_features_live(
-            conn,
-            run_id,
-            [
-                (
-                    AssetRef(r.symbol, AssetType.STOCK),
-                    {
-                        **r.as_features(),
-                        "stale": not r.is_fresh(floors[market_of(r.symbol)]),
-                        "unconfirmed_jump": r.last_day in flagged.get(r.symbol, ()),
-                    },
-                )
-                for r in priority_rows
-            ],
-            now_utc,
+            conn, run_id, live_feature_rows(priority_rows, flagged, floors), now_utc
         )
 
         # Phase 2: each market's universe, then one price fetch for everything not yet priced.
@@ -185,8 +192,14 @@ def execute_run(
             if len(universes[market]) >= limits[market]:
                 repo.upsert_symbols(conn, market, universes[market])
         rest = sorted({r.symbol for u in universes.values() for r in u} - set(priority))
-        if rest:
-            second = fetch_prices(rest)
+        # A priority symbol phase 1 left unpriced (Yahoo can miss silently) gets a second try.
+        retry = [s for s in priority if s not in bars]
+        if rest or retry:
+            second = fetch_prices(rest + retry)
+            recovered = [screener.price_stats(s, second.bars[s]) for s in retry if s in second.bars]
+            repo.write_features_live(
+                conn, run_id, live_feature_rows(recovered, second.flagged, floors), now_utc
+            )
             bars = {**second.bars, **bars}
             flagged = {**second.flagged, **flagged}
 
@@ -227,11 +240,20 @@ def execute_run(
             },
             "priority": len(priority),
             "priority_unpriced": sorted(set(priority) - bars.keys()),
-            "unconfirmed_jumps": len(flagged),
+            # symbols whose latest bar is flagged (what the Review badge and Buy block use), not
+            # every symbol with a flagged day somewhere in the lookback
+            "unconfirmed_jumps": sum(
+                1 for s, days in flagged.items() if s in bars and bars[s][-1].day in days
+            ),
             "shortlist": len(targets.stocks) if enriched else 0,
         }
+        held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
         status = decide_status(
-            tracker.merged(), deps.collectors, universe_ok=universe_ok, prices_ok=prices_ok
+            tracker.merged(),
+            deps.collectors,
+            universe_ok=universe_ok,
+            prices_ok=prices_ok,
+            holdings_ok=held_stocks <= bars.keys(),
         )
         if status is RunStatus.FAILED:
             summary["failed_reason"] = [

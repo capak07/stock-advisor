@@ -196,7 +196,10 @@ def test_an_unconfirmed_jump_is_kept_and_flagged(db, tmp_path):
         bars = [b for s in symbols for b in history(s, 70, start=FRESH_START)]
         jumps = {("SHOP.TO", date(2026, 10, 13)), ("RY.TO", date(2026, 10, 13))}
         return [  # both jump 10 -> 16 (+60%) on their latest bar
-            bar(b.symbol, b.day, 16.0) if (b.symbol, b.day) in jumps else b for b in bars
+            bar(b.symbol, b.day, 16.0)
+            if (b.symbol, b.day) in jumps or (b.symbol == "AAA" and b.day >= date(2026, 10, 1))
+            else b  # AAA jumped on 10-01 and stays at the new level: flagged once, long ago
+            for b in bars
         ]
 
     prices = FakeCollector("yfinance_bars", records_for=records_for)
@@ -205,7 +208,8 @@ def test_an_unconfirmed_jump_is_kept_and_flagged(db, tmp_path):
     )
 
     assert outcome.status is RunStatus.SUCCESS
-    assert outcome.summary["unconfirmed_jumps"] == 2  # SHOP.TO from phase 1, RY.TO from phase 2
+    # SHOP.TO from phase 1, RY.TO from phase 2; AAA's older flagged day does not count
+    assert outcome.summary["unconfirmed_jumps"] == 2
     features = market_features(db, outcome.run_id)["SHOP.TO"]
     assert (features["last_close"], features["unconfirmed_jump"]) == (16.0, True)
 
@@ -313,3 +317,68 @@ def test_abandoned_runs_are_swept_when_a_run_starts(db, tmp_path):
     execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     old = db.execute("select status from runs where kind = 'pre_close'").fetchone()
     assert old["status"] == "failed"
+
+
+def test_a_holding_missed_in_phase_one_is_retried_and_saved_in_phase_two(db, tmp_path):
+    hold(db)
+    prices = FakeCollector(  # Yahoo silently answers nothing for the lone holding at first
+        "yfinance_bars",
+        records_for=lambda syms: (
+            [] if list(syms) == ["OTCX"]
+            else [b for s in syms for b in history(s, 70, start=FRESH_START)]
+        ),
+    )
+    outcome = execute_run(
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
+
+    assert prices.calls == [["OTCX"], ["AAA", "BBB", "CCC", "OTCX", "RY.TO", "TD.TO"]]
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["priority_unpriced"] == []
+    assert market_features(db, outcome.run_id)["OTCX"] == {
+        "last_close": 10.0, "adv20": 2_000_000.0, "history_days": 70, "last_day": "2026-10-13",
+        "stale": False, "unconfirmed_jump": False,
+    }
+
+
+def test_a_holding_yahoo_never_returns_degrades_the_run(db, tmp_path):
+    hold(db)
+    prices = FakeCollector(
+        "yfinance_bars",
+        records_for=lambda syms: [
+            b for s in syms if s != "OTCX" for b in history(s, 70, start=FRESH_START)
+        ],
+    )
+    outcome = execute_run(
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
+
+    assert outcome.status is RunStatus.DEGRADED
+    assert run_row(db, outcome.run_id)["published"] is True
+    assert outcome.summary["priority_unpriced"] == ["OTCX"]
+    assert market_features(db, outcome.run_id) == {}
+
+
+def test_a_watchlist_only_stock_yahoo_never_returns_stays_summary_only(db, tmp_path):
+    db.execute("insert into watchlist (symbol, asset_type) values ('OTCX', 'stock')")
+    prices = FakeCollector(
+        "yfinance_bars",
+        records_for=lambda syms: [
+            b for s in syms if s != "OTCX" for b in history(s, 70, start=FRESH_START)
+        ],
+    )
+    outcome = execute_run(
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["priority_unpriced"] == ["OTCX"]
+
+
+def test_an_empty_market_reports_only_its_universe_reason(db, tmp_path):
+    deps = make_deps(db, tmp_path)
+    deps.collectors["tmx_symbols"].records_for = lambda _: []
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.summary["failed_reason"] == ["TSX: universe too small (0 < 2)"]

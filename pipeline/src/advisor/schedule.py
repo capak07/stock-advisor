@@ -1,7 +1,8 @@
-"""Decides whether 'now' falls in a run window on an NYSE trading day.
+"""Decides whether 'now' falls in a run window on a trading day of either market (spec §3).
 
 GitHub cron is UTC-only, so each run has one cron for EDT and one for EST. This guard
-accepts exactly one of them, and only on days the NYSE calendar says are right.
+accepts exactly one of them, and only on days a market calendar says are right. The NYSE
+and the TSX both keep Eastern time, so one set of ET targets serves both markets.
 """
 
 from datetime import date, datetime, time, timedelta
@@ -9,7 +10,8 @@ from functools import cache
 
 import pandas_market_calendars as mcal
 
-from advisor.models import ET, RunKind
+from advisor.markets import MARKETS
+from advisor.models import ET, Market, RunKind
 
 TARGETS: dict[RunKind, time] = {
     RunKind.PRE_OPEN: time(8, 15),
@@ -25,32 +27,31 @@ NORMAL_CLOSE = time(16, 0)
 
 
 @cache
-def _nyse() -> mcal.MarketCalendar:
-    return mcal.get_calendar("NYSE")
+def _calendar(market: Market) -> mcal.MarketCalendar:
+    return mcal.get_calendar(MARKETS[market].calendar)
 
 
-def market_close_et(day: date) -> time | None:
-    """Closing time in ET for `day`, or None when the NYSE is closed."""
-    schedule = _nyse().schedule(start_date=day.isoformat(), end_date=day.isoformat())
+def market_close_et(day: date, market: Market = Market.US) -> time | None:
+    """Closing time in ET for `day`, or None when `market` is closed."""
+    schedule = _calendar(market).schedule(start_date=day.isoformat(), end_date=day.isoformat())
     if schedule.empty:
         return None
     return schedule.iloc[0]["market_close"].tz_convert("America/New_York").time()
 
 
 def _todays_slots(now_et: datetime) -> list[tuple[RunKind, datetime]]:
-    """Run slots that apply on `now_et`'s date: pre_close or early_close, never both."""
-    close = market_close_et(now_et.date())
-    if close is None:
+    """Run slots on `now_et`'s date: pre-open when any market is open, early-close for a market
+    closing before 16:00, pre-close for one closing at 16:00. A split day has both."""
+    closes = [market_close_et(now_et.date(), market) for market in Market]
+    open_closes = [close for close in closes if close is not None]
+    if not open_closes:
         return []
-    early_close_day = close < NORMAL_CLOSE
-    slots = []
-    for kind, target in TARGETS.items():
-        if kind is RunKind.PRE_CLOSE and early_close_day:
-            continue
-        if kind is RunKind.EARLY_CLOSE and not early_close_day:
-            continue
-        slots.append((kind, datetime.combine(now_et.date(), target, tzinfo=ET)))
-    return slots
+    kinds = [RunKind.PRE_OPEN]
+    if any(close < NORMAL_CLOSE for close in open_closes):
+        kinds.append(RunKind.EARLY_CLOSE)
+    if any(close >= NORMAL_CLOSE for close in open_closes):
+        kinds.append(RunKind.PRE_CLOSE)
+    return [(kind, datetime.combine(now_et.date(), TARGETS[kind], tzinfo=ET)) for kind in kinds]
 
 
 def resolve_run_kind(now_utc: datetime) -> RunKind | None:
@@ -70,22 +71,30 @@ def missed_run_kind(now_utc: datetime) -> RunKind | None:
     return None
 
 
-def previous_sessions(end: date, count: int) -> list[date]:
-    """The `count` most recent NYSE session dates on or before `end`, ascending."""
-    schedule = _nyse().schedule(
+def previous_sessions(end: date, count: int, market: Market = Market.US) -> list[date]:
+    """The `count` most recent `market` session dates on or before `end`, ascending."""
+    schedule = _calendar(market).schedule(
         start_date=(end - timedelta(days=count * 2 + 10)).isoformat(), end_date=end.isoformat()
     )
     return [stamp.date() for stamp in schedule.index][-count:]
 
 
-def expected_last_session(kind: RunKind, now_utc: datetime) -> date:
-    """Latest session whose daily bar should exist: today for pre-close runs, else the prior session."""
+def expected_last_session(kind: RunKind, now_utc: datetime, market: Market = Market.US) -> date:
+    """Latest `market` session whose daily bar should exist: the latest one on or before today
+    for pre-close and early-close runs, before today for pre-open runs."""
     today = now_utc.astimezone(ET).date()
-    if kind in (RunKind.PRE_CLOSE, RunKind.EARLY_CLOSE):
-        return today
-    return previous_sessions(today - timedelta(days=1), 1)[0]
+    end = today if kind in (RunKind.PRE_CLOSE, RunKind.EARLY_CLOSE) else today - timedelta(days=1)
+    return previous_sessions(end, 1, market)[0]
 
 
-def freshness_floor(kind: RunKind, now_utc: datetime, allowed_lag_sessions: int = 1) -> date:
-    """Oldest acceptable last-bar date: the expected session, allowing `allowed_lag_sessions` behind."""
-    return previous_sessions(expected_last_session(kind, now_utc), allowed_lag_sessions + 1)[0]
+def freshness_floor(
+    kind: RunKind,
+    now_utc: datetime,
+    allowed_lag_sessions: int = 1,
+    *,
+    market: Market = Market.US,
+) -> date:
+    """Oldest acceptable last-bar date in `market`: its expected session, allowing
+    `allowed_lag_sessions` behind (spec §10)."""
+    last = expected_last_session(kind, now_utc, market)
+    return previous_sessions(last, allowed_lag_sessions + 1, market)[0]

@@ -2,30 +2,13 @@
 
 These are items that the Plan 1, Plan 2a and Plan 2b reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
-## Plan 2c, Task 0: must land before the first real enrichment source
+## Plan 2d: SEC
 
-- **Run deadline.**
-  - Bound the enrichment stage and the health check, with cooperative cancellation: `get_with_retries` stops retrying past the deadline, and unfinished sources are recorded as FAILED "deadline exceeded".
-  - Today a single source can take about 4 minutes in the worst case (4 × 20 s timeout plus 3 × 60 s Retry-After waits). The job is killed at 40 minutes, which leaves an abandoned, unpublished run.
-  - The deadline must also bound the Yahoo price stage. yfinance uses about a 10 s timeout per ticker, so a slow Yahoo can push a run past the 40-minute job limit.
-- **Cadence-window cache.**
-  - DAILY and WEEKLY sources serve per-symbol records cached within the current window (ET date, or ISO week) as OK, and fetch only the missing symbols.
-  - A PARTIAL result is backfilled from the cache.
-  - This is needed for slow or capped sources such as Yahoo analyst data and Google Trends.
-- **One `RateLimiter` per provider**, built in `build_registry`. The SEC allows 10 requests per second per IP across all SEC collectors.
-- **Health check:** write each row as its source finishes, and run sources concurrently with a per-source time budget. Today a timeout loses every row.
-- **Written collector contract** (a docstring in `collectors/base.py`, plus `README` or docs):
-  - collectors never touch the DB connection;
-  - `record.symbol` is the canonical requested symbol;
-  - `PartialFetch` is for per-request failures, and an empty one counts as a failure;
-  - `canary_requires_records` is True only for sources that must always return data.
+- **One shared limiter for every SEC collector,** built in `build_registry`, the same way as FINRA and Yahoo. SEC allows 10 requests per second per IP.
+- **The SEC contact string:** add `SEC_USER_AGENT` (an optional setting; SEC requires a contact in every request) with `MissingCredential`, which fails only the SEC sources when it is unset.
+- **Recorded fixtures:** the SEC fixtures are in `.superpowers/research/plan-2c-fixtures/sec/` (git-ignored). Copy the ones the plan uses into `pipeline/tests/fixtures/sec/`.
 
-## Plan 2c
-
-- **Recorded fixtures:** the FINRA, SEC and Yahoo-analyst fixtures were moved out of the test tree to `.superpowers/research/plan-2c-fixtures/` (git-ignored). Restore the ones the revised plan uses. The Finnhub and FMP fixtures there are obsolete.
-- **Small-universe runs:** when one market's universe is already too small, phase 2 still prices every other symbol. During a multi-day TMX outage that is about 7,400 wasted Yahoo requests per failed run. Skip the bulk fetch for a run that cannot publish, but keep pricing holdings.
-
-## Plans 2c to 2e
+## Plan 2e
 
 - **Collectors covering both stocks and crypto** (LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector.
 - **Crypto holdings priced in phase 1:** CoinGecko is core for crypto (2e).

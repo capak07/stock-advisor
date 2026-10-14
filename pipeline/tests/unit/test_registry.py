@@ -20,6 +20,7 @@ EXPECTED = {
     "finra_short_interest": (False, Scope.SYMBOLS, True, US),
     "yfinance_analyst": (False, Scope.SYMBOLS, True, BOTH),
     "yfinance_earnings": (True, Scope.SYMBOLS, True, BOTH),
+    "boc_valet": (False, Scope.MARKET, True, BOTH),
 }
 
 

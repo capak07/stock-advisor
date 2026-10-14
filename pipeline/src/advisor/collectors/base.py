@@ -121,16 +121,21 @@ def collect_per_symbol(
     *,
     is_fatal: Callable[[Exception], bool] = lambda exc: False,
     pause: Callable[[], None] | None = None,
+    retries: int = 1,
 ) -> list[BaseModel]:
     """Fetch symbol by symbol (each once, in order), keeping going past per-symbol failures.
 
     Failures for single symbols end in PartialFetch with everything else. A fatal error (as
     judged by `is_fatal`) or the run deadline stops the loop: it is re-raised as-is when nothing
     was collected yet, otherwise it becomes PartialFetch with the records so far.
+
+    When the loop finishes, each failed symbol gets up to `retries` more tries, in order and
+    without `pause`. A deadline or fatal error during the retries ends them and keeps the
+    symbols still failing.
     """
     unique = list(dict.fromkeys(symbols))
     records: list[BaseModel] = []
-    failures: list[str] = []
+    failures: dict[str, str] = {}  # symbol -> latest failure text, in first-failure order
     for index, symbol in enumerate(unique):
         try:
             check_deadline()
@@ -139,17 +144,32 @@ def collect_per_symbol(
             stop = isinstance(exc, DeadlineExceeded) or is_fatal(exc)
             if stop and not records:
                 raise
-            failures.append(f"{symbol}: {type(exc).__name__}: {exc}"[:300])
+            failures[symbol] = f"{symbol}: {type(exc).__name__}: {exc}"[:300]
             if stop:
                 raise PartialFetch(
-                    records, f"stopped after {index} of {len(unique)} symbols; {failures[-1]}"
+                    records, f"stopped after {index} of {len(unique)} symbols; {failures[symbol]}"
                 ) from exc
         if pause is not None and index < len(unique) - 1:
             pause()
+    stopped = False
+    for symbol in list(failures):
+        for _ in range(retries):
+            try:
+                check_deadline()
+                records.extend(fetch_one(symbol))
+            except Exception as exc:
+                failures[symbol] = f"{symbol}: {type(exc).__name__}: {exc}"[:300]
+                if isinstance(exc, DeadlineExceeded) or is_fatal(exc):
+                    stopped = True
+                    break
+            else:
+                del failures[symbol]
+                break
+        if stopped:
+            break
     if failures:
-        raise PartialFetch(
-            records, f"{len(failures)} of {len(unique)} symbols failed; first: {failures[0]}"
-        )
+        first = next(iter(failures.values()))
+        raise PartialFetch(records, f"{len(failures)} of {len(unique)} symbols failed; first: {first}")
     return records
 
 

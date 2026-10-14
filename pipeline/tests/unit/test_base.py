@@ -219,3 +219,62 @@ def test_the_run_deadline_stops_the_loop_like_a_fatal_error():
 
     with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols"):
         collect_per_symbol(["A", "B", "C"], one)
+
+
+def test_a_symbol_that_fails_once_is_retried_and_its_records_kept():
+    attempts = []
+
+    def one(symbol):
+        attempts.append(symbol)
+        if symbol == "B" and attempts.count("B") == 1:
+            raise ValueError("blip")
+        return [info(symbol)]
+
+    records = collect_per_symbol(["A", "B", "C"], one)
+    assert [r.symbol for r in records] == ["A", "C", "B"]
+    assert attempts == ["A", "B", "C", "B"]
+
+
+def test_retries_zero_disables_the_retry_pass():
+    attempts = []
+
+    def one(symbol):
+        attempts.append(symbol)
+        if symbol == "B" and attempts.count("B") == 1:
+            raise ValueError("blip")
+        return [info(symbol)]
+
+    with pytest.raises(PartialFetch, match="1 of 3 symbols failed; first: B: ValueError: blip"):
+        collect_per_symbol(["A", "B", "C"], one, retries=0)
+    assert attempts == ["A", "B", "C"]
+
+
+def test_the_final_message_names_only_symbols_still_failing():
+    calls = []
+
+    def one(symbol):
+        calls.append(symbol)
+        if symbol == "C" or (symbol == "B" and calls.count("B") == 1):
+            raise ValueError(f"bad {symbol}")
+        return [info(symbol)]
+
+    with pytest.raises(PartialFetch, match="1 of 3 symbols failed; first: C: ValueError: bad C") as caught:
+        collect_per_symbol(["A", "B", "C"], one)
+    assert sorted(r.symbol for r in caught.value.records) == ["A", "B"]
+
+
+def test_a_fatal_error_during_retries_keeps_the_remaining_failures():
+    calls = []
+
+    def one(symbol):
+        calls.append(symbol)
+        if symbol in ("B", "C"):
+            if calls.count(symbol) > 1:
+                raise Throttled("Too Many Requests")
+            raise ValueError("blip")
+        return [info(symbol)]
+
+    with pytest.raises(PartialFetch, match="2 of 3 symbols failed") as caught:
+        collect_per_symbol(["A", "B", "C"], one, is_fatal=lambda exc: isinstance(exc, Throttled))
+    assert calls == ["A", "B", "C", "B"]
+    assert [r.symbol for r in caught.value.records] == ["A"]

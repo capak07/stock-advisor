@@ -69,6 +69,7 @@ class TmxSymbols:
     scope = Scope.UNIVERSE
     canary: tuple[str, ...] = ()
     canary_requires_records = True
+    max_symbols = None
 
     def __init__(
         self, client: httpx.Client, limiter: RateLimiter | None = None, *, min_kept: int = MIN_KEPT

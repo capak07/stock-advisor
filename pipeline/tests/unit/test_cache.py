@@ -37,3 +37,12 @@ def test_get_returns_none_for_valid_json_of_the_wrong_shape(tmp_path):
     for path in tmp_path.rglob("*.json"):
         path.write_text("[]", encoding="utf-8")
     assert cache.get("s", "k", SymbolInfo, timedelta(days=1)) is None
+
+
+def test_get_entry_returns_saved_time_and_records(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: T0)
+    cache.put("s", "k", [info("AAPL")])
+    saved_at, records = cache.get_entry("s", "k", SymbolInfo)
+    assert saved_at == T0
+    assert [r.symbol for r in records] == ["AAPL"]
+    assert cache.get_entry("s", "missing", SymbolInfo) is None

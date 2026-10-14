@@ -13,6 +13,7 @@ Collector contract (every source module follows it):
 - Long loops honour the run deadline (`check_deadline()` or `time_left()`) between items.
 - A provider's collectors share one RateLimiter, built in the registry.
 - `canary_requires_records` is True only for sources that always return data for their canary.
+- DAILY/WEEKLY collectors with freshness are served from this window's cache, and only missing symbols are fetched; max_symbols caps one call (see runner).
 """
 
 import contextlib
@@ -167,6 +168,7 @@ class Collector(Protocol):
     scope: Scope
     canary: tuple[str, ...]  # symbols the daily health check fetches; () unless scope is SYMBOLS
     canary_requires_records: bool  # health check fails an empty canary answer only when True
+    max_symbols: int | None  # most symbols one call may fetch; the rest wait for a later run
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[BaseModel]: ...
 

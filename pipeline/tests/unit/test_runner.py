@@ -5,7 +5,13 @@ from pydantic import BaseModel
 
 from advisor.collectors.base import Cadence, CollectorResult, CollectorStatus, PartialFetch, Scope
 from advisor.collectors.cache import DiskCache
-from advisor.collectors.runner import SourceState, breaker_open, next_failures, run_collector
+from advisor.collectors.runner import (
+    SourceState,
+    breaker_open,
+    in_window,
+    next_failures,
+    run_collector,
+)
 from advisor.models import SymbolInfo
 from fakes import FakeCollector, bar, info
 
@@ -18,7 +24,7 @@ def universe_collector(**kwargs) -> FakeCollector:
         name="universe",
         records_for=lambda symbols: [info("AAPL")],
         record_type=SymbolInfo,
-        cadence=Cadence.DAILY,
+        cadence=Cadence.PER_RUN,
         freshness=timedelta(days=3),
         scope=Scope.UNIVERSE,
     )
@@ -195,3 +201,131 @@ def test_partial_market_result_does_not_replace_cache(tmp_path):
     stale = run_collector(market, [], NOW, cache=cache, state=SourceState())
     assert stale.status is CollectorStatus.STALE
     assert [r.symbol for r in stale.records] == ["A", "B"]
+
+
+def windowed(cadence=Cadence.DAILY, **kwargs) -> FakeCollector:
+    defaults = dict(
+        name="win",
+        records_for=lambda syms: [bar(s, TODAY, 1.0) for s in syms if s != "NONE"],
+        cadence=cadence,
+        freshness=timedelta(days=10),
+    )
+    return FakeCollector(**{**defaults, **kwargs})
+
+
+def clocked_cache(tmp_path, start):
+    now = [start]
+    return DiskCache(tmp_path, clock=lambda: now[0]), now
+
+
+def test_in_window_uses_et_days_and_iso_weeks():
+    late_monday_et = datetime(2026, 10, 13, 3, 30, tzinfo=UTC)  # 23:30 ET on Monday 12 Oct
+    assert in_window(Cadence.DAILY, late_monday_et, datetime(2026, 10, 12, 14, 0, tzinfo=UTC))
+    assert not in_window(Cadence.DAILY, late_monday_et, datetime(2026, 10, 13, 14, 0, tzinfo=UTC))
+    monday = datetime(2026, 10, 12, 14, 0, tzinfo=UTC)
+    assert in_window(Cadence.WEEKLY, monday, datetime(2026, 10, 18, 14, 0, tzinfo=UTC))
+    assert not in_window(Cadence.WEEKLY, monday, datetime(2026, 10, 19, 14, 0, tzinfo=UTC))
+    assert not in_window(Cadence.PER_RUN, monday, monday)
+
+
+def test_daily_collector_fetches_only_symbols_missing_from_todays_window(tmp_path):
+    cache, now = clocked_cache(tmp_path, NOW)
+    collector = windowed()
+    run_collector(collector, ["AAA", "BBB"], NOW, cache=cache, state=SourceState())
+    later = NOW + timedelta(hours=3)
+    now[0] = later
+    result = run_collector(collector, ["BBB", "CCC"], later, cache=cache, state=SourceState())
+    assert collector.calls == [["AAA", "BBB"], ["CCC"]]
+    assert result.status is CollectorStatus.OK
+    assert sorted(r.symbol for r in result.records) == ["BBB", "CCC"]
+
+
+def test_a_fully_cached_request_does_not_fetch(tmp_path):
+    cache, _ = clocked_cache(tmp_path, NOW)
+    collector = windowed()
+    run_collector(collector, ["AAA"], NOW, cache=cache, state=SourceState())
+    result = run_collector(collector, ["AAA"], NOW, cache=cache, state=SourceState())
+    assert collector.calls == [["AAA"]]
+    assert (result.status, result.latency_ms) == (CollectorStatus.OK, 0)
+    assert [r.symbol for r in result.records] == ["AAA"]
+
+
+def test_a_new_day_fetches_again(tmp_path):
+    cache, now = clocked_cache(tmp_path, NOW)
+    collector = windowed()
+    run_collector(collector, ["AAA"], NOW, cache=cache, state=SourceState())
+    tomorrow = NOW + timedelta(days=1)
+    now[0] = tomorrow
+    run_collector(collector, ["AAA"], tomorrow, cache=cache, state=SourceState())
+    assert collector.calls == [["AAA"], ["AAA"]]
+
+
+def test_weekly_collectors_reuse_the_whole_iso_week(tmp_path):
+    monday = datetime(2026, 10, 12, 13, 0, tzinfo=UTC)
+    cache, now = clocked_cache(tmp_path, monday)
+    collector = windowed(Cadence.WEEKLY)
+    for moment in (monday, monday + timedelta(days=4), monday + timedelta(days=7)):
+        now[0] = moment
+        run_collector(collector, ["AAA"], moment, cache=cache, state=SourceState())
+    assert collector.calls == [["AAA"], ["AAA"]]
+
+
+def test_symbols_without_records_are_remembered_for_the_window(tmp_path):
+    cache, _ = clocked_cache(tmp_path, NOW)
+    collector = windowed()
+    run_collector(collector, ["AAA", "NONE"], NOW, cache=cache, state=SourceState())
+    result = run_collector(collector, ["NONE"], NOW, cache=cache, state=SourceState())
+    assert collector.calls == [["AAA", "NONE"]]
+    assert (result.status, result.records) == (CollectorStatus.OK, [])
+
+
+def test_whole_list_collectors_skip_the_fetch_within_the_window(tmp_path):
+    cache, _ = clocked_cache(tmp_path, NOW)
+    collector = FakeCollector(
+        "macro", scope=Scope.MARKET, record_type=SymbolInfo, records_for=lambda s: [info("X")],
+        cadence=Cadence.DAILY, freshness=timedelta(days=2),
+    )
+    run_collector(collector, [], NOW, cache=cache, state=SourceState())
+    result = run_collector(collector, [], NOW, cache=cache, state=SourceState())
+    assert collector.calls == [[]]
+    assert [r.symbol for r in result.records] == ["X"]
+
+
+def test_use_window_false_always_fetches(tmp_path):
+    cache, _ = clocked_cache(tmp_path, NOW)
+    collector = windowed()
+    run_collector(collector, ["AAA"], NOW, cache=cache, state=SourceState())
+    run_collector(collector, ["AAA"], NOW, cache=cache, state=SourceState(), use_window=False)
+    assert collector.calls == [["AAA"], ["AAA"]]
+
+
+def test_max_symbols_caps_a_call_and_leaves_the_rest_for_later(tmp_path):
+    cache, _ = clocked_cache(tmp_path, NOW)
+    collector = windowed(Cadence.WEEKLY, max_symbols=2)
+    first = run_collector(collector, ["AAA", "BBB", "CCC"], NOW, cache=cache, state=SourceState())
+    second = run_collector(collector, ["AAA", "BBB", "CCC"], NOW, cache=cache, state=SourceState())
+    assert collector.calls == [["AAA", "BBB"], ["CCC"]]
+    assert sorted(r.symbol for r in first.records) == ["AAA", "BBB"]
+    assert sorted(r.symbol for r in second.records) == ["AAA", "BBB", "CCC"]
+
+
+def test_capped_out_symbols_are_served_from_older_cache(tmp_path):
+    cache, now = clocked_cache(tmp_path, NOW)
+    collector = windowed(max_symbols=1)
+    run_collector(collector, ["AAA"], NOW, cache=cache, state=SourceState())
+    run_collector(collector, ["BBB"], NOW, cache=cache, state=SourceState())
+    tomorrow = NOW + timedelta(days=1)
+    now[0] = tomorrow
+    result = run_collector(collector, ["AAA", "BBB"], tomorrow, cache=cache, state=SourceState())
+    assert collector.calls[-1] == ["AAA"]
+    assert sorted(r.symbol for r in result.records) == ["AAA", "BBB"]
+
+
+def test_a_partial_answer_is_backfilled_from_cache(tmp_path):
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    collector = bars_collector()
+    run_collector(collector, ["AAA", "BBB"], NOW, cache=cache, state=SourceState())
+    collector.error = PartialFetch([bar("AAA", TODAY, 2.0)], "1 of 2 requests failed")
+    result = run_collector(collector, ["AAA", "BBB"], NOW, cache=cache, state=SourceState())
+    assert result.status is CollectorStatus.PARTIAL
+    assert sorted((r.symbol, r.close) for r in result.records) == [("AAA", 2.0), ("BBB", 10.0)]

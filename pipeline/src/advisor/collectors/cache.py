@@ -32,14 +32,25 @@ class DiskCache:
         tmp.write_text(json.dumps(payload), encoding="utf-8")
         os.replace(tmp, path)
 
-    def get(
-        self, source: str, key: str, record_type: type[BaseModel], max_age: timedelta
-    ) -> list[BaseModel] | None:
+    def get_entry(
+        self, source: str, key: str, record_type: type[BaseModel]
+    ) -> tuple[datetime, list[BaseModel]] | None:
+        """(saved_at, records) for a cache entry, or None if it is missing or unreadable."""
         try:
             payload = json.loads(self._path(source, key).read_text(encoding="utf-8"))
             saved_at = datetime.fromisoformat(payload["saved_at"])
-            if self._clock() - saved_at > max_age:
-                return None
-            return [record_type.model_validate(raw) for raw in payload["records"]]
+            return saved_at, [record_type.model_validate(raw) for raw in payload["records"]]
         except (OSError, ValueError, KeyError, TypeError):  # missing, corrupt, or wrong-shape
             return None
+
+    def get(
+        self, source: str, key: str, record_type: type[BaseModel], max_age: timedelta
+    ) -> list[BaseModel] | None:
+        entry = self.get_entry(source, key, record_type)
+        if entry is None:
+            return None
+        try:
+            too_old = self._clock() - entry[0] > max_age
+        except TypeError:  # a naive timestamp from an older format
+            return None
+        return None if too_old else entry[1]

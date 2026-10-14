@@ -105,6 +105,7 @@ class NasdaqSymbols:
     scope = Scope.UNIVERSE
     canary: tuple[str, ...] = ()
     canary_requires_records = True
+    max_symbols = None
 
     def __init__(
         self,

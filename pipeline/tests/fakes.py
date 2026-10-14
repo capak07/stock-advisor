@@ -42,6 +42,7 @@ class FakeCollector:
     scope: Scope = Scope.SYMBOLS
     canary: tuple[str, ...] = ()
     canary_requires_records: bool = False
+    max_symbols: int | None = None
     calls: list[list[str]] = field(default_factory=list)
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[BaseModel]:

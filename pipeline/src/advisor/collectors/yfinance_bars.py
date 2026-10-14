@@ -92,6 +92,7 @@ class YFinanceBars:
     scope = Scope.SYMBOLS
     canary = ("AAPL", "MSFT", "RY.TO")
     canary_requires_records = True
+    max_symbols = None
 
     def __init__(self, download: Downloader | None = None) -> None:
         self._download = download or _yahoo_download

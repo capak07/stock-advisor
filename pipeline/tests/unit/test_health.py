@@ -1,8 +1,8 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 
-from advisor.collectors.base import CollectorStatus
+from advisor.collectors.base import Cadence, CollectorStatus, check_deadline
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.runner import SourceState
 from advisor.health import check_sources
@@ -37,3 +37,28 @@ def test_check_sources_fetches_canaries_ignoring_the_breaker(tmp_path):
     assert rows["broken"][0].status is CollectorStatus.FAILED and rows["broken"][1] == 0
     assert rows["event"][0].status is CollectorStatus.OK  # event sources may answer nothing
     assert rows["event"][1] == 0
+
+
+def test_a_source_over_its_budget_fails_without_stopping_the_others(tmp_path):
+    slow = FakeCollector("slow", canary=("AAPL",), records_for=lambda syms: (check_deadline(), [])[1])
+    good = FakeCollector(
+        "good", canary=("AAPL",), records_for=lambda syms: [bar(s, date(2026, 10, 9), 1.0) for s in syms]
+    )
+    rows = {
+        result.name: result
+        for result, _ in check_sources({"slow": slow, "good": good}, DiskCache(tmp_path), {}, NOW, budget=0)
+    }
+    assert rows["slow"].status is CollectorStatus.FAILED
+    assert rows["slow"].error.startswith("DeadlineExceeded")
+    assert rows["good"].status is CollectorStatus.OK
+
+
+def test_health_checks_bypass_the_cadence_cache(tmp_path):
+    daily = FakeCollector(
+        "daily", canary=("AAPL",), cadence=Cadence.DAILY, freshness=timedelta(days=1),
+        records_for=lambda syms: [bar(s, date(2026, 10, 9), 1.0) for s in syms],
+    )
+    cache = DiskCache(tmp_path, clock=lambda: NOW)
+    check_sources({"daily": daily}, cache, {}, NOW)
+    check_sources({"daily": daily}, cache, {}, NOW)
+    assert daily.calls == [["AAPL"], ["AAPL"]]

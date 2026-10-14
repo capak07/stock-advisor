@@ -30,7 +30,7 @@ MIN_UNIVERSE = 1000  # fewer listed stocks than this means the symbol files were
 MIN_PRICED_FRACTION = 0.5
 UNIVERSE_SOURCE = "nasdaq_symbols"
 PRICES = "yfinance_bars"
-PRICE_STAGE = frozenset({UNIVERSE_SOURCE, PRICES})
+PRICE_STAGE = frozenset({UNIVERSE_SOURCE, "tmx_symbols", PRICES})
 
 
 @dataclass(frozen=True)

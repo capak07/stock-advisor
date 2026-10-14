@@ -33,7 +33,7 @@ These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later
   - CHSCN (a preferred);
   - Empire State Realty OP units.
 
-  Use yfinance `quoteType` from sector mapping. Closed-end funds are an owner decision.
+  Use yfinance `quoteType` from sector mapping. Closed-end funds are an owner decision. Run the same check on TSX symbols, for income trusts and closed-end funds whose names the TMX filter cannot recognise.
 - **Partial current-day bar** at the pre-close run, from Yahoo. Features must treat today's bar as incomplete.
 - **Benchmarks** (SPY, XIU.TO, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.

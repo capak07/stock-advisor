@@ -11,14 +11,16 @@ def test_registry_lists_foundation_collectors_with_core_flags():
     settings = Settings("postgresql://x", Path(".cache"))
     with httpx.Client() as client:
         registry = build_registry(settings, client)
-    assert sorted(registry) == ["nasdaq_symbols", "yfinance_bars"]
+    assert sorted(registry) == ["nasdaq_symbols", "tmx_symbols", "yfinance_bars"]
     assert {name: c.core for name, c in registry.items()} == {
         "nasdaq_symbols": True,
+        "tmx_symbols": True,
         "yfinance_bars": True,
     }
     assert all(registry[name].name == name for name in registry)
     assert {name: c.scope for name, c in registry.items()} == {
         "nasdaq_symbols": Scope.UNIVERSE,
+        "tmx_symbols": Scope.UNIVERSE,
         "yfinance_bars": Scope.SYMBOLS,
     }
     for collector in registry.values():  # SYMBOLS collectors need canaries for the health check

@@ -1,0 +1,252 @@
+{
+ "last_updated": 1791881722,
+ "length": 13,
+ "results": [
+  {
+   "symbol": "BTCQ",
+   "name": "3iQ Bitcoin ETF",
+   "instruments": [
+    {
+     "symbol": "BTCQ",
+     "name": "3iQ Bitcoin ETF Un"
+    },
+    {
+     "symbol": "BTCQ.U",
+     "name": "3iQ Bitcoin USF"
+    }
+   ]
+  },
+  {
+   "symbol": "ABT",
+   "name": "Abbott Labs CDR (CAD Hedged)",
+   "instruments": [
+    {
+     "symbol": "ABT",
+     "name": "AbbottLab CDR Hgd"
+    }
+   ]
+  },
+  {
+   "symbol": "BCE",
+   "name": "BCE Inc.",
+   "instruments": [
+    {
+     "symbol": "BCE",
+     "name": "BCE Inc."
+    },
+    {
+     "symbol": "BCE.PR.A",
+     "name": "BCE Inc. Pr Ser AA"
+    },
+    {
+     "symbol": "BCE.PR.B",
+     "name": "BCE Inc. Pr Ser AB"
+    },
+    {
+     "symbol": "BCE.PR.C",
+     "name": "BCE Inc. Pr Ser AC"
+    },
+    {
+     "symbol": "BCE.PR.D",
+     "name": "BCE Inc. Pr Ser AD"
+    },
+    {
+     "symbol": "BCE.PR.E",
+     "name": "BCE Inc. Pr Ser AE"
+    },
+    {
+     "symbol": "BCE.PR.F",
+     "name": "BCE Inc. Pr Ser AF"
+    },
+    {
+     "symbol": "BCE.PR.G",
+     "name": "BCE Inc. Pr Ser AG"
+    },
+    {
+     "symbol": "BCE.PR.H",
+     "name": "BCE Inc. Pr Ser AH"
+    },
+    {
+     "symbol": "BCE.PR.I",
+     "name": "BCE Inc. Pr Ser AI"
+    },
+    {
+     "symbol": "BCE.PR.K",
+     "name": "BCE Inc. Pr Ser AK"
+    },
+    {
+     "symbol": "BCE.PR.L",
+     "name": "BCE Inc. Pr Ser AL"
+    },
+    {
+     "symbol": "BCE.PR.M",
+     "name": "BCE Inc. Pr Ser AM"
+    },
+    {
+     "symbol": "BCE.PR.Q",
+     "name": "BCE Inc. Pr Ser AQ"
+    },
+    {
+     "symbol": "BCE.PR.R",
+     "name": "BCE Inc. Pr Ser R"
+    },
+    {
+     "symbol": "BCE.PR.S",
+     "name": "BCE Inc. Pr Ser S"
+    },
+    {
+     "symbol": "BCE.PR.T",
+     "name": "BCE Inc. Pr Ser T"
+    },
+    {
+     "symbol": "BCE.PR.Y",
+     "name": "BCE Inc. Pr Series Y"
+    },
+    {
+     "symbol": "BCE.PR.Z",
+     "name": "BCE Inc. Pr Series Z"
+    }
+   ]
+  },
+  {
+   "symbol": "CHE.DB.I",
+   "name": "Chemtrade Logistics Income Fund",
+   "instruments": [
+    {
+     "symbol": "CHE.DB.I",
+     "name": "Chemtrade LgstIc 7Db"
+    },
+    {
+     "symbol": "CHE.UN",
+     "name": "Chemtrade Logistc Un"
+    }
+   ]
+  },
+  {
+   "symbol": "REI.UN",
+   "name": "RioCan Real Estate Investment Trust",
+   "instruments": [
+    {
+     "symbol": "REI.UN",
+     "name": "RioCan Rl Est Tr Un"
+    }
+   ]
+  },
+  {
+   "symbol": "RCI.A",
+   "name": "Rogers Communications Inc.",
+   "instruments": [
+    {
+     "symbol": "RCI.A",
+     "name": "Rogers Comm Cl A"
+    },
+    {
+     "symbol": "RCI.B",
+     "name": "Rogers Comm Cl B NV"
+    }
+   ]
+  },
+  {
+   "symbol": "RY",
+   "name": "Royal Bank of Canada",
+   "instruments": [
+    {
+     "symbol": "RY",
+     "name": "Royal Bank of Canada"
+    },
+    {
+     "symbol": "RY.PR.S",
+     "name": "Royal Bank Pr Ser BO"
+    }
+   ]
+  },
+  {
+   "symbol": "SHOP",
+   "name": "Shopify Inc.",
+   "instruments": [
+    {
+     "symbol": "SHOP",
+     "name": "Shopify Inc A SV"
+    }
+   ]
+  },
+  {
+   "symbol": "TECK.A",
+   "name": "Teck Resources Limited",
+   "instruments": [
+    {
+     "symbol": "TECK.A",
+     "name": "Teck Res Cl A MV"
+    },
+    {
+     "symbol": "TECK.B",
+     "name": "Teck Res Cl B SV"
+    }
+   ]
+  },
+  {
+   "symbol": "ASTL",
+   "name": "Algoma Steel Group Inc.",
+   "instruments": [
+    {
+     "symbol": "ASTL",
+     "name": "Algoma Steel Grp Inc"
+    },
+    {
+     "symbol": "ASTL.WT",
+     "name": "Algoma Steel Grp Wt"
+    }
+   ]
+  },
+  {
+   "symbol": "AD.DB.A",
+   "name": "Alaris Equity Partners Income Trust",
+   "instruments": [
+    {
+     "symbol": "AD.DB.A",
+     "name": "Alaris EqPart 6.25Db"
+    },
+    {
+     "symbol": "AD.DB.B",
+     "name": "Alaris Eq PIT 6.5 Db"
+    },
+    {
+     "symbol": "AD.DB.C",
+     "name": "Alaris Eq Prt In T 6"
+    },
+    {
+     "symbol": "AD.UN",
+     "name": "Alaris Eq Part Tr Un"
+    }
+   ]
+  },
+  {
+   "symbol": "HOM.U",
+   "name": "BSR Real Estate Investment Trust",
+   "instruments": [
+    {
+     "symbol": "HOM.U",
+     "name": "BSR REIT Invest USF"
+    },
+    {
+     "symbol": "HOM.UN",
+     "name": "BSR REIT Invest Un"
+    }
+   ]
+  },
+  {
+   "symbol": "ZJPN",
+   "name": "BMO Japan Index ETF",
+   "instruments": [
+    {
+     "symbol": "ZJPN",
+     "name": "BMO Japan Indx ETFUn"
+    },
+    {
+     "symbol": "ZJPN.F",
+     "name": "BMO Japan Index ETF"
+    }
+   ]
+  }
+ ]
+}

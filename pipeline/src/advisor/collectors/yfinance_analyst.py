@@ -14,8 +14,8 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
-from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, collect_per_symbol
-from advisor.collectors.yahoo import rate_limited
+from advisor.collectors.base import Cadence, Category, RateLimiter, Scope
+from advisor.collectors.yahoo import collect_yahoo
 from advisor.collectors.yfinance_bars import to_yahoo
 from advisor.models import AssetType, Market
 
@@ -141,9 +141,7 @@ class YFinanceAnalyst:
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[AnalystView]:
         def one(symbol: str) -> list[AnalystView]:
-            if self._limiter is not None:
-                self._limiter.acquire()
             view = analyst_view(symbol, *self._load(to_yahoo(symbol)), as_of)
             return [view] if view else []
 
-        return collect_per_symbol(symbols, one, is_fatal=rate_limited)
+        return collect_yahoo(symbols, one, limiter=self._limiter)

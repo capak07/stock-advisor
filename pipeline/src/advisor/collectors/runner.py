@@ -6,8 +6,9 @@ Cache use (spec §4.1):
 - `max_symbols` caps one call; capped-out symbols are served from older cache and fetched later.
 - Any collector with `freshness` falls back to entries younger than `freshness` when it fails,
   and a partial per-symbol answer is backfilled the same way.
-- An empty answer never replaces a cached whole list; per symbol, an OK empty answer is
-  remembered for the window so the symbol isn't refetched.
+- An empty answer never replaces cached data. Per symbol, an OK empty answer is remembered for
+  the window under a separate marker, so the symbol isn't refetched and its older records stay
+  available as a fallback.
 """
 
 import time
@@ -31,6 +32,7 @@ from advisor.models import ET
 
 BREAKER_THRESHOLD = 3
 WHOLE = ""  # cache key for UNIVERSE and MARKET collectors, which return one list per call
+EMPTY_MARKER = "#empty"  # suffix of the per-symbol key that says "checked, nothing there"
 
 
 @dataclass(frozen=True)
@@ -100,8 +102,12 @@ def _window_hits(
         entry = cache.get_entry(collector.name, key, collector.record_type)
         if entry is not None and in_window(collector.cadence, entry[0], as_of):
             hits.extend(entry[1])
-        else:
-            missing.append(key)
+            continue
+        if collector.scope is Scope.SYMBOLS:
+            marker = cache.get_entry(collector.name, key + EMPTY_MARKER, collector.record_type)
+            if marker is not None and in_window(collector.cadence, marker[0], as_of):
+                continue  # checked in this window and there was nothing
+        missing.append(key)
     return hits, missing
 
 
@@ -124,13 +130,17 @@ def _store(
         else:
             key = WHOLE
         groups[key].append(record)
-    for symbol in empty_symbols:
-        groups.setdefault(symbol, [])  # "nothing for this symbol", remembered for the window
     for key, group in groups.items():
         try:
             cache.put(collector.name, key, group)
         except Exception:
             pass  # cache is a fallback; a failed write must not lose a good fetch
+    for symbol in empty_symbols:
+        try:
+            # "nothing for this symbol", remembered for the window; never replaces its records
+            cache.put(collector.name, symbol + EMPTY_MARKER, [])
+        except Exception:
+            pass
 
 
 def run_collector(
@@ -185,7 +195,7 @@ def run_collector(
     latency = int((time.perf_counter() - started) * 1000)
     if status is CollectorStatus.OK:
         empty: list[str] = []
-        if collector.scope is Scope.SYMBOLS and collector.cadence is not Cadence.PER_RUN:
+        if collector.scope is Scope.SYMBOLS and collector.cadence is not Cadence.PER_RUN and use_window:
             got = {_symbol_of(r) for r in records}
             empty = [s for s in fetch_symbols if s not in got]
         _store(collector, records, cache, empty_symbols=empty)

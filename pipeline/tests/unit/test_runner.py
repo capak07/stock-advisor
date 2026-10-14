@@ -329,3 +329,33 @@ def test_a_partial_answer_is_backfilled_from_cache(tmp_path):
     result = run_collector(collector, ["AAA", "BBB"], NOW, cache=cache, state=SourceState())
     assert result.status is CollectorStatus.PARTIAL
     assert sorted((r.symbol, r.close) for r in result.records) == [("AAA", 2.0), ("BBB", 10.0)]
+
+
+def test_an_empty_answer_keeps_older_records_for_the_fallback(tmp_path):
+    cache, now = clocked_cache(tmp_path, NOW)
+    collector = windowed()
+    run_collector(collector, ["AAA"], NOW, cache=cache, state=SourceState())
+    day2 = NOW + timedelta(days=1)
+    now[0] = day2
+    collector.records_for = lambda syms: []
+    empty = run_collector(collector, ["AAA"], day2, cache=cache, state=SourceState())
+    assert (empty.status, empty.records) == (CollectorStatus.OK, [])
+    again = run_collector(collector, ["AAA"], day2, cache=cache, state=SourceState())
+    assert again.status is CollectorStatus.OK
+    assert collector.calls == [["AAA"], ["AAA"]]
+    day3 = NOW + timedelta(days=2)
+    now[0] = day3
+    collector.error = httpx.ConnectError("down")
+    stale = run_collector(collector, ["AAA"], day3, cache=cache, state=SourceState())
+    assert stale.status is CollectorStatus.STALE
+    assert [r.symbol for r in stale.records] == ["AAA"]
+
+
+def test_use_window_false_writes_no_empty_markers(tmp_path):
+    cache, _ = clocked_cache(tmp_path, NOW)
+    collector = windowed()
+    run_collector(
+        collector, ["NONE"], NOW, cache=cache, state=SourceState(), use_window=False
+    )
+    run_collector(collector, ["NONE"], NOW, cache=cache, state=SourceState())
+    assert collector.calls == [["NONE"], ["NONE"]]

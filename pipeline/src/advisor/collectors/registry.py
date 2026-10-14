@@ -1,14 +1,23 @@
-"""Every collector the pipeline runs, keyed by name. Later plans add the remaining sources here."""
+"""Every collector the pipeline runs, keyed by name, with one rate limiter per provider."""
 
 import httpx
 
-from advisor.collectors.base import Collector
+from advisor.collectors.base import Collector, RateLimiter
+from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.tmx_symbols import TmxSymbols
 from advisor.collectors.yfinance_bars import YFinanceBars
 from advisor.config import Settings
 
+FINRA_PER_MINUTE = 60
+
 
 def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collector]:
-    collectors: list[Collector] = [NasdaqSymbols(client), TmxSymbols(client), YFinanceBars()]
+    finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
+    collectors: list[Collector] = [
+        NasdaqSymbols(client),
+        TmxSymbols(client),
+        YFinanceBars(),
+        FinraShortVolume(client, finra),
+    ]
     return {collector.name: collector for collector in collectors}

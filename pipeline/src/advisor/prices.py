@@ -1,7 +1,8 @@
-"""Daily bars from the primary source, filled and cross-checked by the fallback source.
+"""Daily stock bars from Yahoo, the only stock price source (spec R7).
 
-Sanity rule (spec §10): a close-to-close move above 50% is dropped unless the other source
-reports the same close for that day within 2%.
+Jump rule (spec §10): a close that moves more than 50% against both the last accepted close and
+the previous close is flagged as an unconfirmed jump. With no second source to confirm it, the
+bar is kept; features, picks and holding actions treat flagged days with care.
 """
 
 from collections.abc import Callable, Iterable, Sequence
@@ -13,7 +14,6 @@ from advisor.collectors.base import CollectorResult
 from advisor.models import DailyBar
 
 JUMP_LIMIT = 0.5
-CONFIRM_TOLERANCE = 0.02
 
 RunFn = Callable[[Sequence[str]], CollectorResult]
 
@@ -21,7 +21,7 @@ RunFn = Callable[[Sequence[str]], CollectorResult]
 @dataclass(frozen=True)
 class PriceFetch:
     bars: dict[str, list[DailyBar]]
-    results: list[CollectorResult]
+    flagged: dict[str, set[date]]  # only symbols with at least one unconfirmed jump
 
 
 def group_bars(records: Iterable[DailyBar]) -> dict[str, list[DailyBar]]:
@@ -31,58 +31,25 @@ def group_bars(records: Iterable[DailyBar]) -> dict[str, list[DailyBar]]:
     return {s: [days[d] for d in sorted(days)] for s, days in by_symbol.items()}
 
 
-def _has_jump(bars: Sequence[DailyBar]) -> bool:
-    return any(abs(cur.close / prev.close - 1) > JUMP_LIMIT for prev, cur in pairwise(bars))
-
-
-def find_unconfirmed_jumps(bars: Sequence[DailyBar], reference: Sequence[DailyBar]) -> set[date]:
-    """Days whose close jumps >50% vs both the last accepted and the previous raw close, unconfirmed."""
-    ref_close = {b.day: b.close for b in reference}
-    bad: set[date] = set()
+def find_jumps(bars: Sequence[DailyBar]) -> set[date]:
+    """Days whose close moves >50% vs both the last unflagged close and the previous close."""
+    flagged: set[date] = set()
     if not bars:
-        return bad
+        return flagged
     last_accepted = bars[0].close
     for prev, cur in pairwise(bars):
-        jumped = (
+        if (
             abs(cur.close / last_accepted - 1) > JUMP_LIMIT
             and abs(cur.close / prev.close - 1) > JUMP_LIMIT
-        )
-        other = ref_close.get(cur.day)
-        confirmed = other is not None and abs(other / cur.close - 1) <= CONFIRM_TOLERANCE
-        if jumped and not confirmed:
-            bad.add(cur.day)
+        ):
+            flagged.add(cur.day)
         else:
             last_accepted = cur.close
-    return bad
+    return flagged
 
 
-def fetch_daily_bars(
-    symbols: Sequence[str], *, primary_run: RunFn, fallback_run: RunFn
-) -> PriceFetch:
-    wanted = sorted(set(symbols))
-    first = primary_run(wanted)
-    results = [first]
-    primary = group_bars(first.records)
-
-    missing = [s for s in wanted if s not in primary]
-    suspects = [s for s, bars in primary.items() if _has_jump(bars)]
-    need = sorted(set(missing) | set(suspects))
-    reference: dict[str, list[DailyBar]] = {}
-    if need:
-        second = fallback_run(need)
-        results.append(second)
-        reference = group_bars(second.records)
-
-    bars: dict[str, list[DailyBar]] = {}
-    for symbol in wanted:
-        if symbol in primary:
-            own, other = primary[symbol], reference.get(symbol, [])
-        elif symbol in reference:
-            own, other = reference[symbol], []
-        else:
-            continue
-        bad = find_unconfirmed_jumps(own, other)
-        kept = [b for b in own if b.day not in bad]
-        if kept:
-            bars[symbol] = kept
-    return PriceFetch(bars=bars, results=results)
+def fetch_daily_bars(symbols: Sequence[str], *, run: RunFn) -> PriceFetch:
+    """One Yahoo call for `symbols`; every bar is kept and jumps are flagged."""
+    bars = group_bars(run(sorted(set(symbols))).records)
+    flagged = {symbol: days for symbol, history in bars.items() if (days := find_jumps(history))}
+    return PriceFetch(bars=bars, flagged=flagged)

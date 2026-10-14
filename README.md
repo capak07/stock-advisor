@@ -54,16 +54,14 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
    The pipeline's `DATABASE_URL` is the session-pooler URI with the user
    `advisor_pipeline.<project-ref>` and that password. If the pooler rejects the custom role,
    resolve that first: the `postgres` user has full DDL rights and should not run the pipeline.
-5. **Alpaca**: create a free account and generate API keys (paper-trading keys work for market
-   data).
-6. **GitHub** (private repo): Settings → Secrets and variables → Actions. Add `DATABASE_URL`
-   (the pipeline login from step 4), `ALPACA_KEY_ID`, `ALPACA_SECRET_KEY`.
-7. Actions → `health` → Run workflow, then `run` → Run workflow → `pre_open`.
+5. **GitHub** (private repo): Settings → Secrets and variables → Actions. Add `DATABASE_URL`
+   (the pipeline login from step 4). No data source needs an API key.
+6. Actions → `health` → Run workflow, then `run` → Run workflow → `pre_open`.
 
 ## Manual run
 
 From `pipeline/`, with secrets in a git-ignored `pipeline/.env.local`
-(`DATABASE_URL=...`, `ALPACA_KEY_ID=...`, `ALPACA_SECRET_KEY=...`):
+(`DATABASE_URL=...`):
 
 ```bash
 set -a; . ./.env.local; set +a

@@ -62,7 +62,7 @@ def info(symbol: str, exchange: str | None = None) -> SymbolInfo:
 
 
 def bar(
-    symbol: str, day: date, close: float, volume: float = 200_000.0, source: str = "alpaca"
+    symbol: str, day: date, close: float, volume: float = 200_000.0, source: str = "yfinance"
 ) -> DailyBar:
     return DailyBar(
         symbol=symbol, day=day, open=close, high=close, low=close, close=close,
@@ -75,7 +75,7 @@ def history(
     days: int,
     close: float = 10.0,
     volume: float = 200_000.0,
-    source: str = "alpaca",
+    source: str = "yfinance",
     start: date = date(2026, 6, 1),
 ) -> list[DailyBar]:
     return [bar(symbol, start + timedelta(days=i), close, volume, source) for i in range(days)]
@@ -85,7 +85,7 @@ FRESH_START = date(2026, 8, 5)  # 70 daily bars from here end 2026-10-13, fresh 
 
 
 def fake_price_collectors(universe: Sequence[str] = ("AAA", "BBB", "CCC")) -> dict[str, FakeCollector]:
-    """Universe, primary and fallback price fakes that return fresh 70-day histories."""
+    """Universe and Yahoo price fakes; prices are fresh 70-day histories."""
     return {
         "nasdaq_symbols": FakeCollector(
             "nasdaq_symbols",
@@ -95,16 +95,9 @@ def fake_price_collectors(universe: Sequence[str] = ("AAA", "BBB", "CCC")) -> di
             scope=Scope.UNIVERSE,
             freshness=timedelta(days=3),
         ),
-        "alpaca_bars": FakeCollector(
-            "alpaca_bars",
-            records_for=lambda syms: [b for s in syms for b in history(s, 70, start=FRESH_START)],
-        ),
         "yfinance_bars": FakeCollector(
             "yfinance_bars",
-            core=False,
             best_effort=True,
-            records_for=lambda syms: [
-                b for s in syms for b in history(s, 70, source="yfinance", start=FRESH_START)
-            ],
+            records_for=lambda syms: [b for s in syms for b in history(s, 70, start=FRESH_START)],
         ),
     }

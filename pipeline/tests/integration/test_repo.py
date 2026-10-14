@@ -63,14 +63,14 @@ def test_has_published_run(db):
 
 def test_source_state_tracks_failures_and_ignores_skips_for_last_attempt(db):
     run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
-    assert repo.load_source_state(db, "alpaca_bars").consecutive_failures == 0
+    assert repo.load_source_state(db, "nasdaq_symbols").consecutive_failures == 0
 
-    failed = CollectorResult("alpaca_bars", CollectorStatus.FAILED, [], 120, "ConnectError: down")
+    failed = CollectorResult("nasdaq_symbols", CollectorStatus.FAILED, [], 120, "ConnectError: down")
     repo.record_source_health(db, run_id, failed, 3, datetime(2026, 10, 13, 19, 15, tzinfo=UTC))
-    skipped = CollectorResult("alpaca_bars", CollectorStatus.SKIPPED, [], 0, "circuit breaker open")
+    skipped = CollectorResult("nasdaq_symbols", CollectorStatus.SKIPPED, [], 0, "circuit breaker open")
     repo.record_source_health(db, run_id, skipped, 3, NOW)
 
-    state = repo.load_source_state(db, "alpaca_bars")
+    state = repo.load_source_state(db, "nasdaq_symbols")
     assert state.consecutive_failures == 3
     assert state.last_attempt_et_date == date(2026, 10, 13)
 
@@ -144,7 +144,7 @@ def test_write_features_live(db):
 
 
 def test_record_source_health_supports_health_context(db):
-    ok = CollectorResult("alpaca_bars", CollectorStatus.OK, [], 7)
+    ok = CollectorResult("nasdaq_symbols", CollectorStatus.OK, [], 7)
     repo.record_source_health(db, None, ok, 0, NOW, context="health")
     row = db.execute("select run_id, context from source_health").fetchone()
     assert (row["run_id"], row["context"]) == (None, "health")
@@ -154,10 +154,10 @@ def test_record_source_health_supports_health_context(db):
 
 def test_load_source_states_returns_one_state_per_source(db):
     run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
-    failed = CollectorResult("alpaca_bars", CollectorStatus.FAILED, [], 1, "down")
+    failed = CollectorResult("nasdaq_symbols", CollectorStatus.FAILED, [], 1, "down")
     repo.record_source_health(db, run_id, failed, 2, NOW)
-    states = repo.load_source_states(db, ["alpaca_bars", "yfinance_bars"])
-    assert states["alpaca_bars"].consecutive_failures == 2
+    states = repo.load_source_states(db, ["nasdaq_symbols", "yfinance_bars"])
+    assert states["nasdaq_symbols"].consecutive_failures == 2
     assert states["yfinance_bars"].consecutive_failures == 0
 
 

@@ -2,7 +2,7 @@
 
 These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
-## Plan 2b, Task 0: must land before the first real enrichment source
+## Plan 2c, Task 0: must land before the first real enrichment source
 
 - **Run deadline.**
   - Bound the enrichment stage and the health check, with cooperative cancellation: `get_with_retries` stops retrying past the deadline, and unfinished sources are recorded as FAILED "deadline exceeded".
@@ -10,8 +10,8 @@ These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later
 - **Cadence-window cache.**
   - DAILY and WEEKLY sources serve per-symbol records cached within the current window (ET date, or ISO week) as OK, and fetch only the missing symbols.
   - A PARTIAL result is backfilled from the cache.
-  - This is needed for daily caps: FMP allows 250 calls/day and Alpha Vantage 25/day.
-- **One `RateLimiter` per provider**, built in `build_registry`. The SEC allows 10 requests per second per IP across all SEC collectors, and Finnhub allows 60 calls per minute per key across all Finnhub collectors.
+  - This is needed for slow or capped sources such as Yahoo analyst data and Google Trends.
+- **One `RateLimiter` per provider**, built in `build_registry`. The SEC allows 10 requests per second per IP across all SEC collectors.
 - **Health check:** write each row as its source finishes, and run sources concurrently with a per-source time budget. Today a timeout loses every row.
 - **Written collector contract** (a docstring in `collectors/base.py`, plus `README` or docs):
   - collectors never touch the DB connection;
@@ -19,14 +19,14 @@ These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later
   - `PartialFetch` is for per-request failures, and an empty one counts as a failure;
   - `canary_requires_records` is True only for sources that must always return data.
 
-## Plans 2c and 2d
+## Plans 2c to 2e
 
 - **Collectors covering both stocks and crypto** (LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector.
-- **Crypto holdings priced in phase 1:** CoinGecko is core for crypto (2c).
+- **Crypto holdings priced in phase 1:** CoinGecko is core for crypto (2e).
 
 ## Plan 3: model and features
 
-- **Jump rule refinement.** When the move against the last accepted close is over 50% and a reference bar exists for that day, keep the bar only if the reference confirms it. A bad first bar is kept today.
+- **Jump indicator feature** (spec §10). Plan 2b keeps flagged bars and records `unconfirmed_jump` for the latest bar of each priority symbol. Plan 3 turns flagged days into the jump feature and blocks a Buy on them (§6.1). A bad first bar in a window is never flagged, because there is no earlier close to compare.
 - **Exclude non-common instruments before any pick exists:**
   - ETNs with `ETF=N` (AMUB, BDCZ, DGP and others);
   - structured trusts (GJH, JBK, KTN);
@@ -34,8 +34,8 @@ These are items that the Plan 1 and Plan 2a reviews deliberately pushed to later
   - Empire State Realty OP units.
 
   Use yfinance `quoteType` from sector mapping. Closed-end funds are an owner decision.
-- **Partial current-day bar** at the pre-close run, from both Alpaca and yfinance. Features must treat today's bar as incomplete.
-- **Benchmarks** (SPY, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
+- **Partial current-day bar** at the pre-close run, from Yahoo. Features must treat today's bar as incomplete.
+- **Benchmarks** (SPY, XIU.TO, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.
 
 ## Plans 4 and 5: recommendations and dashboard

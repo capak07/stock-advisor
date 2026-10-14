@@ -1,21 +1,29 @@
-"""Daily bars from Yahoo Finance via yfinance (source 3): fallback and cross-check for Alpaca."""
+"""Daily bars from Yahoo Finance via yfinance (source 3): the only stock price source (spec R7).
+
+Covers both markets: US symbols map to Yahoo's share-class form (BRK.B -> BRK-B), and TSX
+symbols are already stored in Yahoo's form (RCI-B.TO).
+"""
 
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 
 import pandas as pd
 
-from advisor.collectors.base import Cadence, Category, Scope
-from advisor.models import ET, AssetType, DailyBar
+from advisor.collectors.base import Cadence, Category, PartialFetch, Scope
+from advisor.markets import market_of
+from advisor.models import ET, AssetType, DailyBar, Market
 
 Downloader = Callable[[list[str], date, date], pd.DataFrame]
 SYMBOLS_PER_DOWNLOAD = 100
 LOOKBACK = timedelta(days=100)
-# yf.download never raises: blocked or rate-limited requests come back as empty frames.
+# yf.download never raises: blocked or rate-limited requests come back as empty frames, so a
+# download of at least this many symbols with no bars at all counts as failed.
 MIN_SYMBOLS_FOR_EMPTY_CHECK = 5
 
 
 def to_yahoo(symbol: str) -> str:
+    if market_of(symbol) is Market.TSX:
+        return symbol
     return symbol.replace(".", "-")
 
 
@@ -64,14 +72,14 @@ def parse_frame(frame: pd.DataFrame | None, yahoo_to_symbol: dict[str, str]) -> 
 class YFinanceBars:
     name = "yfinance_bars"
     category = Category.PRICES
-    core = False
+    core = True
     best_effort = True
     cadence = Cadence.PER_RUN
     asset_types = frozenset({AssetType.STOCK})
     record_type = DailyBar
     freshness = None
     scope = Scope.SYMBOLS
-    canary = ("AAPL", "MSFT")
+    canary = ("AAPL", "MSFT", "RY.TO")
     canary_requires_records = True
 
     def __init__(self, download: Downloader | None = None) -> None:
@@ -81,12 +89,21 @@ class YFinanceBars:
         unique = sorted(set(symbols))
         start = (as_of - LOOKBACK).astimezone(ET).date()
         end = as_of.astimezone(ET).date() + timedelta(days=1)
+        chunks = [
+            unique[i : i + SYMBOLS_PER_DOWNLOAD] for i in range(0, len(unique), SYMBOLS_PER_DOWNLOAD)
+        ]
         bars: list[DailyBar] = []
-        for i in range(0, len(unique), SYMBOLS_PER_DOWNLOAD):
-            mapping = {to_yahoo(s): s for s in unique[i : i + SYMBOLS_PER_DOWNLOAD]}
-            bars.extend(parse_frame(self._download(list(mapping), start, end), mapping))
-        if len(unique) >= MIN_SYMBOLS_FOR_EMPTY_CHECK and not bars:
+        empty = 0
+        for chunk in chunks:
+            mapping = {to_yahoo(s): s for s in chunk}
+            got = parse_frame(self._download(list(mapping), start, end), mapping)
+            if not got and len(chunk) >= MIN_SYMBOLS_FOR_EMPTY_CHECK:
+                empty += 1
+            bars.extend(got)
+        if empty and not bars:
             raise RuntimeError(
                 f"yfinance returned no bars for {len(unique)} symbols (blocked or rate-limited?)"
             )
+        if empty:
+            raise PartialFetch(bars, f"{empty} of {len(chunks)} Yahoo downloads returned no bars")
         return bars

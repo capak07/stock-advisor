@@ -9,8 +9,6 @@ from fakes import FakeCollector, bar
 
 def test_health_cli_records_rows_without_a_run_and_fails_on_a_core_source(db, monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
-    monkeypatch.setenv("ALPACA_KEY_ID", "test")
-    monkeypatch.setenv("ALPACA_SECRET_KEY", "test")
     monkeypatch.setenv("ADVISOR_CACHE_DIR", str(tmp_path))
     collectors = {
         "good": FakeCollector("good", canary=("AAPL",),

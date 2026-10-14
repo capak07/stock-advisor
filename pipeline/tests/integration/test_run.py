@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
@@ -7,18 +7,18 @@ from advisor.collectors.base import PartialFetch, Scope
 from advisor.collectors.cache import DiskCache
 from advisor.models import AssetType, RunKind, RunStatus
 from advisor.run import RunDeps, execute_run
-from fakes import FRESH_START, FakeCollector, fake_price_collectors, history
+from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
 UNIVERSE = ["AAA", "BBB", "CCC"]
 
 
-def make_deps(db, tmp_path, *, universe=UNIVERSE, alpaca=None, universe_records=None, extra=None):
+def make_deps(db, tmp_path, *, universe=UNIVERSE, prices=None, universe_records=None, extra=None):
     collectors = fake_price_collectors(universe)
     if universe_records is not None:
         collectors["nasdaq_symbols"].records_for = universe_records
-    if alpaca is not None:
-        collectors["alpaca_bars"] = alpaca
+    if prices is not None:
+        collectors["yfinance_bars"] = prices
     collectors.update(extra or {})
     return RunDeps(db, DiskCache(tmp_path), collectors)
 
@@ -49,13 +49,13 @@ def test_successful_run_is_published_with_summary(db, tmp_path):
     assert outcome.status is RunStatus.SUCCESS
     row = run_row(db, outcome.run_id)
     assert row["published"] is True
-    assert (row["sources_ok"], row["sources_total"]) == (3, 3)
+    assert (row["sources_ok"], row["sources_total"]) == (2, 2)
     assert row["summary"] == {
         "universe": 3, "priced": 3, "passed_filters": 3, "priority": 0, "priority_unpriced": [],
-        "fresh": 3, "fresh_since": "2026-10-12", "shortlist": 3,
+        "fresh": 3, "fresh_since": "2026-10-12", "shortlist": 3, "unconfirmed_jumps": 0,
     }
-    assert deps.collectors["yfinance_bars"].calls == []
-    assert health(db, outcome.run_id) == [("alpaca_bars", "ok"), ("nasdaq_symbols", "ok")]
+    assert deps.collectors["yfinance_bars"].calls == [["AAA", "BBB", "CCC"]]
+    assert health(db, outcome.run_id) == [("nasdaq_symbols", "ok"), ("yfinance_bars", "ok")]
     assert db.execute("select count(*) as n from symbols where active").fetchone()["n"] == 3
 
 
@@ -65,13 +65,16 @@ def test_holdings_are_priced_first_and_get_features(db, tmp_path):
     deps = make_deps(db, tmp_path)
     outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=3)
 
-    assert deps.collectors["alpaca_bars"].calls == [["OTCX"], ["AAA", "BBB", "CCC"]]
-    assert health(db, outcome.run_id) == [("alpaca_bars", "ok"), ("nasdaq_symbols", "ok")]
+    assert deps.collectors["yfinance_bars"].calls == [["OTCX"], ["AAA", "BBB", "CCC"]]
+    assert health(db, outcome.run_id) == [("nasdaq_symbols", "ok"), ("yfinance_bars", "ok")]
     features = db.execute(
         "select symbol, features from features_live where run_id = %s", (outcome.run_id,)
     ).fetchall()
     assert [f["symbol"] for f in features] == ["OTCX"]
-    assert features[0]["features"]["last_close"] == 10.0
+    assert features[0]["features"] == {
+        "last_close": 10.0, "adv20": 2_000_000.0, "history_days": 70, "last_day": "2026-10-13",
+        "stale": False, "unconfirmed_jump": False,
+    }
     assert outcome.summary["priority"] == 1
     assert outcome.summary["priced"] == 4
 
@@ -87,34 +90,31 @@ def test_holdings_are_saved_even_when_a_later_stage_fails(db, tmp_path):
     assert row["summary"]["error"].startswith("AttributeError")
 
 
-def test_primary_price_outage_falls_back_and_marks_run_degraded(db, tmp_path):
-    alpaca = FakeCollector("alpaca_bars", error=httpx.ConnectError("down"))
+def test_price_outage_fails_the_run(db, tmp_path):
+    prices = FakeCollector("yfinance_bars", error=httpx.ConnectError("down"))
     outcome = execute_run(
-        make_deps(db, tmp_path, alpaca=alpaca), RunKind.PRE_CLOSE, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
+    )
+
+    assert outcome.status is RunStatus.FAILED
+    assert run_row(db, outcome.run_id)["published"] is False
+    assert outcome.summary["failed_reason"] == ["too few fresh priced symbols (0 of 3)"]
+    assert ("yfinance_bars", "failed") in health(db, outcome.run_id)
+
+
+def test_partial_prices_degrade_the_run(db, tmp_path):
+    some = [b for s in ("AAA", "BBB") for b in history(s, 70, start=FRESH_START)]
+    prices = FakeCollector(
+        "yfinance_bars", error=PartialFetch(some, "1 of 2 Yahoo downloads returned no bars")
+    )
+    outcome = execute_run(
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
     )
 
     assert outcome.status is RunStatus.DEGRADED
-    row = run_row(db, outcome.run_id)
-    assert row["published"] is True
-    assert row["sources_ok"] == 2
-    assert health(db, outcome.run_id) == [
-        ("alpaca_bars", "failed"), ("nasdaq_symbols", "ok"), ("yfinance_bars", "ok"),
-    ]
-    assert outcome.summary["priced"] == 3
-
-
-def test_partial_primary_prices_degrade_the_run_and_fall_back_for_the_rest(db, tmp_path):
-    some = [b for s in ("AAA", "BBB") for b in history(s, 70, start=FRESH_START)]
-    alpaca = FakeCollector("alpaca_bars", error=PartialFetch(some, "1 of 2 Alpaca requests failed"))
-    deps = make_deps(db, tmp_path, alpaca=alpaca)
-    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=3)
-
-    assert outcome.status is RunStatus.DEGRADED
-    assert deps.collectors["yfinance_bars"].calls == [["CCC"]]
-    assert health(db, outcome.run_id) == [
-        ("alpaca_bars", "partial"), ("nasdaq_symbols", "ok"), ("yfinance_bars", "ok"),
-    ]
-    assert outcome.summary["priced"] == 3
+    assert run_row(db, outcome.run_id)["published"] is True
+    assert health(db, outcome.run_id) == [("nasdaq_symbols", "ok"), ("yfinance_bars", "partial")]
+    assert outcome.summary["priced"] == 2
 
 
 def test_a_source_failing_in_one_phase_reports_one_partial_row(db, tmp_path):
@@ -125,16 +125,39 @@ def test_a_source_failing_in_one_phase_reports_one_partial_row(db, tmp_path):
             raise httpx.ConnectError("down")
         return history("OTCX", 70, start=FRESH_START)
 
-    alpaca = FakeCollector("alpaca_bars", records_for=records_for)
+    prices = FakeCollector("yfinance_bars", records_for=records_for)
     outcome = execute_run(
-        make_deps(db, tmp_path, alpaca=alpaca), RunKind.PRE_OPEN, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
     )
     rows = health(db, outcome.run_id)
-    assert rows.count(("alpaca_bars", "partial")) == 1
-    assert len([s for s, _ in rows if s == "alpaca_bars"]) == 1
-    assert ("yfinance_bars", "ok") in rows
-    assert outcome.status is RunStatus.DEGRADED
-    assert outcome.summary["priced"] == 4
+    assert rows.count(("yfinance_bars", "partial")) == 1
+    assert len([s for s, _ in rows if s == "yfinance_bars"]) == 1
+    assert outcome.status is RunStatus.FAILED  # the rest of the market went unpriced
+    assert outcome.summary["priced"] == 1
+
+
+def test_an_unconfirmed_jump_is_kept_and_flagged(db, tmp_path):
+    hold(db)
+
+    def records_for(symbols):
+        bars = [b for s in symbols for b in history(s, 70, start=FRESH_START)]
+        return [  # OTCX jumps 10 -> 16 (+60%) on its latest bar
+            bar(b.symbol, b.day, 16.0) if (b.symbol, b.day) == ("OTCX", date(2026, 10, 13)) else b
+            for b in bars
+        ]
+
+    prices = FakeCollector("yfinance_bars", records_for=records_for)
+    outcome = execute_run(
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
+    )
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["unconfirmed_jumps"] == 1
+    features = db.execute(
+        "select features from features_live where run_id = %s and symbol = 'OTCX'",
+        (outcome.run_id,),
+    ).fetchone()["features"]
+    assert (features["last_close"], features["unconfirmed_jump"]) == (16.0, True)
 
 
 def test_enrichment_collectors_get_priority_first_then_the_shortlist(db, tmp_path):
@@ -153,7 +176,7 @@ def test_enrichment_collectors_get_priority_first_then_the_shortlist(db, tmp_pat
     assert extra["coins"].calls == [["BTC"]]
     assert outcome.summary["shortlist"] == 4
     assert [s for s, _ in health(db, outcome.run_id)] == [
-        "alpaca_bars", "coins", "macro", "nasdaq_symbols", "news",
+        "coins", "macro", "nasdaq_symbols", "news", "yfinance_bars",
     ]
 
 
@@ -185,11 +208,11 @@ def test_truncated_universe_fails_the_run_and_stays_unpublished(db, tmp_path):
 
 def test_stale_prices_fail_the_run_and_flag_holding_features(db, tmp_path):
     hold(db)
-    alpaca = FakeCollector(  # bars end 2026-08-09: two months behind a 2026-10-14 run
-        "alpaca_bars", records_for=lambda syms: [b for s in syms for b in history(s, 70)]
+    prices = FakeCollector(  # bars end 2026-08-09: two months behind a 2026-10-14 run
+        "yfinance_bars", records_for=lambda syms: [b for s in syms for b in history(s, 70)]
     )
     outcome = execute_run(
-        make_deps(db, tmp_path, alpaca=alpaca), RunKind.PRE_OPEN, NOW, min_universe=3
+        make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=3
     )
 
     assert outcome.status is RunStatus.FAILED

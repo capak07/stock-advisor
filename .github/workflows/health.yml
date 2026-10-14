@@ -33,8 +33,6 @@ jobs:
       - name: Check sources
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
-          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           ADVISOR_CACHE_DIR: .cache
         run: uv run python -m advisor.health
       - uses: actions/cache/save@v4

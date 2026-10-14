@@ -29,9 +29,8 @@ from advisor.store.db import connect
 MIN_UNIVERSE = 1000  # fewer listed stocks than this means the symbol files were truncated
 MIN_PRICED_FRACTION = 0.5
 UNIVERSE_SOURCE = "nasdaq_symbols"
-PRIMARY_PRICES = "alpaca_bars"
-FALLBACK_PRICES = "yfinance_bars"
-PRICE_STAGE = frozenset({UNIVERSE_SOURCE, PRIMARY_PRICES, FALLBACK_PRICES})
+PRICES = "yfinance_bars"
+PRICE_STAGE = frozenset({UNIVERSE_SOURCE, PRICES})
 
 
 @dataclass(frozen=True)
@@ -83,11 +82,7 @@ def execute_run(
     )
 
     def fetch_prices(symbols: Sequence[str]) -> PriceFetch:
-        return fetch_daily_bars(
-            symbols,
-            primary_run=lambda s: tracker.run(PRIMARY_PRICES, s),
-            fallback_run=lambda s: tracker.run(FALLBACK_PRICES, s),
-        )
+        return fetch_daily_bars(symbols, run=lambda s: tracker.run(PRICES, s))
 
     def record_health() -> None:
         for result, failures in tracker.health_rows():
@@ -99,7 +94,8 @@ def execute_run(
         crypto = priority_order(held, watch, AssetType.CRYPTO)
 
         # Phase 1: holdings and watchlist are priced and saved before anything else can fail.
-        bars = fetch_prices(priority).bars if priority else {}
+        first = fetch_prices(priority) if priority else PriceFetch({}, {})
+        bars, flagged = dict(first.bars), dict(first.flagged)
         priority_rows = [screener.price_stats(s, bars[s]) for s in priority if s in bars]
         repo.write_features_live(
             conn,
@@ -107,7 +103,11 @@ def execute_run(
             [
                 (
                     AssetRef(r.symbol, AssetType.STOCK),
-                    {**r.as_features(), "stale": not r.is_fresh(floor)},
+                    {
+                        **r.as_features(),
+                        "stale": not r.is_fresh(floor),
+                        "unconfirmed_jump": r.last_day in flagged.get(r.symbol, ()),
+                    },
                 )
                 for r in priority_rows
             ],
@@ -121,7 +121,9 @@ def execute_run(
             repo.upsert_symbols(conn, Market.US, universe)
         rest = sorted({record.symbol for record in universe} - set(priority))
         if rest:
-            bars = {**fetch_prices(rest).bars, **bars}
+            second = fetch_prices(rest)
+            bars = {**second.bars, **bars}
+            flagged = {**second.flagged, **flagged}
         symbols = sorted(set(priority) | set(rest))
 
         passed = screener.hard_filter(bars, fresh_since=floor)
@@ -150,6 +152,7 @@ def execute_run(
             "fresh": fresh,
             "fresh_since": floor.isoformat(),
             "shortlist": len(targets.stocks) if enriched else 0,
+            "unconfirmed_jumps": len(flagged),
         }
         status = decide_status(
             tracker.merged(), deps.collectors, universe_ok=universe_ok, prices_ok=prices_ok

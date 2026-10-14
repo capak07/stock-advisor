@@ -2,7 +2,7 @@ from advisor.run import main
 
 
 def clear_env(monkeypatch):
-    for name in ("DATABASE_URL", "ALPACA_KEY_ID", "ALPACA_SECRET_KEY"):
+    for name in ("DATABASE_URL",):
         monkeypatch.delenv(name, raising=False)
 
 

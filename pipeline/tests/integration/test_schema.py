@@ -174,12 +174,12 @@ def test_every_table_except_migrations_has_a_pipeline_policy(db):
 def test_health_rows_have_no_run_and_run_rows_need_one(db):
     db.execute(
         "insert into source_health (run_id, source, status, latency_ms, records,"
-        " consecutive_failures, context) values (null, 'alpaca_bars', 'partial', 5, 1, 0, 'health')"
+        " consecutive_failures, context) values (null, 'nasdaq_symbols', 'partial', 5, 1, 0, 'health')"
     )
     with pytest.raises(psycopg.errors.CheckViolation):
         db.execute(
             "insert into source_health (run_id, source, status, latency_ms, records,"
-            " consecutive_failures, context) values (null, 'alpaca_bars', 'ok', 5, 1, 0, 'run')"
+            " consecutive_failures, context) values (null, 'nasdaq_symbols', 'ok', 5, 1, 0, 'run')"
         )
 
 

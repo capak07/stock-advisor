@@ -44,8 +44,6 @@ jobs:
       - name: Run pipeline
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
-          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           ADVISOR_CACHE_DIR: .cache
           FORCE_KIND: ${{ inputs.kind }}
         run: |

@@ -11,8 +11,6 @@ NOW_ARG = ["--now", "2026-10-14T12:15:00+00:00"]  # 08:15 ET, a pre-open slot
 @pytest.fixture
 def cli_env(db, monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
-    monkeypatch.setenv("ALPACA_KEY_ID", "test")
-    monkeypatch.setenv("ALPACA_SECRET_KEY", "test")
     monkeypatch.setenv("ADVISOR_CACHE_DIR", str(tmp_path))
     db.execute(
         "insert into runs (kind, et_date, status, published)"

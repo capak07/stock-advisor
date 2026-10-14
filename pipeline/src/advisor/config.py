@@ -1,4 +1,4 @@
-"""Runtime settings loaded from environment variables."""
+"""Runtime settings loaded from environment variables. No data source needs a key (spec R7)."""
 
 import os
 from collections.abc import Mapping
@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
-REQUIRED = ("DATABASE_URL", "ALPACA_KEY_ID", "ALPACA_SECRET_KEY")
+REQUIRED = ("DATABASE_URL",)
 
 
 class ConfigError(RuntimeError):
@@ -16,8 +16,6 @@ class ConfigError(RuntimeError):
 @dataclass(frozen=True)
 class Settings:
     database_url: str = field(repr=False)  # holds the database password
-    alpaca_key_id: str
-    alpaca_secret_key: str = field(repr=False)
     cache_dir: Path
 
     @classmethod
@@ -28,7 +26,5 @@ class Settings:
             raise ConfigError(f"Missing required environment variables: {', '.join(missing)}")
         return cls(
             database_url=env["DATABASE_URL"],
-            alpaca_key_id=env["ALPACA_KEY_ID"],
-            alpaca_secret_key=env["ALPACA_SECRET_KEY"],
             cache_dir=Path(env.get("ADVISOR_CACHE_DIR", ".cache")),
         )

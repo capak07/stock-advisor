@@ -3,6 +3,7 @@ from datetime import UTC, date, datetime
 import pandas as pd
 import pytest
 
+from advisor.collectors.base import PartialFetch
 from advisor.collectors.yfinance_bars import YFinanceBars, parse_frame, to_yahoo
 
 AS_OF = datetime(2026, 10, 14, 19, 15, tzinfo=UTC)
@@ -65,3 +66,26 @@ def test_fetch_raises_when_five_or_more_symbols_all_come_back_empty():
 def test_fetch_allows_empty_results_for_fewer_than_five_symbols():
     collector = YFinanceBars(download=lambda tickers, start, end: pd.DataFrame())
     assert collector.fetch(["A", "B"], AS_OF) == []
+
+
+def test_to_yahoo_leaves_tsx_symbols_in_yahoos_form():
+    assert to_yahoo("RY.TO") == "RY.TO"
+    assert to_yahoo("RCI-B.TO") == "RCI-B.TO"
+
+
+def test_yahoo_is_the_core_price_source_with_a_tsx_canary():
+    collector = YFinanceBars()
+    assert collector.core is True
+    assert "RY.TO" in collector.canary
+
+
+def test_fetch_reports_partial_when_a_whole_download_comes_back_empty(monkeypatch):
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.SYMBOLS_PER_DOWNLOAD", 5)
+
+    def fake_download(tickers, start, end):  # Yahoo throttles the second download silently
+        return two_ticker_frame() if "AAPL" in tickers else pd.DataFrame()
+
+    symbols = ["AAPL", "BRK.B", "C", "D", "E", "F", "G", "H", "I", "J"]
+    with pytest.raises(PartialFetch, match="1 of 2 Yahoo downloads returned no bars") as caught:
+        YFinanceBars(download=fake_download).fetch(symbols, AS_OF)
+    assert {b.symbol for b in caught.value.records} == {"AAPL", "BRK.B"}

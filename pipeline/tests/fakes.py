@@ -36,6 +36,7 @@ class FakeCollector:
     category: Category = Category.PRICES
     cadence: Cadence = Cadence.PER_RUN
     asset_types: frozenset[AssetType] = frozenset({AssetType.STOCK})
+    markets: frozenset[Market] = frozenset(Market)
     record_type: type[BaseModel] = DailyBar
     freshness: timedelta | None = None
     scope: Scope = Scope.SYMBOLS

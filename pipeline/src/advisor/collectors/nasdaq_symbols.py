@@ -99,6 +99,7 @@ class NasdaqSymbols:
     best_effort = False
     cadence = Cadence.DAILY
     asset_types = frozenset({AssetType.STOCK})
+    markets = frozenset({Market.US})
     record_type = SymbolInfo
     freshness = timedelta(days=3)
     scope = Scope.UNIVERSE

@@ -3,12 +3,14 @@ import pytest
 
 from advisor.collectors.base import (
     DeadlineExceeded,
+    PartialFetch,
     RateLimiter,
     check_deadline,
+    collect_per_symbol,
     deadline,
     get_with_retries,
 )
-from fakes import FakeClock
+from fakes import FakeClock, info
 
 
 def scripted_client(script):
@@ -156,3 +158,64 @@ def test_a_retry_that_fits_the_deadline_still_happens():
         response = get_with_retries(client, "https://example.test/x", clock=clock, sleep=clock.sleep)
     assert response.text == "ok"
     assert clock.sleeps == [1.0]
+
+
+def test_collect_per_symbol_fetches_each_symbol_once_in_order():
+    seen, pauses = [], []
+
+    def one(symbol):
+        seen.append(symbol)
+        return [info(symbol)]
+
+    records = collect_per_symbol(["A", "B", "A", "C"], one, pause=lambda: pauses.append(1))
+    assert seen == ["A", "B", "C"]
+    assert [r.symbol for r in records] == ["A", "B", "C"]
+    assert len(pauses) == 2
+
+
+def test_collect_per_symbol_turns_symbol_failures_into_a_partial_result():
+    def one(symbol):
+        if symbol == "B":
+            raise ValueError("bad row")
+        return [info(symbol)]
+
+    with pytest.raises(PartialFetch, match="1 of 3 symbols failed; first: B: ValueError: bad row") as caught:
+        collect_per_symbol(["A", "B", "C"], one)
+    assert [r.symbol for r in caught.value.records] == ["A", "C"]
+
+
+class Throttled(Exception):
+    pass
+
+
+def test_a_fatal_error_before_any_record_is_raised_as_is():
+    def one(symbol):
+        raise Throttled("Too Many Requests")
+
+    with pytest.raises(Throttled):
+        collect_per_symbol(["A", "B"], one, is_fatal=lambda exc: isinstance(exc, Throttled))
+
+
+def test_a_fatal_error_after_some_records_stops_with_a_partial_result():
+    calls = []
+
+    def one(symbol):
+        calls.append(symbol)
+        if symbol == "B":
+            raise Throttled("Too Many Requests")
+        return [info(symbol)]
+
+    with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols") as caught:
+        collect_per_symbol(["A", "B", "C"], one, is_fatal=lambda exc: isinstance(exc, Throttled))
+    assert calls == ["A", "B"]
+    assert [r.symbol for r in caught.value.records] == ["A"]
+
+
+def test_the_run_deadline_stops_the_loop_like_a_fatal_error():
+    def one(symbol):
+        if symbol == "B":
+            raise DeadlineExceeded("run time budget exhausted")
+        return [info(symbol)]
+
+    with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols"):
+        collect_per_symbol(["A", "B", "C"], one)

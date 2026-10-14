@@ -11,7 +11,7 @@ from advisor.enrich import (
     shortlist,
     symbols_for,
 )
-from advisor.models import AssetType
+from advisor.models import AssetType, Market
 from advisor.screener import ScreenRow
 from fakes import FakeCollector
 
@@ -76,3 +76,23 @@ def test_interleave_alternates_markets_and_keeps_the_longer_tail():
     assert interleave(["A1", "A2", "A3"], ["B1"]) == ["A1", "B1", "A2", "A3"]
     assert interleave([], ["B1", "B2"]) == ["B1", "B2"]
     assert interleave() == []
+
+
+TWO_MARKETS = EnrichTargets(
+    priority_stocks=["OTCX", "SHOP.TO"], crypto=["BTC"], ranked_stocks=["AAA", "RY.TO"]
+)
+
+
+def test_symbols_for_sends_only_the_markets_a_collector_covers():
+    us_only = FakeCollector("us_only", markets=frozenset({Market.US}))
+    tsx_only = FakeCollector("tsx_only", markets=frozenset({Market.TSX}))
+    both = FakeCollector("both")
+    mixed = FakeCollector(
+        "mixed",
+        asset_types=frozenset({AssetType.STOCK, AssetType.CRYPTO}),
+        markets=frozenset({Market.US}),
+    )
+    assert symbols_for(us_only, TWO_MARKETS) == ["OTCX", "AAA"]
+    assert symbols_for(tsx_only, TWO_MARKETS) == ["SHOP.TO", "RY.TO"]
+    assert symbols_for(both, TWO_MARKETS) == ["OTCX", "SHOP.TO", "AAA", "RY.TO"]
+    assert symbols_for(mixed, TWO_MARKETS) == ["OTCX", "BTC", "AAA"]  # crypto is never filtered

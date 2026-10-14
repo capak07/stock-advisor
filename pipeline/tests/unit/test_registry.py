@@ -5,28 +5,37 @@ import httpx
 from advisor.collectors.base import Scope
 from advisor.collectors.registry import build_registry
 from advisor.config import Settings
+from advisor.models import Market
+
+US = frozenset({Market.US})
+TSX = frozenset({Market.TSX})
+BOTH = frozenset({Market.US, Market.TSX})
+
+# name: (core, scope, canary_requires_records, markets). Every new source adds a row.
+EXPECTED = {
+    "nasdaq_symbols": (True, Scope.UNIVERSE, True, US),
+    "tmx_symbols": (True, Scope.UNIVERSE, True, TSX),
+    "yfinance_bars": (True, Scope.SYMBOLS, True, BOTH),
+}
 
 
-def test_registry_lists_foundation_collectors_with_core_flags():
-    settings = Settings("postgresql://x", Path(".cache"))
+def build() -> dict:
     with httpx.Client() as client:
-        registry = build_registry(settings, client)
-    assert sorted(registry) == ["nasdaq_symbols", "tmx_symbols", "yfinance_bars"]
-    assert {name: c.core for name, c in registry.items()} == {
-        "nasdaq_symbols": True,
-        "tmx_symbols": True,
-        "yfinance_bars": True,
-    }
+        return build_registry(Settings("postgresql://x", Path(".cache")), client)
+
+
+def test_registry_matches_the_expected_sources():
+    registry = build()
+    assert {
+        name: (c.core, c.scope, c.canary_requires_records, c.markets)
+        for name, c in registry.items()
+    } == EXPECTED
     assert all(registry[name].name == name for name in registry)
-    assert {name: c.scope for name, c in registry.items()} == {
-        "nasdaq_symbols": Scope.UNIVERSE,
-        "tmx_symbols": Scope.UNIVERSE,
-        "yfinance_bars": Scope.SYMBOLS,
-    }
-    for collector in registry.values():  # SYMBOLS collectors need canaries for the health check
+
+
+def test_symbols_collectors_have_canaries_and_symbol_records():
+    for collector in build().values():
         assert bool(collector.canary) == (collector.scope is Scope.SYMBOLS)
-    assert all(c.canary_requires_records is True for c in registry.values())
-    for collector in registry.values():
         if collector.scope is Scope.SYMBOLS:
             field = collector.record_type.model_fields["symbol"]
             assert field.annotation is str

@@ -1,7 +1,7 @@
 """Enrichment stage (spec §4.3 stage 4): which symbols each collector gets, run concurrently.
 
 Holdings and watchlist symbols always come first, so collectors with daily caps spend them on
-the owner's positions before the rest of the shortlist (spec §7.2).
+the owner's positions before the rest of the shortlist (spec §7.2). A collector only gets stock symbols of the markets it covers.
 """
 
 from collections.abc import Mapping, Sequence
@@ -11,6 +11,7 @@ from itertools import zip_longest
 
 from advisor.collectors.base import Collector, CollectorResult, Scope
 from advisor.collectors.tracker import SourceTracker
+from advisor.markets import market_of
 from advisor.models import AssetType
 from advisor.screener import ScreenRow
 
@@ -60,14 +61,18 @@ class EnrichTargets:
 def symbols_for(collector: Collector, targets: EnrichTargets) -> list[str]:
     if collector.scope is not Scope.SYMBOLS:
         return []
+
+    def covered(stocks: Sequence[str]) -> list[str]:
+        return [s for s in stocks if market_of(s) in collector.markets]
+
     symbols: list[str] = []
     stocks = AssetType.STOCK in collector.asset_types
     if stocks:
-        symbols += targets.priority_stocks
+        symbols += covered(targets.priority_stocks)
     if AssetType.CRYPTO in collector.asset_types:
         symbols += targets.crypto  # held and watched crypto outrank the stock shortlist
     if stocks:
-        symbols += targets.ranked_stocks
+        symbols += covered(targets.ranked_stocks)
     return symbols
 
 

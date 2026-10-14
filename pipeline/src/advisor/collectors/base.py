@@ -1,4 +1,19 @@
-"""Shared building blocks for collectors: the interface, rate limiting, and HTTP retries."""
+"""Shared building blocks for collectors: the interface, rate limiting, HTTP retries, deadlines.
+
+Collector contract (every source module follows it):
+- `fetch(symbols, as_of)` returns validated records or raises; it never touches the database.
+- No source needs an API key or an account (spec R7).
+- SYMBOLS scope: every record has `symbol` equal to the canonical requested symbol ("BRK.B",
+  "RCI-B.TO"); map provider formats ("BRK/B", "BRKB", "BRK-B") in and out inside the collector.
+- `markets` names the stock markets a source covers; it is only sent symbols of those markets.
+- Raise PartialFetch(records, error) when some requests failed but others succeeded; an empty
+  PartialFetch counts as a failure. `collect_per_symbol` does this for per-symbol APIs.
+- HTTP goes through `get_with_retries`: it honours the run deadline, backs off on 429/5xx, and
+  never puts query strings into error text.
+- Long loops honour the run deadline (`check_deadline()` or `time_left()`) between items.
+- A provider's collectors share one RateLimiter, built in the registry.
+- `canary_requires_records` is True only for sources that always return data for their canary.
+"""
 
 import contextlib
 import threading
@@ -13,7 +28,7 @@ from typing import Any, Protocol
 import httpx
 from pydantic import BaseModel
 
-from advisor.models import AssetType
+from advisor.models import AssetType, Market
 
 USER_AGENT = "stock-advisor/0.1 (personal research)"
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
@@ -99,6 +114,44 @@ def check_deadline(clock: Callable[[], float] = time.monotonic) -> None:
         raise DeadlineExceeded(BUDGET_EXHAUSTED)
 
 
+def collect_per_symbol(
+    symbols: Sequence[str],
+    fetch_one: Callable[[str], Sequence[BaseModel]],
+    *,
+    is_fatal: Callable[[Exception], bool] = lambda exc: False,
+    pause: Callable[[], None] | None = None,
+) -> list[BaseModel]:
+    """Fetch symbol by symbol (each once, in order), keeping going past per-symbol failures.
+
+    Failures for single symbols end in PartialFetch with everything else. A fatal error (as
+    judged by `is_fatal`) or the run deadline stops the loop: it is re-raised as-is when nothing
+    was collected yet, otherwise it becomes PartialFetch with the records so far.
+    """
+    unique = list(dict.fromkeys(symbols))
+    records: list[BaseModel] = []
+    failures: list[str] = []
+    for index, symbol in enumerate(unique):
+        try:
+            check_deadline()
+            records.extend(fetch_one(symbol))
+        except Exception as exc:
+            stop = isinstance(exc, DeadlineExceeded) or is_fatal(exc)
+            if stop and not records:
+                raise
+            failures.append(f"{symbol}: {type(exc).__name__}: {exc}"[:300])
+            if stop:
+                raise PartialFetch(
+                    records, f"stopped after {index} of {len(unique)} symbols; {failures[-1]}"
+                ) from exc
+        if pause is not None and index < len(unique) - 1:
+            pause()
+    if failures:
+        raise PartialFetch(
+            records, f"{len(failures)} of {len(unique)} symbols failed; first: {failures[0]}"
+        )
+    return records
+
+
 class Collector(Protocol):
     """One data source. `fetch` returns validated records or raises; `run_collector` wraps it."""
 
@@ -108,6 +161,7 @@ class Collector(Protocol):
     best_effort: bool
     cadence: Cadence
     asset_types: frozenset[AssetType]
+    markets: frozenset[Market]  # stock markets covered; only their stock symbols are sent
     record_type: type[BaseModel]
     freshness: timedelta | None  # max cache age used as a failure fallback; None = never cache
     scope: Scope

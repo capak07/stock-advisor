@@ -63,6 +63,7 @@ class TmxSymbols:
     best_effort = True
     cadence = Cadence.DAILY
     asset_types = frozenset({AssetType.STOCK})
+    markets = frozenset({Market.TSX})
     record_type = SymbolInfo
     freshness = timedelta(days=3)
     scope = Scope.UNIVERSE

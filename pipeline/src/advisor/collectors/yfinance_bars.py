@@ -86,6 +86,7 @@ class YFinanceBars:
     best_effort = True
     cadence = Cadence.PER_RUN
     asset_types = frozenset({AssetType.STOCK})
+    markets = frozenset({Market.US, Market.TSX})
     record_type = DailyBar
     freshness = None
     scope = Scope.SYMBOLS

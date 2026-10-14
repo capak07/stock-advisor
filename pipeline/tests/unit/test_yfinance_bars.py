@@ -89,3 +89,34 @@ def test_fetch_reports_partial_when_a_whole_download_comes_back_empty(monkeypatc
     with pytest.raises(PartialFetch, match="1 of 2 Yahoo downloads returned no bars") as caught:
         YFinanceBars(download=fake_download).fetch(symbols, AS_OF)
     assert {b.symbol for b in caught.value.records} == {"AAPL", "BRK.B"}
+
+
+def test_fetch_stops_after_three_consecutive_empty_downloads(monkeypatch):
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.SYMBOLS_PER_DOWNLOAD", 5)
+    calls = []
+
+    def fake_download(tickers, start, end):  # Yahoo answers the first download, then refuses
+        calls.append(tickers)
+        return two_ticker_frame() if len(calls) == 1 else pd.DataFrame()
+
+    symbols = ["AAPL", "BRK.B"] + [f"S{i:02d}" for i in range(28)]
+    with pytest.raises(PartialFetch, match="stopped after 3 consecutive empty Yahoo downloads; "
+                       "2 of 6 not tried") as caught:
+        YFinanceBars(download=fake_download).fetch(symbols, AS_OF)
+    assert len(calls) == 4
+    assert {b.symbol for b in caught.value.records} == {"AAPL", "BRK.B"}
+
+
+def test_fetch_stopping_with_no_bars_at_all_raises_runtime_error(monkeypatch):
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.SYMBOLS_PER_DOWNLOAD", 5)
+    calls = []
+
+    def fake_download(tickers, start, end):
+        calls.append(tickers)
+        return pd.DataFrame()
+
+    symbols = [f"S{i:02d}" for i in range(30)]
+    with pytest.raises(RuntimeError, match="stopped after 3 consecutive empty Yahoo downloads; "
+                       "3 of 6 not tried"):
+        YFinanceBars(download=fake_download).fetch(symbols, AS_OF)
+    assert len(calls) == 3

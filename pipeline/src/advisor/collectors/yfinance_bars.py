@@ -19,6 +19,8 @@ LOOKBACK = timedelta(days=100)
 # yf.download never raises: blocked or rate-limited requests come back as empty frames, so a
 # download of at least this many symbols with no bars at all counts as failed.
 MIN_SYMBOLS_FOR_EMPTY_CHECK = 5
+# Once Yahoo is clearly throttling, the remaining downloads are not sent (one request per ticker).
+MAX_CONSECUTIVE_EMPTY = 3
 
 
 def to_yahoo(symbol: str) -> str:
@@ -93,13 +95,27 @@ class YFinanceBars:
             unique[i : i + SYMBOLS_PER_DOWNLOAD] for i in range(0, len(unique), SYMBOLS_PER_DOWNLOAD)
         ]
         bars: list[DailyBar] = []
-        empty = 0
-        for chunk in chunks:
+        empty = streak = not_tried = 0
+        for done, chunk in enumerate(chunks, start=1):
             mapping = {to_yahoo(s): s for s in chunk}
             got = parse_frame(self._download(list(mapping), start, end), mapping)
-            if not got and len(chunk) >= MIN_SYMBOLS_FOR_EMPTY_CHECK:
+            if got:
+                streak = 0
+            elif len(chunk) >= MIN_SYMBOLS_FOR_EMPTY_CHECK:
                 empty += 1
+                streak += 1
             bars.extend(got)
+            if streak >= MAX_CONSECUTIVE_EMPTY:
+                not_tried = len(chunks) - done
+                break
+        if not_tried:
+            message = (
+                f"stopped after {MAX_CONSECUTIVE_EMPTY} consecutive empty Yahoo downloads;"
+                f" {not_tried} of {len(chunks)} not tried"
+            )
+            if bars:
+                raise PartialFetch(bars, message)
+            raise RuntimeError(message)
         if empty and not bars:
             raise RuntimeError(
                 f"yfinance returned no bars for {len(unique)} symbols (blocked or rate-limited?)"

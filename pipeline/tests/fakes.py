@@ -7,7 +7,8 @@ from datetime import date, datetime, timedelta
 from pydantic import BaseModel
 
 from advisor.collectors.base import Cadence, Category, Scope
-from advisor.models import AssetType, DailyBar, SymbolInfo
+from advisor.markets import market_of
+from advisor.models import AssetType, DailyBar, Market, SymbolInfo
 
 
 class FakeClock:
@@ -49,8 +50,15 @@ class FakeCollector:
         return list(self.records_for(symbols))
 
 
-def info(symbol: str, exchange: str = "NYSE") -> SymbolInfo:
-    return SymbolInfo(symbol=symbol, name=f"{symbol} Inc. Common Stock", exchange=exchange)
+def info(symbol: str, exchange: str | None = None) -> SymbolInfo:
+    market = market_of(symbol)
+    default_exchange = "TSX" if market is Market.TSX else "NYSE"
+    return SymbolInfo(
+        symbol=symbol,
+        market=market,
+        name=f"{symbol} Inc. Common Stock",
+        exchange=exchange or default_exchange,
+    )
 
 
 def bar(

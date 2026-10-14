@@ -36,8 +36,8 @@ def health(db, run_id):
 
 def hold(db, symbol="OTCX"):
     db.execute(
-        "insert into lots (symbol, asset_type, qty, price, bought_at)"
-        " values (%s, 'stock', 10, 5, '2026-09-01')",
+        "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"
+        " values ('tfsa', %s, 'stock', 10, 5, 'USD', 1.37, '2026-09-01')",
         (symbol,),
     )
 
@@ -166,8 +166,8 @@ def test_a_failing_core_enrichment_source_degrades_the_run(db, tmp_path):
 
 def test_truncated_universe_fails_the_run_and_stays_unpublished(db, tmp_path):
     db.execute(
-        "insert into symbols (symbol, asset_type, name, exchange)"
-        " values ('OLD', 'stock', 'Old Co', 'NYSE')"
+        "insert into symbols (symbol, asset_type, market, name, exchange)"
+        " values ('OLD', 'stock', 'US', 'Old Co', 'NYSE')"
     )
     extra = {"news": FakeCollector("news")}
     outcome = execute_run(

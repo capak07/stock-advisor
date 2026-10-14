@@ -4,7 +4,7 @@ import psycopg
 import pytest
 
 from advisor.collectors.base import CollectorResult, CollectorStatus
-from advisor.models import AssetRef, AssetType, RunKind, RunStatus, SymbolInfo
+from advisor.models import AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
 from advisor.store import repo
 from fakes import info
 
@@ -78,37 +78,44 @@ def test_source_state_tracks_failures_and_ignores_skips_for_last_attempt(db):
     assert (row["latency_ms"], row["records"], row["error"]) == (120, 0, "ConnectError: down")
 
 
-def test_upsert_symbols_inserts_updates_and_deactivates(db):
-    repo.upsert_symbols(db, [info("AAPL"), info("GONE")])
-    repo.upsert_symbols(db, [info("AAPL", exchange="NASDAQ"), info("MSFT")])
-    rows = db.execute("select symbol, exchange, active from symbols order by symbol").fetchall()
-    assert [(r["symbol"], r["exchange"], r["active"]) for r in rows] == [
-        ("AAPL", "NASDAQ", True),
-        ("GONE", "NYSE", False),
-        ("MSFT", "NYSE", True),
+def test_upsert_symbols_deactivates_only_within_its_market(db):
+    repo.upsert_symbols(db, Market.US, [info("AAPL"), info("GONE")])
+    repo.upsert_symbols(db, Market.TSX, [info("RY.TO")])
+    repo.upsert_symbols(db, Market.US, [info("AAPL", exchange="NASDAQ"), info("MSFT")])
+    rows = db.execute(
+        "select symbol, market, exchange, active from symbols order by symbol"
+    ).fetchall()
+    assert [(r["symbol"], r["market"], r["exchange"], r["active"]) for r in rows] == [
+        ("AAPL", "US", "NASDAQ", True),
+        ("GONE", "US", "NYSE", False),
+        ("MSFT", "US", "NYSE", True),
+        ("RY.TO", "TSX", "TSX", True),  # a US universe never deactivates TSX symbols
     ]
 
 
-def test_upsert_symbols_refuses_an_empty_stock_universe(db):
-    repo.upsert_symbols(db, [info("AAPL")])
+def test_upsert_symbols_refuses_empty_or_foreign_universes(db):
+    repo.upsert_symbols(db, Market.US, [info("AAPL")])
+    with pytest.raises(ValueError, match="refusing to upsert an empty US universe"):
+        repo.upsert_symbols(db, Market.US, [])
     crypto = SymbolInfo(symbol="BTC", asset_type=AssetType.CRYPTO, name="Bitcoin", exchange="-")
-    for symbols in ([], [crypto]):
-        with pytest.raises(ValueError, match="refusing to upsert an empty stock universe"):
-            repo.upsert_symbols(db, symbols)
+    for strays in ([crypto], [info("AAPL"), info("RY.TO")]):
+        with pytest.raises(ValueError, match="not US stocks"):
+            repo.upsert_symbols(db, Market.US, strays)
     rows = db.execute("select symbol, active from symbols").fetchall()
     assert [(r["symbol"], r["active"]) for r in rows] == [("AAPL", True)]
 
 
 def test_load_held_symbols_nets_sells(db):
     db.execute(
-        "insert into lots (symbol, asset_type, qty, price, bought_at) values"
-        " ('AAPL', 'stock', 10, 100, '2026-01-02'),"
-        " ('SOLD', 'stock', 5, 20, '2026-01-02'),"
-        " ('BTC', 'crypto', 0.5, 60000, '2026-02-01')"
+        "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"
+        " values ('tfsa', 'AAPL', 'stock', 10, 100, 'USD', 1.37, '2026-01-02'),"
+        " ('tfsa', 'SOLD', 'stock', 5, 20, 'USD', 1.37, '2026-01-02'),"
+        " ('crypto', 'BTC', 'crypto', 0.5, 60000, 'CAD', null, '2026-02-01')"
     )
     db.execute(
-        "insert into sells (symbol, asset_type, qty, price, sold_at) values"
-        " ('AAPL', 'stock', 4, 120, '2026-05-01'), ('SOLD', 'stock', 5, 25, '2026-05-01')"
+        "insert into sells (account, symbol, asset_type, qty, price, currency, fx_rate_cad, sold_at)"
+        " values ('tfsa', 'AAPL', 'stock', 4, 120, 'USD', 1.36, '2026-05-01'),"
+        " ('tfsa', 'SOLD', 'stock', 5, 25, 'USD', 1.36, '2026-05-01')"
     )
     assert repo.load_held_symbols(db) == {
         AssetRef("AAPL", AssetType.STOCK),

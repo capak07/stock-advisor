@@ -2,10 +2,10 @@
 
 from datetime import date
 from enum import StrEnum
-from typing import NamedTuple
+from typing import NamedTuple, Self
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ET = ZoneInfo("America/New_York")
 
@@ -13,6 +13,13 @@ ET = ZoneInfo("America/New_York")
 class AssetType(StrEnum):
     STOCK = "stock"
     CRYPTO = "crypto"
+
+
+class Market(StrEnum):
+    """Stock markets in scope (spec §3). Crypto belongs to no market."""
+
+    US = "US"
+    TSX = "TSX"
 
 
 class RunKind(StrEnum):
@@ -38,8 +45,15 @@ class SymbolInfo(BaseModel):
 
     symbol: str
     asset_type: AssetType = AssetType.STOCK
+    market: Market | None = None
     name: str
     exchange: str
+
+    @model_validator(mode="after")
+    def _market_matches_asset_type(self) -> Self:
+        if (self.asset_type is AssetType.STOCK) != (self.market is not None):
+            raise ValueError("stocks need a market and crypto has none")
+        return self
 
 
 class DailyBar(BaseModel):

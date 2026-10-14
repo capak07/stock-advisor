@@ -20,7 +20,7 @@ from advisor.collectors.registry import build_registry
 from advisor.collectors.tracker import SourceTracker
 from advisor.config import Settings
 from advisor.enrich import EnrichTargets, ranked_shortlist, run_enrichment
-from advisor.models import ET, AssetRef, AssetType, RunKind, RunStatus, SymbolInfo
+from advisor.models import ET, AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
 from advisor.prices import PriceFetch, fetch_daily_bars
 from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
 from advisor.store import repo
@@ -118,7 +118,7 @@ def execute_run(
         universe: list[SymbolInfo] = list(tracker.run(UNIVERSE_SOURCE, []).records)
         universe_ok = len(universe) >= min_universe
         if universe_ok:
-            repo.upsert_symbols(conn, universe)
+            repo.upsert_symbols(conn, Market.US, universe)
         rest = sorted({record.symbol for record in universe} - set(priority))
         if rest:
             bars = {**fetch_prices(rest).bars, **bars}

@@ -11,6 +11,7 @@ from advisor.collectors.nasdaq_symbols import (
     parse_nasdaq_listed,
     parse_other_listed,
 )
+from advisor.models import Market
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
 
@@ -65,6 +66,7 @@ def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
         ("TSM", "NYSE"),
         ("UAL", "NASDAQ"),
     ]
+    assert {r.market for r in records} == {Market.US}
 
 
 def test_fetch_rejects_other_listed_with_header_and_footer_only(fixtures_dir):

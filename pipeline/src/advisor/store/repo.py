@@ -8,7 +8,7 @@ from psycopg.types.json import Jsonb
 
 from advisor.collectors.base import CollectorResult
 from advisor.collectors.runner import SourceState
-from advisor.models import ET, AssetRef, AssetType, RunKind, RunStatus, SymbolInfo
+from advisor.models import ET, AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
 
@@ -114,23 +114,27 @@ def sweep_abandoned_runs(
     return cursor.rowcount
 
 
-def upsert_symbols(conn: psycopg.Connection, symbols: Sequence[SymbolInfo]) -> None:
-    stock_symbols = [s.symbol for s in symbols if s.asset_type is AssetType.STOCK]
-    if not stock_symbols:  # would deactivate every stock
-        raise ValueError("refusing to upsert an empty stock universe")
+def upsert_symbols(conn: psycopg.Connection, market: Market, symbols: Sequence[SymbolInfo]) -> None:
+    """Upsert one market's stock universe; that market's stocks missing from it are deactivated."""
+    if not symbols:  # would deactivate the whole market
+        raise ValueError(f"refusing to upsert an empty {market} universe")
+    strays = sorted(s.symbol for s in symbols if s.market is not market)
+    if strays:
+        raise ValueError(f"not {market} stocks: {', '.join(strays[:5])}")
     with conn.transaction():
         with conn.cursor() as cur:
             cur.executemany(
-                "insert into symbols (symbol, asset_type, name, exchange, active, updated_at)"
-                " values (%s, %s, %s, %s, true, now())"
-                " on conflict (symbol, asset_type) do update set name = excluded.name,"
-                " exchange = excluded.exchange, active = true, updated_at = now()",
-                [(s.symbol, s.asset_type.value, s.name, s.exchange) for s in symbols],
+                "insert into symbols (symbol, asset_type, market, name, exchange, active, updated_at)"
+                " values (%s, 'stock', %s, %s, %s, true, now())"
+                " on conflict (symbol, asset_type) do update set market = excluded.market,"
+                " name = excluded.name, exchange = excluded.exchange, active = true,"
+                " updated_at = now()",
+                [(s.symbol, market.value, s.name, s.exchange) for s in symbols],
             )
         conn.execute(
             "update symbols set active = false, updated_at = now()"
-            " where asset_type = 'stock' and active and not (symbol = any(%s))",
-            (stock_symbols,),
+            " where asset_type = 'stock' and market = %s and active and not (symbol = any(%s))",
+            (market.value, [s.symbol for s in symbols]),
         )
 
 

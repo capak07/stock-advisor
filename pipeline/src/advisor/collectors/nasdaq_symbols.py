@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, get_with_retries
-from advisor.models import AssetType, SymbolInfo
+from advisor.models import AssetType, Market, SymbolInfo
 
 NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
 OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
@@ -71,7 +71,9 @@ def _keep(symbol: str, name: str, etf: str, test_issue: str) -> bool:
 
 def parse_nasdaq_listed(text: str) -> list[SymbolInfo]:
     return [
-        SymbolInfo(symbol=row["Symbol"], name=row["Security Name"], exchange="NASDAQ")
+        SymbolInfo(
+            symbol=row["Symbol"], market=Market.US, name=row["Security Name"], exchange="NASDAQ"
+        )
         for row in _rows(text)
         if _keep(row["Symbol"], row["Security Name"], row["ETF"], row["Test Issue"])
     ]
@@ -81,6 +83,7 @@ def parse_other_listed(text: str) -> list[SymbolInfo]:
     return [
         SymbolInfo(
             symbol=row["ACT Symbol"],
+            market=Market.US,
             name=row["Security Name"],
             exchange=OTHER_EXCHANGES.get(row["Exchange"], row["Exchange"]),
         )

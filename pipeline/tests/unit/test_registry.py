@@ -18,6 +18,7 @@ EXPECTED = {
     "yfinance_bars": (True, Scope.SYMBOLS, True, BOTH),
     "finra_short_volume": (False, Scope.SYMBOLS, True, US),
     "finra_short_interest": (False, Scope.SYMBOLS, True, US),
+    "yfinance_analyst": (False, Scope.SYMBOLS, True, BOTH),
 }
 
 

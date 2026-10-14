@@ -7,6 +7,8 @@ from advisor.collectors.finra_short_interest import FinraShortInterest
 from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.tmx_symbols import TmxSymbols
+from advisor.collectors.yahoo import YAHOO_PER_MINUTE
+from advisor.collectors.yfinance_analyst import YFinanceAnalyst
 from advisor.collectors.yfinance_bars import YFinanceBars
 from advisor.config import Settings
 
@@ -15,11 +17,13 @@ FINRA_PER_MINUTE = 60
 
 def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collector]:
     finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
+    yahoo = RateLimiter(per_minute=YAHOO_PER_MINUTE, burst=2)  # shared by Yahoo's per-symbol collectors
     collectors: list[Collector] = [
         NasdaqSymbols(client),
         TmxSymbols(client),
         YFinanceBars(),
         FinraShortVolume(client, finra),
         FinraShortInterest(client, finra),
+        YFinanceAnalyst(limiter=yahoo),
     ]
     return {collector.name: collector for collector in collectors}

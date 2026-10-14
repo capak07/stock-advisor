@@ -272,6 +272,13 @@ def test_settings_has_one_seeded_row_that_only_the_owner_can_update(owned_db):
         owned_db.execute("update settings set tfsa_short_hold_share_warn = 1.5")
 
 
+def test_anon_sees_and_changes_no_settings(owned_db):
+    with acting_as(owned_db, "anon"):
+        assert owned_db.execute("select * from settings").fetchall() == []
+        assert owned_db.execute("update settings set usd_fx_fee_pct = 9").rowcount == 0
+    assert owned_db.execute("select usd_fx_fee_pct from settings").fetchone()["usd_fx_fee_pct"] == 1.5
+
+
 def test_pipeline_reads_settings_but_cannot_change_them(db):
     with acting_as(db, "pipeline_rw"):
         assert db.execute("select usd_fx_fee_pct from settings").fetchone()["usd_fx_fee_pct"] == 1.5

@@ -8,7 +8,7 @@ is capped per call (spec §7.2): holdings come first and the rest wait for a lat
 import logging
 import math
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from advisor.collectors.base import Cadence, Category, RateLimiter, Scope
 from advisor.collectors.yahoo import collect_yahoo
 from advisor.collectors.yfinance_bars import to_yahoo
-from advisor.models import AssetType, Market
+from advisor.models import ET, AssetType, Market
 
 TickerData = tuple[dict, pd.DataFrame, pd.DataFrame]  # price targets, recommendations, rating changes
 Loader = Callable[[str], TickerData]
@@ -27,6 +27,7 @@ class AnalystView(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     symbol: str
+    as_of: date  # ET date the view was fetched
     target_mean: float | None = None
     target_low: float | None = None
     target_high: float | None = None
@@ -44,12 +45,30 @@ class AnalystView(BaseModel):
     target_lowers_30d: int = 0
 
 
+def _quietly(read: Callable[[], Any], empty: Any) -> Any:
+    """yfinance raises YFDataException when a symbol simply lacks this data; that isn't a failure."""
+    try:
+        return read()
+    except Exception as exc:
+        if type(exc).__name__ == "YFDataException":
+            return empty
+        raise
+
+
+def read_ticker(ticker: Any) -> TickerData:
+    """Price targets, recommendations and rating changes from a yfinance Ticker, each guarded."""
+    return (
+        _quietly(lambda: ticker.analyst_price_targets, {}) or {},
+        _quietly(lambda: ticker.recommendations, pd.DataFrame()),
+        _quietly(lambda: ticker.upgrades_downgrades, pd.DataFrame()),
+    )
+
+
 def _yahoo_load(yahoo_symbol: str) -> TickerData:
     import yfinance as yf  # imported lazily: slow import, and tests inject a fake
 
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)  # it logs an ERROR line per 404
-    ticker = yf.Ticker(yahoo_symbol)
-    return ticker.analyst_price_targets or {}, ticker.recommendations, ticker.upgrades_downgrades
+    return read_ticker(yf.Ticker(yahoo_symbol))
 
 
 def _price(value: Any) -> float | None:
@@ -102,6 +121,7 @@ def analyst_view(
     up_90, down_90, _, _ = _graded(upgrades, now, 90)
     return AnalystView(
         symbol=symbol,
+        as_of=as_of.astimezone(ET).date(),
         target_mean=_price(targets.get("mean")),
         target_low=_price(targets.get("low")),
         target_high=_price(targets.get("high")),

@@ -1,12 +1,12 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
 
 from advisor.collectors.base import DeadlineExceeded, PartialFetch
 from advisor.collectors.yahoo import rate_limited
-from advisor.collectors.yfinance_analyst import YFinanceAnalyst, analyst_view
+from advisor.collectors.yfinance_analyst import YFinanceAnalyst, analyst_view, read_ticker
 from advisor.models import Market
 
 AS_OF = datetime(2026, 10, 12, 20, 0, tzinfo=UTC)
@@ -42,6 +42,7 @@ def test_analyst_view_from_real_aapl_data(fixtures_dir):
     )
     assert (view.upgrades_30d, view.downgrades_30d, view.upgrades_90d, view.downgrades_90d) == (0, 0, 2, 2)
     assert (view.target_raises_30d, view.target_lowers_30d) == (2, 1)
+    assert view.as_of == date(2026, 10, 12)
 
 
 def test_no_coverage_yields_no_record():
@@ -116,3 +117,47 @@ def test_the_run_deadline_ends_the_loop_with_what_was_gathered(fixtures_dir):
     with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols") as caught:
         YFinanceAnalyst(load=load).fetch(["AAA", "BBB", "CCC"], AS_OF)
     assert [r.symbol for r in caught.value.records] == ["AAA"]
+
+
+class YFDataException(Exception):  # same name as yfinance's, which read_ticker treats as "no data"
+    pass
+
+
+class FakeTicker:
+    def __init__(self, data, *, raises: dict[str, Exception] | None = None) -> None:
+        self._data = data
+        self._raises = raises or {}
+
+    def _read(self, part: str, index: int):
+        if part in self._raises:
+            raise self._raises[part]
+        return self._data[index]
+
+    @property
+    def analyst_price_targets(self):
+        return self._read("analyst_price_targets", 0)
+
+    @property
+    def recommendations(self):
+        return self._read("recommendations", 1)
+
+    @property
+    def upgrades_downgrades(self):
+        return self._read("upgrades_downgrades", 2)
+
+
+def test_a_missing_upgrade_history_keeps_targets_and_recommendations(fixtures_dir):
+    ticker = FakeTicker(
+        aapl(fixtures_dir), raises={"upgrades_downgrades": YFDataException("No upgrade/downgrade history")}
+    )
+    targets, recommendations, upgrades = read_ticker(ticker)
+    assert upgrades.empty
+    view = analyst_view("AAPL", targets, recommendations, upgrades, AS_OF)
+    assert view.target_mean == pytest.approx(328.09384)
+    assert (view.rec_strong_buy, view.rec_buy, view.rec_hold) == (6, 19, 13)
+
+
+def test_a_rate_limit_while_reading_a_ticker_propagates(fixtures_dir):
+    ticker = FakeTicker(aapl(fixtures_dir), raises={"recommendations": YFRateLimitError("Too Many Requests")})
+    with pytest.raises(YFRateLimitError):
+        read_ticker(ticker)

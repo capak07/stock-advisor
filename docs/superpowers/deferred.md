@@ -1,6 +1,6 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a and Plan 2b reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
+These are items that the Plan 1, Plan 2a, Plan 2b and Plan 2c reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2d: SEC
 
@@ -28,6 +28,8 @@ These are items that the Plan 1, Plan 2a and Plan 2b reviews deliberately pushed
 - **Partial current-day bar** at the pre-close run, from Yahoo. Features must treat today's bar as incomplete.
 - **Benchmarks** (SPY, XIU.TO, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.
+- **Analyst rotation:** `max_symbols` always takes the head of the missing list. Rotate the rest oldest-first, so the bottom of the analyst shortlist isn't left unfetched forever.
+- **Earnings failure rate:** measure the first live run's per-symbol failure rate for `yfinance_earnings`.
 
 ## Plans 4 and 5: recommendations and dashboard
 
@@ -38,11 +40,17 @@ These are items that the Plan 1, Plan 2a and Plan 2b reviews deliberately pushed
 - Indexes on `picks.run_id` and `source_health.run_id`, added with their first readers.
 - **Old USD lots and sells:** pre-rev-2 USD lots and sells have no `fx_rate_cad`, and the `*_usd_needs_fx_rate` check (NOT VALID) still applies on UPDATE. Editing such a row fails until a rate is backfilled. Backfill from Bank of Canada rates first.
 - **`settings.updated_at`** has no trigger. The Settings page must set it, or add a trigger.
+- **Failed-run counts:** a failed run's per-market `priced` and `fresh` count only priority symbols.
 - **`runs.summary` shape:** it changed in Plan 2b, from flat keys to `{"markets": {"US": …, "TSX": …}, …}`. The dashboard must read both shapes, or ignore runs from before the change.
 - **Run summary `shortlist`:** the per-market `shortlist` excludes priority symbols but the top-level `shortlist` includes them. Rename one before the dashboard shows them side by side.
 
 ## Operational and minor
 
+- **Breaker and deadlines:** a `DeadlineExceeded` failure counts toward the circuit breaker.
+- **Stale versus partial:** a call whose fetched symbols all fail while the window served the rest reports STALE, not PARTIAL, and counts toward the breaker.
+- **Run deadline:** it starts in `execute_run`, after job setup. Consider a 28-minute budget if runs approach the 40-minute kill.
+- **FINRA symbol-key twins:** `BRK.B` and a plain `BRKB` share one key, and the later request wins silently.
+- **No markers on PARTIAL:** a PARTIAL result writes no empty markers, so uncovered symbols are refetched while any symbol keeps failing. This costs capped slots.
 - **Old shortlist default:** remove the `SHORTLIST_SIZE = 300` default and the unused `shortlist()` helper in `enrich.py`, or require an explicit size.
 
 - **Deploy-time probe:** check that the `advisor_pipeline` login really cannot write holdings or run DDL on Supabase, and that Supavisor accepts the `advisor_pipeline.<project-ref>` user.

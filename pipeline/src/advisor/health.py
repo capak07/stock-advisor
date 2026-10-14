@@ -96,9 +96,11 @@ def check_sources(
     cache: DiskCache,
     states: Mapping[str, SourceState],
     now: datetime,
-    **kwargs: float,
+    *,
+    workers: int = HEALTH_WORKERS,
+    budget: float = SOURCE_BUDGET_SECONDS,
 ) -> list[tuple[CollectorResult, int]]:
-    return list(iter_checks(collectors, cache, states, now, **kwargs))
+    return list(iter_checks(collectors, cache, states, now, workers=workers, budget=budget))
 
 
 def main(argv: list[str] | None = None) -> int:

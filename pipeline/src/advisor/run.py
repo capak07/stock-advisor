@@ -326,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{kind.value} already published today; nothing to do.")
             return 0
         with make_client() as client:
-            deps = RunDeps(conn, DiskCache(settings.cache_dir), build_registry(settings, client))
+            deps = RunDeps(conn, DiskCache(settings.cache_dir, clock=lambda: now), build_registry(settings, client))
             outcome = execute_run(deps, kind, now)
 
     print(json.dumps({"run_id": outcome.run_id, "status": outcome.status.value, **outcome.summary}))

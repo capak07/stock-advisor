@@ -10,6 +10,7 @@ from advisor.collectors.tmx_symbols import TmxSymbols
 from advisor.collectors.yahoo import YAHOO_PER_MINUTE
 from advisor.collectors.yfinance_analyst import YFinanceAnalyst
 from advisor.collectors.yfinance_bars import YFinanceBars
+from advisor.collectors.yfinance_earnings import YFinanceEarnings
 from advisor.config import Settings
 
 FINRA_PER_MINUTE = 60
@@ -25,5 +26,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         FinraShortVolume(client, finra),
         FinraShortInterest(client, finra),
         YFinanceAnalyst(limiter=yahoo),
+        YFinanceEarnings(limiter=yahoo),
     ]
     return {collector.name: collector for collector in collectors}

@@ -1,122 +1,155 @@
-# Stock Advisor — Plan 2c: Collector Contract and Market-Data Sources Implementation Plan
-
-> **Status: draft from before spec rev 2. Do not execute until it has been revised.** It was written as Plan 2b and renamed after spec rev 2. The revision must:
-> - drop the Finnhub and FMP tasks (8–10) and every key-based credential;
-> - add Yahoo earnings dates (source 17, core) and Bank of Canada FX (source 7);
-> - make collectors market-aware, building on Plan 2b's `advisor.markets`;
-> - keep the deadline, cadence cache, concurrent health check, contract, FINRA and Yahoo analyst tasks.
+# Stock Advisor — Plan 2c: Collector Infrastructure and Market Data Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:**
-- Finish the collector infrastructure that Plan 2a deferred (`docs/superpowers/deferred.md`, "Plan 2b, Task 0"):
+- Finish the collector infrastructure that earlier plans deferred (`docs/superpowers/deferred.md`, "Plan 2c, Task 0" and "Plan 2c"):
   - a run deadline;
+  - a written collector contract, with stock-market coverage;
   - a cadence-window cache;
   - a concurrent health check;
-  - the written collector contract.
-- Add the six non-SEC fundamentals sources from spec §4.2:
+  - lean failing runs.
+- Add five keyless sources:
   - FINRA short volume (#14) and short interest (#13);
-  - yfinance analyst data (#16);
-  - Finnhub recommendation trends (#17) and earnings (#18);
-  - FMP ratios (#15).
+  - Yahoo analyst data (#16);
+  - Yahoo earnings dates and surprises (#17, core);
+  - Bank of Canada Valet (#7).
 
 **Architecture:**
-- **Run deadline:** a context-variable deadline, which `get_with_retries` and long collector loops honour, bounds every source.
-- **Cadence-window cache:** the runner serves DAILY and WEEKLY collectors from entries saved in the current ET day or ISO week, and fetches only the missing symbols. An optional per-collector `max_symbols` caps one call, so the rest wait for a later run (FMP's free plan allows 250 calls a day).
-- **New sources:** each one is a single module behind the existing `Collector` protocol, with one shared rate limiter per provider. Their tests use real response fixtures, captured on 2026-10-12, under `pipeline/tests/fixtures/`.
+- **Run deadline.** A context-variable deadline bounds every source. `get_with_retries`, long collector loops and the Yahoo price download loop all honour it.
+- **Market coverage.** Each collector declares the stock markets it covers. The enrichment stage only sends it symbols of those markets, so TSX symbols never reach US-only FINRA files.
+- **Cadence-window cache.** The runner serves DAILY and WEEKLY collectors from entries saved in the current ET day or ISO week, and fetches only missing symbols. An optional `max_symbols` caps one call; the rest wait for a later run, holdings first.
+- **New sources.** Each is one module behind the `Collector` protocol, with one shared rate limiter per provider. Each is tested against real responses recorded on 2026-10-12 to 2026-10-14. Those fixtures are already committed under `pipeline/tests/fixtures/`.
 
-**Tech Stack:** Python 3.12, uv, httpx, pydantic v2, pandas, yfinance, pandas-market-calendars, pytest, ruff, Postgres 16 (Docker), GitHub Actions.
+**Tech Stack:** Python 3.12, uv, httpx, pydantic v2, pandas, yfinance 1.7, pandas-market-calendars, pytest, ruff, Postgres 16 (Docker), GitHub Actions.
 
-**Spec:** `docs/superpowers/specs/2026-10-09-stock-advisor-design.md`. Read §4.1, §4.2 (sources 13–18) and §10.
-- Research notes are in `.superpowers/research/plan-2b/` (finra.md, finnhub_fmp.md, yfinance_analyst.md); they're git-ignored, so read them locally.
-- The work deferred to this plan is in `docs/superpowers/deferred.md`.
+**Spec:** `docs/superpowers/specs/2026-10-09-stock-advisor-design.md` (rev 2). Read:
+- §2 R7;
+- §3 Scheduling (the 30-minute deadline);
+- §4.1;
+- §4.2 sources 7 and 13–17;
+- §5.1 (the Ownership and flow, Earnings and Macro regime rows);
+- §7.2;
+- §10.
 
-## Roadmap update
+Plans 1, 2a and 2b built everything this plan modifies. The work deferred to this plan is in `docs/superpowers/deferred.md`.
+
+## Roadmap
 
 | Plan | Delivers |
 |---|---|
-| **2b (this plan)** | Deadline, cadence cache, concurrent health check, collector contract, plus FINRA ×2, yfinance analyst, Finnhub ×2 and FMP |
-| 2b-SEC (next) | SEC XBRL financials, 8-K, Form 4, 13F (quarterly data sets plus CUSIP mapping), 13D/G. The research is already in `.superpowers/research/plan-2b/sec.md`, with fixtures in `pipeline/tests/fixtures/sec/` |
-| 2c | Macro, options, crypto, on-chain and catalyst sources |
-| 2d | News and social sources, de-duplication and FinBERT |
+| 2a, 2b | Done |
+| **2c (this plan)** | Deadline, contract and market coverage, cadence cache, concurrent health check, lean failing runs; FINRA ×2, Yahoo analyst, Yahoo earnings, Bank of Canada |
+| 2d | SEC: XBRL facts, 8-K, Form 4, 13F, 13D/G. The research is in `.superpowers/research/plan-2b/sec.md` and the fixtures in `.superpowers/research/plan-2c-fixtures/sec/` (both git-ignored) |
+| 2e | Macro, options, crypto, on-chain, catalysts, and Canadian short positions |
+| 2f | News and social sources, de-duplication, ticker mapping, FinBERT |
+
+## Plan-level decisions
+
+These refine the spec without changing what it asks for. The spec edit that goes with them is in the same commit as this plan.
+
+- **`markets` on the collector protocol.** Each collector declares `markets: frozenset[Market]`, the stock markets it covers, and `enrich.symbols_for` sends it only those markets' stock symbols. Spec §4.1 gains this attribute. Universe and market-wide collectors declare it too, as documentation; it only filters SYMBOLS-scope stock symbols.
+- **No credentials in this plan.** No source here needs one (R7). `MissingCredential` and the SEC contact setting arrive with Plan 2d, which is the only plan that uses them.
+- **One rate limiter per provider**, built in `build_registry`:
+  - FINRA's two collectors share 60 requests/minute.
+  - Yahoo's per-symbol collectors (analyst and earnings) share 120/minute.
+  - The Yahoo price download is a bulk `yf.download` and is bounded by the deadline instead.
+- **Yahoo analyst data is capped at 200 symbols per call** (spec §7.2 lists it as a capped source). With two runs a day and holdings first, about 400 symbols a day are refreshed, and anything not refetched is served from a cache up to 3 days old.
+- **Earnings: one record per report** (date, EPS estimate, actual, surprise). Plan 3 derives "days to the next report" and "last EPS surprise" (spec §5.1).
+  - When Yahoo lists one date twice, the reported row wins.
+  - Symbols Yahoo doesn't cover return `None`, which means no records, not a failure. Verified live on 2026-10-14 for SPY, XIU.TO and an unknown ticker.
+  - The source is core (spec §4.2).
+- **Bank of Canada:**
+  - The source is named `boc_valet`. It is market-wide and fetched once a day with a 120-day lookback, enough for a 63-session trend.
+  - It reads four series:
+    - `FXUSDCAD`, the daily USD/CAD rate;
+    - `V39079`, the policy rate;
+    - `BD.CDN.2YR.DQ.YLD`, the 2-year benchmark yield;
+    - `BD.CDN.10YR.DQ.YLD`, the 10-year benchmark yield.
+  - It is not core.
+- **Lean failing runs.** When any market's universe is too small to publish, the run skips the bulk price fetch: about 7,400 Yahoo requests during a TMX outage. It still retries the owner's unpriced holdings. Failure reasons then name only the universes.
+- **Run budget:** 30 minutes (spec §3), measured from the start of the run. GitHub kills the job at 40.
 
 ## Global Constraints
 
-- Python `>=3.12,<3.13`, managed by uv. Running cost is $0/month: free tiers only.
-- **Provider terms:** Finnhub and FMP free tiers are for personal, non-commercial use only. Never redistribute their data.
-- **Tests run in the Linux container:** `scripts/in-docker.sh uv run pytest ...`. Windows Application Control blocks psycopg's DLLs on the host.
-- **Lint runs on the host:** `uv run --no-sync ruff check --fix .`. A `uv` re-sync can fail with "Access is denied" under OneDrive.
-- Run all commands from `stock-advisor/pipeline/` unless a step says otherwise.
-- **Collector contract** (Task 2 writes it into `collectors/base.py`):
+- Python `>=3.12,<3.13`, managed by uv, with `uv.lock` committed. Running cost is $0/month.
+- **R7:** "Free data sources only, with no API keys and no accounts." No collector, setting or secret may need one.
+- **Collector contract.** Task 2 writes it into `collectors/base.py`:
   - Collectors never touch the database.
-  - SYMBOLS-scope records have `symbol` equal to the canonical requested symbol (`BRK.B`). Provider formats such as `BRK/B`, `BRKB` and `BRK-B` are mapped inside the collector.
-  - Collectors raise `PartialFetch` for per-request failures.
-  - Long loops call `check_deadline()`.
-  - HTTP goes through `get_with_retries`.
-- **API keys:**
-  - Send them in headers where the provider supports it (Finnhub: `X-Finnhub-Token`).
-  - FMP only accepts a query parameter, so pass it via `params=`. Error text uses query-free URLs (Plan 2a F4).
-  - Keys come only from environment variables or GitHub secrets.
-  - A missing key fails only that source, with `MissingCredential: <ENV_NAME> is not set`.
-- **Holdings first:** the runner passes symbols with priority first, and collectors keep that order.
-- **Registering a source:** every new source gets a registry entry and a row in the registry test table `EXPECTED`.
+  - Records of SYMBOLS-scope collectors carry the canonical requested symbol (`BRK.B`, `RCI-B.TO`). Provider formats (`BRK/B`, `BRKB`, `BRK-B`) are mapped inside the collector.
+  - A collector raises `PartialFetch` for per-request failures. An empty one counts as a failure.
+  - HTTP goes through `get_with_retries`. Error text never contains query strings.
+  - Long loops honour the run deadline.
+  - A collector is sent only symbols of the markets it declares.
+- **Holdings first (spec §3 rule 5, §7.2):** symbol lists keep their priority order, and capped sources spend their quota on holdings first.
+- **Registering a source:** every new source gets a registry entry and a row in `EXPECTED` in `pipeline/tests/unit/test_registry.py`.
 - **Migrations are append-only.** This plan needs none.
-- Every commit message ends with a `Co-Authored-By:` trailer naming the model that actually wrote the commit. Never bypass git hooks.
+- **Tests use the recorded real responses** under `pipeline/tests/fixtures/{finra,yfinance_analyst,yfinance_earnings,boc}/`, which were committed with this plan. Tests make no live network calls.
+- **Tests and lint run in Docker,** from the repo root. Windows Application Control blocks psycopg's DLLs on the host, and the host `.venv` under OneDrive is fragile.
+  - Tests: `pipeline/scripts/in-docker.sh uv run pytest -q`.
+  - Lint: `pipeline/scripts/in-docker.sh uv run ruff check .`.
+- **Stage explicit file paths only.** Never use `git add -A`, `git add .`, or a bare directory.
+- Never bypass git hooks: no `--no-verify`, no `-n`.
+- Every commit message ends with a `Co-Authored-By:` trailer naming the model that actually wrote the commit.
 
 ## Review Focus
 
-1. **A missing or wrong API key** must fail only that source, with a clear message. It must not crash the run, stall it, or put the key in any stored text. Tested in Tasks 2, 8 and 10.
-2. **FMP's daily cap:** symbols beyond `max_symbols` must not be marked as fetched for the window. They're served from older cache and fetched on a later run. Tested in Tasks 3 and 10.
-3. **Provider symbol formats** (`BRK/B` in FINRA's volume file, `BRKB` in its short-interest file, `BRK-B` at Yahoo) must come back as `BRK.B`. Tested in Tasks 5, 6 and 7.
-4. **A FINRA file that isn't published yet** (HTTP 403 on the run day, a weekend or a holiday) must fall back to the newest published file, not fail. Tested in Tasks 5 and 6.
-5. **A slow source past the run budget** must end as a failed or partial source while the run still publishes. Tested in Tasks 1 and 7.
+These are the five inputs most likely to hurt the owner that no earlier test exercises. Each has a test in its owning task.
 
----
+1. **A slow source, or a slow Yahoo, past the 30-minute budget.** The source ends FAILED or PARTIAL and the run still finishes and publishes, instead of the job being killed with an abandoned run. *Tests: Task 1 (tracker, run, and the Yahoo download loop).*
+2. **A FINRA file that isn't published yet** (HTTP 403 on the run day, a weekend or a holiday) falls back to the newest published file instead of failing. *Tests: Tasks 6 and 7.*
+3. **Provider symbol formats come back canonical, and TSX symbols never reach US-only sources.** `BRK/B`, `BRKB` and `BRK-B` must come back as `BRK.B`. Without the market filter, a FINRA key collision like `RY.TO` → `RYTO` could even attach another company's data. *Tests: Tasks 2, 6, 7 and 8.*
+4. **Yahoo lists one earnings date twice, or has no coverage for a symbol.** The result is one report per date with the reported row winning. No coverage means no records, so the core earnings source doesn't degrade every run over an ETF on the watchlist. *Tests: Task 9.*
+5. **The capped analyst source.** Symbols past `max_symbols` are not marked as fetched for the window. They are served from older cache and fetched on a later run, holdings first. *Tests: Tasks 3 and 8.*
 
 ## File Structure
 
-```
-pipeline/src/advisor/
-  collectors/base.py       MOD  deadline, DeadlineExceeded, check_deadline, MissingCredential, require,
-                                collect_per_symbol, contract docstring, protocol attr max_symbols
-  collectors/cache.py      MOD  DiskCache.get_entry
-  collectors/runner.py     MOD  cadence windows, empty markers, max_symbols, partial backfill, use_window
-  collectors/tracker.py    MOD  deadline_at
-  collectors/registry.py   MOD  six new sources, shared Finnhub limiter
-  collectors/finra_short_volume.py, finra_short_interest.py, yfinance_analyst.py,
-  collectors/finnhub.py (shared helpers), finnhub_recommendations.py, finnhub_earnings.py, fmp_ratios.py   NEW
-  symbols.py               NEW  provider-neutral symbol keys
-  config.py                MOD  optional FINNHUB_API_KEY, FMP_API_KEY, SEC_USER_AGENT
-  health.py                MOD  concurrent checks, per-source budget, rows written as they finish
-  run.py                   MOD  run budget
-pipeline/tests/fixtures/{finra,finnhub,fmp,yfinance_analyst}/   EXIST (untracked) — commit them with their task
-.github/workflows/run.yml, health.yml   MOD  new secrets
-pipeline/scripts/in-docker.sh           MOD  forward new env vars
-README.md                               MOD  data-source keys
-```
+| File | Responsibility | Task |
+|---|---|---|
+| `collectors/base.py` | Deadline (`deadline`, `time_left`, `check_deadline`, `DeadlineExceeded`); contract docstring; `collect_per_symbol`; protocol attributes `markets` and `max_symbols` | 1, 2, 3 |
+| `collectors/tracker.py` | Runs every call inside the run deadline | 1 |
+| `collectors/yfinance_bars.py` | Stops the download loop at the deadline; `markets`, `max_symbols` | 1, 2, 3 |
+| `collectors/nasdaq_symbols.py`, `collectors/tmx_symbols.py` | `markets`, `max_symbols` | 2, 3 |
+| `enrich.py` | Market filter in `symbols_for` | 2 |
+| `collectors/cache.py`, `collectors/runner.py` | Cadence windows, empty markers, `max_symbols`, partial backfill, `use_window` | 3 |
+| `health.py` | Concurrent checks with a per-source budget; rows written as they finish | 4 |
+| `run.py` | Run budget; lean failing runs | 1, 5 |
+| `symbols.py` (new) | Provider-neutral symbol keys | 6 |
+| `collectors/finra_short_volume.py`, `collectors/finra_short_interest.py` (new) | Sources 14 and 13 | 6, 7 |
+| `collectors/yahoo.py` (new) | Shared Yahoo helpers: `YAHOO_PER_MINUTE`, `rate_limited` | 8 |
+| `collectors/yfinance_analyst.py`, `collectors/yfinance_earnings.py` (new) | Sources 16 and 17 | 8, 9 |
+| `collectors/boc_valet.py` (new) | Source 7 | 10 |
+| `collectors/registry.py` | New sources and one limiter per provider | 6–10 |
+| `pipeline/tests/fakes.py` | `FakeCollector.markets`, `FakeCollector.max_symbols` | 2, 3 |
+| `docs/superpowers/deferred.md` | Plan 2c items resolved; items left for later recorded | 10 |
+
+All paths above are under `pipeline/src/advisor/` unless they start with `pipeline/` or `docs/`.
 
 ---
 
 ### Task 1: Run deadline
 
 **Files:**
-- Modify: `pipeline/src/advisor/collectors/base.py`, `pipeline/src/advisor/collectors/tracker.py`, `pipeline/src/advisor/run.py`
-- Test: `pipeline/tests/unit/test_base.py`, `pipeline/tests/unit/test_tracker.py`, `pipeline/tests/integration/test_run.py`
+- Modify: `pipeline/src/advisor/collectors/base.py`, `pipeline/src/advisor/collectors/tracker.py`, `pipeline/src/advisor/collectors/yfinance_bars.py`, `pipeline/src/advisor/run.py`
+- Test: `pipeline/tests/unit/test_base.py`, `pipeline/tests/unit/test_tracker.py`, `pipeline/tests/unit/test_yfinance_bars.py`, `pipeline/tests/integration/test_run.py`
 
 **Interfaces:**
-- Produces:
-  - In `base`:
-    - `DeadlineExceeded(Exception)`;
-    - `deadline(at: float | None)`, a context manager;
-    - `time_left(clock=time.monotonic) -> float | None`;
-    - `check_deadline(clock=time.monotonic) -> None`;
-    - `get_with_retries(..., clock=time.monotonic)`, which stops before a request or a retry wait that would overrun the deadline.
-  - `SourceTracker(..., *, deadline_at: float | None = None)`.
-  - `run.RUN_BUDGET_SECONDS = 30 * 60` and `execute_run(..., run_budget: float = RUN_BUDGET_SECONDS)`.
+- Produces in `base`:
+  - `BUDGET_EXHAUSTED = "run time budget exhausted"`;
+  - `DeadlineExceeded(Exception)`;
+  - `deadline(at: float | None)`, a context manager;
+  - `time_left(clock=time.monotonic) -> float | None`;
+  - `check_deadline(clock=time.monotonic) -> None`;
+  - `get_with_retries(..., clock=time.monotonic)`, which stops before a request, or a retry wait, that would overrun the deadline.
+- Produces elsewhere:
+  - `SourceTracker(..., *, deadline_at: float | None = None)`;
+  - `run.RUN_BUDGET_SECONDS = 30 * 60`;
+  - `execute_run(..., run_budget: float = RUN_BUDGET_SECONDS)`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `pipeline/tests/unit/test_base.py`. Add `DeadlineExceeded`, `check_deadline` and `deadline` to its `advisor.collectors.base` import, and `FakeClock` to its `fakes` import:
+Append to `pipeline/tests/unit/test_base.py`, and change its base import to `from advisor.collectors.base import DeadlineExceeded, RateLimiter, check_deadline, deadline, get_with_retries`:
+
 ```python
 def test_check_deadline_is_a_no_op_without_a_deadline():
     check_deadline()
@@ -126,7 +159,7 @@ def test_deadline_applies_only_inside_its_block():
     clock = FakeClock()
     clock.now = 100.0
     with deadline(50.0):
-        with pytest.raises(DeadlineExceeded):
+        with pytest.raises(DeadlineExceeded, match="run time budget exhausted"):
             check_deadline(clock)
     check_deadline(clock)
 
@@ -161,7 +194,8 @@ def test_a_retry_that_fits_the_deadline_still_happens():
     assert clock.sleeps == [1.0]
 ```
 
-Append to `pipeline/tests/unit/test_tracker.py`. Add `import time` and `from advisor.collectors.base import check_deadline` to its imports:
+Append to `pipeline/tests/unit/test_tracker.py`, and add `import time` and `from advisor.collectors.base import check_deadline` to its imports:
+
 ```python
 def test_tracker_applies_its_deadline_to_every_call(tmp_path):
     slow = FakeCollector("slow", records_for=lambda syms: (check_deadline(), [])[1])
@@ -173,30 +207,64 @@ def test_tracker_applies_its_deadline_to_every_call(tmp_path):
     assert result.error == "DeadlineExceeded: run time budget exhausted"
 ```
 
-Append to `pipeline/tests/integration/test_run.py`. Add `from advisor.collectors.base import check_deadline` to its imports:
+Append to `pipeline/tests/unit/test_yfinance_bars.py`, and change its base import to `from advisor.collectors.base import DeadlineExceeded, PartialFetch`:
+
+```python
+def test_fetch_stops_at_the_run_deadline_with_what_it_has(monkeypatch):
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.SYMBOLS_PER_DOWNLOAD", 5)
+    lefts = iter([60.0, 0.0])  # time left before the first and the second download
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.time_left", lambda: next(lefts))
+    calls = []
+
+    def fake_download(tickers, start, end):
+        calls.append(tickers)
+        return two_ticker_frame()
+
+    symbols = ["AAPL", "BRK.B", "C", "D", "E", "F", "G", "H", "I", "J"]
+    with pytest.raises(PartialFetch, match="run time budget exhausted; 1 of 2 not tried") as caught:
+        YFinanceBars(download=fake_download).fetch(symbols, AS_OF)
+    assert len(calls) == 1
+    assert {b.symbol for b in caught.value.records} == {"AAPL", "BRK.B"}
+
+
+def test_fetch_past_the_deadline_before_any_download_raises(monkeypatch):
+    monkeypatch.setattr("advisor.collectors.yfinance_bars.time_left", lambda: 0.0)
+
+    def must_not_download(tickers, start, end):
+        raise AssertionError("downloaded past the deadline")
+
+    with pytest.raises(DeadlineExceeded, match="run time budget exhausted; 1 of 1 not tried"):
+        YFinanceBars(download=must_not_download).fetch(["AAPL"], AS_OF)
+```
+
+Append to `pipeline/tests/integration/test_run.py`, and change its base import to `from advisor.collectors.base import PartialFetch, Scope, check_deadline`:
+
 ```python
 def test_a_source_past_the_run_budget_fails_and_the_run_still_publishes(db, tmp_path):
     extra = {
         "slow": FakeCollector("slow", core=False, records_for=lambda syms: (check_deadline(), [])[1])
     }
     outcome = execute_run(
-        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=3, run_budget=0
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL, run_budget=0
     )
     assert outcome.status is RunStatus.SUCCESS  # the price fakes never consult the deadline
+    assert run_row(db, outcome.run_id)["published"] is True
     assert ("slow", "failed") in health(db, outcome.run_id)
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_base.py tests/unit/test_tracker.py tests/integration/test_run.py -v`
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_base.py tests/unit/test_tracker.py tests/unit/test_yfinance_bars.py tests/integration/test_run.py -q`
 Expected: ImportError for `DeadlineExceeded`, `check_deadline` and `deadline`.
 
 - [ ] **Step 3: Implement the deadline in `base.py`**
 
 Add `import contextlib` and `from contextvars import ContextVar` to the imports. Change the `collections.abc` import to `from collections.abc import Callable, Iterator, Mapping, Sequence`.
 
-Add after the `PartialFetch` class:
+Add this after the `PartialFetch` class:
+
 ```python
+BUDGET_EXHAUSTED = "run time budget exhausted"
 _DEADLINE: ContextVar[float | None] = ContextVar("collector_deadline", default=None)
 
 
@@ -224,20 +292,22 @@ def check_deadline(clock: Callable[[], float] = time.monotonic) -> None:
     """Raise DeadlineExceeded once the current deadline has passed; long loops call this per item."""
     left = time_left(clock)
     if left is not None and left <= 0:
-        raise DeadlineExceeded("run time budget exhausted")
+        raise DeadlineExceeded(BUDGET_EXHAUSTED)
 ```
 
 In `get_with_retries`:
-- add the parameter `clock: Callable[[], float] = time.monotonic` after `sleep`;
-- at the top of the loop body, right after `retry_after: float | None = None`, insert:
+1. Add the parameter `clock: Callable[[], float] = time.monotonic` after `sleep`.
+2. At the top of the loop body, right after `retry_after: float | None = None`, replace the existing `if limiter is not None: limiter.acquire()` lines with:
+
 ```python
         check_deadline(clock)
         if limiter is not None:
             limiter.acquire()
             check_deadline(clock)  # a busy shared limiter may have slept past the deadline
 ```
-  and delete the old `if limiter is not None: limiter.acquire()` lines;
-- replace the end-of-loop wait block with:
+
+3. Replace the end-of-loop wait block (`if attempt < attempts - 1: ... sleep(...)`) with:
+
 ```python
         if attempt < attempts - 1:
             backoff = base_delay * 2**attempt
@@ -245,93 +315,115 @@ In `get_with_retries`:
             left = time_left(clock)
             if left is not None and wait >= left:
                 raise DeadlineExceeded(
-                    f"run time budget exhausted while retrying {_safe_url(url)}"
+                    f"{BUDGET_EXHAUSTED} while retrying {_safe_url(url)}"
                 ) from last_error
             sleep(wait)
 ```
 
-- [ ] **Step 4: Apply the deadline in the tracker and the orchestrator**
+- [ ] **Step 4: Stop the Yahoo download loop at the deadline**
+
+In `collectors/yfinance_bars.py`, change the base import to `from advisor.collectors.base import BUDGET_EXHAUSTED, Cadence, Category, DeadlineExceeded, PartialFetch, Scope, time_left`. Then replace `YFinanceBars.fetch` with:
+
+```python
+    def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[DailyBar]:
+        unique = sorted(set(symbols))
+        start = (as_of - LOOKBACK).astimezone(ET).date()
+        end = as_of.astimezone(ET).date() + timedelta(days=1)
+        chunks = [
+            unique[i : i + SYMBOLS_PER_DOWNLOAD] for i in range(0, len(unique), SYMBOLS_PER_DOWNLOAD)
+        ]
+        bars: list[DailyBar] = []
+        empty = streak = not_tried = 0
+        stopped = ""
+        for done, chunk in enumerate(chunks):
+            left = time_left()
+            if left is not None and left <= 0:  # yfinance sends one request per ticker
+                stopped, not_tried = BUDGET_EXHAUSTED, len(chunks) - done
+                break
+            mapping = {to_yahoo(s): s for s in chunk}
+            got = parse_frame(self._download(list(mapping), start, end), mapping)
+            if got:
+                streak = 0
+            elif len(chunk) >= MIN_SYMBOLS_FOR_EMPTY_CHECK:
+                empty += 1
+                streak += 1
+            bars.extend(got)
+            if streak >= MAX_CONSECUTIVE_EMPTY and done + 1 < len(chunks):
+                stopped = f"stopped after {MAX_CONSECUTIVE_EMPTY} consecutive empty Yahoo downloads"
+                not_tried = len(chunks) - done - 1
+                break
+        if stopped:
+            message = f"{stopped}; {not_tried} of {len(chunks)} not tried"
+            if bars:
+                raise PartialFetch(bars, message)
+            if stopped == BUDGET_EXHAUSTED:
+                raise DeadlineExceeded(message)
+            raise RuntimeError(message)
+        if empty and not bars:
+            raise RuntimeError(
+                f"yfinance returned no bars for {len(unique)} symbols (blocked or rate-limited?)"
+            )
+        if empty:
+            raise PartialFetch(bars, f"{empty} of {len(chunks)} Yahoo downloads returned no bars")
+        return bars
+```
+
+The existing tests for the empty-download and consecutive-empty rules must keep passing unchanged.
+
+- [ ] **Step 5: Apply the deadline in the tracker and the orchestrator**
 
 In `collectors/tracker.py`:
 - import `deadline` from `advisor.collectors.base`;
-- add the keyword-only parameter `deadline_at: float | None = None` to `__init__`, after `states` (put `*,` before it), and store it as `self._deadline_at`;
-- in `run`, wrap the `run_collector(...)` call: `with deadline(self._deadline_at):` inside the existing `try`.
+- add a keyword-only parameter to `__init__`, after `states`: put `*,` before it, and declare `deadline_at: float | None = None`. Store it as `self._deadline_at`;
+- in `run`, wrap the `run_collector(...)` call inside the existing `try` with `with deadline(self._deadline_at):`.
 
 In `run.py`:
 - add `import time`;
-- add the constant `RUN_BUDGET_SECONDS = 30 * 60  # GitHub kills the job at 40 minutes` next to `MIN_PRICED_FRACTION`;
-- add the keyword-only parameter `run_budget: float = RUN_BUDGET_SECONDS` to `execute_run`;
+- add `RUN_BUDGET_SECONDS = 30 * 60  # spec §3; GitHub kills the job at 40 minutes` after `MIN_PRICED_FRACTION`;
+- add the keyword-only parameter `run_budget: float = RUN_BUDGET_SECONDS` to `execute_run`, after `min_universe`;
 - pass `deadline_at=time.monotonic() + run_budget` to `SourceTracker(...)`.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 6: Run the tests and lint**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_base.py tests/unit/test_tracker.py tests/integration/test_run.py -v`, then the full suite.
-Expected: all pass.
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes.
 
-- [ ] **Step 6: Commit**
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
+
+- [ ] **Step 7: Commit**
 
 ```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/collectors/base.py src/advisor/collectors/tracker.py src/advisor/run.py tests/unit/test_base.py tests/unit/test_tracker.py tests/integration/test_run.py
-git commit -m "feat: bound every source by a run deadline"
+git add pipeline/src/advisor/collectors/base.py pipeline/src/advisor/collectors/tracker.py \
+  pipeline/src/advisor/collectors/yfinance_bars.py pipeline/src/advisor/run.py \
+  pipeline/tests/unit/test_base.py pipeline/tests/unit/test_tracker.py \
+  pipeline/tests/unit/test_yfinance_bars.py pipeline/tests/integration/test_run.py
+git commit -m "feat: bound every source and the Yahoo price loop by a run deadline"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
 
 ---
 
-### Task 2: Collector contract, credentials, and per-symbol collection
+### Task 2: Collector contract, market coverage and per-symbol collection
 
 **Files:**
-- Modify: `pipeline/src/advisor/collectors/base.py`, `pipeline/src/advisor/config.py`, `.github/workflows/run.yml`, `.github/workflows/health.yml`, `pipeline/scripts/in-docker.sh`, `README.md`
-- Test: `pipeline/tests/unit/test_base.py`, `pipeline/tests/unit/test_config.py`
+- Modify: `pipeline/src/advisor/collectors/base.py`, `pipeline/src/advisor/enrich.py`, `pipeline/src/advisor/collectors/nasdaq_symbols.py`, `pipeline/src/advisor/collectors/tmx_symbols.py`, `pipeline/src/advisor/collectors/yfinance_bars.py`, `pipeline/tests/fakes.py`
+- Test: `pipeline/tests/unit/test_base.py`, `pipeline/tests/unit/test_enrich.py`, `pipeline/tests/unit/test_registry.py` (rewrite as a table)
 
 **Interfaces:**
-- Consumes: `check_deadline` and `DeadlineExceeded` (Task 1), and `PartialFetch`
+- Consumes: `check_deadline` and `DeadlineExceeded` (Task 1), and `PartialFetch`.
 - Produces:
-  - In `base`:
-    - `MissingCredential(RuntimeError)`;
-    - `require(value: str | None, env_name: str) -> str`;
-    - `collect_per_symbol(symbols, fetch_one, *, is_fatal=..., pause=None) -> list[BaseModel]`.
-  - `Settings` fields `finnhub_api_key: str | None`, `fmp_api_key: str | None` and `sec_user_agent: str | None` (all default `None`; a blank env value counts as unset).
+  - protocol attribute `markets: frozenset[Market]`;
+  - `base.collect_per_symbol(symbols, fetch_one, *, is_fatal=..., pause=None) -> list[BaseModel]`;
+  - `FakeCollector.markets`, which defaults to both markets;
+  - the registry test table `EXPECTED`, keyed by name with values `(core, scope, canary_requires_records, markets)`. Later tasks add rows.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `pipeline/tests/unit/test_config.py`, which already defines `FULL`:
+Append to `pipeline/tests/unit/test_base.py`. Add `PartialFetch` and `collect_per_symbol` to its base import, and change the fakes import to `from fakes import FakeClock, info`:
+
 ```python
-def test_source_credentials_default_to_none():
-    settings = Settings.from_env(FULL)
-    assert (settings.finnhub_api_key, settings.fmp_api_key, settings.sec_user_agent) == (
-        None, None, None,
-    )
-
-
-def test_source_credentials_are_read_and_blank_means_unset():
-    settings = Settings.from_env({
-        **FULL,
-        "FINNHUB_API_KEY": "fk-123",
-        "FMP_API_KEY": "",
-        "SEC_USER_AGENT": "stock-advisor me@example.com",
-    })
-    assert settings.finnhub_api_key == "fk-123"
-    assert settings.fmp_api_key is None
-    assert settings.sec_user_agent == "stock-advisor me@example.com"
-
-
-def test_repr_hides_source_keys():
-    settings = Settings.from_env({**FULL, "FINNHUB_API_KEY": "fk-SECRET-1", "FMP_API_KEY": "fmp-SECRET-2"})
-    assert "fk-SECRET-1" not in repr(settings)
-    assert "fmp-SECRET-2" not in repr(settings)
-```
-
-Append to `pipeline/tests/unit/test_base.py`. Add `MissingCredential`, `PartialFetch`, `collect_per_symbol` and `require` to the base import, and `info` to the fakes import:
-```python
-def test_require_returns_the_value_or_names_the_missing_setting():
-    assert require("abc", "FMP_API_KEY") == "abc"
-    for missing in (None, ""):
-        with pytest.raises(MissingCredential, match="FMP_API_KEY is not set"):
-            require(missing, "FMP_API_KEY")
-
-
 def test_collect_per_symbol_fetches_each_symbol_once_in_order():
     seen, pauses = [], []
 
@@ -356,12 +448,16 @@ def test_collect_per_symbol_turns_symbol_failures_into_a_partial_result():
     assert [r.symbol for r in caught.value.records] == ["A", "C"]
 
 
+class Throttled(Exception):
+    pass
+
+
 def test_a_fatal_error_before_any_record_is_raised_as_is():
     def one(symbol):
-        raise MissingCredential("FINNHUB_API_KEY is not set")
+        raise Throttled("Too Many Requests")
 
-    with pytest.raises(MissingCredential):
-        collect_per_symbol(["A", "B"], one, is_fatal=lambda exc: isinstance(exc, MissingCredential))
+    with pytest.raises(Throttled):
+        collect_per_symbol(["A", "B"], one, is_fatal=lambda exc: isinstance(exc, Throttled))
 
 
 def test_a_fatal_error_after_some_records_stops_with_a_partial_result():
@@ -370,11 +466,11 @@ def test_a_fatal_error_after_some_records_stops_with_a_partial_result():
     def one(symbol):
         calls.append(symbol)
         if symbol == "B":
-            raise RuntimeError("rate limited")
+            raise Throttled("Too Many Requests")
         return [info(symbol)]
 
     with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols") as caught:
-        collect_per_symbol(["A", "B", "C"], one, is_fatal=lambda exc: isinstance(exc, RuntimeError))
+        collect_per_symbol(["A", "B", "C"], one, is_fatal=lambda exc: isinstance(exc, Throttled))
     assert calls == ["A", "B"]
     assert [r.symbol for r in caught.value.records] == ["A"]
 
@@ -389,47 +485,116 @@ def test_the_run_deadline_stops_the_loop_like_a_fatal_error():
         collect_per_symbol(["A", "B", "C"], one)
 ```
 
+Append to `pipeline/tests/unit/test_enrich.py`, and change its models import to `from advisor.models import AssetType, Market`:
+
+```python
+TWO_MARKETS = EnrichTargets(
+    priority_stocks=["OTCX", "SHOP.TO"], crypto=["BTC"], ranked_stocks=["AAA", "RY.TO"]
+)
+
+
+def test_symbols_for_sends_only_the_markets_a_collector_covers():
+    us_only = FakeCollector("us_only", markets=frozenset({Market.US}))
+    tsx_only = FakeCollector("tsx_only", markets=frozenset({Market.TSX}))
+    both = FakeCollector("both")
+    mixed = FakeCollector(
+        "mixed",
+        asset_types=frozenset({AssetType.STOCK, AssetType.CRYPTO}),
+        markets=frozenset({Market.US}),
+    )
+    assert symbols_for(us_only, TWO_MARKETS) == ["OTCX", "AAA"]
+    assert symbols_for(tsx_only, TWO_MARKETS) == ["SHOP.TO", "RY.TO"]
+    assert symbols_for(both, TWO_MARKETS) == ["OTCX", "SHOP.TO", "AAA", "RY.TO"]
+    assert symbols_for(mixed, TWO_MARKETS) == ["OTCX", "BTC", "AAA"]  # crypto is never filtered
+```
+
+Replace `pipeline/tests/unit/test_registry.py` entirely with:
+
+```python
+from pathlib import Path
+
+import httpx
+
+from advisor.collectors.base import Scope
+from advisor.collectors.registry import build_registry
+from advisor.config import Settings
+from advisor.models import Market
+
+US = frozenset({Market.US})
+TSX = frozenset({Market.TSX})
+BOTH = frozenset({Market.US, Market.TSX})
+
+# name: (core, scope, canary_requires_records, markets). Every new source adds a row.
+EXPECTED = {
+    "nasdaq_symbols": (True, Scope.UNIVERSE, True, US),
+    "tmx_symbols": (True, Scope.UNIVERSE, True, TSX),
+    "yfinance_bars": (True, Scope.SYMBOLS, True, BOTH),
+}
+
+
+def build() -> dict:
+    with httpx.Client() as client:
+        return build_registry(Settings("postgresql://x", Path(".cache")), client)
+
+
+def test_registry_matches_the_expected_sources():
+    registry = build()
+    assert {
+        name: (c.core, c.scope, c.canary_requires_records, c.markets)
+        for name, c in registry.items()
+    } == EXPECTED
+    assert all(registry[name].name == name for name in registry)
+
+
+def test_symbols_collectors_have_canaries_and_symbol_records():
+    for collector in build().values():
+        assert bool(collector.canary) == (collector.scope is Scope.SYMBOLS)
+        if collector.scope is Scope.SYMBOLS:
+            field = collector.record_type.model_fields["symbol"]
+            assert field.annotation is str
+            assert field.is_required()
+```
+
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_base.py tests/unit/test_config.py -v`
-Expected: ImportError for `MissingCredential`, and `Settings` has no `finnhub_api_key`.
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_base.py tests/unit/test_enrich.py tests/unit/test_registry.py -q`
+Expected:
+- ImportError for `collect_per_symbol`;
+- `FakeCollector` has no `markets` field;
+- the collectors have no `markets` attribute.
 
-- [ ] **Step 3: Write the contract and helpers in `base.py`**
+- [ ] **Step 3: Write the contract, the protocol attribute and the helper in `base.py`**
 
 Replace the module docstring of `collectors/base.py` with:
+
 ```python
 """Shared building blocks for collectors: the interface, rate limiting, HTTP retries, deadlines.
 
 Collector contract (every source module follows it):
 - `fetch(symbols, as_of)` returns validated records or raises; it never touches the database.
-- SYMBOLS scope: every record has `symbol` equal to the canonical requested symbol ("BRK.B");
-  map provider formats ("BRK/B", "BRKB", "BRK-B") in and out inside the collector.
+- No source needs an API key or an account (spec R7).
+- SYMBOLS scope: every record has `symbol` equal to the canonical requested symbol ("BRK.B",
+  "RCI-B.TO"); map provider formats ("BRK/B", "BRKB", "BRK-B") in and out inside the collector.
+- `markets` names the stock markets a source covers; it is only sent symbols of those markets.
 - Raise PartialFetch(records, error) when some requests failed but others succeeded; an empty
   PartialFetch counts as a failure. `collect_per_symbol` does this for per-symbol APIs.
 - HTTP goes through `get_with_retries`: it honours the run deadline, backs off on 429/5xx, and
-  never puts query strings (where some providers require API keys) into error text.
-- Long loops call `check_deadline()` between items.
-- Prefer header auth. A provider that only accepts a query-param key gets it via `params=`.
-- A missing key raises MissingCredential via `require(value, "ENV_NAME")`, failing only that source.
+  never puts query strings into error text.
+- Long loops honour the run deadline (`check_deadline()` or `time_left()`) between items.
+- A provider's collectors share one RateLimiter, built in the registry.
 - `canary_requires_records` is True only for sources that always return data for their canary.
-- DAILY/WEEKLY collectors with `freshness` are served from this window's cache, and only missing
-  symbols are fetched; `max_symbols` caps one call (see runner).
 """
 ```
 
-Add after `check_deadline`:
+Add `Market` to the models import (`from advisor.models import AssetType, Market`). In the `Collector` protocol, add this after `asset_types`:
+
 ```python
-class MissingCredential(RuntimeError):
-    """A source's API key or contact setting is not configured."""
+    markets: frozenset[Market]  # stock markets covered; only their stock symbols are sent
+```
 
+Add this after `check_deadline`:
 
-def require(value: str | None, env_name: str) -> str:
-    """Return a configured credential, or fail this source with a clear message."""
-    if not value:
-        raise MissingCredential(f"{env_name} is not set")
-    return value
-
-
+```python
 def collect_per_symbol(
     symbols: Sequence[str],
     fetch_one: Callable[[str], Sequence[BaseModel]],
@@ -468,54 +633,61 @@ def collect_per_symbol(
     return records
 ```
 
-- [ ] **Step 4: Add the optional credentials to `Settings`**
+- [ ] **Step 4: Declare markets on every collector and the fake, and filter in `symbols_for`**
 
-In `config.py`, add three fields to `Settings` after `cache_dir`:
+Add a class attribute after `asset_types` in each collector, and import `Market` from `advisor.models` where it isn't already imported:
+- `nasdaq_symbols.py`: `markets = frozenset({Market.US})`
+- `tmx_symbols.py`: `markets = frozenset({Market.TSX})`
+- `yfinance_bars.py`: `markets = frozenset({Market.US, Market.TSX})`
+
+In `pipeline/tests/fakes.py`, add this field to `FakeCollector` after `asset_types`. `Market` is already imported there.
+
 ```python
-    finnhub_api_key: str | None = field(default=None, repr=False)
-    fmp_api_key: str | None = field(default=None, repr=False)
-    sec_user_agent: str | None = None  # e.g. "stock-advisor you@example.com"; SEC requires a contact
+    markets: frozenset[Market] = frozenset(Market)
 ```
 
-In `from_env`, pass these after `cache_dir=`:
+In `enrich.py`:
+- add `from advisor.markets import market_of`;
+- replace `symbols_for` with the code below;
+- extend the module docstring with this sentence: "A collector only gets stock symbols of the markets it covers."
+
 ```python
-            finnhub_api_key=env.get("FINNHUB_API_KEY") or None,
-            fmp_api_key=env.get("FMP_API_KEY") or None,
-            sec_user_agent=env.get("SEC_USER_AGENT") or None,
+def symbols_for(collector: Collector, targets: EnrichTargets) -> list[str]:
+    if collector.scope is not Scope.SYMBOLS:
+        return []
+
+    def covered(stocks: Sequence[str]) -> list[str]:
+        return [s for s in stocks if market_of(s) in collector.markets]
+
+    symbols: list[str] = []
+    stocks = AssetType.STOCK in collector.asset_types
+    if stocks:
+        symbols += covered(targets.priority_stocks)
+    if AssetType.CRYPTO in collector.asset_types:
+        symbols += targets.crypto  # held and watched crypto outrank the stock shortlist
+    if stocks:
+        symbols += covered(targets.ranked_stocks)
+    return symbols
 ```
 
-- [ ] **Step 5: Pass the new secrets to workflows, the container, and document them**
+- [ ] **Step 5: Run the tests and lint**
 
-In `.github/workflows/run.yml` (the "Run pipeline" step) and `.github/workflows/health.yml` (the "Check sources" step), add these to the step's `env:` block:
-```yaml
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
-          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
-```
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes, including the existing `symbols_for` and run tests: the fakes cover both markets by default.
 
-In `pipeline/scripts/in-docker.sh`, add `-e FINNHUB_API_KEY -e FMP_API_KEY -e SEC_USER_AGENT` to the existing env-forwarding line.
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
 
-In `README.md` "Deployment":
-1. Insert a new step directly after the Alpaca step:
-   > **Data-source keys** (free accounts): sign up at finnhub.io and financialmodelingprep.com and copy each API key. Both providers' terms allow personal, non-commercial use only and forbid redistributing their data. For SEC requests, pick a contact string such as `stock-advisor you@example.com`; SEC requires one in every request.
-2. Renumber the following steps.
-3. In the GitHub secrets step, add `FINNHUB_API_KEY`, `FMP_API_KEY` and `SEC_USER_AGENT` to the list.
-4. In "Manual run", add the same three names to the `.env.local` example.
-
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_base.py tests/unit/test_config.py -v`, then the full suite.
-Validate the YAML: `uv run --no-sync --with pyyaml python -c "import yaml,sys; [yaml.safe_load(open(p, encoding='utf-8')) for p in sys.argv[1:]]; print('ok')" ../.github/workflows/run.yml ../.github/workflows/health.yml`
-If `--no-sync --with` is refused, use `uv run --with pyyaml ...` instead.
-Expected: all pass, and `ok`.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/collectors/base.py src/advisor/config.py tests/unit/test_base.py tests/unit/test_config.py ../.github/workflows/run.yml ../.github/workflows/health.yml scripts/in-docker.sh ../README.md
-git commit -m "feat: add collector contract, source credentials, and per-symbol collection helper"
+git add pipeline/src/advisor/collectors/base.py pipeline/src/advisor/enrich.py \
+  pipeline/src/advisor/collectors/nasdaq_symbols.py pipeline/src/advisor/collectors/tmx_symbols.py \
+  pipeline/src/advisor/collectors/yfinance_bars.py pipeline/tests/fakes.py \
+  pipeline/tests/unit/test_base.py pipeline/tests/unit/test_enrich.py pipeline/tests/unit/test_registry.py
+git commit -m "feat: write the collector contract, declare market coverage, add per-symbol collection"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
 
 ---
@@ -523,31 +695,33 @@ End the message with your `Co-Authored-By:` trailer.
 ### Task 3: Cadence-window cache, per-call symbol cap, partial backfill
 
 **Files:**
-- Modify: `pipeline/src/advisor/collectors/cache.py`, `pipeline/src/advisor/collectors/runner.py` (full replacement), `pipeline/src/advisor/collectors/base.py` (protocol attribute), `collectors/nasdaq_symbols.py`, `collectors/alpaca_bars.py`, `collectors/yfinance_bars.py`, `pipeline/tests/fakes.py`
+- Modify: `pipeline/src/advisor/collectors/cache.py`, `pipeline/src/advisor/collectors/runner.py` (full replacement), `pipeline/src/advisor/collectors/base.py` (protocol attribute and docstring line), `pipeline/src/advisor/collectors/nasdaq_symbols.py`, `pipeline/src/advisor/collectors/tmx_symbols.py`, `pipeline/src/advisor/collectors/yfinance_bars.py`, `pipeline/tests/fakes.py`
 - Test: `pipeline/tests/unit/test_runner.py`, `pipeline/tests/unit/test_cache.py`
 
 **Interfaces:**
 - Produces:
-  - `DiskCache.get_entry(source, key, record_type) -> tuple[datetime, list[BaseModel]] | None`
-  - `runner.in_window(cadence, saved_at, as_of) -> bool`
-  - `run_collector(..., use_window: bool = True)`
-  - protocol attribute `max_symbols: int | None` (existing collectors and `FakeCollector` set `None`)
-- Behaviour, in short:
-  - DAILY/WEEKLY collectors with `freshness` skip symbols already fetched in this ET day or ISO week.
+  - `DiskCache.get_entry(source, key, record_type) -> tuple[datetime, list[BaseModel]] | None`;
+  - `runner.in_window(cadence, saved_at, as_of) -> bool`;
+  - `run_collector(..., use_window: bool = True)`;
+  - protocol attribute `max_symbols: int | None`. Existing collectors and `FakeCollector` set `None`.
+- Behaviour:
+  - DAILY and WEEKLY collectors with `freshness` skip symbols already fetched in this ET day or ISO week.
   - An OK per-symbol empty answer is remembered for the window.
   - `max_symbols` caps one call. Capped-out symbols are served from older cache and are not marked as fetched.
   - A PARTIAL per-symbol answer is backfilled from cache.
 
 - [ ] **Step 1: Add the protocol attribute everywhere**
 
-- In `collectors/base.py`, add to the `Collector` protocol after `canary_requires_records`:
-  `max_symbols: int | None  # most symbols one call may fetch; the rest wait for a later run`
-- In `nasdaq_symbols.py`, `alpaca_bars.py` and `yfinance_bars.py`, add the class attribute `max_symbols = None` after `canary_requires_records`.
+- In `collectors/base.py`:
+  - add to the `Collector` protocol, after `canary_requires_records`: `max_symbols: int | None  # most symbols one call may fetch; the rest wait for a later run`;
+  - append to the module docstring's contract list: `- DAILY/WEEKLY collectors with freshness are served from this window's cache, and only missing symbols are fetched; max_symbols caps one call (see runner).`
+- In `nasdaq_symbols.py`, `tmx_symbols.py` and `yfinance_bars.py`, add the class attribute `max_symbols = None` after `canary_requires_records`.
 - In `tests/fakes.py`, add the field `max_symbols: int | None = None` to `FakeCollector`, after `canary_requires_records`.
 
 - [ ] **Step 2: Write the failing tests**
 
 Append to `pipeline/tests/unit/test_cache.py`:
+
 ```python
 def test_get_entry_returns_saved_time_and_records(tmp_path):
     cache = DiskCache(tmp_path, clock=lambda: T0)
@@ -559,9 +733,10 @@ def test_get_entry_returns_saved_time_and_records(tmp_path):
 ```
 
 In `pipeline/tests/unit/test_runner.py`:
-- change `universe_collector`'s default to `cadence=Cadence.PER_RUN` (window behaviour is tested separately below);
-- add `in_window` to the runner import, and add `Scope` to the base import if it's missing;
-- then append:
+- change `universe_collector`'s default to `cadence=Cadence.PER_RUN`; window behaviour is tested separately below;
+- add `in_window` to the runner import;
+- append:
+
 ```python
 def windowed(cadence=Cadence.DAILY, **kwargs) -> FakeCollector:
     defaults = dict(
@@ -693,12 +868,13 @@ def test_a_partial_answer_is_backfilled_from_cache(tmp_path):
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_runner.py tests/unit/test_cache.py -v`
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_runner.py tests/unit/test_cache.py -q`
 Expected: ImportError for `in_window`, and `DiskCache` has no `get_entry`.
 
 - [ ] **Step 4: Add `get_entry` to `cache.py`**
 
 Replace `DiskCache.get` with these two methods:
+
 ```python
     def get_entry(
         self, source: str, key: str, record_type: type[BaseModel]
@@ -726,7 +902,8 @@ Replace `DiskCache.get` with these two methods:
 
 - [ ] **Step 5: Replace `runner.py`**
 
-`pipeline/src/advisor/collectors/runner.py` (full replacement):
+Replace `pipeline/src/advisor/collectors/runner.py` in full:
+
 ```python
 """Runs one collector safely: circuit breaker, cadence-window cache, timing, error capture.
 
@@ -928,18 +1105,24 @@ def run_collector(
     return CollectorResult(collector.name, status, hits + records + deferred, latency, error)
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [ ] **Step 6: Run the tests and lint**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_runner.py tests/unit/test_cache.py -v`, then the full suite.
-Expected: all pass, including every existing runner, tracker, health and run test.
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes, including all existing runner, tracker, health and run tests.
+
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
 
 - [ ] **Step 7: Commit**
 
 ```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/collectors tests/fakes.py tests/unit/test_runner.py tests/unit/test_cache.py
+git add pipeline/src/advisor/collectors/cache.py pipeline/src/advisor/collectors/runner.py \
+  pipeline/src/advisor/collectors/base.py pipeline/src/advisor/collectors/nasdaq_symbols.py \
+  pipeline/src/advisor/collectors/tmx_symbols.py pipeline/src/advisor/collectors/yfinance_bars.py \
+  pipeline/tests/fakes.py pipeline/tests/unit/test_runner.py pipeline/tests/unit/test_cache.py
 git commit -m "feat: serve daily and weekly sources from the cadence window and cap symbols per call"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
 
 ---
@@ -951,17 +1134,18 @@ End the message with your `Co-Authored-By:` trailer.
 - Test: `pipeline/tests/unit/test_health.py`
 
 **Interfaces:**
-- Consumes: `deadline` (Task 1), `run_collector(..., use_window=False)` (Task 3)
+- Consumes: `deadline` (Task 1); `run_collector(..., use_window=False)` (Task 3).
 - Produces:
-  - `health.check_source(collector, cache, state, now, *, budget=SOURCE_BUDGET_SECONDS) -> tuple[CollectorResult, int]`
-  - `health.iter_checks(collectors, cache, states, now, *, workers=HEALTH_WORKERS, budget=...)`, an iterator that yields each source's result as soon as it finishes
-  - `health.check_sources(...) -> list`, which keeps the existing call shape
-  - `main` writes each row as its source finishes
-  - constants `HEALTH_WORKERS = 8` and `SOURCE_BUDGET_SECONDS = 120.0`
+  - `health.check_source(collector, cache, state, now, *, budget=SOURCE_BUDGET_SECONDS) -> tuple[CollectorResult, int]`;
+  - `health.iter_checks(collectors, cache, states, now, *, workers=HEALTH_WORKERS, budget=...)`, which yields each source's result as soon as it finishes;
+  - `health.check_sources(...) -> list`, keeping the existing call shape;
+  - `main`, which writes each row as its source finishes;
+  - `HEALTH_WORKERS = 8` and `SOURCE_BUDGET_SECONDS = 120.0`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `pipeline/tests/unit/test_health.py`. Add `from datetime import timedelta`, `from advisor.collectors.base import Cadence, check_deadline`, and import `CollectorStatus` if it's missing:
+Append to `pipeline/tests/unit/test_health.py`. Change its datetime import to `from datetime import UTC, date, datetime, timedelta`, and its base import to `from advisor.collectors.base import Cadence, CollectorStatus, check_deadline`:
+
 ```python
 def test_a_source_over_its_budget_fails_without_stopping_the_others(tmp_path):
     slow = FakeCollector("slow", canary=("AAPL",), records_for=lambda syms: (check_deadline(), [])[1])
@@ -990,14 +1174,15 @@ def test_health_checks_bypass_the_cadence_cache(tmp_path):
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_health.py -v`
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_health.py -q`
 Expected:
 - `check_sources()` got an unexpected keyword `budget`;
 - the second test makes only one call, because the cadence cache served it.
 
 - [ ] **Step 3: Rewrite the checking functions in `health.py`**
 
-Replace the imports and `check_sources` with the following. Keep the module docstring, but add one line to it: "Sources are checked concurrently, each within its own time budget, and rows are written as they finish." Change `main` only as Step 4 says.
+Keep the module docstring, and add this line to it: "Sources are checked concurrently, each within its own time budget, and rows are written as they finish." Replace the imports and `check_sources` with the code below. Change `main` only as Step 4 says.
+
 ```python
 import json
 import sys
@@ -1095,7 +1280,8 @@ def check_sources(
 
 - [ ] **Step 4: Write rows as they finish in `main`**
 
-Replace the body of `main` (keep its signature) with:
+Replace the body of `main`, keeping its signature:
+
 ```python
     now = datetime.now(UTC)
     settings = Settings.from_env()
@@ -1118,47 +1304,166 @@ Replace the body of `main` (keep its signature) with:
     return 0
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 5: Run the tests and lint**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_health.py tests/integration/test_health_cli.py -v`, then the full suite.
-Expected: all pass. The existing tests build dicts keyed by source name, so completion order doesn't matter.
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes. The existing health tests key their rows by source name, so completion order doesn't matter.
+
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
 
 - [ ] **Step 6: Commit**
 
 ```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/health.py tests/unit/test_health.py
+git add pipeline/src/advisor/health.py pipeline/tests/unit/test_health.py
 git commit -m "feat: check sources concurrently with a per-source budget and write rows as they finish"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
 
 ---
 
-### Task 5: Provider-neutral symbol keys and FINRA short volume (source 14)
+### Task 5: Lean failing runs
 
 **Files:**
-- Create: `pipeline/src/advisor/symbols.py`, `pipeline/src/advisor/collectors/finra_short_volume.py`
-- Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (rewrite as a table)
-- Test: `pipeline/tests/unit/test_finra_short_volume.py`
-- Commit: the existing fixture `pipeline/tests/fixtures/finra/CNMSshvol20261009.txt`
-
-It is a real file from 2026-10-09, trimmed to 73 rows. Its trailer still holds the real row count, 12278.
+- Modify: `pipeline/src/advisor/run.py`
+- Test: `pipeline/tests/integration/test_run.py`
 
 **Interfaces:**
+- Consumes: `execute_run`, `MarketPass` and `check_market` (Plan 2b).
 - Produces:
-  - `symbols.symbol_key(symbol) -> str` (`"BRK/B"`, `"BRK-B"`, `"BRK.B"` and `"brkb"` all give `"BRKB"`)
-  - `symbols.requested_by_key(symbols) -> dict[str, str]`
-  - `finra_short_volume`:
-    - `ShortVolume(symbol, trade_date, short_volume, short_exempt_volume, total_volume)`
-    - `candidate_days(as_of) -> list[date]`
-    - `parse_short_volume(text, wanted) -> list[ShortVolume]`
-    - `FinraShortVolume(client, limiter=None)`: name `finra_short_volume`, DAILY, SYMBOLS, freshness 4 days, canary `("AAPL",)` (requires records), not core
-    - `FINRA_SHORT_VOLUME_URL`
-  - registry test table `EXPECTED`, which later tasks extend
+  - `MarketPass.failed_reasons(self, *, prices_checked: bool = True) -> list[str]`, which leaves out the price reason when prices were not checked;
+  - in `execute_run`, a run whose universe check fails skips the bulk price fetch but still retries unpriced priority symbols.
 
 - [ ] **Step 1: Write the failing tests**
 
-`pipeline/tests/unit/test_finra_short_volume.py`:
+In `pipeline/tests/integration/test_run.py`, in `test_a_truncated_universe_fails_the_run_and_keeps_that_markets_symbols`:
+- replace `outcome = execute_run(make_deps(db, tmp_path, extra=extra), ...)` with `deps = make_deps(db, tmp_path, extra=extra)`, followed by `outcome = execute_run(deps, ...)` with the same remaining arguments;
+- add this line at the end of the test:
+
+```python
+    assert deps.collectors["yfinance_bars"].calls == []  # no bulk Yahoo fetch for a run that cannot publish
+```
+
+Then append:
+
+```python
+def test_a_run_that_cannot_publish_still_retries_unpriced_holdings(db, tmp_path):
+    hold(db)
+
+    def records_for(symbols):  # phase 1 misses the holding; the retry finds it
+        if list(symbols) == ["OTCX"] and not prices.calls[:-1]:
+            return []
+        return [b for s in symbols for b in history(s, 70, start=FRESH_START)]
+
+    prices = FakeCollector("yfinance_bars", best_effort=True, records_for=records_for)
+    deps = make_deps(db, tmp_path, prices=prices)
+    outcome = execute_run(
+        deps, RunKind.PRE_OPEN, NOW, min_universe={Market.US: 3, Market.TSX: 300}
+    )
+
+    assert prices.calls == [["OTCX"], ["OTCX"]]  # the retry, but no bulk fetch
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.summary["failed_reason"] == ["TSX: universe too small (2 < 300)"]
+    assert outcome.summary["priority_unpriced"] == []
+    assert "OTCX" in market_features(db, outcome.run_id)
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/integration/test_run.py -q`
+Expected:
+- the truncated-universe test fails: Yahoo was called with the US and TSX universes;
+- the new test fails, because the second call included the whole universe.
+
+- [ ] **Step 3: Skip the bulk fetch when a universe is too small**
+
+In `run.py`, replace `MarketPass.failed_reasons` with:
+
+```python
+    def failed_reasons(self, *, prices_checked: bool = True) -> list[str]:
+        reasons = []
+        if not self.universe_ok:
+            reasons.append(
+                f"{self.market}: universe too small ({self.universe} < {self.min_universe})"
+            )
+        empty = self.symbols == 0  # an empty market has no prices to report on
+        if prices_checked and not self.prices_ok and not (empty and not self.universe_ok):
+            reasons.append(
+                f"{self.market}: too few fresh priced symbols ({self.fresh} of {self.symbols})"
+            )
+        return reasons
+```
+
+In `execute_run`, phase 2:
+1. Right after the universes loop, add:
+
+```python
+        # A run that cannot publish skips the bulk fetch (about 7,400 Yahoo requests during a
+        # TMX outage) but still retries the owner's unpriced holdings.
+        universe_ok = all(len(universes[m]) >= limits[m] for m in Market)
+```
+
+2. Change the `rest = ...` line to:
+
+```python
+        rest = (
+            sorted({r.symbol for u in universes.values() for r in u} - set(priority))
+            if universe_ok
+            else []
+        )
+```
+
+3. Delete the later line `universe_ok = all(p.universe_ok for p in passes.values())`. `prices_ok` stays as it is.
+4. In the failure branch, change the list comprehension to `p.failed_reasons(prices_checked=universe_ok)`.
+
+- [ ] **Step 4: Run the tests and lint**
+
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes. `test_default_minimums_come_from_the_markets_table` and `test_an_empty_market_reports_only_its_universe_reason` still get exactly the universe reasons.
+
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add pipeline/src/advisor/run.py pipeline/tests/integration/test_run.py
+git commit -m "feat: skip the bulk price fetch for a run that cannot publish"
+```
+
+End the message with your `Co-Authored-By:` trailer.
+
+---
+
+### Task 6: Provider-neutral symbol keys and FINRA short volume (source 14)
+
+**Files:**
+- Create: `pipeline/src/advisor/symbols.py`, `pipeline/src/advisor/collectors/finra_short_volume.py`
+- Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row)
+- Test: `pipeline/tests/unit/test_finra_short_volume.py`
+- Fixture (already committed): `pipeline/tests/fixtures/finra/CNMSshvol20261009.txt`. This is the real 2026-10-09 file trimmed to 73 rows; its trailer still holds the real row count, 12278.
+
+**Interfaces:**
+- Produces:
+  - `symbols.symbol_key(symbol) -> str` (`"BRK/B"`, `"BRK-B"`, `"BRK.B"` and `"brkb"` all give `"BRKB"`);
+  - `symbols.requested_by_key(symbols) -> dict[str, str]`.
+- Produces in `finra_short_volume`:
+  - `ShortVolume(symbol, trade_date, short_volume, short_exempt_volume, total_volume)`;
+  - `candidate_days(as_of) -> list[date]`;
+  - `parse_short_volume(text, wanted) -> list[ShortVolume]`;
+  - `FINRA_SHORT_VOLUME_URL`;
+  - `FinraShortVolume(client, limiter=None)`, with:
+    - name `finra_short_volume`, DAILY, SYMBOLS, markets US;
+    - freshness 4 days;
+    - canary `("AAPL",)` (requires records);
+    - not core.
+- Produces in the registry: `FINRA_PER_MINUTE = 60` and one FINRA limiter shared by both FINRA collectors.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `pipeline/tests/unit/test_finra_short_volume.py`:
+
 ```python
 from datetime import UTC, date, datetime
 
@@ -1171,6 +1476,7 @@ from advisor.collectors.finra_short_volume import (
     candidate_days,
     parse_short_volume,
 )
+from advisor.models import Market
 from advisor.symbols import requested_by_key, symbol_key
 
 MONDAY_PRE_OPEN = datetime(2026, 10, 12, 12, 15, tzinfo=UTC)  # 08:15 ET
@@ -1192,6 +1498,10 @@ def client_serving(responses: dict[str, httpx.Response], seen: list[str]) -> htt
 def test_symbol_key_ignores_share_class_separators():
     assert {symbol_key(s) for s in ("BRK.B", "BRK/B", "BRK-B", "brkb")} == {"BRKB"}
     assert requested_by_key(["BRK.B", "AAPL"]) == {"BRKB": "BRK.B", "AAPL": "AAPL"}
+
+
+def test_finra_covers_only_us_stocks():
+    assert FinraShortVolume.markets == frozenset({Market.US})
 
 
 def test_candidate_days_skip_weekends_and_wait_for_publication():
@@ -1239,58 +1549,21 @@ def test_other_http_errors_are_not_treated_as_unpublished():
         collector.fetch(["AAPL"], TUESDAY_PRE_OPEN)
 ```
 
-Replace `pipeline/tests/unit/test_registry.py` entirely with:
+In `pipeline/tests/unit/test_registry.py`, add this row to `EXPECTED`:
+
 ```python
-from pathlib import Path
-
-import httpx
-
-from advisor.collectors.base import Scope
-from advisor.collectors.registry import build_registry
-from advisor.config import Settings
-
-# name: (core, scope, canary_requires_records). Every new source adds a row.
-EXPECTED = {
-    "alpaca_bars": (True, Scope.SYMBOLS, True),
-    "finra_short_volume": (False, Scope.SYMBOLS, True),
-    "nasdaq_symbols": (True, Scope.UNIVERSE, True),
-    "yfinance_bars": (False, Scope.SYMBOLS, True),
-}
-
-
-def build() -> dict:
-    settings = Settings(
-        "postgresql://x", "key", "secret", Path(".cache"), finnhub_api_key="fk", fmp_api_key="mk"
-    )
-    with httpx.Client() as client:
-        return build_registry(settings, client)
-
-
-def test_registry_matches_the_expected_sources():
-    registry = build()
-    assert {
-        name: (c.core, c.scope, c.canary_requires_records) for name, c in registry.items()
-    } == EXPECTED
-    assert all(registry[name].name == name for name in registry)
-
-
-def test_symbols_collectors_have_canaries_and_symbol_records():
-    for collector in build().values():
-        assert bool(collector.canary) == (collector.scope is Scope.SYMBOLS)
-        if collector.scope is Scope.SYMBOLS:
-            field = collector.record_type.model_fields["symbol"]
-            assert field.annotation is str
-            assert field.is_required()
+    "finra_short_volume": (False, Scope.SYMBOLS, True, US),
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finra_short_volume.py tests/unit/test_registry.py -v`
-Expected: `ModuleNotFoundError` for `advisor.collectors.finra_short_volume` and `advisor.symbols`, and the registry table lacks `finra_short_volume`.
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_finra_short_volume.py tests/unit/test_registry.py -q`
+Expected: `ModuleNotFoundError` for `advisor.collectors.finra_short_volume` and `advisor.symbols`, and the registry lacks `finra_short_volume`.
 
 - [ ] **Step 3: Implement `symbols.py`**
 
-`pipeline/src/advisor/symbols.py`:
+Create `pipeline/src/advisor/symbols.py`:
+
 ```python
 """Canonical symbols ("BRK.B") and a provider-neutral key for matching other formats."""
 
@@ -1311,9 +1584,10 @@ def requested_by_key(symbols: Sequence[str]) -> dict[str, str]:
 
 - [ ] **Step 4: Implement the collector**
 
-`pipeline/src/advisor/collectors/finra_short_volume.py`:
+Create `pipeline/src/advisor/collectors/finra_short_volume.py`:
+
 ```python
-"""Daily short-sale volume from FINRA's consolidated Reg SHO file (spec source 14).
+"""Daily short-sale volume from FINRA's consolidated Reg SHO file (spec source 14, US only).
 
 One static file per trading day covers every symbol, so a run downloads one file and keeps the
 requested symbols. Missing files (weekend, holiday, not published yet) answer HTTP 403.
@@ -1333,7 +1607,7 @@ from advisor.collectors.base import (
     check_deadline,
     get_with_retries,
 )
-from advisor.models import ET, AssetType
+from advisor.models import ET, AssetType, Market
 from advisor.symbols import requested_by_key, symbol_key
 
 FINRA_SHORT_VOLUME_URL = "https://cdn.finra.org/equity/regsho/daily/CNMSshvol{day:%Y%m%d}.txt"
@@ -1396,6 +1670,7 @@ class FinraShortVolume:
     best_effort = False
     cadence = Cadence.DAILY
     asset_types = frozenset({AssetType.STOCK})
+    markets = frozenset({Market.US})
     record_type = ShortVolume
     freshness = timedelta(days=4)
     scope = Scope.SYMBOLS
@@ -1423,55 +1698,72 @@ class FinraShortVolume:
         raise RuntimeError(f"no FINRA short volume file in the last {LOOKBACK_WEEKDAYS} weekdays")
 ```
 
-- [ ] **Step 5: Register it**
+- [ ] **Step 5: Register it with a shared FINRA limiter**
 
 In `collectors/registry.py`:
-- add the import `from advisor.collectors.finra_short_volume import FinraShortVolume`;
-- append `FinraShortVolume(client),` to the `collectors` list;
-- change the module docstring to `"""Every collector the pipeline runs, keyed by name."""`.
+- change the module docstring to `"""Every collector the pipeline runs, keyed by name, with one rate limiter per provider."""`;
+- change the base import to `from advisor.collectors.base import Collector, RateLimiter`, and add `from advisor.collectors.finra_short_volume import FinraShortVolume`;
+- add the constant `FINRA_PER_MINUTE = 60` below the imports;
+- in `build_registry`, create the limiter and add the collector after `YFinanceBars()`. Lay the list out one collector per line:
 
-- [ ] **Step 6: Run the tests to verify they pass**
+```python
+def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collector]:
+    finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
+    collectors: list[Collector] = [
+        NasdaqSymbols(client),
+        TmxSymbols(client),
+        YFinanceBars(),
+        FinraShortVolume(client, finra),
+    ]
+    return {collector.name: collector for collector in collectors}
+```
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finra_short_volume.py tests/unit/test_registry.py -v`, then the full suite.
-Expected: all pass.
+- [ ] **Step 6: Run the tests and lint**
+
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes.
+
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
 
 - [ ] **Step 7: Commit**
 
 ```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/symbols.py src/advisor/collectors/finra_short_volume.py src/advisor/collectors/registry.py tests/unit/test_finra_short_volume.py tests/unit/test_registry.py tests/fixtures/finra/CNMSshvol20261009.txt
+git add pipeline/src/advisor/symbols.py pipeline/src/advisor/collectors/finra_short_volume.py \
+  pipeline/src/advisor/collectors/registry.py pipeline/tests/unit/test_finra_short_volume.py \
+  pipeline/tests/unit/test_registry.py
 git commit -m "feat: add FINRA daily short volume source"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
 
 ---
 
-### Task 6: FINRA short interest (source 13)
+### Task 7: FINRA short interest (source 13)
 
 **Files:**
 - Create: `pipeline/src/advisor/collectors/finra_short_interest.py`
 - Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row)
 - Test: `pipeline/tests/unit/test_finra_short_interest.py`
-- Commit: the existing fixture `pipeline/tests/fixtures/finra/shrt20260930.csv`
-
-It is the real 2026-09-30 settlement file, trimmed. Every value is quoted, the delimiter is `|`, and it has 14 columns.
-
-The other existing file, `fixtures/finra/consolidatedShortInterest_api_20260930.json`, is the API alternative and is not used. Delete it in this task.
+- Fixture (already committed): `pipeline/tests/fixtures/finra/shrt20260930.csv`. This is the real 2026-09-30 settlement file, trimmed. Every value is quoted, the delimiter is `|`, and there are 14 columns.
 
 **Interfaces:**
-- Consumes:
-  - `symbols.symbol_key` and `requested_by_key` (Task 5)
-  - `schedule.previous_sessions(end, count)` (Plan 1)
+- Consumes: `symbols.symbol_key` and `requested_by_key` (Task 6); `schedule.previous_sessions(end, count)`, which defaults to the NYSE; the registry's FINRA limiter (Task 6).
 - Produces:
-  - `ShortInterest(symbol, settlement_date, short_interest, previous_short_interest, avg_daily_volume, days_to_cover)`
-  - `settlement_dates(as_of, months=2) -> list[date]`
-  - `parse_short_interest(text, wanted) -> list[ShortInterest]`
-  - `FinraShortInterest(client, limiter=None)`: WEEKLY, SYMBOLS, freshness 20 days, canary `("AAPL",)` (requires records), not core
-  - `FINRA_SHORT_INTEREST_URL` and `HEADER`
+  - `ShortInterest(symbol, settlement_date, short_interest, previous_short_interest, avg_daily_volume, days_to_cover)`;
+  - `settlement_dates(as_of, months=2) -> list[date]`;
+  - `parse_short_interest(text, wanted) -> list[ShortInterest]`;
+  - `FINRA_SHORT_INTEREST_URL` and `HEADER`;
+  - `FinraShortInterest(client, limiter=None)`, with:
+    - WEEKLY, SYMBOLS, markets US;
+    - freshness 20 days;
+    - canary `("AAPL",)` (requires records);
+    - not core.
 
 - [ ] **Step 1: Write the failing test**
 
-`pipeline/tests/unit/test_finra_short_interest.py`:
+Create `pipeline/tests/unit/test_finra_short_interest.py`:
+
 ```python
 from datetime import UTC, date, datetime
 
@@ -1548,18 +1840,23 @@ def test_fetch_takes_the_newest_published_settlement(fixtures_dir):
     assert seen == [FINRA_SHORT_INTEREST_URL.format(day=date(2026, 9, 30)), published]
 ```
 
-Add the row `"finra_short_interest": (False, Scope.SYMBOLS, True),` to `EXPECTED` in `tests/unit/test_registry.py`.
+In `pipeline/tests/unit/test_registry.py`, add this row to `EXPECTED`:
+
+```python
+    "finra_short_interest": (False, Scope.SYMBOLS, True, US),
+```
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finra_short_interest.py tests/unit/test_registry.py -v`
-Expected: `ModuleNotFoundError`, and the registry is missing `finra_short_interest`.
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_finra_short_interest.py tests/unit/test_registry.py -q`
+Expected: `ModuleNotFoundError`, and the registry lacks `finra_short_interest`.
 
 - [ ] **Step 3: Implement**
 
-`pipeline/src/advisor/collectors/finra_short_interest.py`:
+Create `pipeline/src/advisor/collectors/finra_short_interest.py`:
+
 ```python
-"""Bi-monthly short interest from FINRA's settlement files (spec source 13).
+"""Bi-monthly short interest from FINRA's settlement files (spec source 13, US only).
 
 FINRA settles short interest on the 15th and the last business day of each month and publishes
 about seven business days later, re-issuing files after first publication. The weekly run takes
@@ -1583,7 +1880,7 @@ from advisor.collectors.base import (
     check_deadline,
     get_with_retries,
 )
-from advisor.models import ET, AssetType
+from advisor.models import ET, AssetType, Market
 from advisor.schedule import previous_sessions
 from advisor.symbols import requested_by_key, symbol_key
 
@@ -1667,6 +1964,7 @@ class FinraShortInterest:
     best_effort = False
     cadence = Cadence.WEEKLY
     asset_types = frozenset({AssetType.STOCK})
+    markets = frozenset({Market.US})
     record_type = ShortInterest
     freshness = timedelta(days=20)
     scope = Scope.SYMBOLS
@@ -1694,48 +1992,53 @@ class FinraShortInterest:
         raise RuntimeError("no published FINRA short interest file in the last two months")
 ```
 
-Register it in `collectors/registry.py`: add the import and append `FinraShortInterest(client),`.
+Register it in `collectors/registry.py`: import `FinraShortInterest`, and add `FinraShortInterest(client, finra),` after `FinraShortVolume(client, finra),`.
 
-Delete the unused fixture: `git rm --cached tests/fixtures/finra/consolidatedShortInterest_api_20260930.json 2>/dev/null; rm -f tests/fixtures/finra/consolidatedShortInterest_api_20260930.json`
+- [ ] **Step 4: Run the tests and lint**
 
-- [ ] **Step 4: Run the tests to verify they pass**
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes.
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finra_short_interest.py tests/unit/test_registry.py -v`, then the full suite.
-Expected: all pass.
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
 
 - [ ] **Step 5: Commit**
 
 ```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/collectors/finra_short_interest.py src/advisor/collectors/registry.py tests/unit/test_finra_short_interest.py tests/unit/test_registry.py tests/fixtures/finra/shrt20260930.csv
+git add pipeline/src/advisor/collectors/finra_short_interest.py pipeline/src/advisor/collectors/registry.py \
+  pipeline/tests/unit/test_finra_short_interest.py pipeline/tests/unit/test_registry.py
 git commit -m "feat: add FINRA short interest source"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
 
 ---
 
-### Task 7: yfinance analyst data (source 16)
+### Task 8: Yahoo analyst data (source 16) and the shared Yahoo limiter
 
 **Files:**
-- Create: `pipeline/src/advisor/collectors/yfinance_analyst.py`
+- Create: `pipeline/src/advisor/collectors/yahoo.py`, `pipeline/src/advisor/collectors/yfinance_analyst.py`
 - Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row)
 - Test: `pipeline/tests/unit/test_yfinance_analyst.py`
-- Commit: the existing fixtures `pipeline/tests/fixtures/yfinance_analyst/price_targets.json`, `recommendations.json` and `upgrades.json`
-
-These are real AAPL captures from 2026-10-12. `upgrades.json` is trimmed to grades since 2026-07-01 (34 rows). The DataFrames were saved with `to_json(orient="split", date_format="iso")`.
+- Fixtures (already committed): `pipeline/tests/fixtures/yfinance_analyst/price_targets.json`, `recommendations.json` and `upgrades.json`. These are real AAPL captures from 2026-10-12. `upgrades.json` is trimmed to grades since 2026-07-01 (34 rows). The DataFrames were saved with `to_json(orient="split", date_format="iso")`.
 
 **Interfaces:**
-- Consumes:
-  - `collect_per_symbol`, `DeadlineExceeded` and `PartialFetch` (base)
-  - `to_yahoo` (`collectors/yfinance_bars.py`)
+- Consumes: `collect_per_symbol` and `PartialFetch` (base); `to_yahoo` (`collectors/yfinance_bars.py`).
 - Produces:
-  - `AnalystView(symbol, target_mean, target_low, target_high, target_median, rec_strong_buy, rec_buy, rec_hold, rec_sell, rec_strong_sell, upgrades_30d, downgrades_30d, upgrades_90d, downgrades_90d, target_raises_30d, target_lowers_30d)`
-  - `analyst_view(symbol, targets, recommendations, upgrades, as_of) -> AnalystView | None` (None means no analyst coverage at all)
-  - `YFinanceAnalyst(load=None, sleep=time.sleep, pause=PAUSE_SECONDS)`: DAILY, SYMBOLS, freshness 3 days, canary `("AAPL",)` (requires records), best-effort, not core
+  - `yahoo.YAHOO_PER_MINUTE = 120` and `yahoo.rate_limited(exc) -> bool`;
+  - `AnalystView(symbol, target_mean, target_low, target_high, target_median, rec_strong_buy, rec_buy, rec_hold, rec_sell, rec_strong_sell, upgrades_30d, downgrades_30d, upgrades_90d, downgrades_90d, target_raises_30d, target_lowers_30d)`;
+  - `analyst_view(symbol, targets, recommendations, upgrades, as_of) -> AnalystView | None`. `None` means no analyst coverage at all;
+  - `YFinanceAnalyst(load=None, limiter=None)`, with:
+    - DAILY, SYMBOLS, markets US and TSX;
+    - freshness 3 days, `max_symbols = 200`;
+    - canary `("AAPL", "RY.TO")` (requires records);
+    - best-effort, not core;
+  - a shared Yahoo limiter in the registry, which Task 9 reuses.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-`pipeline/tests/unit/test_yfinance_analyst.py`:
+Create `pipeline/tests/unit/test_yfinance_analyst.py`:
+
 ```python
 import json
 from datetime import UTC, datetime
@@ -1744,9 +2047,23 @@ import pandas as pd
 import pytest
 
 from advisor.collectors.base import DeadlineExceeded, PartialFetch
+from advisor.collectors.yahoo import rate_limited
 from advisor.collectors.yfinance_analyst import YFinanceAnalyst, analyst_view
+from advisor.models import Market
 
 AS_OF = datetime(2026, 10, 12, 20, 0, tzinfo=UTC)
+
+
+class CountingLimiter:
+    def __init__(self) -> None:
+        self.count = 0
+
+    def acquire(self) -> None:
+        self.count += 1
+
+
+class YFRateLimitError(Exception):  # same name as yfinance's, which `rate_limited` matches
+    pass
 
 
 def aapl(fixtures_dir):
@@ -1770,7 +2087,7 @@ def test_analyst_view_from_real_aapl_data(fixtures_dir):
 
 
 def test_no_coverage_yields_no_record():
-    assert analyst_view("ZZZZ", {}, pd.DataFrame(), pd.DataFrame(), AS_OF) is None
+    assert analyst_view("SPY", {}, pd.DataFrame(), pd.DataFrame(), AS_OF) is None
 
 
 def test_zero_or_missing_targets_are_treated_as_missing():
@@ -1780,18 +2097,25 @@ def test_zero_or_missing_targets_are_treated_as_missing():
     assert view.target_high is None
 
 
-def test_fetch_maps_share_classes_and_pauses_between_symbols(fixtures_dir):
+def test_yahoo_analyst_covers_both_markets_and_is_capped():
+    collector = YFinanceAnalyst()
+    assert collector.markets == frozenset({Market.US, Market.TSX})
+    assert collector.max_symbols == 200
+
+
+def test_fetch_maps_symbols_and_takes_one_limiter_token_per_symbol(fixtures_dir):
     data = aapl(fixtures_dir)
-    loaded, sleeps = [], []
+    loaded = []
+    limiter = CountingLimiter()
 
     def load(yahoo_symbol):
         loaded.append(yahoo_symbol)
         return data
 
-    records = YFinanceAnalyst(load=load, sleep=sleeps.append).fetch(["BRK.B", "AAPL"], AS_OF)
-    assert loaded == ["BRK-B", "AAPL"]
-    assert [r.symbol for r in records] == ["BRK.B", "AAPL"]
-    assert sleeps == [0.4]
+    records = YFinanceAnalyst(load=load, limiter=limiter).fetch(["BRK.B", "AAPL", "RY.TO"], AS_OF)
+    assert loaded == ["BRK-B", "AAPL", "RY.TO"]
+    assert [r.symbol for r in records] == ["BRK.B", "AAPL", "RY.TO"]
+    assert limiter.count == 3
 
 
 def test_a_failing_symbol_is_a_partial_result(fixtures_dir):
@@ -1803,14 +2127,11 @@ def test_a_failing_symbol_is_a_partial_result(fixtures_dir):
         return data
 
     with pytest.raises(PartialFetch, match="BAD") as caught:
-        YFinanceAnalyst(load=load, sleep=lambda s: None).fetch(["AAPL", "BAD"], AS_OF)
+        YFinanceAnalyst(load=load).fetch(["AAPL", "BAD"], AS_OF)
     assert [r.symbol for r in caught.value.records] == ["AAPL"]
 
 
 def test_rate_limiting_stops_the_loop(fixtures_dir):
-    class YFRateLimitError(Exception):
-        pass
-
     data = aapl(fixtures_dir)
     loaded = []
 
@@ -1820,8 +2141,9 @@ def test_rate_limiting_stops_the_loop(fixtures_dir):
             raise YFRateLimitError("Too Many Requests")
         return data
 
+    assert rate_limited(YFRateLimitError("x")) and not rate_limited(KeyError("x"))
     with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols"):
-        YFinanceAnalyst(load=load, sleep=lambda s: None).fetch(["AAA", "BBB", "CCC"], AS_OF)
+        YFinanceAnalyst(load=load).fetch(["AAA", "BBB", "CCC"], AS_OF)
     assert loaded == ["AAA", "BBB"]
 
 
@@ -1834,30 +2156,50 @@ def test_the_run_deadline_ends_the_loop_with_what_was_gathered(fixtures_dir):
         return data
 
     with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols") as caught:
-        YFinanceAnalyst(load=load, sleep=lambda s: None).fetch(["AAA", "BBB", "CCC"], AS_OF)
+        YFinanceAnalyst(load=load).fetch(["AAA", "BBB", "CCC"], AS_OF)
     assert [r.symbol for r in caught.value.records] == ["AAA"]
 ```
 
-Add the row `"yfinance_analyst": (False, Scope.SYMBOLS, True),` to `EXPECTED` in `tests/unit/test_registry.py`.
+In `pipeline/tests/unit/test_registry.py`, add this row to `EXPECTED`:
+
+```python
+    "yfinance_analyst": (False, Scope.SYMBOLS, True, BOTH),
+```
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_yfinance_analyst.py tests/unit/test_registry.py -v`
-Expected: `ModuleNotFoundError`, and the registry is missing `yfinance_analyst`.
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_yfinance_analyst.py tests/unit/test_registry.py -q`
+Expected: `ModuleNotFoundError`, and the registry lacks `yfinance_analyst`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement the shared Yahoo helpers**
 
-`pipeline/src/advisor/collectors/yfinance_analyst.py`:
+Create `pipeline/src/advisor/collectors/yahoo.py`:
+
+```python
+"""Helpers shared by the Yahoo (yfinance) per-symbol collectors."""
+
+YAHOO_PER_MINUTE = 120  # one shared budget for Yahoo's per-symbol calls (analyst, earnings)
+
+
+def rate_limited(exc: Exception) -> bool:
+    """yfinance's YFRateLimitError: stop asking Yahoo for the rest of this run."""
+    return type(exc).__name__ == "YFRateLimitError"
+```
+
+- [ ] **Step 4: Implement the collector**
+
+Create `pipeline/src/advisor/collectors/yfinance_analyst.py`:
+
 ```python
 """Analyst price targets, recommendation counts and rating changes via yfinance (source 16).
 
-yfinance has no batch API for these, so the collector goes symbol by symbol with a short pause.
-A symbol Yahoo doesn't cover (or doesn't know) comes back empty and yields no record.
+yfinance has no batch API for these, so the collector goes symbol by symbol through the shared
+Yahoo limiter. A symbol Yahoo doesn't cover comes back empty and yields no record. The source
+is capped per call (spec §7.2): holdings come first and the rest wait for a later run.
 """
 
 import logging
 import math
-import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -1865,13 +2207,13 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
-from advisor.collectors.base import Cadence, Category, Scope, collect_per_symbol
+from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, collect_per_symbol
+from advisor.collectors.yahoo import rate_limited
 from advisor.collectors.yfinance_bars import to_yahoo
-from advisor.models import AssetType
+from advisor.models import AssetType, Market
 
 TickerData = tuple[dict, pd.DataFrame, pd.DataFrame]  # price targets, recommendations, rating changes
 Loader = Callable[[str], TickerData]
-PAUSE_SECONDS = 0.4  # politeness between symbols; Yahoo publishes no limit
 
 
 class AnalystView(BaseModel):
@@ -1971,11 +2313,6 @@ def analyst_view(
     )
 
 
-def _rate_limited(exc: Exception) -> bool:
-    """yfinance's YFRateLimitError: stop asking Yahoo for the rest of this run."""
-    return type(exc).__name__ == "YFRateLimitError"
-
-
 class YFinanceAnalyst:
     name = "yfinance_analyst"
     category = Category.FUNDAMENTALS
@@ -1983,437 +2320,437 @@ class YFinanceAnalyst:
     best_effort = True
     cadence = Cadence.DAILY
     asset_types = frozenset({AssetType.STOCK})
+    markets = frozenset({Market.US, Market.TSX})
     record_type = AnalystView
     freshness = timedelta(days=3)
     scope = Scope.SYMBOLS
-    canary = ("AAPL",)
+    canary = ("AAPL", "RY.TO")
     canary_requires_records = True
-    max_symbols = None
+    max_symbols = 200  # about 400 a day over two runs; older views are served from cache
 
-    def __init__(
-        self,
-        load: Loader | None = None,
-        sleep: Callable[[float], None] = time.sleep,
-        pause: float = PAUSE_SECONDS,
-    ) -> None:
+    def __init__(self, load: Loader | None = None, limiter: RateLimiter | None = None) -> None:
         self._load = load or _yahoo_load
-        self._sleep = sleep
-        self._pause = pause
+        self._limiter = limiter
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[AnalystView]:
         def one(symbol: str) -> list[AnalystView]:
+            if self._limiter is not None:
+                self._limiter.acquire()
             view = analyst_view(symbol, *self._load(to_yahoo(symbol)), as_of)
             return [view] if view else []
 
-        return collect_per_symbol(
-            symbols, one, is_fatal=_rate_limited, pause=lambda: self._sleep(self._pause)
-        )
+        return collect_per_symbol(symbols, one, is_fatal=rate_limited)
 ```
 
-Register it in `collectors/registry.py`: add the import and append `YFinanceAnalyst(),`.
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_yfinance_analyst.py tests/unit/test_registry.py -v`, then the full suite.
-Expected: all pass.
-
-- [ ] **Step 5: Commit**
-
-```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/collectors/yfinance_analyst.py src/advisor/collectors/registry.py tests/unit/test_yfinance_analyst.py tests/unit/test_registry.py tests/fixtures/yfinance_analyst
-git commit -m "feat: add yfinance analyst targets, ratings, and rating changes source"
-```
-End the message with your `Co-Authored-By:` trailer.
-
----
-
-### Task 8: Finnhub helpers and recommendation trends (source 17)
-
-**Files:**
-- Create: `pipeline/src/advisor/collectors/finnhub.py`, `pipeline/src/advisor/collectors/finnhub_recommendations.py`
-- Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row)
-- Test: `pipeline/tests/unit/test_finnhub_recommendations.py`, plus a shared test helper in `pipeline/tests/fakes.py`
-- Commit: the existing fixture `pipeline/tests/fixtures/finnhub/recommendation_AAPL.json`. It comes from Finnhub's documentation example; we have no live key.
-
-**Interfaces:**
-- Consumes: `get_with_retries`, `require`, `MissingCredential`, `RateLimiter` and `collect_per_symbol` (base)
-- Produces:
-  - In `finnhub`:
-    - `FINNHUB_BASE_URL` and `FINNHUB_PER_MINUTE = 50`;
-    - `finnhub_limiter() -> RateLimiter`, one per API key, shared by every Finnhub collector;
-    - `finnhub_get(client, path, params, api_key, limiter)`, which sends the key in the `X-Finnhub-Token` header;
-    - `finnhub_is_fatal(exc) -> bool`.
-  - In `finnhub_recommendations`:
-    - `RecommendationTrend(symbol, period, strong_buy, buy, hold, sell, strong_sell)`;
-    - `latest_trend(symbol, rows) -> RecommendationTrend | None`;
-    - `FinnhubRecommendations(client, api_key, limiter=None)` with a public `.limiter`: WEEKLY (trends change monthly), SYMBOLS, freshness 21 days, canary `("AAPL",)` (requires records), not core.
-  - In `tests/fakes.py`: `route_client(routes, seen) -> httpx.Client`.
-
-- [ ] **Step 1: Add the shared HTTP test helper**
-
-Append to `pipeline/tests/fakes.py`, and add `import httpx` and `from typing import Any` to its imports:
-```python
-def route_client(routes: dict, seen: list[httpx.Request]) -> httpx.Client:
-    """Mock client: `routes` maps (path, symbol param) or path to a JSON body or an httpx.Response."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        body: Any = routes.get((request.url.path, request.url.params.get("symbol")))
-        if body is None:
-            body = routes.get(request.url.path)
-        if body is None:
-            return httpx.Response(404, json={"error": "not found"})
-        return body if isinstance(body, httpx.Response) else httpx.Response(200, json=body)
-
-    return httpx.Client(transport=httpx.MockTransport(handler))
-```
-
-- [ ] **Step 2: Write the failing test**
-
-`pipeline/tests/unit/test_finnhub_recommendations.py`:
-```python
-import json
-from datetime import UTC, date, datetime
-
-import httpx
-import pytest
-
-from advisor.collectors.base import MissingCredential, RateLimiter
-from advisor.collectors.finnhub_recommendations import (
-    FinnhubRecommendations,
-    RecommendationTrend,
-    latest_trend,
-)
-from fakes import route_client
-
-AS_OF = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
-FAST = RateLimiter(per_minute=60_000, burst=1_000)
-PATH = "/api/v1/stock/recommendation"
-
-
-def rows(fixtures_dir) -> list:
-    return json.loads((fixtures_dir / "finnhub" / "recommendation_AAPL.json").read_text(encoding="utf-8"))
-
-
-def test_latest_trend_uses_the_newest_period(fixtures_dir):
-    assert latest_trend("AAPL", rows(fixtures_dir)) == RecommendationTrend(
-        symbol="AAPL", period=date(2025, 3, 1), strong_buy=13, buy=24, hold=7, sell=0, strong_sell=0
-    )
-    assert latest_trend("AAPL", []) is None
-
-
-def test_fetch_sends_the_key_only_in_a_header(fixtures_dir):
-    seen: list[httpx.Request] = []
-    client = route_client({(PATH, "AAPL"): rows(fixtures_dir), (PATH, "NOREC"): []}, seen)
-    records = FinnhubRecommendations(client, "key-123", FAST).fetch(["AAPL", "NOREC"], AS_OF)
-    assert [r.symbol for r in records] == ["AAPL"]
-    assert all(r.headers["X-Finnhub-Token"] == "key-123" for r in seen)
-    assert all("key-123" not in str(r.url) for r in seen)
-
-
-def test_a_missing_key_fails_before_any_request():
-    seen: list[httpx.Request] = []
-    with pytest.raises(MissingCredential, match="FINNHUB_API_KEY is not set"):
-        FinnhubRecommendations(route_client({}, seen), None, FAST).fetch(["AAPL"], AS_OF)
-    assert seen == []
-
-
-def test_a_rejected_key_stops_at_the_first_symbol():
-    seen: list[httpx.Request] = []
-    client = route_client({PATH: httpx.Response(401, json={"error": "Invalid API key"})}, seen)
-    with pytest.raises(httpx.HTTPStatusError) as caught:
-        FinnhubRecommendations(client, "key-123", FAST).fetch(["AAPL", "MSFT"], AS_OF)
-    assert len(seen) == 1
-    assert "key-123" not in str(caught.value)
-```
-
-Add the row `"finnhub_recommendations": (False, Scope.SYMBOLS, True),` to `EXPECTED` in `tests/unit/test_registry.py`.
-
-- [ ] **Step 3: Run them to verify they fail**
-
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finnhub_recommendations.py tests/unit/test_registry.py -v`
-Expected: `ModuleNotFoundError`, and the registry is missing the row.
-
-- [ ] **Step 4: Implement the shared helpers**
-
-`pipeline/src/advisor/collectors/finnhub.py`:
-```python
-"""Finnhub helpers shared by its collectors: header auth, one limiter per key, error policy.
-
-Free tier: 60 calls per minute per key, personal non-commercial use only.
-"""
-
-from collections.abc import Mapping
-from typing import Any
-
-import httpx
-
-from advisor.collectors.base import MissingCredential, RateLimiter, get_with_retries, require
-
-FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
-FINNHUB_PER_MINUTE = 50  # headroom under the free tier's 60 calls/minute per key
-
-
-def finnhub_limiter() -> RateLimiter:
-    return RateLimiter(per_minute=FINNHUB_PER_MINUTE, burst=5)
-
-
-def finnhub_get(
-    client: httpx.Client,
-    path: str,
-    params: Mapping[str, Any],
-    api_key: str | None,
-    limiter: RateLimiter,
-) -> Any:
-    """GET a Finnhub endpoint with the key in a header, so it never appears in a URL."""
-    response = get_with_retries(
-        client,
-        f"{FINNHUB_BASE_URL}{path}",
-        params=params,
-        headers={"X-Finnhub-Token": require(api_key, "FINNHUB_API_KEY")},
-        limiter=limiter,
-    )
-    return response.json()
-
-
-def finnhub_is_fatal(exc: Exception) -> bool:
-    """Errors that would hit every symbol: a missing or rejected key, or the rate limit."""
-    if isinstance(exc, MissingCredential):
-        return True
-    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (401, 403, 429)
-```
-
-- [ ] **Step 5: Implement the collector**
-
-`pipeline/src/advisor/collectors/finnhub_recommendations.py`:
-```python
-"""Analyst recommendation trends from Finnhub (spec source 17). Trends change monthly."""
-
-from collections.abc import Sequence
-from datetime import date, datetime, timedelta
-
-import httpx
-from pydantic import BaseModel, ConfigDict, Field
-
-from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, collect_per_symbol, require
-from advisor.collectors.finnhub import finnhub_get, finnhub_is_fatal, finnhub_limiter
-from advisor.models import AssetType
-
-
-class RecommendationTrend(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    symbol: str
-    period: date
-    strong_buy: int = Field(ge=0)
-    buy: int = Field(ge=0)
-    hold: int = Field(ge=0)
-    sell: int = Field(ge=0)
-    strong_sell: int = Field(ge=0)
-
-
-def latest_trend(symbol: str, rows: list) -> RecommendationTrend | None:
-    """The newest month's counts; malformed rows are skipped."""
-    trends: list[RecommendationTrend] = []
-    for row in rows:
-        try:
-            trends.append(RecommendationTrend(
-                symbol=symbol,
-                period=date.fromisoformat(row["period"]),
-                strong_buy=row["strongBuy"],
-                buy=row["buy"],
-                hold=row["hold"],
-                sell=row["sell"],
-                strong_sell=row["strongSell"],
-            ))
-        except (KeyError, TypeError, ValueError):
-            continue
-    return max(trends, key=lambda trend: trend.period) if trends else None
-
-
-class FinnhubRecommendations:
-    name = "finnhub_recommendations"
-    category = Category.FUNDAMENTALS
-    core = False
-    best_effort = False
-    cadence = Cadence.WEEKLY  # monthly data; weekly keeps it to ~300 calls a week
-    asset_types = frozenset({AssetType.STOCK})
-    record_type = RecommendationTrend
-    freshness = timedelta(days=21)
-    scope = Scope.SYMBOLS
-    canary = ("AAPL",)
-    canary_requires_records = True
-    max_symbols = None
-
-    def __init__(
-        self, client: httpx.Client, api_key: str | None, limiter: RateLimiter | None = None
-    ) -> None:
-        self._client = client
-        self._api_key = api_key
-        self.limiter = limiter or finnhub_limiter()
-
-    def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[RecommendationTrend]:
-        require(self._api_key, "FINNHUB_API_KEY")
-
-        def one(symbol: str) -> list[RecommendationTrend]:
-            rows = finnhub_get(
-                self._client, "/stock/recommendation", {"symbol": symbol}, self._api_key, self.limiter
-            )
-            trend = latest_trend(symbol, rows if isinstance(rows, list) else [])
-            return [trend] if trend else []
-
-        return collect_per_symbol(symbols, one, is_fatal=finnhub_is_fatal)
-```
-
-- [ ] **Step 6: Register it with one shared Finnhub limiter**
+- [ ] **Step 5: Register it with a shared Yahoo limiter**
 
 In `collectors/registry.py`:
-- add the imports `from advisor.collectors.finnhub import finnhub_limiter` and `from advisor.collectors.finnhub_recommendations import FinnhubRecommendations`;
-- at the start of `build_registry`, add `finnhub = finnhub_limiter()  # one limiter per key, shared by every Finnhub collector`;
-- append `FinnhubRecommendations(client, settings.finnhub_api_key, finnhub),` to the list.
+- import `YAHOO_PER_MINUTE` from `advisor.collectors.yahoo`, and `YFinanceAnalyst`;
+- in `build_registry`, add `yahoo = RateLimiter(per_minute=YAHOO_PER_MINUTE, burst=2)  # shared by Yahoo's per-symbol collectors` after the FINRA limiter;
+- add `YFinanceAnalyst(limiter=yahoo),` after `FinraShortInterest(client, finra),`.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [ ] **Step 6: Run the tests and lint**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finnhub_recommendations.py tests/unit/test_registry.py -v`, then the full suite.
-Expected: all pass.
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes.
 
-- [ ] **Step 8: Commit**
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
+
+- [ ] **Step 7: Commit**
 
 ```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/collectors/finnhub.py src/advisor/collectors/finnhub_recommendations.py src/advisor/collectors/registry.py tests/fakes.py tests/unit/test_finnhub_recommendations.py tests/unit/test_registry.py tests/fixtures/finnhub/recommendation_AAPL.json
-git commit -m "feat: add Finnhub recommendation trends source with header auth"
+git add pipeline/src/advisor/collectors/yahoo.py pipeline/src/advisor/collectors/yfinance_analyst.py \
+  pipeline/src/advisor/collectors/registry.py pipeline/tests/unit/test_yfinance_analyst.py \
+  pipeline/tests/unit/test_registry.py
+git commit -m "feat: add Yahoo analyst targets, ratings and rating changes for both markets"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
 
 ---
 
-### Task 9: Finnhub earnings calendar and surprises (source 18, core)
+### Task 9: Yahoo earnings dates and surprises (source 17, core)
 
 **Files:**
-- Create: `pipeline/src/advisor/collectors/finnhub_earnings.py`
-- Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row and a limiter test)
-- Test: `pipeline/tests/unit/test_finnhub_earnings.py`
-- Commit: the existing fixtures `pipeline/tests/fixtures/finnhub/earnings_calendar.json` and `earnings_surprises_AAPL.json`. Both come from Finnhub's documentation examples.
+- Create: `pipeline/src/advisor/collectors/yfinance_earnings.py`
+- Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row)
+- Test: `pipeline/tests/unit/test_yfinance_earnings.py`
+- Fixtures (already committed): `pipeline/tests/fixtures/yfinance_earnings/earnings_dates_AAPL.json`, `earnings_dates_RY_TO.json` and `earnings_dates_BRK_B.json`.
+  - These are real `Ticker.get_earnings_dates()` frames captured on 2026-10-14, 25 rows each. They were saved with `to_json(orient="split", date_format="iso")`, so the index reads back as UTC.
+  - BRK-B lists 2026-08-08 twice: a scheduled row at 16:00 ET with no actual, and the reported row at 08:00 ET.
 
 **Interfaces:**
-- Consumes:
-  - `finnhub_get`, `finnhub_is_fatal` and `finnhub_limiter` (Task 8)
-  - `requested_by_key` and `symbol_key` (Task 5)
-  - `collect_per_symbol`, `PartialFetch` and `require` (base)
+- Consumes: `collect_per_symbol` (base), `rate_limited` (Task 8), `to_yahoo`, and the registry's Yahoo limiter (Task 8).
 - Produces:
-  - `EarningsRecord(symbol, kind: "scheduled" | "surprise", report_date, period_end, hour, year, quarter, eps_estimate, eps_actual, revenue_estimate, revenue_actual, surprise_percent)`
-  - `parse_calendar(payload, wanted) -> list[EarningsRecord]`
-  - `parse_surprises(symbol, rows) -> list[EarningsRecord]`
-  - `FinnhubEarnings(client, api_key, limiter=None)`, with a public `.limiter`. It is DAILY, SYMBOLS, freshness 3 days, **core**, with canary `("AAPL",)` (`canary_requires_records=False`, because AAPL may have no report in the window).
-  - Per run it makes one market-wide calendar call (`from` = today − 7 days, `to` = today + 21 days), plus one surprises call for each requested symbol that reported in the last 10 days.
+  - `EarningsReport(symbol, report_at, eps_estimate, eps_actual, surprise_pct)`;
+  - `parse_earnings(symbol, frame) -> list[EarningsReport]`;
+  - `YFinanceEarnings(load=None, limiter=None)`, with:
+    - name `yfinance_earnings`, DAILY, SYMBOLS, markets US and TSX;
+    - freshness 7 days;
+    - canary `("AAPL", "RY.TO")` (requires records);
+    - **core**, best-effort.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-`pipeline/tests/unit/test_finnhub_earnings.py`:
+Create `pipeline/tests/unit/test_yfinance_earnings.py`:
+
 ```python
-import json
 from datetime import UTC, date, datetime
 
-import httpx
+import pandas as pd
 import pytest
 
-from advisor.collectors.base import PartialFetch, RateLimiter
-from advisor.collectors.finnhub_earnings import FinnhubEarnings, parse_calendar, parse_surprises
-from advisor.symbols import requested_by_key
-from fakes import route_client
+from advisor.collectors.base import PartialFetch
+from advisor.collectors.yfinance_earnings import YFinanceEarnings, parse_earnings
+from advisor.models import ET, Market
 
 AS_OF = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
-FAST = RateLimiter(per_minute=60_000, burst=1_000)
-CALENDAR_PATH = "/api/v1/calendar/earnings"
-SURPRISES_PATH = "/api/v1/stock/earnings"
-CALENDAR = {"earningsCalendar": [
-    {"date": "2026-10-09", "epsActual": 1.1, "epsEstimate": 1.0, "hour": "bmo", "quarter": 3,
-     "revenueActual": 10, "revenueEstimate": 9, "symbol": "JUST", "year": 2026},
-    {"date": "2026-10-20", "epsActual": None, "epsEstimate": 2.0, "hour": "amc", "quarter": 3,
-     "revenueActual": None, "revenueEstimate": 20, "symbol": "SOON", "year": 2026},
-    {"date": "2026-10-09", "epsActual": 3.0, "epsEstimate": 2.5, "hour": "amc", "quarter": 3,
-     "revenueActual": 30, "revenueEstimate": 28, "symbol": "OTHER", "year": 2026},
-]}
 
 
-def fixture(fixtures_dir, name: str):
-    return json.loads((fixtures_dir / "finnhub" / name).read_text(encoding="utf-8"))
+class CountingLimiter:
+    def __init__(self) -> None:
+        self.count = 0
+
+    def acquire(self) -> None:
+        self.count += 1
 
 
-def test_parse_calendar_from_the_docs_example(fixtures_dir):
-    records = parse_calendar(fixture(fixtures_dir, "earnings_calendar.json"), requested_by_key(["AAPL"]))
-    assert [(r.report_date, r.eps_actual, r.hour) for r in records] == [
-        (date(2020, 1, 28), 4.99, "amc"), (date(2019, 10, 30), 3.03, "amc"),
-    ]
-    assert records[0].revenue_actual == 91819000000
-    assert all(r.kind == "scheduled" for r in records)
+class YFRateLimitError(Exception):
+    pass
 
 
-def test_parse_surprises_from_the_docs_example(fixtures_dir):
-    records = parse_surprises("AAPL", fixture(fixtures_dir, "earnings_surprises_AAPL.json"))
-    assert len(records) == 3
-    first = records[0]
-    assert (first.kind, first.period_end, first.eps_actual, first.eps_estimate, first.surprise_percent) == (
-        "surprise", date(2023, 3, 31), 1.88, 1.9744, -4.7812,
-    )
+def frame(fixtures_dir, name: str) -> pd.DataFrame:
+    path = fixtures_dir / "yfinance_earnings" / f"earnings_dates_{name}.json"
+    return pd.read_json(path, orient="split")
 
 
-def test_fetch_asks_one_calendar_window_and_surprises_only_for_fresh_reports(fixtures_dir):
-    seen: list[httpx.Request] = []
-    client = route_client({
-        CALENDAR_PATH: CALENDAR,
-        (SURPRISES_PATH, "JUST"): fixture(fixtures_dir, "earnings_surprises_AAPL.json"),
-    }, seen)
-    records = FinnhubEarnings(client, "key-123", FAST).fetch(["SOON", "JUST"], AS_OF)
-    calendar_call = seen[0]
-    assert (calendar_call.url.params["from"], calendar_call.url.params["to"]) == ("2026-10-07", "2026-11-04")
-    assert "symbol" not in calendar_call.url.params
-    assert [r.url.params.get("symbol") for r in seen[1:]] == ["JUST"]
-    assert sorted((r.symbol, r.kind) for r in records) == [
-        ("JUST", "scheduled"), ("JUST", "surprise"), ("JUST", "surprise"), ("JUST", "surprise"),
-        ("SOON", "scheduled"),
-    ]
+def test_parse_gives_one_report_per_date_oldest_first(fixtures_dir):
+    reports = parse_earnings("AAPL", frame(fixtures_dir, "AAPL"))
+    assert len(reports) == 25
+    assert reports == sorted(reports, key=lambda r: r.report_at)
+    last, upcoming = reports[-2], reports[-1]
+    assert last.report_at == datetime(2026, 7, 30, 16, 0, tzinfo=ET)
+    assert last.eps_estimate == pytest.approx(1.89)
+    assert (last.eps_actual, last.surprise_pct) == (pytest.approx(2.02), pytest.approx(6.74))
+    assert upcoming.report_at == datetime(2026, 11, 2, 15, 0, tzinfo=ET)
+    assert upcoming.eps_estimate == pytest.approx(1.98)
+    assert (upcoming.eps_actual, upcoming.surprise_pct) == (None, None)
 
 
-def test_failed_surprises_keep_the_calendar_records():
-    client = route_client({
-        CALENDAR_PATH: CALENDAR,
-        SURPRISES_PATH: httpx.Response(400, json={"error": "bad request"}),
-    }, [])
-    with pytest.raises(PartialFetch) as caught:
-        FinnhubEarnings(client, "key-123", FAST).fetch(["JUST", "SOON"], AS_OF)
-    assert sorted(r.symbol for r in caught.value.records) == ["JUST", "SOON"]
+def test_tsx_reports_parse_the_same_way(fixtures_dir):
+    reports = parse_earnings("RY.TO", frame(fixtures_dir, "RY_TO"))
+    assert len(reports) == 25
+    assert reports[-1].report_at == datetime(2026, 12, 3, 7, 0, tzinfo=ET)
+    assert reports[-1].eps_actual is None
+    assert reports[-2].eps_actual == pytest.approx(4.28)
+    assert {r.symbol for r in reports} == {"RY.TO"}
+
+
+def test_a_date_listed_twice_keeps_the_reported_row(fixtures_dir):
+    reports = parse_earnings("BRK.B", frame(fixtures_dir, "BRK_B"))
+    assert len(reports) == 24  # 25 rows; 2026-08-08 is listed twice
+    [august] = [r for r in reports if r.report_at.date() == date(2026, 8, 8)]
+    assert august.report_at.hour == 8
+    assert (august.eps_actual, august.surprise_pct) == (pytest.approx(6.03), pytest.approx(17.4))
+
+
+def test_no_coverage_yields_no_reports():
+    assert parse_earnings("SPY", None) == []
+    assert parse_earnings("SPY", pd.DataFrame()) == []
+
+
+def test_earnings_are_core_and_cover_both_markets():
+    collector = YFinanceEarnings()
+    assert collector.core is True
+    assert collector.markets == frozenset({Market.US, Market.TSX})
+
+
+def test_fetch_maps_symbols_and_takes_one_limiter_token_per_symbol(fixtures_dir):
+    loaded = []
+    limiter = CountingLimiter()
+
+    def load(yahoo_symbol):
+        loaded.append(yahoo_symbol)
+        return frame(fixtures_dir, "AAPL") if yahoo_symbol == "AAPL" else None  # others: no coverage
+
+    records = YFinanceEarnings(load=load, limiter=limiter).fetch(["BRK.B", "AAPL", "RY.TO"], AS_OF)
+    assert loaded == ["BRK-B", "AAPL", "RY.TO"]
+    assert limiter.count == 3
+    assert {r.symbol for r in records} == {"AAPL"}
+    assert len(records) == 25
+
+
+def test_rate_limiting_stops_the_loop(fixtures_dir):
+    def load(yahoo_symbol):
+        if yahoo_symbol == "BBB":
+            raise YFRateLimitError("Too Many Requests")
+        return frame(fixtures_dir, "AAPL")
+
+    with pytest.raises(PartialFetch, match="stopped after 1 of 3 symbols") as caught:
+        YFinanceEarnings(load=load).fetch(["AAA", "BBB", "CCC"], AS_OF)
+    assert {r.symbol for r in caught.value.records} == {"AAA"}
 ```
 
-In `tests/unit/test_registry.py`:
-- add the row `"finnhub_earnings": (True, Scope.SYMBOLS, False),` to `EXPECTED`;
-- append:
+In `pipeline/tests/unit/test_registry.py`, add this row to `EXPECTED`:
+
 ```python
-def test_finnhub_collectors_share_one_rate_limiter():
-    registry = build()
-    assert registry["finnhub_earnings"].limiter is registry["finnhub_recommendations"].limiter
+    "yfinance_earnings": (True, Scope.SYMBOLS, True, BOTH),
 ```
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finnhub_earnings.py tests/unit/test_registry.py -v`
-Expected: `ModuleNotFoundError`, and the registry is missing `finnhub_earnings`.
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_yfinance_earnings.py tests/unit/test_registry.py -q`
+Expected: `ModuleNotFoundError`, and the registry lacks `yfinance_earnings`.
 
 - [ ] **Step 3: Implement**
 
-`pipeline/src/advisor/collectors/finnhub_earnings.py`:
-```python
-"""Earnings calendar and EPS surprises from Finnhub (spec source 18, a core source).
+Create `pipeline/src/advisor/collectors/yfinance_earnings.py`:
 
-One market-wide calendar call covers every symbol for a window around today (the free tier allows
-about a month per call). Surprises are fetched only for requested symbols that just reported.
+```python
+"""Earnings report dates, EPS estimates, actuals and surprises via yfinance (source 17, core).
+
+One record per report: past reports carry the actual EPS and the surprise, upcoming ones only
+the estimate. Yahoo sometimes lists one report twice (a scheduled and a reported row for the
+same day); the reported row wins. Symbols Yahoo doesn't cover (ETFs, unknown tickers) come back
+as None and yield no records. Plan 3 derives days to the next report and the last surprise.
 """
 
+import logging
+import math
+from collections.abc import Callable, Sequence
+from datetime import date, datetime, timedelta
+from typing import Any
+
+import pandas as pd
+from pydantic import BaseModel, ConfigDict
+
+from advisor.collectors.base import Cadence, Category, RateLimiter, Scope, collect_per_symbol
+from advisor.collectors.yahoo import rate_limited
+from advisor.collectors.yfinance_bars import to_yahoo
+from advisor.models import ET, AssetType, Market
+
+Loader = Callable[[str], pd.DataFrame | None]
+REPORTS = 12  # about three years of quarters plus the next one; Yahoo may send more
+
+
+class EarningsReport(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    symbol: str
+    report_at: datetime  # scheduled or actual report time, in ET
+    eps_estimate: float | None = None
+    eps_actual: float | None = None  # None until reported
+    surprise_pct: float | None = None
+
+
+def _yahoo_load(yahoo_symbol: str) -> pd.DataFrame | None:
+    import yfinance as yf  # imported lazily: slow import, and tests inject a fake
+
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)  # it logs an ERROR line per 404
+    return yf.Ticker(yahoo_symbol).get_earnings_dates(limit=REPORTS)
+
+
+def _number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def parse_earnings(symbol: str, frame: pd.DataFrame | None) -> list[EarningsReport]:
+    """One report per ET date, oldest first; a reported row beats a scheduled one."""
+    if frame is None or frame.empty:
+        return []
+    by_day: dict[date, EarningsReport] = {}
+    for stamp, row in frame.iterrows():
+        at = pd.Timestamp(stamp)
+        if at.tzinfo is None:
+            at = at.tz_localize("UTC")
+        report = EarningsReport(
+            symbol=symbol,
+            report_at=at.tz_convert(ET).to_pydatetime(),
+            eps_estimate=_number(row.get("EPS Estimate")),
+            eps_actual=_number(row.get("Reported EPS")),
+            surprise_pct=_number(row.get("Surprise(%)")),
+        )
+        day = report.report_at.date()
+        kept = by_day.get(day)
+        if kept is None or (kept.eps_actual is None and report.eps_actual is not None):
+            by_day[day] = report
+    return sorted(by_day.values(), key=lambda report: report.report_at)
+
+
+class YFinanceEarnings:
+    name = "yfinance_earnings"
+    category = Category.FUNDAMENTALS
+    core = True  # spec §4.2: the earnings catalyst feeds event risk and the Review badge
+    best_effort = True
+    cadence = Cadence.DAILY
+    asset_types = frozenset({AssetType.STOCK})
+    markets = frozenset({Market.US, Market.TSX})
+    record_type = EarningsReport
+    freshness = timedelta(days=7)
+    scope = Scope.SYMBOLS
+    canary = ("AAPL", "RY.TO")
+    canary_requires_records = True
+    max_symbols = None
+
+    def __init__(self, load: Loader | None = None, limiter: RateLimiter | None = None) -> None:
+        self._load = load or _yahoo_load
+        self._limiter = limiter
+
+    def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[EarningsReport]:
+        def one(symbol: str) -> list[EarningsReport]:
+            if self._limiter is not None:
+                self._limiter.acquire()
+            return parse_earnings(symbol, self._load(to_yahoo(symbol)))
+
+        return collect_per_symbol(symbols, one, is_fatal=rate_limited)
+```
+
+Register it in `collectors/registry.py`: import `YFinanceEarnings`, and add `YFinanceEarnings(limiter=yahoo),` after `YFinanceAnalyst(limiter=yahoo),`.
+
+- [ ] **Step 4: Run the tests and lint**
+
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes.
+
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add pipeline/src/advisor/collectors/yfinance_earnings.py pipeline/src/advisor/collectors/registry.py \
+  pipeline/tests/unit/test_yfinance_earnings.py pipeline/tests/unit/test_registry.py
+git commit -m "feat: add Yahoo earnings dates and surprises as a core source"
+```
+
+End the message with your `Co-Authored-By:` trailer.
+
+---
+
+### Task 10: Bank of Canada Valet (source 7) and the deferred list
+
+**Files:**
+- Create: `pipeline/src/advisor/collectors/boc_valet.py`
+- Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row), `docs/superpowers/deferred.md`
+- Test: `pipeline/tests/unit/test_boc_valet.py`
+- Fixture (already committed): `pipeline/tests/fixtures/boc/valet_observations_recent10.json`.
+  - This is the real answer to `observations/FXUSDCAD,V39079,BD.CDN.2YR.DQ.YLD,BD.CDN.10YR.DQ.YLD/json?recent=10`, captured on 2026-10-14.
+  - It holds 10 observations per series across 12 dates.
+  - On 2026-10-12 (Canadian Thanksgiving) only the policy rate has a value.
+
+**Interfaces:**
+- Consumes: `get_with_retries` and `PartialFetch` (base).
+- Produces:
+  - `SeriesObservation(series, day, value)`;
+  - `SERIES`, a dict of series name to description;
+  - `VALET_URL` and `LOOKBACK = timedelta(days=120)`;
+  - `parse_observations(payload, series) -> list[SeriesObservation]`;
+  - `BankOfCanadaValet(client, limiter=None)`, with:
+    - name `boc_valet`, category PRICES, DAILY, MARKET scope, markets US and TSX;
+    - freshness 7 days;
+    - no canary (requires records);
+    - not core.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `pipeline/tests/unit/test_boc_valet.py`:
+
+```python
+import json
+from datetime import UTC, date, datetime
+
+import httpx
+import pytest
+
+from advisor.collectors.base import PartialFetch
+from advisor.collectors.boc_valet import SERIES, BankOfCanadaValet, parse_observations
+
+AS_OF = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)  # 120-day lookback starts 2026-06-16
+
+
+def payload(fixtures_dir) -> dict:
+    path = fixtures_dir / "boc" / "valet_observations_recent10.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def serving(handler) -> BankOfCanadaValet:
+    return BankOfCanadaValet(httpx.Client(transport=httpx.MockTransport(handler)))
+
+
+def test_parse_reads_every_series_and_skips_days_without_a_value(fixtures_dir):
+    records = parse_observations(payload(fixtures_dir), list(SERIES))
+    by_series: dict[str, list] = {}
+    for record in records:
+        by_series.setdefault(record.series, []).append(record)
+    assert {name: len(rows) for name, rows in by_series.items()} == {name: 10 for name in SERIES}
+    fx = by_series["FXUSDCAD"]
+    assert (fx[-1].day, fx[-1].value) == (date(2026, 10, 13), 1.4222)
+    assert date(2026, 10, 12) not in {r.day for r in fx}  # Canadian Thanksgiving: no FX rate
+    assert [r.value for r in by_series["V39079"] if r.day == date(2026, 10, 12)] == [2.25]
+    assert by_series["BD.CDN.10YR.DQ.YLD"][-1].value == 3.87
+
+
+def test_fetch_asks_once_for_every_series_since_the_lookback(fixtures_dir):
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url)
+        return httpx.Response(200, json=payload(fixtures_dir))
+
+    records = serving(handler).fetch([], AS_OF)
+    [url] = seen
+    assert url.path == "/valet/observations/FXUSDCAD,V39079,BD.CDN.2YR.DQ.YLD,BD.CDN.10YR.DQ.YLD/json"
+    assert url.params["start_date"] == "2026-06-16"
+    assert len(records) == 40
+
+
+def test_a_series_with_no_observations_is_a_partial_result(fixtures_dir):
+    data = payload(fixtures_dir)
+    for observation in data["observations"]:
+        observation.pop("BD.CDN.2YR.DQ.YLD", None)
+    with pytest.raises(PartialFetch, match="no observations for BD.CDN.2YR.DQ.YLD") as caught:
+        serving(lambda request: httpx.Response(200, json=data)).fetch([], AS_OF)
+    assert len(caught.value.records) == 30
+
+
+def test_an_unknown_series_fails_the_source():
+    collector = serving(lambda request: httpx.Response(404, json={"message": "Series NOPE not found."}))
+    with pytest.raises(httpx.HTTPStatusError, match="HTTP 404"):
+        collector.fetch([], AS_OF)
+```
+
+In `pipeline/tests/unit/test_registry.py`, add this row to `EXPECTED`:
+
+```python
+    "boc_valet": (False, Scope.MARKET, True, BOTH),
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `pipeline/scripts/in-docker.sh uv run pytest tests/unit/test_boc_valet.py tests/unit/test_registry.py -q`
+Expected: `ModuleNotFoundError`, and the registry lacks `boc_valet`.
+
+- [ ] **Step 3: Implement**
+
+Create `pipeline/src/advisor/collectors/boc_valet.py`:
+
+```python
+"""USD/CAD, the policy rate and Government of Canada yields from the Bank of Canada Valet API
+(spec source 7).
+
+One keyless JSON call returns every series since the lookback. A day a series has no value (a
+holiday, or today's rate before publication) simply lacks it.
+"""
+
+import math
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime, timedelta
-from typing import Any, Literal
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, ConfigDict
@@ -2424,413 +2761,130 @@ from advisor.collectors.base import (
     PartialFetch,
     RateLimiter,
     Scope,
-    collect_per_symbol,
-    require,
+    get_with_retries,
 )
-from advisor.collectors.finnhub import finnhub_get, finnhub_is_fatal, finnhub_limiter
-from advisor.models import ET, AssetType
-from advisor.symbols import requested_by_key, symbol_key
+from advisor.models import ET, AssetType, Market
 
-CALENDAR_PAST_DAYS = 7
-CALENDAR_FUTURE_DAYS = 21
-SURPRISE_LOOKBACK_DAYS = 10
+VALET_URL = "https://www.bankofcanada.ca/valet/observations/{series}/json"
+SERIES = {
+    "FXUSDCAD": "USD/CAD, daily average",
+    "V39079": "target for the overnight rate (policy rate)",
+    "BD.CDN.2YR.DQ.YLD": "2-year Government of Canada benchmark bond yield",
+    "BD.CDN.10YR.DQ.YLD": "10-year Government of Canada benchmark bond yield",
+}
+LOOKBACK = timedelta(days=120)  # enough for a 63-session trend
 
 
-class EarningsRecord(BaseModel):
+class SeriesObservation(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    symbol: str
-    kind: Literal["scheduled", "surprise"]
-    report_date: date | None = None  # scheduled: the announcement date
-    period_end: date | None = None  # surprise: the fiscal period it reports
-    hour: str | None = None  # "bmo" before open, "amc" after close, "dmh" during market hours
-    year: int | None = None
-    quarter: int | None = None
-    eps_estimate: float | None = None
-    eps_actual: float | None = None
-    revenue_estimate: float | None = None
-    revenue_actual: float | None = None
-    surprise_percent: float | None = None
+    series: str
+    day: date
+    value: float
 
 
-def _number(value: Any) -> float | None:
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
-
-
-def parse_calendar(payload: Any, wanted: Mapping[str, str]) -> list[EarningsRecord]:
-    rows = payload.get("earningsCalendar") if isinstance(payload, dict) else None
-    records: list[EarningsRecord] = []
-    for row in rows or []:
-        try:
-            symbol = wanted.get(symbol_key(row["symbol"]))
-            if symbol is None:
+def parse_observations(
+    payload: Mapping[str, Any], series: Sequence[str]
+) -> list[SeriesObservation]:
+    rows: list[SeriesObservation] = []
+    for observation in payload["observations"]:
+        day = date.fromisoformat(observation["d"])
+        for name in series:
+            raw = (observation.get(name) or {}).get("v")
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
                 continue
-            records.append(EarningsRecord(
-                symbol=symbol,
-                kind="scheduled",
-                report_date=date.fromisoformat(row["date"]),
-                hour=row.get("hour") or None,
-                year=row.get("year"),
-                quarter=row.get("quarter"),
-                eps_estimate=_number(row.get("epsEstimate")),
-                eps_actual=_number(row.get("epsActual")),
-                revenue_estimate=_number(row.get("revenueEstimate")),
-                revenue_actual=_number(row.get("revenueActual")),
-            ))
-        except (KeyError, TypeError, ValueError):
-            continue
-    return records
+            if math.isfinite(value):
+                rows.append(SeriesObservation(series=name, day=day, value=value))
+    return sorted(rows, key=lambda row: (row.series, row.day))
 
 
-def parse_surprises(symbol: str, rows: Any) -> list[EarningsRecord]:
-    records: list[EarningsRecord] = []
-    for row in rows if isinstance(rows, list) else []:
-        try:
-            records.append(EarningsRecord(
-                symbol=symbol,
-                kind="surprise",
-                period_end=date.fromisoformat(row["period"]),
-                year=row.get("year"),
-                quarter=row.get("quarter"),
-                eps_actual=_number(row.get("actual")),
-                eps_estimate=_number(row.get("estimate")),
-                surprise_percent=_number(row.get("surprisePercent")),
-            ))
-        except (KeyError, TypeError, ValueError):
-            continue
-    return records
-
-
-class FinnhubEarnings:
-    name = "finnhub_earnings"
-    category = Category.FUNDAMENTALS
-    core = True
+class BankOfCanadaValet:
+    name = "boc_valet"
+    category = Category.PRICES  # spec §4.2 lists it with the price sources
+    core = False
     best_effort = False
     cadence = Cadence.DAILY
     asset_types = frozenset({AssetType.STOCK})
-    record_type = EarningsRecord
-    freshness = timedelta(days=3)
-    scope = Scope.SYMBOLS
-    canary = ("AAPL",)
-    canary_requires_records = False  # AAPL may have nothing scheduled in the window
+    markets = frozenset({Market.US, Market.TSX})
+    record_type = SeriesObservation
+    freshness = timedelta(days=7)
+    scope = Scope.MARKET
+    canary: tuple[str, ...] = ()
+    canary_requires_records = True
     max_symbols = None
 
-    def __init__(
-        self, client: httpx.Client, api_key: str | None, limiter: RateLimiter | None = None
-    ) -> None:
+    def __init__(self, client: httpx.Client, limiter: RateLimiter | None = None) -> None:
         self._client = client
-        self._api_key = api_key
-        self.limiter = limiter or finnhub_limiter()
+        self._limiter = limiter
 
-    def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[EarningsRecord]:
-        require(self._api_key, "FINNHUB_API_KEY")
-        today = as_of.astimezone(ET).date()
-        payload = finnhub_get(
+    def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[SeriesObservation]:
+        start = as_of.astimezone(ET).date() - LOOKBACK
+        response = get_with_retries(
             self._client,
-            "/calendar/earnings",
-            {
-                "from": (today - timedelta(days=CALENDAR_PAST_DAYS)).isoformat(),
-                "to": (today + timedelta(days=CALENDAR_FUTURE_DAYS)).isoformat(),
-            },
-            self._api_key,
-            self.limiter,
+            VALET_URL.format(series=",".join(SERIES)),
+            params={"start_date": start.isoformat()},
+            limiter=self._limiter,
         )
-        scheduled = parse_calendar(payload, requested_by_key(symbols))
-        just_reported = {
-            r.symbol
-            for r in scheduled
-            if r.eps_actual is not None
-            and r.report_date is not None
-            and timedelta(0) <= today - r.report_date <= timedelta(days=SURPRISE_LOOKBACK_DAYS)
-        }
-        reported = [s for s in dict.fromkeys(symbols) if s in just_reported]  # keep priority order
-
-        def one(symbol: str) -> list[EarningsRecord]:
-            rows = finnhub_get(
-                self._client, "/stock/earnings", {"symbol": symbol, "limit": 4},
-                self._api_key, self.limiter,
-            )
-            return parse_surprises(symbol, rows)
-
-        try:
-            surprises = collect_per_symbol(reported, one, is_fatal=finnhub_is_fatal)
-        except PartialFetch as exc:
-            raise PartialFetch([*scheduled, *exc.records], str(exc)) from exc
-        except Exception as exc:
-            if not scheduled:
-                raise
-            raise PartialFetch(
-                scheduled, f"surprises failed: {type(exc).__name__}: {exc}"[:300]
-            ) from exc
-        return [*scheduled, *surprises]
+        records = parse_observations(response.json(), list(SERIES))
+        missing = sorted(set(SERIES) - {record.series for record in records})
+        if missing:
+            message = f"Bank of Canada sent no observations for {', '.join(missing)}"
+            if records:
+                raise PartialFetch(records, message)
+            raise ValueError(message)
+        return records
 ```
 
-In `collectors/registry.py`, add the import and append `FinnhubEarnings(client, settings.finnhub_api_key, finnhub),`. It reuses the `finnhub` limiter variable from Task 8.
+Register it in `collectors/registry.py`: import `BankOfCanadaValet`, and add `BankOfCanadaValet(client),` as the last entry in the list.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Update the deferred list**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_finnhub_earnings.py tests/unit/test_registry.py -v`, then the full suite.
-Expected: all pass.
+In `docs/superpowers/deferred.md`:
+- Delete the whole `## Plan 2c, Task 0: must land before the first real enrichment source` section and the whole `## Plan 2c` section. This plan resolves them.
+- Add this section before `## Plans 2c to 2e`:
 
-- [ ] **Step 5: Commit**
+```markdown
+## Plan 2d: SEC
 
-```bash
-uv run --no-sync ruff check --fix .
-git add src/advisor/collectors/finnhub_earnings.py src/advisor/collectors/registry.py tests/unit/test_finnhub_earnings.py tests/unit/test_registry.py tests/fixtures/finnhub/earnings_calendar.json tests/fixtures/finnhub/earnings_surprises_AAPL.json
-git commit -m "feat: add Finnhub earnings calendar and surprises source"
-```
-End the message with your `Co-Authored-By:` trailer.
-
----
-
-### Task 10: FMP valuation ratios (source 15)
-
-**Files:**
-- Create: `pipeline/src/advisor/collectors/fmp_ratios.py`
-- Modify: `pipeline/src/advisor/collectors/registry.py`, `pipeline/tests/unit/test_registry.py` (add a row)
-- Test: `pipeline/tests/unit/test_fmp_ratios.py`
-- Commit: the existing fixture `pipeline/tests/fixtures/fmp/ratios_ttm_AAPL.json`, which comes from FMP's documented example. Delete the unused `fixtures/fmp/ratios_annual_AMZN.json`.
-
-**Interfaces:**
-- Consumes:
-  - `get_with_retries`, `require`, `MissingCredential`, `RateLimiter` and `collect_per_symbol` (base)
-  - `run_collector` and `max_symbols` (Task 3)
-- Produces:
-  - `Valuation(symbol, pe, ps, gross_margin, operating_margin, fcf_yield, debt_to_equity, current_ratio)`
-  - `parse_ratios(symbol, payload) -> Valuation | None`
-  - `FmpRatios(client, api_key, limiter=None)`, with a public `.limiter`:
-    - WEEKLY, SYMBOLS, freshness 21 days, canary `("AAPL",)` (requires records), not core;
-    - `max_symbols = MAX_SYMBOLS_PER_RUN = 110`. The free plan allows 250 calls a day; two runs use at most 220, and the daily health check uses 1.
-  - `FMP_RATIOS_TTM_URL`
-
-- [ ] **Step 1: Write the failing test**
-
-`pipeline/tests/unit/test_fmp_ratios.py`:
-```python
-import json
-from datetime import UTC, datetime
-
-import httpx
-import pytest
-
-from advisor.collectors.base import MissingCredential, RateLimiter
-from advisor.collectors.cache import DiskCache
-from advisor.collectors.fmp_ratios import FMP_RATIOS_TTM_URL, MAX_SYMBOLS_PER_RUN, FmpRatios, parse_ratios
-from advisor.collectors.runner import SourceState, run_collector
-from fakes import route_client
-
-AS_OF = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
-FAST = RateLimiter(per_minute=60_000, burst=1_000)
-PATH = "/stable/ratios-ttm"
-
-
-def payload(fixtures_dir) -> list:
-    return json.loads((fixtures_dir / "fmp" / "ratios_ttm_AAPL.json").read_text(encoding="utf-8"))
-
-
-def test_parse_ratios_from_the_documented_example(fixtures_dir):
-    valuation = parse_ratios("AAPL", payload(fixtures_dir))
-    assert valuation.pe == pytest.approx(36.27890581198107)
-    assert valuation.ps == pytest.approx(9.652042838036241)
-    assert valuation.gross_margin == pytest.approx(0.4690516410716045)
-    assert valuation.operating_margin == pytest.approx(0.31970799762591884)
-    assert valuation.fcf_yield == pytest.approx(1 / 40.66949284194113)
-    assert valuation.debt_to_equity == pytest.approx(1.5241072518411023)
-    assert valuation.current_ratio == pytest.approx(0.8932929222186667)
-    assert parse_ratios("AAPL", []) is None
-
-
-def test_a_non_positive_price_to_fcf_gives_no_fcf_yield():
-    assert parse_ratios("X", [{"priceToFreeCashFlowRatioTTM": -12.0}]).fcf_yield is None
-
-
-def test_fetch_sends_the_symbol_and_key_as_params_and_skips_unavailable_symbols(fixtures_dir):
-    seen: list[httpx.Request] = []
-    client = route_client({
-        (PATH, "AAPL"): payload(fixtures_dir),
-        (PATH, "EMPTY"): [],
-        (PATH, "PAID"): httpx.Response(402, json={"message": "Premium endpoint"}),
-    }, seen)
-    records = FmpRatios(client, "key-123", FAST).fetch(["AAPL", "EMPTY", "PAID"], AS_OF)
-    assert [r.symbol for r in records] == ["AAPL"]
-    assert str(seen[0].url).startswith(FMP_RATIOS_TTM_URL)
-    assert seen[0].url.params["apikey"] == "key-123"
-
-
-def test_a_rejected_key_is_fatal_and_never_appears_in_the_error():
-    client = route_client({PATH: httpx.Response(401, json={"Error Message": "Invalid API KEY"})}, [])
-    with pytest.raises(httpx.HTTPStatusError) as caught:
-        FmpRatios(client, "key-123", FAST).fetch(["AAPL", "MSFT"], AS_OF)
-    assert "key-123" not in str(caught.value)
-
-
-def test_a_missing_key_fails_before_any_request():
-    seen: list[httpx.Request] = []
-    with pytest.raises(MissingCredential, match="FMP_API_KEY is not set"):
-        FmpRatios(route_client({}, seen), None, FAST).fetch(["AAPL"], AS_OF)
-    assert seen == []
-
-
-def test_the_daily_cap_spreads_symbols_over_later_runs_within_the_week(fixtures_dir, tmp_path):
-    assert MAX_SYMBOLS_PER_RUN == 110
-    seen: list[httpx.Request] = []
-    body = payload(fixtures_dir)
-    collector = FmpRatios(route_client({PATH: body}, seen), "key-123", FAST)
-    collector.max_symbols = 2
-    cache = DiskCache(tmp_path, clock=lambda: AS_OF)
-    symbols = ["AAPL", "MSFT", "NVDA"]
-    run_collector(collector, symbols, AS_OF, cache=cache, state=SourceState())
-    run_collector(collector, symbols, AS_OF, cache=cache, state=SourceState())
-    assert [r.url.params["symbol"] for r in seen] == ["AAPL", "MSFT", "NVDA"]
+- **One shared limiter for every SEC collector,** built in `build_registry`, the same way as FINRA and Yahoo. SEC allows 10 requests per second per IP.
+- **The SEC contact string:** add `SEC_USER_AGENT` (an optional setting; SEC requires a contact in every request) with `MissingCredential`, which fails only the SEC sources when it is unset.
+- **Recorded fixtures:** the SEC fixtures are in `.superpowers/research/plan-2c-fixtures/sec/` (git-ignored). Copy the ones the plan uses into `pipeline/tests/fixtures/sec/`.
 ```
 
-Add the row `"fmp_ratios": (False, Scope.SYMBOLS, True),` to `EXPECTED` in `tests/unit/test_registry.py`.
+- Rename `## Plans 2c to 2e` to `## Plan 2e`.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [ ] **Step 5: Run the tests and lint**
 
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_fmp_ratios.py tests/unit/test_registry.py -v`
-Expected: `ModuleNotFoundError`, and the registry is missing `fmp_ratios`.
+Run: `pipeline/scripts/in-docker.sh uv run pytest -q`
+Expected: every test passes.
 
-- [ ] **Step 3: Implement**
-
-`pipeline/src/advisor/collectors/fmp_ratios.py`:
-```python
-"""Trailing-twelve-month valuation ratios from Financial Modeling Prep (spec source 15).
-
-Free plan: 250 calls per day, US symbols, personal non-commercial use. FMP accepts the key only
-as a query parameter, so it is passed via `params=`; error text never includes query strings.
-The weekly cadence plus `max_symbols` spreads a 300-symbol shortlist over several runs.
-"""
-
-import math
-from collections.abc import Sequence
-from datetime import datetime, timedelta
-from typing import Any
-
-import httpx
-from pydantic import BaseModel, ConfigDict
-
-from advisor.collectors.base import (
-    Cadence,
-    Category,
-    MissingCredential,
-    RateLimiter,
-    Scope,
-    collect_per_symbol,
-    get_with_retries,
-    require,
-)
-from advisor.models import AssetType
-
-FMP_RATIOS_TTM_URL = "https://financialmodelingprep.com/stable/ratios-ttm"
-MAX_SYMBOLS_PER_RUN = 110  # two runs a day plus the health check stay under 250 calls
-FMP_PER_MINUTE = 120
-NOT_ON_FREE_PLAN = 402
-
-
-class Valuation(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    symbol: str
-    pe: float | None = None
-    ps: float | None = None
-    gross_margin: float | None = None
-    operating_margin: float | None = None
-    fcf_yield: float | None = None
-    debt_to_equity: float | None = None
-    current_ratio: float | None = None
-
-
-def parse_ratios(symbol: str, payload: Any) -> Valuation | None:
-    if not isinstance(payload, list) or not payload or not isinstance(payload[0], dict):
-        return None
-    row = payload[0]
-
-    def number(key: str) -> float | None:
-        value = row.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return None
-        return float(value) if math.isfinite(value) else None
-
-    price_to_fcf = number("priceToFreeCashFlowRatioTTM")
-    return Valuation(
-        symbol=symbol,
-        pe=number("priceToEarningsRatioTTM"),
-        ps=number("priceToSalesRatioTTM"),
-        gross_margin=number("grossProfitMarginTTM"),
-        operating_margin=number("operatingProfitMarginTTM"),
-        fcf_yield=1 / price_to_fcf if price_to_fcf and price_to_fcf > 0 else None,
-        debt_to_equity=number("debtToEquityRatioTTM"),
-        current_ratio=number("currentRatioTTM"),
-    )
-
-
-def fmp_is_fatal(exc: Exception) -> bool:
-    """Errors that would hit every symbol: a missing or rejected key, or the rate limit."""
-    if isinstance(exc, MissingCredential):
-        return True
-    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (401, 403, 429)
-
-
-class FmpRatios:
-    name = "fmp_ratios"
-    category = Category.FUNDAMENTALS
-    core = False
-    best_effort = False
-    cadence = Cadence.WEEKLY
-    asset_types = frozenset({AssetType.STOCK})
-    record_type = Valuation
-    freshness = timedelta(days=21)
-    scope = Scope.SYMBOLS
-    canary = ("AAPL",)
-    canary_requires_records = True
-    max_symbols: int | None = MAX_SYMBOLS_PER_RUN
-
-    def __init__(
-        self, client: httpx.Client, api_key: str | None, limiter: RateLimiter | None = None
-    ) -> None:
-        self._client = client
-        self._api_key = api_key
-        self.limiter = limiter or RateLimiter(per_minute=FMP_PER_MINUTE, burst=5)
-
-    def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[Valuation]:
-        key = require(self._api_key, "FMP_API_KEY")
-
-        def one(symbol: str) -> list[Valuation]:
-            try:
-                payload = get_with_retries(
-                    self._client, FMP_RATIOS_TTM_URL, params={"symbol": symbol, "apikey": key},
-                    limiter=self.limiter,
-                ).json()
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == NOT_ON_FREE_PLAN:
-                    return []
-                raise
-            valuation = parse_ratios(symbol, payload)
-            return [valuation] if valuation else []
-
-        capped = list(symbols)[: self.max_symbols] if self.max_symbols else list(symbols)
-        return collect_per_symbol(capped, one, is_fatal=fmp_is_fatal)
-```
-
-In `collectors/registry.py`, add the import and append `FmpRatios(client, settings.fmp_api_key),`.
-
-Delete the unused fixture: `rm -f tests/fixtures/fmp/ratios_annual_AMZN.json`.
-
-- [ ] **Step 4: Run the tests to verify they pass**
-
-Run: `scripts/in-docker.sh uv run pytest tests/unit/test_fmp_ratios.py tests/unit/test_registry.py -v`, then the full suite.
-Expected: all pass.
-
-- [ ] **Step 5: Final verification**
-
-Run: `uv run --no-sync ruff check . && scripts/in-docker.sh uv run pytest -q`
-Expected: lint is clean and every test passes. Report the exact count. `git status` must show no untracked fixtures left under `tests/fixtures/`, except `tests/fixtures/sec/`, which Plan 2b-SEC commits.
+Run: `pipeline/scripts/in-docker.sh uv run ruff check .`
+Expected: `All checks passed!`
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/advisor/collectors/fmp_ratios.py src/advisor/collectors/registry.py tests/unit/test_fmp_ratios.py tests/unit/test_registry.py tests/fixtures/fmp/ratios_ttm_AAPL.json
-git commit -m "feat: add FMP valuation ratios source capped to the free daily quota"
+git add pipeline/src/advisor/collectors/boc_valet.py pipeline/src/advisor/collectors/registry.py \
+  pipeline/tests/unit/test_boc_valet.py pipeline/tests/unit/test_registry.py docs/superpowers/deferred.md
+git commit -m "feat: add Bank of Canada USD/CAD, policy rate and yields; close Plan 2c deferrals"
 ```
+
 End the message with your `Co-Authored-By:` trailer.
+
+---
+
+## After this plan
+
+- **Live check.** On the owner's machine, against a scratch database, run the health check and then a forced pre-open run:
+
+  ```bash
+  pipeline/scripts/in-docker.sh uv run python -m advisor.health
+  pipeline/scripts/in-docker.sh uv run python -m advisor.run --force-kind pre_open
+  ```
+
+  - All eight sources should be `ok`.
+  - The run should finish well inside the 30-minute budget.
+  - A second run the same day should skip the daily sources' fetches, because they are served from the cadence window.
+- **Next:** Plan 2d (SEC).

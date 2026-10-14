@@ -146,6 +146,7 @@ class Collector(Protocol):
     best_effort: bool                # unofficial / fragile; failures are expected
     cadence: Cadence                 # per_run | daily | weekly
     asset_types: frozenset[AssetType]
+    markets: frozenset[Market]       # stock markets covered (US, TSX); a source is sent only their symbols
     record_type: type[BaseModel]
     freshness: timedelta | None      # max age of cached data served as a fallback; None = never cache
     scope: Scope                     # universe | symbols (one or more records per symbol) | market (market-wide)

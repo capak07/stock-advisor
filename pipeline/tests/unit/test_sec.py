@@ -1,4 +1,7 @@
 import json
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 
 import httpx
@@ -10,6 +13,7 @@ from advisor.collectors.sec import (
     TICKERS_URL,
     DocumentBudget,
     DocumentBudgetExhausted,
+    SecEdgar,
     archive_url,
     parse_filings,
     parse_tickers,
@@ -114,3 +118,53 @@ def test_sec_stop_recognises_a_missing_contact_a_block_and_a_spent_budget():
     assert sec_stop(httpx.HTTPStatusError("x", request=request, response=httpx.Response(403)))
     assert not sec_stop(httpx.HTTPStatusError("x", request=request, response=httpx.Response(404)))
     assert not sec_stop(ValueError("x"))
+
+
+def slow_sec(routes):
+    """A SecEdgar whose every answer takes 0.2 s, so threads asking together overlap."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        time.sleep(0.2)
+        seen.append(request)
+        answer = routes.get(str(request.url), 404)
+        return httpx.Response(answer) if isinstance(answer, int) else httpx.Response(200, content=answer)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    return SecEdgar(client, SEC_CONTACT), seen
+
+
+def test_threads_asking_at_once_share_one_submissions_fetch(fixtures_dir):
+    sec, seen = slow_sec(sec_routes(fixtures_dir))
+    barrier = threading.Barrier(3)
+
+    def ask(_):
+        barrier.wait()
+        assert sec.cik_for("AAPL") == 320193
+        return sec.filings(320193)
+
+    with ThreadPoolExecutor(3) as pool:
+        results = list(pool.map(ask, range(3)))
+    assert results[0] == results[1] == results[2]
+    urls = [str(r.url) for r in seen]
+    assert urls.count(TICKERS_URL) == 1
+    assert urls.count(SUBMISSIONS_URL.format(cik=320193)) == 1
+
+
+def test_a_failed_fetch_is_shared_by_waiters_and_retried_later(fixtures_dir):
+    routes = sec_routes(fixtures_dir)
+    routes[SUBMISSIONS_URL.format(cik=320193)] = 404
+    sec, seen = slow_sec(routes)
+    barrier = threading.Barrier(3)
+
+    def ask(_):
+        barrier.wait()
+        with pytest.raises(httpx.HTTPStatusError):
+            sec.filings(320193)
+
+    with ThreadPoolExecutor(3) as pool:
+        list(pool.map(ask, range(3)))
+    assert len(seen) == 1
+    with pytest.raises(httpx.HTTPStatusError):
+        sec.filings(320193)
+    assert len(seen) == 2

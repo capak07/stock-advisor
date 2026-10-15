@@ -9,11 +9,11 @@ run, and an on-disk cache of filing documents, which never change once filed.
 import math
 import os
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 
@@ -25,6 +25,8 @@ TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 CONTACT_EXAMPLE = "stock-advisor you@example.com"
+
+T = TypeVar("T")
 
 
 def sec_ticker(symbol: str) -> str:
@@ -103,8 +105,21 @@ def sec_stop(exc: Exception) -> bool:
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403
 
 
+class _Flight:
+    """A fetch in progress that other threads wait on instead of repeating it."""
+
+    def __init__(self) -> None:
+        self.done = threading.Event()
+        self.value: Any = None
+        self.error: BaseException | None = None
+
+
 class SecEdgar:
-    """SEC access shared by every SEC collector in one process; safe to use from several threads."""
+    """SEC access shared by every SEC collector in one process; safe to use from several threads.
+
+    The ticker map and each company's submissions are fetched once: threads asking for one that is
+    being fetched wait for it. Errors are not remembered; a later call tries again.
+    """
 
     def __init__(
         self,
@@ -119,8 +134,8 @@ class SecEdgar:
         self._limiter = limiter
         self._documents = documents
         self._lock = threading.Lock()
-        self._ciks: dict[str, int] | None = None
-        self._filings: dict[int, list[Filing]] = {}
+        self._values: dict[Hashable, Any] = {}
+        self._flights: dict[Hashable, _Flight] = {}
 
     def require_contact(self) -> str:
         if not self._user_agent or "@" not in self._user_agent:
@@ -134,24 +149,42 @@ class SecEdgar:
             self._client, url, headers={"User-Agent": self.require_contact()}, limiter=self._limiter
         )
 
-    def cik_for(self, symbol: str) -> int | None:
+    def _shared(self, key: Hashable, load: Callable[[], T]) -> T:
+        """load() once per key; threads asking meanwhile wait and share its answer or its error."""
         with self._lock:
-            ciks = self._ciks
-        if ciks is None:
-            ciks = parse_tickers(self.get(TICKERS_URL).json())
+            if key in self._values:
+                return self._values[key]
+            flight = self._flights.get(key)
+            leader = flight is None
+            if leader:
+                flight = self._flights[key] = _Flight()
+        if not leader:
+            flight.done.wait()
+            if flight.error is not None:
+                raise flight.error
+            return flight.value
+        try:
+            flight.value = load()
+        except BaseException as exc:
+            flight.error = exc
+            raise
+        finally:
             with self._lock:
-                self._ciks = ciks
+                if flight.error is None:
+                    self._values[key] = flight.value
+                del self._flights[key]
+            flight.done.set()
+        return flight.value
+
+    def cik_for(self, symbol: str) -> int | None:
+        ciks = self._shared("tickers", lambda: parse_tickers(self.get(TICKERS_URL).json()))
         return ciks.get(sec_ticker(symbol))
 
     def filings(self, cik: int) -> list[Filing]:
         """A company's recent filings, fetched once per process and shared by every collector."""
-        with self._lock:
-            known = self._filings.get(cik)
-        if known is None:
-            known = parse_filings(self.get(SUBMISSIONS_URL.format(cik=cik)).json())
-            with self._lock:
-                known = self._filings.setdefault(cik, known)
-        return known
+        return self._shared(
+            ("submissions", cik), lambda: parse_filings(self.get(SUBMISSIONS_URL.format(cik=cik)).json())
+        )
 
     def _document_path(self, filing: Filing) -> Path | None:
         return None if self._documents is None else self._documents / f"{filing.accession}.xml"

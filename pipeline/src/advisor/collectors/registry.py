@@ -8,6 +8,7 @@ from advisor.collectors.finra_short_interest import FinraShortInterest
 from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.sec import SEC_PER_MINUTE, SecEdgar
+from advisor.collectors.sec_events import SecEvents
 from advisor.collectors.sec_xbrl import SecXbrl
 from advisor.collectors.tmx_symbols import TmxSymbols
 from advisor.collectors.yahoo import YAHOO_PER_MINUTE
@@ -38,5 +39,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         YFinanceEarnings(limiter=yahoo),
         BankOfCanadaValet(client),
         SecXbrl(sec),
+        SecEvents(sec),
     ]
     return {collector.name: collector for collector in collectors}

@@ -22,6 +22,7 @@ EXPECTED = {
     "yfinance_earnings": (True, Scope.SYMBOLS, True, BOTH),
     "boc_valet": (False, Scope.MARKET, True, BOTH),
     "sec_xbrl": (True, Scope.SYMBOLS, True, US),
+    "sec_8k": (False, Scope.SYMBOLS, True, US),
 }
 
 

@@ -17,7 +17,7 @@ class ConfigError(RuntimeError):
 class Settings:
     database_url: str = field(repr=False)  # holds the database password
     cache_dir: Path
-    sec_user_agent: str | None = None  # "<name> <email>": SEC requires a contact; not a key
+    sec_user_agent: str | None = field(default=None, repr=False)  # "<name> <email>": SEC requires a contact; not a key
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Self:

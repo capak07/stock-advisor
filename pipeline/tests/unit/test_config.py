@@ -31,3 +31,8 @@ def test_the_sec_contact_is_optional_and_blank_means_unset():
     assert Settings.from_env({"DATABASE_URL": "x", "SEC_USER_AGENT": ""}).sec_user_agent is None
     contact = "stock-advisor you@example.com"
     assert Settings.from_env({"DATABASE_URL": "x", "SEC_USER_AGENT": contact}).sec_user_agent == contact
+
+
+def test_repr_hides_the_sec_contact():
+    settings = Settings.from_env({"DATABASE_URL": "x", "SEC_USER_AGENT": "dev you@example.com"})
+    assert "you@example.com" not in repr(settings)

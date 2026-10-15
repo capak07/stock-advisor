@@ -3,7 +3,8 @@ from datetime import UTC, date, datetime
 import httpx
 import pytest
 
-from advisor.collectors.sec import DocumentBudgetExhausted, Filing
+from advisor.collectors.base import PartialFetch
+from advisor.collectors.sec import DocumentBudgetExhausted, Filing, archive_url
 from advisor.collectors.sec_insiders import SecInsiders, parse_form4
 from fakes import fake_sec, sec_routes
 
@@ -76,3 +77,18 @@ def test_documents_on_disk_cost_nothing_on_later_runs(fixtures_dir, tmp_path):
 def test_the_document_budget_stops_the_run(fixtures_dir):
     with pytest.raises(DocumentBudgetExhausted, match="fetched 2 Form 4 documents this run"):
         SecInsiders(fake_sec(sec_routes(fixtures_dir)), max_documents=2).fetch(["AAPL"], AS_OF)
+
+
+def test_a_malformed_document_skips_only_that_filing(fixtures_dir):
+    routes = sec_routes(fixtures_dir)
+    routes[archive_url(320193, "0001140361-26-038674", "form4.xml")] = b"<ownershipDocument><unclosed"
+    trades = SecInsiders(fake_sec(routes)).fetch(["AAPL"], AS_OF)
+    assert len(trades) == 3  # the CEO's 8 trades are skipped; the other 3 are kept
+    assert "0001140361-26-038674" not in {t.accession for t in trades}
+
+
+def test_a_symbol_cut_off_by_the_budget_is_left_out_whole(fixtures_dir):
+    with pytest.raises(PartialFetch, match="fetched 5 Form 4 documents this run") as caught:
+        SecInsiders(fake_sec(sec_routes(fixtures_dir)), max_documents=5).fetch(["AAPL", "PFE"], AS_OF)
+    assert len(caught.value.records) == 11  # AAPL only; PFE contributes nothing
+    assert {t.symbol for t in caught.value.records} == {"AAPL"}

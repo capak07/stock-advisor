@@ -130,7 +130,11 @@ class SecInsiders:
             trades: list[InsiderTrade] = []
             for filing in self._sec.filings(cik):
                 if filing.form in INSIDER_FORMS and cutoff <= filing.filing_date <= today:
-                    trades.extend(parse_form4(symbol, filing, budget.fetch(cik, filing), cik))
+                    body = budget.fetch(cik, filing)
+                    try:  # a malformed document is cached, so skip only it; the symbol's other trades stay
+                        trades.extend(parse_form4(symbol, filing, body, cik))
+                    except (ElementTree.ParseError, ValueError):
+                        pass
             return trades
 
         return collect_per_symbol(symbols, one, is_fatal=sec_stop)

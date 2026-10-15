@@ -7,6 +7,8 @@ from advisor.collectors.boc_valet import BankOfCanadaValet
 from advisor.collectors.finra_short_interest import FinraShortInterest
 from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
+from advisor.collectors.sec import SEC_PER_MINUTE, SecEdgar
+from advisor.collectors.sec_xbrl import SecXbrl
 from advisor.collectors.tmx_symbols import TmxSymbols
 from advisor.collectors.yahoo import YAHOO_PER_MINUTE
 from advisor.collectors.yfinance_analyst import YFinanceAnalyst
@@ -20,6 +22,12 @@ FINRA_PER_MINUTE = 60
 def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collector]:
     finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
     yahoo = RateLimiter(per_minute=YAHOO_PER_MINUTE, burst=2)  # shared by Yahoo's per-symbol collectors
+    sec = SecEdgar(  # shared by every SEC collector
+        client,
+        settings.sec_user_agent,
+        RateLimiter(per_minute=SEC_PER_MINUTE, burst=5),
+        documents=settings.cache_dir / "sec-documents",
+    )
     collectors: list[Collector] = [
         NasdaqSymbols(client),
         TmxSymbols(client),
@@ -29,5 +37,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         YFinanceAnalyst(limiter=yahoo),
         YFinanceEarnings(limiter=yahoo),
         BankOfCanadaValet(client),
+        SecXbrl(sec),
     ]
     return {collector.name: collector for collector in collectors}

@@ -63,7 +63,7 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
 **Upgrading an existing deployment:** apply migration 0004 (`python -m advisor.store.migrate`, as
 in step 2) in the same window as you deploy the matching code, between run slots. Code without the
 migration, or the migration without the code, only produces failed runs and emails; no data is
-damaged.
+damaged. Before deploying Plan 2d's code, add the `SEC_USER_AGENT` secret (step 5); without it every run is degraded and the health job emails you daily.
 
 ## Manual run
 

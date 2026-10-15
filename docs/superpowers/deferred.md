@@ -31,6 +31,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c and Plan 2d reviews d
 - **Yahoo analyst throttling.** Three local full runs on 2026-10-14 got analyst data for 39 of 200, then 199 of 200, then none (`SilentFailure`, served stale). Each came right after the bulk price download from one busy IP. Fetched alone, 40 of 40 large caps had data, and earnings data was unaffected. If GitHub Actions runs show the same, fetch analyst data apart from the price download: in the 06:30 ET health job, or for priority symbols before prices.
 - **XBRL facts are raw.** `sec_xbrl` keeps every listed concept and every re-reported or restated duplicate with its `filed` date. Features pick a concept per period by `METRICS` priority, take the latest fact filed on or before `as_of`, derive Q4 as FY minus 9M, and compute single quarters of cash-flow items from year-to-date facts (research `sec.md` §2.4–2.5).
 - **Insider and holder signals.** Count only codes P and S from non-derivative rows for insider buying and selling, and treat `planned` (10b5-1) sales as weaker. For 13D/G, a 0-share 13G/A can be an index giant's entity realignment rather than an exit.
+- **Amendments:** a Form 4/A restates trades already in the original Form 4, and both are stored (`form` tells them apart; the XML doesn't name the original's accession). Count a trade once: for the same owners, trade date, code and shares, keep the latest `accepted_at`. Do the same for 13D/G amendments of one reporting person.
 
 ## Plans 4 and 5: recommendations and dashboard
 
@@ -64,3 +65,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c and Plan 2d reviews d
 - **SEC document cache** (`<cache>/sec-documents/`) grows by roughly 1 MB a day of Form 4 and 13D/G XML; prune files older than 400 days.
 - **XBRL bandwidth:** company facts are downloaded daily for every US symbol in the enrichment list (about 300 KB compressed each). If time or bandwidth becomes a problem, refresh a company only when its submissions show a new 10-K or 10-Q.
 - **8-K bodies** (Exhibit 99.1 earnings text) are not downloaded; only the item codes are used.
+- **SEC first fill:** the first live run fetched Form 4 documents for 42 of 299 US symbols (budget 1,000) and 13D/G for 122 (budget 500), so those two sources stay PARTIAL for about 5 and 3 runs (a second run added 67 and 110 symbols). Raise the budgets for the first deployment if that is too slow.
+- **Unparseable SEC documents** are skipped and dropped from the cache, so every run downloads them again (one budget unit each) and nothing records the skip. Count skips into the source-health detail if they ever appear.
+- **SEC client polish:** `filings()` returns the shared list (return a tuple); untested: a 403 through `get()` end to end and `DocumentBudget`'s deadline check. `sec_xbrl` copies every fact even for a company's first share class, and one malformed fact fails that symbol rather than being skipped.
+- **Form 4 details:** a reporting owner's name can be empty; `acquired` is False when the A/D code is missing; no unit test covers rows skipped for a missing code, share count or date.
+- **Runner coverage:** no runner-level test of a PER_RUN source (such as `sec_8k`) falling back to its cache within `freshness`.

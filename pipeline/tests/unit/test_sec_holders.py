@@ -81,3 +81,11 @@ def test_a_malformed_document_skips_only_that_filing(fixtures_dir):
     routes[archive_url(320193, "0000102909-26-000630", "primary_doc.xml")] = b"<schedule><unclosed"
     holdings = SecHolders(fake_sec(routes)).fetch(["AAPL"], AS_OF)
     assert [h.accession for h in holdings] == ["0002100119-26-000139"]
+
+
+def test_a_malformed_schedule_is_dropped_from_the_cache(fixtures_dir, tmp_path):
+    routes = sec_routes(fixtures_dir)
+    routes[archive_url(320193, "0000102909-26-000630", "primary_doc.xml")] = b"<schedule><unclosed"
+    SecHolders(fake_sec(routes, documents=tmp_path)).fetch(["AAPL"], AS_OF)
+    assert not (tmp_path / "0000102909-26-000630.xml").exists()
+    assert (tmp_path / "0002100119-26-000139.xml").exists()

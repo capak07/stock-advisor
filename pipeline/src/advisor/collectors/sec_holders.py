@@ -141,9 +141,10 @@ class SecHolders:
                     holdings.append(holding_header(symbol, filing))
                     continue
                 body = budget.fetch(cik, filing)
-                try:  # a malformed document is cached, so skip only it; the symbol's other holdings stay
+                try:  # skip only a malformed document, drop it from the cache; the symbol's other holdings stay
                     holding = parse_schedule(symbol, filing, body, cik)
                 except (ElementTree.ParseError, ValueError):
+                    self._sec.forget(filing)  # fetched again next run
                     continue
                 if holding is not None:
                     holdings.append(holding)

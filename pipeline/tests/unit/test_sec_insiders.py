@@ -94,3 +94,11 @@ def test_a_symbol_cut_off_by_the_budget_is_left_out_whole(fixtures_dir):
         SecInsiders(fake_sec(sec_routes(fixtures_dir)), max_documents=5).fetch(["AAPL", "PFE"], AS_OF)
     assert len(caught.value.records) == 11  # AAPL only; PFE contributes nothing
     assert {t.symbol for t in caught.value.records} == {"AAPL"}
+
+
+def test_a_malformed_document_is_dropped_from_the_cache(fixtures_dir, tmp_path):
+    routes = sec_routes(fixtures_dir)
+    routes[archive_url(320193, "0001140361-26-038674", "form4.xml")] = b"<ownershipDocument><unclosed"
+    SecInsiders(fake_sec(routes, documents=tmp_path)).fetch(["AAPL"], AS_OF)
+    assert not (tmp_path / "0001140361-26-038674.xml").exists()
+    assert (tmp_path / "0001140361-26-039158.xml").exists()

@@ -8,6 +8,7 @@ run, and an on-disk cache of filing documents, which never change once filed.
 
 import math
 import os
+import re
 import threading
 import time
 from collections.abc import Callable, Hashable, Mapping
@@ -33,6 +34,8 @@ SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 CONTACT_EXAMPLE = "stock-advisor you@example.com"
 SEC_FAILURES_TO_STOP = 5  # requests in a row that failed even after retries: SEC is down for this run
+
+ACCESSION = re.compile(r"\d{10}-\d{2}-\d{6}")
 
 T = TypeVar("T")
 
@@ -235,7 +238,9 @@ class SecEdgar:
         )
 
     def _document_path(self, filing: Filing) -> Path | None:
-        return None if self._documents is None else self._documents / f"{filing.accession}.xml"
+        if self._documents is None or not ACCESSION.fullmatch(filing.accession):
+            return None
+        return self._documents / f"{filing.accession}.xml"
 
     def has_document(self, filing: Filing) -> bool:
         path = self._document_path(filing)
@@ -249,11 +254,26 @@ class SecEdgar:
         name = filing.primary_document.rsplit("/", 1)[-1]  # drop the xsl... rendering folder
         body = self.get(archive_url(cik, filing.accession, name)).content
         if path is not None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".tmp")
-            temporary.write_bytes(body)
-            os.replace(temporary, path)
+            temporary = path.with_name(f"{path.name}.{threading.get_ident()}.tmp")
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                temporary.write_bytes(body)
+                os.replace(temporary, path)
+            except OSError:  # a cache we can't write must not lose a good download
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
         return body
+
+    def forget(self, filing: Filing) -> None:
+        """Drop a cached document that failed to parse, so a later run downloads it again."""
+        path = self._document_path(filing)
+        if path is not None:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 class DocumentBudget:
@@ -267,6 +287,8 @@ class DocumentBudget:
 
     def fetch(self, cik: int, filing: Filing) -> bytes:
         check_deadline()
+        if not filing.primary_document:
+            return b""  # nothing to download; the parser skips the filing
         if not self._sec.has_document(filing):
             if self._left <= 0:
                 raise DocumentBudgetExhausted(

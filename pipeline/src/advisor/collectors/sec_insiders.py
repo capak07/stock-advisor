@@ -139,10 +139,10 @@ class SecInsiders:
                     and public_by(filing, as_of)
                 ):
                     body = budget.fetch(cik, filing)
-                    try:  # a malformed document is cached, so skip only it; the symbol's other trades stay
+                    try:  # skip only a malformed document, drop it from the cache; the symbol's other trades stay
                         trades.extend(parse_form4(symbol, filing, body, cik))
                     except (ElementTree.ParseError, ValueError):
-                        pass
+                        self._sec.forget(filing)  # fetched again next run
             return trades
 
         return collect_per_symbol(symbols, one, is_fatal=sec_stop)

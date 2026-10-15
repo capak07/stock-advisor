@@ -14,6 +14,7 @@ from advisor.collectors.sec import (
     TICKERS_URL,
     DocumentBudget,
     DocumentBudgetExhausted,
+    Filing,
     SecEdgar,
     SecUnavailable,
     archive_url,
@@ -199,3 +200,47 @@ def test_one_failing_company_does_not_stop_sec(fixtures_dir):
 
 def test_sec_stop_recognises_an_outage():
     assert sec_stop(SecUnavailable("x"))
+
+
+def test_an_odd_accession_is_never_used_as_a_file_name(tmp_path):
+    filing = Filing(
+        accession="../escape", form="4", filing_date=date(2026, 10, 1), accepted_at=None,
+        report_date=None, items=(), file_number="", primary_document="doc.xml",
+    )
+    routes = {str(httpx.URL(archive_url(320193, "../escape", "doc.xml"))): b"<x/>"}
+    sec = fake_sec(routes, documents=tmp_path / "docs")
+    assert sec.document(320193, filing) == b"<x/>"
+    assert not sec.has_document(filing)
+    assert list(tmp_path.rglob("*.xml")) == []
+
+
+def test_a_cache_that_cannot_be_written_keeps_the_download(fixtures_dir, tmp_path):
+    blocker = tmp_path / "docs"
+    blocker.write_text("a file, not a folder")
+    filing = aapl_filings(fixtures_dir)[0]
+    body = fake_sec(sec_routes(fixtures_dir), documents=blocker).document(320193, filing)
+    assert body.startswith(b"<?xml")
+
+
+def test_forget_drops_a_cached_document(fixtures_dir, tmp_path):
+    filing = aapl_filings(fixtures_dir)[0]
+    sec = fake_sec(sec_routes(fixtures_dir), documents=tmp_path)
+    sec.document(320193, filing)
+    assert sec.has_document(filing)
+    sec.forget(filing)
+    assert not sec.has_document(filing)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_filing_without_a_document_name_costs_nothing(fixtures_dir):
+    seen: list[httpx.Request] = []
+    sec = fake_sec(sec_routes(fixtures_dir), seen=seen)
+    real = aapl_filings(fixtures_dir)[0]
+    nameless = Filing(
+        accession=real.accession, form="4", filing_date=real.filing_date, accepted_at=None,
+        report_date=None, items=(), file_number="", primary_document="",
+    )
+    budget = DocumentBudget(sec, 1, "Form 4")
+    assert budget.fetch(320193, nameless) == b""
+    assert seen == []
+    assert budget.fetch(320193, real).startswith(b"<?xml")

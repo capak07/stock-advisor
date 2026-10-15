@@ -24,3 +24,10 @@ def test_from_env_requires_only_the_database_url():  # spec R7: no data source n
 def test_repr_hides_the_database_url():
     settings = Settings.from_env({"DATABASE_URL": "postgresql://u:db-password-123@h/db"})
     assert "db-password-123" not in repr(settings)
+
+
+def test_the_sec_contact_is_optional_and_blank_means_unset():
+    assert Settings.from_env({"DATABASE_URL": "x"}).sec_user_agent is None
+    assert Settings.from_env({"DATABASE_URL": "x", "SEC_USER_AGENT": ""}).sec_user_agent is None
+    contact = "stock-advisor you@example.com"
+    assert Settings.from_env({"DATABASE_URL": "x", "SEC_USER_AGENT": contact}).sec_user_agent == contact

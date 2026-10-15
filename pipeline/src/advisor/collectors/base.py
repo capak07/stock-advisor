@@ -3,6 +3,7 @@
 Collector contract (every source module follows it):
 - `fetch(symbols, as_of)` returns validated records or raises; it never touches the database.
 - No source needs an API key or an account (spec R7).
+- SEC sources need the owner's contact string (SEC_USER_AGENT); without it they raise MissingCredential and only they fail.
 - SYMBOLS scope: every record has `symbol` equal to the canonical requested symbol ("BRK.B",
   "RCI-B.TO"); map provider formats ("BRK/B", "BRKB", "BRK-B") in and out inside the collector.
 - `markets` names the stock markets a source covers; it is only sent symbols of those markets.
@@ -82,6 +83,10 @@ class PartialFetch(Exception):
     def __init__(self, records: Sequence[BaseModel], error: str) -> None:
         super().__init__(error)
         self.records = list(records)
+
+
+class MissingCredential(RuntimeError):
+    """A source's required setting is missing: only the SEC contact string (spec §4.1)."""
 
 
 BUDGET_EXHAUSTED = "run time budget exhausted"

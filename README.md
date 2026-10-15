@@ -55,7 +55,9 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
    `advisor_pipeline.<project-ref>` and that password. If the pooler rejects the custom role,
    resolve that first: the `postgres` user has full DDL rights and should not run the pipeline.
 5. **GitHub** (private repo): Settings → Secrets and variables → Actions. Add `DATABASE_URL`
-   (the pipeline login from step 4). No data source needs an API key.
+   (the pipeline login from step 4) and `SEC_USER_AGENT`: a name plus your contact email, such
+   as `stock-advisor you@example.com`. SEC requires a contact in every request; it is not an
+   account or a key, and no data source needs one.
 6. Actions → `health` → Run workflow, then `run` → Run workflow → `pre_open`.
 
 **Upgrading an existing deployment:** apply migration 0004 (`python -m advisor.store.migrate`, as
@@ -66,7 +68,7 @@ damaged.
 ## Manual run
 
 From `pipeline/`, with secrets in a git-ignored `pipeline/.env.local`
-(`DATABASE_URL=...`):
+(`DATABASE_URL=...`, `SEC_USER_AGENT=...`):
 
 ```bash
 set -a; . ./.env.local; set +a

@@ -44,6 +44,7 @@ jobs:
       - name: Run pipeline
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
           ADVISOR_CACHE_DIR: .cache
           FORCE_KIND: ${{ inputs.kind }}
         run: |

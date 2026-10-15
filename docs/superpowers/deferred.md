@@ -65,8 +65,15 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c and Plan 2d reviews d
 - **SEC document cache** (`<cache>/sec-documents/`) grows by roughly 1 MB a day of Form 4 and 13D/G XML; prune files older than 400 days.
 - **XBRL bandwidth:** company facts are downloaded daily for every US symbol in the enrichment list (about 300 KB compressed each). If time or bandwidth becomes a problem, refresh a company only when its submissions show a new 10-K or 10-Q.
 - **8-K bodies** (Exhibit 99.1 earnings text) are not downloaded; only the item codes are used.
-- **SEC first fill:** the first live run fetched Form 4 documents for 42 of 299 US symbols (budget 1,000) and 13D/G for 122 (budget 500), so those two sources stay PARTIAL for about 5 and 3 runs (a second run added 67 and 110 symbols). Raise the budgets for the first deployment if that is too slow.
+- **SEC first fill:** the first live run fetched Form 4 documents for 42 of 299 US symbols (budget 1,000) and 13D/G for 122 (budget 500), so those two sources stay PARTIAL for about 5 and 3 runs (a second run added 67 and 110 symbols; 13D/G finished on the third, when Form 4 reached 188 of 300). Raise the budgets for the first deployment if that is too slow.
 - **Unparseable SEC documents** are skipped and dropped from the cache, so every run downloads them again (one budget unit each) and nothing records the skip. Count skips into the source-health detail if they ever appear.
 - **SEC client polish:** `filings()` returns the shared list (return a tuple); untested: a 403 through `get()` end to end and `DocumentBudget`'s deadline check. `sec_xbrl` copies every fact even for a company's first share class, and one malformed fact fails that symbol rather than being skipped.
+- **SEC outage guard edges:**
+  - It is one failure counter for both SEC hosts. If www.sec.gov (documents and the ticker map) is down while data.sec.gov answers, successes there keep resetting it, and Form 4 and 13D/G fail symbol by symbol.
+  - A ticker map that answers 200 with a broken body is downloaded again for every symbol.
+  - In the health job, a thread waiting on another's fetch shares that fetch's deadline outcome, not its own 120 s budget.
+  - A single-flight error is re-raised in several threads, so its printed traceback mixes frames.
+  - `DocumentBudget` charges a unit for a download that then fails.
+  - Untested: that a timeout counts, that a 404 resets the counter, and that `DeadlineExceeded` does neither.
 - **Form 4 details:** a reporting owner's name can be empty; `acquired` is False when the A/D code is missing; no unit test covers rows skipped for a missing code, share count or date.
 - **Runner coverage:** no runner-level test of a PER_RUN source (such as `sec_8k`) falling back to its cache within `freshness`.

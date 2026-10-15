@@ -7,13 +7,15 @@ from datetime import UTC, date, datetime
 import httpx
 import pytest
 
-from advisor.collectors.base import MissingCredential
+from advisor.collectors.base import MissingCredential, PartialFetch
 from advisor.collectors.sec import (
+    SEC_FAILURES_TO_STOP,
     SUBMISSIONS_URL,
     TICKERS_URL,
     DocumentBudget,
     DocumentBudgetExhausted,
     SecEdgar,
+    SecUnavailable,
     archive_url,
     parse_filings,
     parse_tickers,
@@ -21,7 +23,11 @@ from advisor.collectors.sec import (
     sec_ticker,
     true_acceptance,
 )
+from advisor.collectors.sec_events import SecEvents
+from advisor.collectors.sec_insiders import SecInsiders
 from fakes import SEC_CONTACT, fake_sec, sec_routes
+
+AS_OF = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
 
 
 def aapl_filings(fixtures_dir):
@@ -131,7 +137,7 @@ def slow_sec(routes):
         return httpx.Response(answer) if isinstance(answer, int) else httpx.Response(200, content=answer)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    return SecEdgar(client, SEC_CONTACT), seen
+    return SecEdgar(client, SEC_CONTACT, sleep=lambda seconds: None), seen
 
 
 def test_threads_asking_at_once_share_one_submissions_fetch(fixtures_dir):
@@ -168,3 +174,28 @@ def test_a_failed_fetch_is_shared_by_waiters_and_retried_later(fixtures_dir):
     with pytest.raises(httpx.HTTPStatusError):
         sec.filings(320193)
     assert len(seen) == 2
+
+
+def test_an_sec_outage_stops_every_collector_quickly():
+    seen: list[httpx.Request] = []
+    sec = fake_sec({TICKERS_URL: 503}, seen=seen)
+    with pytest.raises(SecUnavailable):
+        SecEvents(sec).fetch(["AAPL", "PFE", "GOOGL", "JPM", "BRK.B", "MSFT", "NVDA", "AMZN"], AS_OF)
+    assert len(seen) == SEC_FAILURES_TO_STOP * 4  # the sixth symbol stops before any request
+    with pytest.raises(SecUnavailable):
+        SecInsiders(sec).fetch(["AAPL"], AS_OF)
+    assert len(seen) == SEC_FAILURES_TO_STOP * 4
+
+
+def test_one_failing_company_does_not_stop_sec(fixtures_dir):
+    routes = sec_routes(fixtures_dir)
+    routes[SUBMISSIONS_URL.format(cik=78003)] = 503
+    with pytest.raises(PartialFetch, match="PFE") as caught:
+        SecEvents(fake_sec(routes)).fetch(["PFE", "AAPL"], AS_OF)
+    assert [(e.form, e.filing_date) for e in caught.value.records] == [
+        ("8-K/A", date(2026, 9, 1)), ("8-K", date(2026, 7, 30)),
+    ]
+
+
+def test_sec_stop_recognises_an_outage():
+    assert sec_stop(SecUnavailable("x"))

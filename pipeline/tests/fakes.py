@@ -142,7 +142,7 @@ def fake_sec(
         return httpx.Response(200, content=answer)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    return SecEdgar(client, user_agent, documents=documents)
+    return SecEdgar(client, user_agent, documents=documents, sleep=lambda seconds: None)
 
 
 def sec_routes(fixtures_dir: Path) -> dict[str, bytes]:

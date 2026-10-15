@@ -9,6 +9,7 @@ run, and an on-disk cache of filing documents, which never change once filed.
 import math
 import os
 import threading
+import time
 from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -17,7 +18,13 @@ from typing import Any, TypeVar
 
 import httpx
 
-from advisor.collectors.base import MissingCredential, RateLimiter, check_deadline, get_with_retries
+from advisor.collectors.base import (
+    RETRY_STATUS,
+    MissingCredential,
+    RateLimiter,
+    check_deadline,
+    get_with_retries,
+)
 from advisor.models import ET
 
 SEC_PER_MINUTE = 300  # half of SEC's 10-per-second cap, shared by every SEC collector
@@ -25,6 +32,7 @@ TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 CONTACT_EXAMPLE = "stock-advisor you@example.com"
+SEC_FAILURES_TO_STOP = 5  # requests in a row that failed even after retries: SEC is down for this run
 
 T = TypeVar("T")
 
@@ -98,9 +106,13 @@ class DocumentBudgetExhausted(Exception):
     """A collector downloaded its share of filing documents this run; the rest wait."""
 
 
+class SecUnavailable(Exception):
+    """SEC kept failing (server errors, rate limiting or timeouts), so this run stops asking it."""
+
+
 def sec_stop(exc: Exception) -> bool:
-    """Errors that end an SEC collector's loop: no contact, SEC blocking us (403), budget spent."""
-    if isinstance(exc, MissingCredential | DocumentBudgetExhausted):
+    """Errors that end an SEC collector's loop: no contact, SEC blocking us (403) or down, budget spent."""
+    if isinstance(exc, MissingCredential | DocumentBudgetExhausted | SecUnavailable):
         return True
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403
 
@@ -128,11 +140,14 @@ class SecEdgar:
         limiter: RateLimiter | None = None,
         *,
         documents: Path | None = None,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._client = client
         self._user_agent = user_agent
         self._limiter = limiter
         self._documents = documents
+        self._sleep = sleep
+        self._failures = 0
         self._lock = threading.Lock()
         self._values: dict[Hashable, Any] = {}
         self._flights: dict[Hashable, _Flight] = {}
@@ -145,9 +160,37 @@ class SecEdgar:
         return self._user_agent
 
     def get(self, url: str) -> httpx.Response:
-        return get_with_retries(
-            self._client, url, headers={"User-Agent": self.require_contact()}, limiter=self._limiter
-        )
+        user_agent = self.require_contact()
+        with self._lock:
+            if self._failures >= SEC_FAILURES_TO_STOP:
+                raise SecUnavailable(
+                    f"SEC failed {SEC_FAILURES_TO_STOP} requests in a row; no more SEC requests this run"
+                )
+        try:
+            response = get_with_retries(
+                self._client, url, headers={"User-Agent": user_agent}, limiter=self._limiter,
+                sleep=self._sleep,
+            )
+        except httpx.TransportError:
+            self._count_failure()
+            raise
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in RETRY_STATUS:
+                self._count_failure()
+            else:  # SEC answered (a 404, a 403): it is up
+                self._reset_failures()
+            raise
+        else:
+            self._reset_failures()
+            return response
+
+    def _count_failure(self) -> None:
+        with self._lock:
+            self._failures += 1
+
+    def _reset_failures(self) -> None:
+        with self._lock:
+            self._failures = 0
 
     def _shared(self, key: Hashable, load: Callable[[], T]) -> T:
         """load() once per key; threads asking meanwhile wait and share its answer or its error."""

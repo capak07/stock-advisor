@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from pydantic import BaseModel, ConfigDict, Field
 
 from advisor.collectors.base import Cadence, Category, Scope, collect_per_symbol
-from advisor.collectors.sec import DocumentBudget, Filing, SecEdgar, number, sec_stop
+from advisor.collectors.sec import DocumentBudget, Filing, SecEdgar, number, public_by, sec_stop
 from advisor.models import ET, AssetType, Market
 
 HOLDER_FORMS = frozenset({
@@ -40,6 +40,7 @@ class LargeHolding(BaseModel):
     accession: str
     form: str
     filing_date: date
+    accepted_at: datetime | None = None  # true UTC acceptance time
     activist: bool  # Schedule 13D (possible control intent) rather than passive 13G
     amendment: bool
     event_date: date | None = None
@@ -68,6 +69,7 @@ def holding_header(symbol: str, filing: Filing) -> LargeHolding:
         accession=filing.accession,
         form=filing.form,
         filing_date=filing.filing_date,
+        accepted_at=filing.accepted_at,
         activist="13D" in filing.form,
         amendment=filing.form.endswith("/A"),
     )
@@ -132,6 +134,7 @@ class SecHolders:
                     filing.form not in HOLDER_FORMS
                     or not filing.file_number.startswith(SUBJECT_FILE_NUMBER)
                     or not cutoff <= filing.filing_date <= today
+                    or not public_by(filing, as_of)
                 ):
                     continue
                 if not filing.form.startswith("SCHEDULE"):  # legacy HTML: no structured data

@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from pydantic import BaseModel, ConfigDict
 
 from advisor.collectors.base import Cadence, Category, Scope, collect_per_symbol
-from advisor.collectors.sec import DocumentBudget, Filing, SecEdgar, number, sec_stop
+from advisor.collectors.sec import DocumentBudget, Filing, SecEdgar, number, public_by, sec_stop
 from advisor.models import ET, AssetType, Market
 
 INSIDER_FORMS = frozenset({"4", "4/A"})
@@ -26,7 +26,9 @@ class InsiderTrade(BaseModel):
 
     symbol: str
     accession: str
+    form: str  # "4", or "4/A" when it amends an earlier Form 4
     filing_date: date
+    accepted_at: datetime | None = None  # true UTC acceptance time
     trade_date: date
     owners: list[str]  # reporting owners ("LAST FIRST"); joint filings list several
     director: bool
@@ -65,7 +67,9 @@ def parse_form4(symbol: str, filing: Filing, xml: bytes, cik: int) -> list[Insid
     shared = dict(
         symbol=symbol,
         accession=filing.accession,
+        form=filing.form,
         filing_date=filing.filing_date,
+        accepted_at=filing.accepted_at,
         owners=[(o.findtext("reportingOwnerId/rptOwnerName") or "").strip() for o in owners],
         director=any(_flag(role.find("isDirector")) for role in roles),
         officer=any(_flag(role.find("isOfficer")) for role in roles),
@@ -129,7 +133,11 @@ class SecInsiders:
                 return []
             trades: list[InsiderTrade] = []
             for filing in self._sec.filings(cik):
-                if filing.form in INSIDER_FORMS and cutoff <= filing.filing_date <= today:
+                if (
+                    filing.form in INSIDER_FORMS
+                    and cutoff <= filing.filing_date <= today
+                    and public_by(filing, as_of)
+                ):
                     body = budget.fetch(cik, filing)
                     try:  # a malformed document is cached, so skip only it; the symbol's other trades stay
                         trades.extend(parse_form4(symbol, filing, body, cik))

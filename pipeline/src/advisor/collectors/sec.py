@@ -94,6 +94,11 @@ def parse_filings(payload: Mapping[str, Any]) -> list[Filing]:
     return filings
 
 
+def public_by(filing: Filing, as_of: datetime) -> bool:
+    """Whether SEC had accepted the filing by `as_of` (filings without an acceptance time count as public)."""
+    return filing.accepted_at is None or filing.accepted_at <= as_of
+
+
 def number(text: str | None) -> float | None:
     try:
         value = float(text)  # None raises TypeError

@@ -56,6 +56,8 @@ def test_fetch_reads_the_last_90_days_of_form_4s(fixtures_dir):
     assert len(trades) == 11  # 1 + 8 + 2; the two Boeing documents are ignored
     assert sorted({t.code for t in trades}) == ["A", "F", "G", "M", "S"]
     assert sum("Archives" in str(r.url) for r in seen) == 5
+    assert {t.form for t in trades} == {"4"}
+    assert all(t.accepted_at is not None for t in trades)
 
 
 def test_filings_dated_after_as_of_are_left_out(fixtures_dir):

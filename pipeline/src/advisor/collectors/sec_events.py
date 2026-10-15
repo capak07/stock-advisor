@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from pydantic import BaseModel, ConfigDict, Field
 
 from advisor.collectors.base import Cadence, Category, Scope, collect_per_symbol
-from advisor.collectors.sec import Filing, SecEdgar, sec_stop
+from advisor.collectors.sec import Filing, SecEdgar, public_by, sec_stop
 from advisor.models import ET, AssetType, Market
 
 EVENT_FORMS = frozenset({"8-K", "8-K/A"})
@@ -71,6 +71,9 @@ class SecEvents:
 
         def one(symbol: str) -> list[MaterialEvent]:
             cik = self._sec.cik_for(symbol)
-            return [] if cik is None else material_events(symbol, self._sec.filings(cik), today)
+            if cik is None:
+                return []
+            public = [f for f in self._sec.filings(cik) if public_by(f, as_of)]
+            return material_events(symbol, public, today)
 
         return collect_per_symbol(symbols, one, is_fatal=sec_stop)

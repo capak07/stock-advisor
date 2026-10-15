@@ -44,3 +44,11 @@ def test_two_sec_collectors_in_one_run_share_the_submissions(fixtures_dir):
     SecEvents(sec).fetch(["AAPL"], AS_OF)
     SecEvents(sec).fetch(["AAPL"], AS_OF)
     assert sum("submissions" in str(r.url) for r in seen) == 1
+
+
+def test_an_8k_accepted_after_as_of_is_left_out(fixtures_dir):
+    sec = fake_sec(sec_routes(fixtures_dir))
+    before = SecEvents(sec).fetch(["AAPL"], datetime(2026, 7, 30, 19, 15, tzinfo=UTC))  # 15:15 ET
+    assert date(2026, 7, 30) not in {e.filing_date for e in before}
+    after = SecEvents(sec).fetch(["AAPL"], datetime(2026, 7, 30, 21, 0, tzinfo=UTC))
+    assert ("8-K", date(2026, 7, 30)) in {(e.form, e.filing_date) for e in after}

@@ -53,6 +53,7 @@ def test_only_filings_about_the_company_are_read(fixtures_dir):
         ("AAPL", "0002100119-26-000139", "SCHEDULE 13G"),
         ("AAPL", "0000102909-26-000630", "SCHEDULE 13G/A"),
     ]  # PFE's two subject documents name Apple as issuer, so they're dropped
+    assert all(h.accepted_at is not None for h in holdings)
     documents = [str(r.url) for r in seen if "Archives" in str(r.url)]
     assert len(documents) == 4
     assert not any("/0000078003" in url for url in documents)  # Pfizer's own 13D/Gs on others

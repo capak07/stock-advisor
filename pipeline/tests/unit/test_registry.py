@@ -24,6 +24,7 @@ EXPECTED = {
     "sec_xbrl": (True, Scope.SYMBOLS, True, US),
     "sec_8k": (False, Scope.SYMBOLS, True, US),
     "sec_form4": (False, Scope.SYMBOLS, True, US),
+    "sec_13dg": (False, Scope.SYMBOLS, True, US),
 }
 
 

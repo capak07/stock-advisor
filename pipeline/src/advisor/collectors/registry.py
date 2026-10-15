@@ -9,6 +9,7 @@ from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.sec import SEC_PER_MINUTE, SecEdgar
 from advisor.collectors.sec_events import SecEvents
+from advisor.collectors.sec_holders import SecHolders
 from advisor.collectors.sec_insiders import SecInsiders
 from advisor.collectors.sec_xbrl import SecXbrl
 from advisor.collectors.tmx_symbols import TmxSymbols
@@ -42,5 +43,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         SecXbrl(sec),
         SecEvents(sec),
         SecInsiders(sec),
+        SecHolders(sec),
     ]
     return {collector.name: collector for collector in collectors}

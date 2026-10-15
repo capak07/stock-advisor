@@ -1,12 +1,10 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a, Plan 2b and Plan 2c reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
+These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c and Plan 2d reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
-## Plan 2d: SEC
+## Plan 2g: 13F institutional ownership
 
-- **One shared limiter for every SEC collector,** built in `build_registry`, the same way as FINRA and Yahoo. SEC allows 10 requests per second per IP.
-- **The SEC contact string:** add `SEC_USER_AGENT` (an optional setting; SEC requires a contact in every request) with `MissingCredential`, which fails only the SEC sources when it is unset.
-- **Recorded fixtures:** the SEC fixtures are in `.superpowers/research/plan-2c-fixtures/sec/` (git-ignored). Copy the ones the plan uses into `pipeline/tests/fixtures/sec/`.
+- **Source 11 (SEC 13F data sets plus OpenFIGI CUSIP mapping) moved out of Plan 2d.** It needs a persistent CUSIP → ticker map (about 6,500 CUSIPs, roughly 27 minutes at OpenFIGI's keyless 25 requests a minute, then only new CUSIPs each quarter) and about 100 MB of quarterly SEC data sets. Research: `.superpowers/research/plan-2b/sec.md` §5. Fixtures: `.superpowers/research/plan-2c-fixtures/sec/13f_*` and `openfigi_cusip_mapping_sample.json` (git-ignored).
 
 ## Plan 2e
 
@@ -31,6 +29,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b and Plan 2c reviews deliberate
 - **Analyst rotation:** `max_symbols` always takes the head of the missing list. Rotate the rest oldest-first, so the bottom of the analyst shortlist isn't left unfetched forever.
 - **Earnings failure rate:** measure the first live run's per-symbol failure rate for `yfinance_earnings`.
 - **Yahoo analyst throttling.** Three local full runs on 2026-10-14 got analyst data for 39 of 200, then 199 of 200, then none (`SilentFailure`, served stale). Each came right after the bulk price download from one busy IP. Fetched alone, 40 of 40 large caps had data, and earnings data was unaffected. If GitHub Actions runs show the same, fetch analyst data apart from the price download: in the 06:30 ET health job, or for priority symbols before prices.
+- **XBRL facts are raw.** `sec_xbrl` keeps every listed concept and every re-reported or restated duplicate with its `filed` date. Features pick a concept per period by `METRICS` priority, take the latest fact filed on or before `as_of`, derive Q4 as FY minus 9M, and compute single quarters of cash-flow items from year-to-date facts (research `sec.md` §2.4–2.5).
+- **Insider and holder signals.** Count only codes P and S from non-derivative rows for insider buying and selling, and treat `planned` (10b5-1) sales as weaker. For 13D/G, a 0-share 13G/A can be an index giant's entity realignment rather than an exit.
 
 ## Plans 4 and 5: recommendations and dashboard
 
@@ -61,3 +61,6 @@ These are items that the Plan 1, Plan 2a, Plan 2b and Plan 2c reviews deliberate
   - The `pipeline-run` concurrency group can cancel an older pending job.
 - **Migrate CLI:** refuse `--baseline` once `schema_migrations` has rows, print the names it baselined, and take an advisory lock.
 - **Dev machine:** a `uv` re-sync can fail with "Access is denied" on `.venv` under OneDrive. Use `uv run --no-sync ruff check .` for lint.
+- **SEC document cache** (`<cache>/sec-documents/`) grows by roughly 1 MB a day of Form 4 and 13D/G XML; prune files older than 400 days.
+- **XBRL bandwidth:** company facts are downloaded daily for every US symbol in the enrichment list (about 300 KB compressed each). If time or bandwidth becomes a problem, refresh a company only when its submissions show a new 10-K or 10-Q.
+- **8-K bodies** (Exhibit 99.1 earnings text) are not downloaded; only the item codes are used.

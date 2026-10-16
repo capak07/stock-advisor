@@ -7,6 +7,7 @@ from advisor.collectors.blockchain_stats import BLOCKCHAIN_PER_MINUTE, Blockchai
 from advisor.collectors.boc_valet import BankOfCanadaValet
 from advisor.collectors.cnn_fear_greed import CnnFearGreed
 from advisor.collectors.crypto_fear_greed import CryptoFearGreed
+from advisor.collectors.defillama_tvl import DEFILLAMA_PER_MINUTE, DefiLlamaTvl
 from advisor.collectors.finra_short_interest import FinraShortInterest
 from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.fomc import Fomc
@@ -54,5 +55,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         CnnFearGreed(client),
         CryptoFearGreed(client),
         BlockchainStats(client, RateLimiter(per_minute=BLOCKCHAIN_PER_MINUTE, burst=1)),
+        DefiLlamaTvl(client, RateLimiter(per_minute=DEFILLAMA_PER_MINUTE, burst=2)),
     ]
     return {collector.name: collector for collector in collectors}

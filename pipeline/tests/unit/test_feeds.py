@@ -89,6 +89,16 @@ def test_an_item_without_a_date_title_or_link_is_skipped():
     assert [entry.title for entry in parse_feed(body)] == ["Kept"]
 
 
+def test_only_web_links_are_kept():
+    """A link is stored and later shown as a link, so only http and https get through."""
+    item = "<item><title>{}</title><link>{}</link><pubDate>Fri, 16 Oct 2026 12:00:00 GMT</pubDate></item>"
+    links = ["javascript:alert(1)", "data:text/html,hi", "ftp://x/1", "/relative/2", "HTTPS://x/3", "http://x/4"]
+    body = "<rss version='2.0'><channel>{}</channel></rss>".format(
+        "".join(item.format(f"T{n}", link) for n, link in enumerate(links))
+    ).encode()
+    assert [entry.title for entry in parse_feed(body)] == ["T4", "T5"]
+
+
 @pytest.mark.parametrize(
     "body",
     [

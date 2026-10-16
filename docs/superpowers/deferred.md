@@ -57,7 +57,13 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
   - One-word everyday names (`COMMON_WORDS`) count only with a tag or cashtag.
   - Google News and Yahoo items count only for the stock they were fetched for.
 
-  Measure false matches on a week of real `news_items`, then tune the word list and the cap of 3 stories per outlet.
+  Measure false matches on a week of real `news_items`, then tune the word list and the cap of 3 stories per outlet. Known gaps from Plan 2f's reviews:
+  - Short forms are missed: "Amazon" (short name "Amazon.com"), "Meta" ("Meta Platforms"), "Nvidia" (the directory says "NVIDIA").
+  - Some one-word names still match ordinary words: "Arm", "Dover", "Carnival", "Mosaic", "Oracle of Omaha". "Bitcoin, Gold, Stocks Rally" reads as the coin Bitcoin Gold.
+  - `outlet_key` joins "MarketBeat" and marketbeat.com, but not "Yahoo Finance" and finance.yahoo.com or "The Motley Fool" and fool.com, so those publishers can fill 6 of an asset's stories, not 3.
+- **News volume z-score:** unbounded on sparse history. Daily counts of [0, 0, 0, 0, 1] and 10 stories today give about 24.5. Clip it or floor the spread before a model uses it.
+- **Missing versus zero:** when no news item came in at all (every news source failed), the run leaves the `news_*` features missing. When items came in but none for an asset, its counts are 0 and its sentiment is empty. Treat missing as unknown.
+- **`features_live` rows:** `merge_features_live` creates a row with only `news_*` keys for a shortlisted stock that had no row. A later plain `write_features_live` for the same run and asset would hit the unique key, so merge there too, or write before the news stage.
 
 ## Plans 4 and 5: recommendations and dashboard
 
@@ -68,6 +74,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
 - **Source credits:** CoinGecko requires "Data provided by CoinGecko" wherever its data is shown, and FRED asks to be cited. alternative.me, DefiLlama and blockchain.com welcome a credit. Put a sources footer on the dashboard.
 - **`runs.summary`** gained `crypto` (held and watched coins) and `crypto_unquoted` in Plan 2e, and `news` (items, stories, rows, assets, sentiment status) in Plan 2f.
 - **Ticker Detail news:** read `news_items` by symbol and asset type, newest first. Google News links are Google's own redirect pages; show the outlet beside each title.
+- **News text is untrusted:** titles, outlets and links come from third-party feeds. Render them as text, never as HTML. `parse_feed` keeps only http and https links.
+- **Sentiment status:** the scheduled run installs the `nlp` extra. So `summary.news.sentiment` reading `unavailable` means a broken install, and `failed: …` a model or scoring error. The run still publishes in both cases, so show them on the health view.
 - A table for holding-action outcomes. Spec §6.5 grades holding actions, but §8 has no table for them.
 - Decide spec §7.2 ("holdings analysis survives a later failure") against "failed runs are never published".
 - A `published_runs` view, so the dashboard never reads unpublished rows.
@@ -129,3 +137,5 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
   - Loading the model takes about 25 s on a cold cache.
   - Its CC BY-NC-SA 4.0 licence allows personal use only.
 - **news_items growth:** about 300 rows per run, so the 90-day prune keeps roughly 50,000 rows.
+- **Unscored duplicates:** say a story was stored unscored (scoring was skipped or failed), and a later run sees it under another item's key. That run doesn't write the row again, so the sentiment stays empty.
+- **Company names:** on 2026-10-16, `search_name` was checked against the full NASDAQ Trader and TMX directories (6,645 names). If Google News finds nothing for a holding, check its directory name: an unusual suffix leaves a quoted query that matches nothing.

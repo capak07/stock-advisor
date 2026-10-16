@@ -67,6 +67,7 @@ def test_a_stock_without_a_name_is_searched_by_ticker():
     assert query_for("AAPL", None) == "AAPL stock when:2d"
     assert query_for("RY.TO", None) == "RY stock when:2d"
     assert query_for("BRK.B", "Berkshire Hathaway Inc. Class B Common Stock") == '"Berkshire Hathaway Inc" when:2d'
+    assert query_for("XYZ", "(Holding Company)") == "XYZ stock when:2d"  # nothing left to quote
 
 
 @pytest.mark.parametrize(

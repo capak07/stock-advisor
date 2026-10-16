@@ -19,6 +19,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pydantic import BaseModel, ConfigDict, Field
 
 SUMMARY_CHARS = 400
+WEB_SCHEMES = frozenset({"http", "https"})  # never javascript: or data: links from a feed
 TAG = re.compile(r"<[^>]+>")
 SPACE = re.compile(r"\s+")
 TRACKER = re.compile(r"utm_\w+|mod|\.tsrc|oc|ref|cmpid|src|time", re.IGNORECASE)
@@ -101,6 +102,8 @@ def parse_feed(body: bytes, *, clock_is_utc: bool = False) -> list[FeedEntry]:
         title = plain_text(item.findtext("title"))
         link = (item.findtext("link") or "").strip()
         if published is None or not title or not link:
+            continue
+        if urlsplit(link).scheme.lower() not in WEB_SCHEMES:  # stored, then shown as a link
             continue
         tickers = item.findtext("{*}tickers") or ""
         entries.append(FeedEntry(

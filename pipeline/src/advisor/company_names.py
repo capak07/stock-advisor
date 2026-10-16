@@ -12,13 +12,25 @@ import re
 import threading
 from collections.abc import Mapping
 
-# What follows the company in a directory name: NASDAQ's " - Common Stock", and NYSE's
-# " Class B Common Stock", " Common Units representing ...", " American Depositary Shares".
+# What follows the company in a directory name: NASDAQ's " - Common Stock"; NYSE's " Class B Common
+# Stock", " New Common Stock", " Class A Sub. Vot. Common Stock", " Class A Limited Voting Shares",
+# " Limited Partnership Units", " American Depositary Shares, each representing ...", " Sponsored
+# ADR", " Class B"; trusts' " Units of Beneficial Interest" (checked against the full NASDAQ
+# Trader and TMX directories, 2026-10-16). A word that only looks like one stays: "China A Share
+# Fund", "World Class Holdings".
+CLASS = r"Class\s+[A-Z](?:-\d+)?"
 INSTRUMENT = re.compile(
-    r"\s+(?:-\s+.*|(?:Class\s+[A-Z]\s+)?"
-    r"(?:Common|Ordinary|Subordinate Voting|American Depositary|Depositary)\b.*)$"
+    r"\s+(?:-\s+.*"
+    rf"|(?:New\s+)?(?:{CLASS}\s+)?(?i:common|ordinary|sub(?:ordinate)?\.?\s+vot(?:ing)?"
+    r"|limited voting|exchangeable|voting|representing|american deposit[ao]ry|deposit[ao]ry"
+    r"|limited partnership|(?:new york|ny) registry|(?:spon\w*\s+)?adrs?)\b.*"
+    rf"|(?:{CLASS}\s+)?(?i:shares?|units?)(?:\s+(?i:of|representing)\b.*|,.*)?"
+    rf"|{CLASS}"
+    r"|ADS\b.*"  # upper case only: "SAP SE ADS", not "Digital Ads"
+    r")$"
 )
-THE = re.compile(r"\s*\(The\)")  # NASDAQ and NYSE put "The" last: "Walt Disney Company (The)"
+PARENTHETICAL = re.compile(r"\s*\([^()]*\)")  # "(The)", "(REIT)", "(New)", "(representing ...)"
+TRAILING_NEW = re.compile(r"\s+New$")  # "Central Pacific Financial Corp New"
 LEGAL = re.compile(
     r"(?:,?\s+&?\s*(?:Inc|Incorporated|Corp|Corporation|Co|Company|Ltd|Limited|plc|PLC|LLC"
     r"|L\.P|LP|N\.V|S\.A|SA|SE|AG|Holdings?|Group)\.?)+$"
@@ -26,8 +38,17 @@ LEGAL = re.compile(
 
 
 def search_name(directory_name: str) -> str:
-    """'Apple Inc. - Common Stock' -> 'Apple Inc'. TMX names, such as 'Royal Bank of Canada', are unchanged."""
-    return THE.sub("", INSTRUMENT.sub("", directory_name)).strip().rstrip(".").strip()
+    """'Apple Inc. - Common Stock' -> 'Apple Inc'. TMX names, such as 'Royal Bank of Canada', are unchanged.
+
+    Parenthetical notes go first, innermost first ("(each representing twenty (20) ...)"); NASDAQ
+    and NYSE put "The" last as one: "Walt Disney Company (The)".
+    """
+    name = directory_name
+    while (bare := PARENTHETICAL.sub(" ", name)) != name:
+        name = bare
+    name = " ".join(name.split()).replace(" ,", ",")  # "Jerash Holdings (US), Inc"
+    name = INSTRUMENT.sub("", name).strip().rstrip(".")
+    return TRAILING_NEW.sub("", name).strip().rstrip(".").strip()
 
 
 def short_name(directory_name: str) -> str:

@@ -256,7 +256,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 
    It runs only for a run that can still publish.
 5. **News processing.**
-   - De-duplicate across feeds by canonical URL, then by headline similarity (Jaccard ≥ 0.8 over title words, computed exactly) within 48 hours.
+   - De-duplicate across feeds by canonical URL, then by headline similarity (Jaccard ≥ 0.8 over title words, computed exactly) within 48 hours. Each asset stores a story once, even when later runs see it again.
    - Map each item to tickers using cashtags, symbols and a company-name dictionary for both markets.
    - Score each unique item with **FinBERT** (`ProsusAI/finbert`, CPU, model files cached).
    - Per ticker, compute sentiment mean and trend, a volume z-score, and **coverage breadth**.

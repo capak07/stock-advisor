@@ -57,8 +57,9 @@ def blocked(exc: Exception) -> bool:
 
 
 def query_for(symbol: str, name: str | None) -> str:
-    if name:
-        return f'"{search_name(name)}" when:2d'
+    search = search_name(name) if name else ""
+    if search:
+        return f'"{search}" when:2d'
     return f"{symbol.removesuffix(TSX_SUFFIX)} stock when:2d"
 
 

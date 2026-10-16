@@ -1,10 +1,11 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import psycopg
 import pytest
 
 from advisor.collectors.base import CollectorResult, CollectorStatus
 from advisor.models import AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
+from advisor.news.stage import NewsRow
 from advisor.store import repo
 from fakes import info
 
@@ -172,3 +173,59 @@ def test_sweep_marks_only_old_running_runs_abandoned(db):
     assert rows[0]["status"] == "failed"
     assert rows[0]["summary"]["error"].startswith("abandoned")
     assert rows[1]["status"] == "running"
+
+
+def news_row(symbol="AAPL", key="k1", hours_ago=1.0, sentiment=0.5, asset_type=AssetType.STOCK, cluster="c1"):
+    return NewsRow(
+        ref=AssetRef(symbol, asset_type), published_at=NOW - timedelta(hours=hours_ago),
+        outlet="Reuters", url=f"https://www.reuters.com/{key}", title=f"Story {key}",
+        sentiment=sentiment, cluster_id=cluster, story_key=key,
+    )
+
+
+def test_a_story_stored_by_an_earlier_run_is_kept_and_only_gains_a_missing_score(db):
+    repo.write_news_items(db, [news_row(sentiment=None), news_row("BTC", asset_type=AssetType.CRYPTO)])
+    repo.write_news_items(db, [news_row(sentiment=0.5), news_row(key="k2", sentiment=-0.25)])
+    repo.write_news_items(db, [news_row(sentiment=0.9)])  # a later score never replaces one
+    repo.write_news_items(db, [])
+    rows = db.execute(
+        "select symbol, asset_type, story_key, sentiment from news_items order by symbol, story_key"
+    ).fetchall()
+    assert [(r["symbol"], r["asset_type"], r["story_key"], r["sentiment"]) for r in rows] == [
+        ("AAPL", "stock", "k1", 0.5), ("AAPL", "stock", "k2", -0.25), ("BTC", "crypto", "k1", 0.5),
+    ]
+
+
+def test_news_older_than_90_days_is_pruned(db):
+    repo.write_news_items(db, [news_row(key="old", hours_ago=24 * 91), news_row(key="new")])
+    assert repo.prune_news_items(db, NOW) == 1
+    assert [r["story_key"] for r in db.execute("select story_key from news_items").fetchall()] == ["new"]
+
+
+def test_daily_story_counts_cover_the_days_with_any_news(db):
+    repo.write_news_items(db, [
+        news_row(key="a", hours_ago=24 * 3, cluster="s1"),
+        news_row(key="b", hours_ago=24 * 3, cluster="s1"),  # the same story twice: one
+        news_row(key="c", hours_ago=24 * 3 - 1, cluster="s2"),
+        news_row("RY.TO", key="d", hours_ago=24 * 2, cluster="s3"),
+    ])
+    counts = repo.news_daily_counts(
+        db, [AssetRef("AAPL", AssetType.STOCK), AssetRef("TD.TO", AssetType.STOCK)],
+        NOW - timedelta(days=10), NOW - timedelta(days=1),
+    )
+    assert counts == {
+        AssetRef("AAPL", AssetType.STOCK): [2, 0],  # 2026-10-11 and 2026-10-12 (only RY.TO's day)
+        AssetRef("TD.TO", AssetType.STOCK): [0, 0],
+    }
+
+
+def test_merging_features_adds_to_an_existing_row_or_creates_one(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    aapl, ry = AssetRef("AAPL", AssetType.STOCK), AssetRef("RY.TO", AssetType.STOCK)
+    repo.write_features_live(db, run_id, [(aapl, {"last_close": 150.0})], NOW)
+    repo.merge_features_live(db, run_id, [(aapl, {"news_stories_48h": 2}), (ry, {"news_stories_48h": 0})], NOW)
+    repo.merge_features_live(db, run_id, [], NOW)
+    rows = db.execute("select symbol, features from features_live order by symbol").fetchall()
+    assert [(r["symbol"], r["features"]) for r in rows] == [
+        ("AAPL", {"last_close": 150.0, "news_stories_48h": 2}), ("RY.TO", {"news_stories_48h": 0}),
+    ]

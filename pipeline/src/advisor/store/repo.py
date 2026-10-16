@@ -1,5 +1,6 @@
 """Every SQL statement the pipeline runs. Functions take an open autocommit connection."""
 
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import date, datetime, timedelta
 
@@ -9,8 +10,10 @@ from psycopg.types.json import Jsonb
 from advisor.collectors.base import CollectorResult
 from advisor.collectors.runner import SourceState
 from advisor.models import ET, AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
+from advisor.news.stage import NewsRow
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
+NEWS_KEPT = timedelta(days=90)  # spec §10: news is pruned after 90 days
 
 
 def create_run(conn: psycopg.Connection, kind: RunKind, et_date: date) -> int:
@@ -169,3 +172,68 @@ def write_features_live(
             " values (%s, %s, %s, %s, %s)",
             [(run_id, ref.symbol, ref.asset_type.value, Jsonb(feats), as_of) for ref, feats in rows],
         )
+
+
+def merge_features_live(
+    conn: psycopg.Connection,
+    run_id: int,
+    rows: Sequence[tuple[AssetRef, dict]],
+    as_of: datetime,
+) -> None:
+    """Add features to each asset's row for this run, creating the row if there is none yet."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into features_live (run_id, symbol, asset_type, features, as_of)"
+            " values (%s, %s, %s, %s, %s)"
+            " on conflict (run_id, symbol, asset_type)"
+            " do update set features = features_live.features || excluded.features",
+            [(run_id, ref.symbol, ref.asset_type.value, Jsonb(feats), as_of) for ref, feats in rows],
+        )
+
+
+def write_news_items(conn: psycopg.Connection, rows: Sequence[NewsRow]) -> None:
+    """Store news rows. A row an earlier run stored is kept; it only gains a missing sentiment."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into news_items (symbol, asset_type, published_at, outlet, url, title,"
+            " sentiment, cluster_id, story_key) values (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " on conflict (symbol, asset_type, story_key)"
+            " do update set sentiment = coalesce(news_items.sentiment, excluded.sentiment)",
+            [
+                (
+                    row.ref.symbol, row.ref.asset_type.value, row.published_at, row.outlet,
+                    row.url, row.title, row.sentiment, row.cluster_id, row.story_key,
+                )
+                for row in rows
+            ],
+        )
+
+
+def prune_news_items(conn: psycopg.Connection, now: datetime, kept: timedelta = NEWS_KEPT) -> int:
+    """Delete news published more than 90 days before `now`; returns how many rows went."""
+    return conn.execute("delete from news_items where published_at < %s", (now - kept,)).rowcount
+
+
+def news_daily_counts(
+    conn: psycopg.Connection, refs: Iterable[AssetRef], since: datetime, until: datetime
+) -> dict[AssetRef, list[int]]:
+    """Each asset's stories per UTC day in [since, until), over the days that have any news.
+
+    A day with news for other assets but none for this one counts as 0; a day with no news at all
+    (before the pipeline started) is left out.
+    """
+    rows = conn.execute(
+        "select symbol, asset_type, (published_at at time zone 'UTC')::date as day,"
+        " count(distinct cluster_id) as stories from news_items"
+        " where published_at >= %s and published_at < %s group by 1, 2, 3",
+        (since, until),
+    ).fetchall()
+    days = sorted({row["day"] for row in rows})
+    counts: dict[AssetRef, dict[date, int]] = defaultdict(dict)
+    for row in rows:
+        counts[AssetRef(row["symbol"], AssetType(row["asset_type"]))][row["day"]] = row["stories"]
+    return {ref: [counts[ref].get(day, 0) for day in days] for ref in refs}

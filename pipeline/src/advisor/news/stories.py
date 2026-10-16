@@ -48,9 +48,10 @@ def cluster(items: Sequence[NewsItem]) -> dict[str, str]:
     by_url: dict[str, str] = {}
     stories: list[tuple[frozenset[str], NewsItem, str]] = []  # (words, first item, story id)
     index: dict[str, list[int]] = defaultdict(list)  # word -> stories whose first title has it
-    for item in sorted(items, key=lambda i: (i.published_at, story_key(i))):
-        key = story_key(item)
+    keyed = sorted(((story_key(i), i) for i in items), key=lambda p: (p[1].published_at, p[0], p[1].url))
+    for key, item in keyed:
         if key in ids:
+            by_url.setdefault(item.url, ids[key])  # a repeat's own link still leads to its story
             continue
         found = by_url.get(item.url)
         if found is None:

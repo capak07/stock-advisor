@@ -74,7 +74,7 @@ The research behind this plan is in `.superpowers/research/plan-2e/` (`macro.md`
   - One `/coins/markets?vs_currency=cad&symbols=…` request prices every coin. With `symbols=`, CoinGecko returns the top-ranked coin for each ticker; 12 coins call themselves "btc".
   - The keyless limit is tiny and shared per IP, so the call is tried at most twice, the retry honouring Retry-After.
   - A quote not updated for a day is a dead listing and counts as missing.
-  - Coinbase lists no CAD products for these coins, so its USD candles feed only the price features (returns, volatility), which don't depend on currency. No FX conversion is needed.
+  - Coinbase lists no CAD products for these coins, so its USD candles feed only the price features (returns, volatility), which don't depend on currency. Stops and graded returns do, so Plans 4 and 5 must convert (see `deferred.md`).
 - **MATIC is priced and charted as POL.** Polygon renamed it in 2024, and exchanges price only POL. The rename lives in one small module, `collectors/coins.py`.
 - **Kraken cross-checks Coinbase.** It plays the role the jump rule plays for stocks (spec §10).
   - When Kraken's close for Coinbase's latest finished day differs by more than 2%, `unconfirmed_price` is true.

@@ -188,8 +188,8 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 | 2 | prices | TMX company directory ⚠ | TSX | daily | TSX universe, one JSON call. Core |
 | 3 | prices | Yahoo prices (yfinance) ⚠ | US, TSX | per_run | **The only stock price source.** Core |
 | 4 | prices | CoinGecko public API ⚠ | C | per_run | Crypto prices and market cap. Core for crypto |
-| 5 | prices | Coinbase Exchange public API | C | per_run | Crypto OHLCV |
-| 6 | prices | Kraken public API | C | per_run | Crypto cross-check |
+| 5 | prices | Coinbase Exchange public API | C | daily | Crypto OHLCV (finished UTC days) |
+| 6 | prices | Kraken public API | C | daily | Crypto cross-check |
 | 7 | prices | Bank of Canada Valet | US, TSX | daily | Official USD/CAD rate, plus the Canadian policy rate and yields |
 | 8 | fundamentals | SEC XBRL company facts | US | daily | Point-in-time financials via filing date. Core |
 | 9 | fundamentals | SEC 8-K filings | US | per_run | Material-event catalysts |
@@ -203,10 +203,10 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 | 17 | fundamentals | Yahoo earnings dates and surprises ⚠ | US, TSX | daily | Upcoming dates, EPS estimate, actual and surprise. Core (catalysts) |
 | 18 | options | Yahoo option chains ⚠ | US | per_run | Implied volatility, per-ticker put/call. Shortlist only |
 | 19 | options | CBOE daily put/call ratios | US | daily | Market-wide |
-| 20 | macro | FRED public CSV | US | daily | About 10 series: yield curve, VIX, HY spread, CPI, unemployment, fed funds. Core |
-| 21 | macro | Federal Reserve FOMC RSS | US | per_run | |
+| 20 | macro | FRED public CSV | US, TSX | daily | About 10 series: yield curve, VIX, HY spread, CPI, unemployment, fed funds. Core |
+| 21 | macro | Federal Reserve FOMC RSS | US, TSX | per_run | Plus the meeting calendar page |
 | 22 | macro | CNN Fear & Greed ⚠ | US | per_run | Unofficial endpoint |
-| 23 | macro | alternative.me Crypto Fear & Greed | C | per_run | |
+| 23 | macro | alternative.me Crypto Fear & Greed | C | daily | |
 | 24–30 | news | Per-ticker RSS: Yahoo Finance, **Google News (core)**, Seeking Alpha; market RSS: Nasdaq.com, CNBC, MarketWatch, WSJ Markets | US, TSX | per_run | Google News queries by company name, so it also covers TSX |
 | 31–35 | news | Investing.com, Benzinga, PR Newswire/CNW, GlobeNewswire, Business Wire | US, TSX | per_run | CNW and GlobeNewswire carry Canadian press releases |
 | 36–38 | news | CoinDesk, Cointelegraph, Decrypt | C | per_run | |

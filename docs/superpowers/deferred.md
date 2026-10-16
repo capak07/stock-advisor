@@ -41,10 +41,15 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d and Plan 2e 
 - **Crypto history:** Coinbase gives 290 finished daily USD candles per coin in one request. 12-month momentum needs 365, so fetch a second window when the crypto model needs it. Altcoins are measured against BTC (spec §5.4), so price BTC whenever any crypto is held or watched.
 - **Macro event:** "days to the next FOMC decision" comes from the `fomc` source's `meeting` records. The decision is at 14:00 ET on the meeting's last day.
 - **Protocol TVL** (spec source 52 names chain and protocol TVL): Plan 2e collects chain TVL only. DeFi tokens such as UNI or AAVE belong to a protocol rather than a chain, and DefiLlama's `/protocols` list has a `symbol` per protocol. Add it if the crypto model's features need it.
+- **HY spread history:** FRED's `BAMLH0A0HYM2` CSV only goes back to 2023-10-16 (ICE licensing), so an 8-year backtest can't use it as is.
+- **Training histories:** the live collectors keep 30–60 days. Full histories exist: alternative.me `limit=0` (from 2018), DefiLlama's full chain series, and blockchain.com `timespan=all`. FOMC meetings older than the calendar page's 5 or so years are on `fomc_historical.htm`.
 
 ## Plans 4 and 5: recommendations and dashboard
 
-- **Crypto Buy and Add:** a coin whose `unconfirmed_price` is true (Coinbase and Kraken more than 2% apart on the latest day) is blocked like a stock's `unconfirmed_jump`.
+- **Crypto Buy and Add:** a coin whose `unconfirmed_price` is true (Coinbase and Kraken more than 2% apart on the latest day) is blocked like a stock's `unconfirmed_jump`. `None` means Kraken had no close to compare, and crypto gets no jump rule (`find_jumps` isn't applied to Coinbase candles), so a coin only Coinbase lists has no price sanity check: treat `None` as unconfirmed, or apply the jump rule to crypto.
+- **Crypto currency:** Coinbase candles, and so ATR and the highest close since purchase, are in USD, while lots and `price_cad` are in CAD. Stops, trailing stops and graded returns must use one currency: convert the candles with the Bank of Canada FXUSDCAD rate (`boc_valet`) or CoinGecko's CAD/USD ratio, or work in USD with the entry converted at the buy date's rate.
+- **Crypto quote age:** each crypto row carries `quote_updated_at` and `quote_stale` (older than a day, e.g. served from cache). Show the age next to a stale CAD value.
+- **Watchlist coins:** check a coin with CoinGecko when it is added. A coin CoinGecko doesn't price is only listed in `crypto_unquoted`; it doesn't degrade the run.
 - **Source credits:** CoinGecko requires "Data provided by CoinGecko" wherever its data is shown, and FRED asks to be cited. alternative.me, DefiLlama and blockchain.com welcome a credit. Put a sources footer on the dashboard.
 - **`runs.summary`** gained `crypto` (held and watched coins) and `crypto_unquoted` in Plan 2e.
 - A table for holding-action outcomes. Spec §6.5 grades holding actions, but §8 has no table for them.
@@ -89,10 +94,11 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d and Plan 2e 
   - Untested: that a timeout counts, that a 404 resets the counter, and that `DeadlineExceeded` does neither.
 - **Form 4 details:** a reporting owner's name can be empty; `acquired` is False when the A/D code is missing; no unit test covers rows skipped for a missing code, share count or date.
 - **Runner coverage:** no runner-level test of a PER_RUN source (such as `sec_8k`) falling back to its cache within `freshness`.
-- **CoinGecko's keyless limit** is unpublished and shared per IP, and GitHub's runners share IPs. The source makes one call per run, with one retry after Retry-After. If 429s become common, holdings are valued from the last quote (2-day freshness) and the run is degraded. A free Demo key would need an account, which R7 rules out.
+- **CoinGecko's keyless limit** is unpublished and shared per IP, and GitHub's runners share IPs. The source makes one call per run, with one retry after Retry-After. If 429s become common, holdings are valued from a quote cached within 2 days and the run is degraded. The health job refreshes only BTC, so after a weekend other held coins' quotes are older than that: they are listed in `crypto_unquoted` and the run is degraded. A free Demo key would need an account, which R7 rules out.
 - **Terms to watch:**
   - FRED's FAQ says "Don't do any data mining, scraping or extraction of FRED data", while its terms forbid only disruptive scraping. The pipeline makes 9 requests a day, cached for the day, for personal use.
-  - CNN's terms allow downloads "for your personal use only". Its endpoint is unofficial and gated by a Referer check.
+  - CNN's terms allow downloads "for your personal use only". Its endpoint is unofficial: it answers plain clients with 418 "You're a bot", and the pipeline gets past that by sending CNN's own Referer and Origin. Drop the source if that isn't acceptable.
   - CoinGecko's terms forbid storing its data beyond a cache refreshed daily; only each run's features keep a quote.
 - **blockchain.com** documents a newer gateway API, so the legacy `api.blockchain.info/charts` endpoints used here may be retired.
 - **FOMC calendar** is read from the page's `fomc-meeting__month` and `fomc-meeting__date` classes. A redesign makes the source PARTIAL; releases still arrive.
+- **Market-wide partial results** are neither cached nor backfilled per series. FRED is the first core source of this kind: a series that fails is absent for that run even if yesterday's cache has it, and the run is degraded.

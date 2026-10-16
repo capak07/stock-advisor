@@ -11,7 +11,6 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
-from pydantic import BaseModel, ConfigDict
 
 from advisor.collectors.base import (
     Cadence,
@@ -21,6 +20,7 @@ from advisor.collectors.base import (
     Scope,
     get_with_retries,
 )
+from advisor.collectors.series import SeriesObservation
 from advisor.models import ET, AssetType, Market
 
 VALET_URL = "https://www.bankofcanada.ca/valet/observations/{series}/json"
@@ -31,14 +31,6 @@ SERIES = {
     "BD.CDN.10YR.DQ.YLD": "10-year Government of Canada benchmark bond yield",
 }
 LOOKBACK = timedelta(days=120)  # enough for a 63-session trend
-
-
-class SeriesObservation(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    series: str
-    day: date
-    value: float
 
 
 def parse_observations(

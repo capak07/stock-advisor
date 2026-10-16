@@ -10,6 +10,7 @@ from advisor.models import Market
 US = frozenset({Market.US})
 TSX = frozenset({Market.TSX})
 BOTH = frozenset({Market.US, Market.TSX})
+NONE: frozenset[Market] = frozenset()  # crypto belongs to no stock market
 
 # name: (core, scope, canary_requires_records, markets). Every new source adds a row.
 EXPECTED = {
@@ -25,6 +26,7 @@ EXPECTED = {
     "sec_8k": (False, Scope.SYMBOLS, True, US),
     "sec_form4": (False, Scope.SYMBOLS, True, US),
     "sec_13dg": (False, Scope.SYMBOLS, True, US),
+    "fred": (True, Scope.MARKET, True, BOTH),
 }
 
 

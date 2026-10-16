@@ -32,6 +32,7 @@ EXPECTED = {
     "crypto_fear_greed": (False, Scope.MARKET, True, NONE),
     "blockchain_stats": (False, Scope.MARKET, True, NONE),
     "defillama_tvl": (False, Scope.SYMBOLS, True, NONE),
+    "coingecko": (True, Scope.SYMBOLS, True, NONE),
 }
 
 

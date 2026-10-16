@@ -33,6 +33,8 @@ EXPECTED = {
     "blockchain_stats": (False, Scope.MARKET, True, NONE),
     "defillama_tvl": (False, Scope.SYMBOLS, True, NONE),
     "coingecko": (True, Scope.SYMBOLS, True, NONE),
+    "coinbase_candles": (False, Scope.SYMBOLS, True, NONE),
+    "kraken_ohlc": (False, Scope.SYMBOLS, True, NONE),
 }
 
 

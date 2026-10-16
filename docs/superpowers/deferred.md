@@ -6,6 +6,12 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
 
 - **Source 11 (SEC 13F data sets plus OpenFIGI CUSIP mapping) moved out of Plan 2d.** It needs a persistent CUSIP → ticker map (about 6,500 CUSIPs, roughly 27 minutes at OpenFIGI's keyless 25 requests a minute, then only new CUSIPs each quarter) and about 100 MB of quarterly SEC data sets. Research: `.superpowers/research/plan-2b/sec.md` §5. Fixtures: `.superpowers/research/plan-2c-fixtures/sec/13f_*` and `openfigi_cusip_mapping_sample.json` (git-ignored).
 
+## Plan 2h: options, catalysts and Canadian short positions
+
+- **Split out of Plan 2e**, which kept macro, crypto and on-chain. Sources: Yahoo option chains (18) and CBOE put/call ratios (19); openFDA (48), ClinicalTrials.gov (49), USAspending.gov (50) and House Clerk periodic transaction reports (51); the Canadian short-position report (15), kept only if a keyless file is confirmed.
+- **Catalysts name companies, not tickers:** drug sponsors, trial sponsors and contract recipients need a company-name → symbol map for both markets. Plan 2f built one; reuse `advisor.company_names` and `advisor.news.mapping.TickerMap`.
+- **House Clerk reports are PDFs.** Check that electronically filed reports read as text before committing to source 51.
+
 ## Plan 2i: social and attention
 
 - **Split out of Plan 2f**, which kept news. The sources are:
@@ -17,12 +23,6 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
 - **Wikipedia needs a ticker → article map.** Build it once from Wikidata, commit it, and refresh it now and then; don't query SPARQL at run time. In Wikidata the ticker is qualifier P249 on stock exchange P414, with Nasdaq Q82059, NYSE Q13677 and TSX Q818723.
 - **Wikimedia's User-Agent policy** asks for contact information. A project URL meets it, so use the repo's URL, never an email.
 - **Collectors covering both stocks and crypto** (ApeWisdom; LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector. Plan 2e's crypto sources and Plan 2f's news sources keep them apart already.
-
-## Plan 2h: options, catalysts and Canadian short positions
-
-- **Split out of Plan 2e**, which kept macro, crypto and on-chain. Sources: Yahoo option chains (18) and CBOE put/call ratios (19); openFDA (48), ClinicalTrials.gov (49), USAspending.gov (50) and House Clerk periodic transaction reports (51); the Canadian short-position report (15), kept only if a keyless file is confirmed.
-- **Catalysts name companies, not tickers:** drug sponsors, trial sponsors and contract recipients need a company-name → symbol map for both markets. Plan 2f built one; reuse `advisor.company_names` and `advisor.news.mapping.TickerMap`.
-- **House Clerk reports are PDFs.** Check that electronically filed reports read as text before committing to source 51.
 
 ## Plan 3: model and features
 

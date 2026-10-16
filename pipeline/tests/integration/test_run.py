@@ -8,8 +8,10 @@ from advisor.collectors.base import Category, PartialFetch, Scope, check_deadlin
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.feeds import NewsItem, TickerNewsItem
-from advisor.models import AssetType, Market, RunKind, RunStatus
-from advisor.run import RunDeps, execute_run
+from advisor.models import AssetRef, AssetType, Market, RunKind, RunStatus
+from advisor.news.stage import NewsRow
+from advisor.run import RunDeps, empty_news_summary, execute_run
+from advisor.store import repo
 from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
@@ -635,3 +637,96 @@ def test_a_failing_sentiment_model_leaves_stories_unscored_and_the_run_publishes
     assert outcome.summary["news"]["sentiment"] == "failed: OSError: couldn't reach huggingface.co"
     rows = db.execute("select sentiment from news_items").fetchall()
     assert len(rows) == 6 and {r["sentiment"] for r in rows} == {None}  # a later run scores them
+
+
+def stored_news(db):
+    return db.execute("select symbol, sentiment from news_items order by symbol, outlet").fetchall()
+
+
+def test_a_scorer_that_raises_leaves_stories_unscored(db, tmp_path):
+    hold(db)
+
+    def raising_scorer(titles):
+        raise RuntimeError("boom")
+
+    deps = dataclasses.replace(
+        make_deps(db, tmp_path, extra=news_sources()), news_scorer=lambda: raising_scorer
+    )
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["news"]["sentiment"].startswith("failed: RuntimeError")
+    rows = stored_news(db)
+    assert len(rows) == 7 and {r["sentiment"] for r in rows} == {None}  # a later run scores them
+    assert market_features(db, outcome.run_id)["OTCX"]["news_stories_48h"] == 1
+
+
+def test_scoring_is_skipped_near_the_run_budget(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("advisor.run.SCORING_RESERVE_SECONDS", 10**6)
+    hold(db)
+    calls: list = []
+
+    def scorer(titles):
+        calls.append(titles)
+        return [0.5] * len(titles)
+
+    deps = dataclasses.replace(
+        make_deps(db, tmp_path, extra=news_sources()), news_scorer=lambda: scorer
+    )
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["news"]["sentiment"] == "skipped: run budget"
+    assert calls == []
+    rows = stored_news(db)
+    assert len(rows) == 7 and {r["sentiment"] for r in rows} == {None}
+
+
+def test_old_news_is_pruned(db, tmp_path):
+    old = NewsRow(
+        ref=AssetRef("AAA", AssetType.STOCK), published_at=NOW - timedelta(days=91),
+        outlet="Reuters", url="https://www.reuters.com/old", title="Story old",
+        sentiment=0.5, cluster_id="old", story_key="old",
+    )
+    repo.write_news_items(db, [old])
+    execute_run(
+        make_deps(db, tmp_path, extra=news_sources()), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
+    titles = [r["title"] for r in db.execute("select title from news_items").fetchall()]
+    assert "Story old" not in titles
+    assert len(titles) == 6  # this run's stories were stored
+
+
+def test_no_news_items_means_no_news_features(db, tmp_path):
+    hold(db)
+    calls: list = []
+
+    def scorer(titles):
+        calls.append(titles)
+        return [0.5] * len(titles)
+
+    extra = news_sources()
+    for source in extra.values():
+        source.records_for = lambda symbols: []
+    deps = dataclasses.replace(make_deps(db, tmp_path, extra=extra), news_scorer=lambda: scorer)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.summary["news"]["sentiment"] == "no items"
+    assert calls == []
+    features = market_features(db, outcome.run_id)["OTCX"]
+    assert features["last_close"] == 10.0
+    assert [key for key in features if key.startswith("news_")] == []  # missing, not zero
+    assert stored_news(db) == []
+
+
+def test_news_does_not_run_when_the_run_is_not_enriched(db, tmp_path):
+    extra = news_sources()
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW,
+        min_universe={Market.US: 3, Market.TSX: 300},
+    )
+
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.summary["news"] == empty_news_summary()
+    assert [source.calls for source in extra.values()] == [[], []]
+    assert stored_news(db) == []

@@ -205,9 +205,16 @@ def news_stage(
             sentiment = f"failed: {type(exc).__name__}: {exc}"[:200]
         else:
             sentiment = "finbert" if scorer is not None else "unavailable"
-    outcome = process_news(items, ticker_map, refs, now_utc, scorer=scorer, history=history)
+    try:
+        outcome = process_news(items, ticker_map, refs, now_utc, scorer=scorer, history=history)
+    except Exception as exc:
+        if scorer is None:
+            raise  # a bug in the stage itself fails the run (spec §10)
+        sentiment = f"failed: {type(exc).__name__}: {exc}"[:200]  # scoring failed: keep the stories unscored
+        outcome = process_news(items, ticker_map, refs, now_utc, scorer=None, history=history)
     repo.write_news_items(deps.conn, outcome.rows)
-    repo.merge_features_live(deps.conn, run_id, outcome.features, now_utc)
+    if items:  # with no stories at all a source outage must leave the values missing, not zero
+        repo.merge_features_live(deps.conn, run_id, outcome.features, now_utc)
     return {**outcome.summary, "sentiment": sentiment}
 
 

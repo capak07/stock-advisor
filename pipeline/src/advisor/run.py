@@ -34,7 +34,7 @@ from advisor.markets import MARKETS, market_of
 from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, RunStatus, SymbolInfo
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
-from advisor.news.stage import RECENT, process_news
+from advisor.news.stage import RECENT, WINDOW, process_news
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
 from advisor.screener import ScreenRow
@@ -190,9 +190,10 @@ def news_stage(
     refs = [AssetRef(s, AssetType.STOCK) for s in targets.stocks]
     refs += [AssetRef(s, AssetType.CRYPTO) for s in targets.crypto]
     ticker_map = TickerMap(dict(deps.names.items()), coin_names, refs)
-    history = repo.news_daily_counts(
-        deps.conn, refs, now_utc - RECENT - NEWS_HISTORY, now_utc - RECENT
-    )
+    # Whole UTC days only: a partial first or last day would skew the volume baseline.
+    history_end = (now_utc - RECENT).replace(hour=0, minute=0, second=0, microsecond=0)
+    history = repo.news_daily_counts(deps.conn, refs, history_end - NEWS_HISTORY, history_end)
+    stored = repo.recent_news(deps.conn, refs, now_utc - 2 * WINDOW)
     scorer: Scorer | None = None
     if not items:
         sentiment = "no items"
@@ -206,12 +207,16 @@ def news_stage(
         else:
             sentiment = "finbert" if scorer is not None else "unavailable"
     try:
-        outcome = process_news(items, ticker_map, refs, now_utc, scorer=scorer, history=history)
+        outcome = process_news(
+            items, ticker_map, refs, now_utc, scorer=scorer, history=history, stored=stored
+        )
     except Exception as exc:
         if scorer is None:
             raise  # a bug in the stage itself fails the run (spec §10)
         sentiment = f"failed: {type(exc).__name__}: {exc}"[:200]  # scoring failed: keep the stories unscored
-        outcome = process_news(items, ticker_map, refs, now_utc, scorer=None, history=history)
+        outcome = process_news(
+            items, ticker_map, refs, now_utc, scorer=None, history=history, stored=stored
+        )
     repo.write_news_items(deps.conn, outcome.rows)
     if items:  # with no stories at all a source outage must leave the values missing, not zero
         repo.merge_features_live(deps.conn, run_id, outcome.features, now_utc)

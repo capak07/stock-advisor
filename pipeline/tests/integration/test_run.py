@@ -730,3 +730,19 @@ def test_news_does_not_run_when_the_run_is_not_enriched(db, tmp_path):
     assert outcome.summary["news"] == empty_news_summary()
     assert [source.calls for source in extra.values()] == [[], []]
     assert stored_news(db) == []
+
+
+def test_a_story_stored_by_an_earlier_run_is_not_stored_twice(db, tmp_path):
+    hold(db)
+    # An earlier run stored OTCX's story under another outlet's item, an hour before this run's copy.
+    repo.write_news_items(db, [NewsRow(
+        ref=AssetRef("OTCX", AssetType.STOCK), published_at=NOW - timedelta(hours=3),
+        outlet="Earlier Wire", url="https://www.example.com/otcx-contract",
+        title="OTCX wins a big contract", sentiment=None, cluster_id="earlier", story_key="e" * 16,
+    )])
+    deps = dataclasses.replace(make_deps(db, tmp_path, extra=news_sources()), news_scorer=lambda: None)
+    execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    rows = db.execute(
+        "select outlet from news_items where symbol = 'OTCX' and title = 'OTCX wins a big contract'"
+    ).fetchall()
+    assert [r["outlet"] for r in rows] == ["Earlier Wire"]

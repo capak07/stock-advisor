@@ -4,7 +4,8 @@
 2. Attribute each item. A per-stock item (Google News, Yahoo) goes to its stock. A market-wide item
    goes to the targets it names (`advisor.news.mapping`).
 3. Group items into stories (`advisor.news.stories`). Each asset keeps one item per story, and at
-   most 3 stories per outlet: MarketBeat alone filled 60 of Google's 100 results for Apple.
+   most 3 stories per outlet: MarketBeat alone filled 60 of Google's 100 results for Apple. A story
+   an earlier run already stored for the asset, under another item's key, is not stored again.
 4. Score each story's headline once (FinBERT).
 5. Compute per-asset features: stories, outlets, mean sentiment, and the sentiment trend (the last
    24 h minus the 24 h before). The volume z-score compares the last 24 h's stories with the
@@ -22,7 +23,7 @@ from advisor.collectors.feeds import NewsItem, TickerNewsItem
 from advisor.models import AssetRef, AssetType
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer
-from advisor.news.stories import cluster, story_key
+from advisor.news.stories import cluster, similar, story_key, title_words
 
 WINDOW = timedelta(hours=48)
 RECENT = timedelta(hours=24)
@@ -39,6 +40,16 @@ class NewsRow:
     title: str
     sentiment: float | None
     cluster_id: str
+    story_key: str
+
+
+@dataclass(frozen=True)
+class StoredNews:
+    """A story row an earlier run stored for an asset."""
+
+    url: str
+    title: str
+    published_at: datetime
     story_key: str
 
 
@@ -79,6 +90,29 @@ def outlet_key(outlet: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name)
 
 
+def _stored_under_another_key(
+    story_items: Sequence[NewsItem], item: NewsItem, earlier: Sequence[StoredNews]
+) -> bool:
+    """Whether an earlier run stored this story for the asset under another item's key.
+
+    That happens when the story's first item has left the 48-hour window since, or a source
+    returned an older item late. Matching follows story grouping: a shared link, or a similar title
+    within 48 hours. A row with this item's own key is the same row, and the upsert keeps it.
+    """
+    if any(row.story_key == story_key(item) for row in earlier):
+        return False
+    for row in earlier:
+        row_words = title_words(row.title)
+        for member in story_items:
+            if row.url == member.url:
+                return True
+            if abs(member.published_at - row.published_at) <= WINDOW and similar(
+                row_words, title_words(member.title)
+            ):
+                return True
+    return False
+
+
 def process_news(
     items: Sequence[NewsItem],
     ticker_map: TickerMap,
@@ -87,9 +121,13 @@ def process_news(
     *,
     scorer: Scorer | None,
     history: Mapping[AssetRef, Sequence[int]],
+    stored: Mapping[AssetRef, Sequence[StoredNews]] | None = None,
 ) -> NewsOutcome:
     recent = [item for item in items if as_of - WINDOW <= item.published_at <= as_of]
     story_of = cluster(recent)
+    members: dict[str, list[NewsItem]] = defaultdict(list)  # story -> its items in the window
+    for item in recent:
+        members[story_of[story_key(item)]].append(item)
 
     chosen: dict[AssetRef, dict[str, NewsItem]] = defaultdict(dict)  # asset -> story -> item
     attributed = sorted(
@@ -130,6 +168,7 @@ def process_news(
             )
             for ref, stories in kept.items()
             for story, item in stories
+            if not _stored_under_another_key(members[story], item, (stored or {}).get(ref, ()))
         ),
         key=lambda row: (row.ref, row.published_at, row.story_key, row.url),
     )

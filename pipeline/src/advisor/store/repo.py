@@ -10,7 +10,7 @@ from psycopg.types.json import Jsonb
 from advisor.collectors.base import CollectorResult
 from advisor.collectors.runner import SourceState
 from advisor.models import ET, AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
-from advisor.news.stage import NewsRow
+from advisor.news.stage import NewsRow, StoredNews
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
 NEWS_KEPT = timedelta(days=90)  # spec §10: news is pruned after 90 days
@@ -202,7 +202,8 @@ def write_news_items(conn: psycopg.Connection, rows: Sequence[NewsRow]) -> None:
             "insert into news_items (symbol, asset_type, published_at, outlet, url, title,"
             " sentiment, cluster_id, story_key) values (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
             " on conflict (symbol, asset_type, story_key)"
-            " do update set sentiment = coalesce(news_items.sentiment, excluded.sentiment)",
+            " do update set sentiment = excluded.sentiment"
+            " where news_items.sentiment is null and excluded.sentiment is not null",
             [
                 (
                     row.ref.symbol, row.ref.asset_type.value, row.published_at, row.outlet,
@@ -237,3 +238,23 @@ def news_daily_counts(
     for row in rows:
         counts[AssetRef(row["symbol"], AssetType(row["asset_type"]))][row["day"]] = row["stories"]
     return {ref: [counts[ref].get(day, 0) for day in days] for ref in refs}
+
+
+def recent_news(
+    conn: psycopg.Connection, refs: Iterable[AssetRef], since: datetime
+) -> dict[AssetRef, list[StoredNews]]:
+    """The story rows earlier runs stored for these assets since `since`, oldest first."""
+    wanted = set(refs)
+    rows = conn.execute(
+        "select symbol, asset_type, url, title, published_at, story_key from news_items"
+        " where published_at >= %s order by published_at, story_key",
+        (since,),
+    ).fetchall()
+    stored: dict[AssetRef, list[StoredNews]] = defaultdict(list)
+    for row in rows:
+        ref = AssetRef(row["symbol"], AssetType(row["asset_type"]))
+        if ref in wanted:
+            stored[ref].append(
+                StoredNews(row["url"], row["title"], row["published_at"], row["story_key"])
+            )
+    return dict(stored)

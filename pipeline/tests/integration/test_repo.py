@@ -5,7 +5,7 @@ import pytest
 
 from advisor.collectors.base import CollectorResult, CollectorStatus
 from advisor.models import AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
-from advisor.news.stage import NewsRow
+from advisor.news.stage import NewsRow, StoredNews
 from advisor.store import repo
 from fakes import info
 
@@ -229,3 +229,44 @@ def test_merging_features_adds_to_an_existing_row_or_creates_one(db):
     assert [(r["symbol"], r["features"]) for r in rows] == [
         ("AAPL", {"last_close": 150.0, "news_stories_48h": 2}), ("RY.TO", {"news_stories_48h": 0}),
     ]
+
+
+def test_a_symbol_can_hold_a_story_as_a_stock_and_as_a_coin(db):
+    repo.write_news_items(db, [news_row("ONE"), news_row("ONE", asset_type=AssetType.CRYPTO)])
+    rows = db.execute("select asset_type from news_items order by asset_type").fetchall()
+    assert [r["asset_type"] for r in rows] == ["crypto", "stock"]
+
+
+def test_a_later_missing_sentiment_keeps_the_score(db):
+    repo.write_news_items(db, [news_row(sentiment=0.5)])
+    repo.write_news_items(db, [news_row(sentiment=None)])
+    assert db.execute("select sentiment from news_items").fetchone()["sentiment"] == 0.5
+
+
+def test_daily_story_counts_respect_the_window(db):
+    since = datetime(2026, 10, 10, tzinfo=UTC)
+    until = datetime(2026, 10, 13, tzinfo=UTC)
+    hours = lambda at: (NOW - at).total_seconds() / 3600  # noqa: E731
+    repo.write_news_items(db, [
+        news_row(key="a", hours_ago=hours(since), cluster="s1"),  # at `since`: counted
+        news_row(key="b", hours_ago=hours(datetime(2026, 10, 12, 12, tzinfo=UTC)), cluster="s2"),
+        news_row(key="c", hours_ago=hours(until), cluster="s3"),  # at `until`: left out
+        news_row(key="d", hours_ago=hours(since - timedelta(days=1)), cluster="s4"),  # before
+    ])
+    counts = repo.news_daily_counts(db, [AssetRef("AAPL", AssetType.STOCK)], since, until)
+    assert counts == {AssetRef("AAPL", AssetType.STOCK): [1, 1]}  # 2026-10-10 and 2026-10-12
+
+
+def test_recent_news_returns_each_assets_rows_since_a_time(db):
+    aapl = AssetRef("AAPL", AssetType.STOCK)
+    repo.write_news_items(db, [
+        news_row(key="new", hours_ago=10),
+        news_row(key="old", hours_ago=100),
+        news_row("BTC", key="coin", hours_ago=10, asset_type=AssetType.CRYPTO),
+    ])
+    assert repo.recent_news(db, [aapl], NOW - timedelta(hours=96)) == {
+        aapl: [StoredNews(
+            url="https://www.reuters.com/new", title="Story new",
+            published_at=NOW - timedelta(hours=10), story_key="new",
+        )],
+    }

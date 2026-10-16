@@ -6,7 +6,7 @@ import pytest
 from advisor.collectors.feeds import NewsItem, TickerNewsItem
 from advisor.models import AssetRef, AssetType
 from advisor.news.mapping import TickerMap
-from advisor.news.stage import outlet_key, process_news, volume_z
+from advisor.news.stage import StoredNews, outlet_key, process_news, volume_z
 from advisor.news.stories import story_key
 
 AS_OF = datetime(2026, 10, 16, 12, 15, tzinfo=UTC)
@@ -200,3 +200,59 @@ def test_selection_does_not_depend_on_input_order():
         outcome = process_news(list(order), MAP, TARGETS, AS_OF, scorer=fake_scorer([]), history={})
         assert outcome.rows == baseline.rows
         assert outcome.features == baseline.features
+
+
+def stored_from(item: NewsItem) -> StoredNews:
+    return StoredNews(
+        url=item.url, title=item.title, published_at=item.published_at, story_key=story_key(item)
+    )
+
+
+def test_a_story_an_earlier_run_stored_is_not_stored_again():
+    # The earlier run stored the story under its first item, which has since left the 48-hour window.
+    first = ticker_item("AAPL", "Apple sues Masimo over smartwatch patents", "Reuters", 50)
+    later = ticker_item("AAPL", "Apple sues Masimo over smartwatch patents again", "CNBC", 30)
+    outcome = process_news(
+        [later], MAP, TARGETS, AS_OF, scorer=None, history={}, stored={AAPL: [stored_from(first)]}
+    )
+    assert outcome.rows == []
+    assert dict(outcome.features)[AAPL]["news_stories_48h"] == 1  # it still counts for this run
+
+
+def test_a_stored_row_with_a_shared_link_is_the_same_story():
+    first = ticker_item("AAPL", "Fed decision weighs on Apple", "Reuters", 50)
+    later = ticker_item("AAPL", "Powell speaks; tech slides", "CNBC", 30)
+    earlier = StoredNews(
+        url=later.url, title=first.title, published_at=first.published_at, story_key="0" * 16
+    )
+    outcome = process_news(
+        [later], MAP, TARGETS, AS_OF, scorer=None, history={}, stored={AAPL: [earlier]}
+    )
+    assert outcome.rows == []
+
+
+def test_the_same_stored_row_is_written_again_for_the_upsert():
+    item = ticker_item("AAPL", "Apple sues Masimo over smartwatch patents", "Reuters", 10)
+    outcome = process_news(
+        [item], MAP, TARGETS, AS_OF, scorer=None, history={}, stored={AAPL: [stored_from(item)]}
+    )
+    assert [row.story_key for row in outcome.rows] == [story_key(item)]
+
+
+def test_unrelated_or_other_asset_rows_do_not_hide_a_story():
+    item = ticker_item("AAPL", "Apple sues Masimo over smartwatch patents", "Reuters", 10)
+    unrelated = stored_from(ticker_item("AAPL", "Apple unveils a new iPad lineup", "Reuters", 20))
+    outcome = process_news(
+        [item], MAP, TARGETS, AS_OF, scorer=None, history={},
+        stored={AAPL: [unrelated], RY: [stored_from(item)]},
+    )
+    assert [row.story_key for row in outcome.rows] == [story_key(item)]
+
+
+def test_a_similar_stored_title_more_than_48_hours_away_is_another_story():
+    old = ticker_item("AAPL", "Apple sues Masimo over smartwatch patents", "Reuters", 80)
+    item = ticker_item("AAPL", "Apple sues Masimo over smartwatch patents again", "CNBC", 10)
+    outcome = process_news(
+        [item], MAP, TARGETS, AS_OF, scorer=None, history={}, stored={AAPL: [stored_from(old)]}
+    )
+    assert [row.story_key for row in outcome.rows] == [story_key(item)]

@@ -18,6 +18,7 @@ INSTRUMENT = re.compile(
     r"\s+(?:-\s+.*|(?:Class\s+[A-Z]\s+)?"
     r"(?:Common|Ordinary|Subordinate Voting|American Depositary|Depositary)\b.*)$"
 )
+THE = re.compile(r"\s*\(The\)")  # NASDAQ and NYSE put "The" last: "Walt Disney Company (The)"
 LEGAL = re.compile(
     r"(?:,?\s+&?\s*(?:Inc|Incorporated|Corp|Corporation|Co|Company|Ltd|Limited|plc|PLC|LLC"
     r"|L\.P|LP|N\.V|S\.A|SA|SE|AG|Holdings?|Group)\.?)+$"
@@ -26,7 +27,7 @@ LEGAL = re.compile(
 
 def search_name(directory_name: str) -> str:
     """'Apple Inc. - Common Stock' -> 'Apple Inc'. TMX names, such as 'Royal Bank of Canada', are unchanged."""
-    return INSTRUMENT.sub("", directory_name).strip().rstrip(".").strip()
+    return THE.sub("", INSTRUMENT.sub("", directory_name)).strip().rstrip(".").strip()
 
 
 def short_name(directory_name: str) -> str:

@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from advisor.collectors.base import PartialFetch
+from advisor.collectors.feeds import parse_feed
 from advisor.collectors.google_news import GoogleBlocked, GoogleNews, headline, query_for
 from advisor.company_names import CompanyNames
 
@@ -48,6 +49,18 @@ def test_items_older_than_two_days_are_left_out(fixtures_dir):
     items = serving(fixtures_dir, []).fetch(["RY.TO"], AS_OF)
     assert len(items) == 7  # this answer was recorded without when:2d and reaches back to August
     assert min(item.published_at for item in items) >= datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
+
+
+def test_items_after_as_of_are_left_out(fixtures_dir):
+    # The Apple fixture's newest item is 11:18:12 GMT; the run is taken as of 11:00 GMT.
+    as_of = datetime(2026, 10, 16, 11, 0, tzinfo=UTC)
+    raw = parse_feed((fixtures_dir / "news" / "google_news_us_apple.xml").read_bytes())
+    newest = max(raw, key=lambda entry: entry.published_at)
+    assert newest.published_at > as_of  # so the test can't pass vacuously
+    items = serving(fixtures_dir, []).fetch(["AAPL"], as_of)
+    assert items
+    assert all(item.published_at <= as_of for item in items)
+    assert newest.url not in {item.url for item in items}
 
 
 def test_a_stock_without_a_name_is_searched_by_ticker():

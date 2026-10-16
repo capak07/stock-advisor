@@ -1,9 +1,10 @@
+import time
 from datetime import UTC, date, datetime
 
 import httpx
 import pytest
 
-from advisor.collectors.base import PartialFetch
+from advisor.collectors.base import PartialFetch, deadline
 from advisor.collectors.fred import SERIES, Fred, parse_csv
 
 AS_OF = datetime(2026, 10, 15, 12, 15, tzinfo=UTC)  # the 450-day lookback starts 2025-07-22
@@ -77,3 +78,14 @@ def test_every_series_failing_fails_the_source(fixtures_dir):
     with pytest.raises(PartialFetch, match="9 of 9 FRED series failed") as caught:
         serving(fixtures_dir, broken=frozenset(SERIES)).fetch([], AS_OF)
     assert caught.value.records == []  # an empty PartialFetch counts as a failure
+
+
+def test_a_deadline_keeps_the_series_already_fetched(fixtures_dir):
+    def handler(request: httpx.Request) -> httpx.Response:
+        time.sleep(0.2)  # the first answer arrives after the deadline
+        return httpx.Response(200, text=csv_text(fixtures_dir, request.url.params["id"]))
+
+    fred = Fred(httpx.Client(transport=httpx.MockTransport(handler)))
+    with deadline(time.monotonic() + 0.1), pytest.raises(PartialFetch, match="stopped at T10Y3M") as caught:
+        fred.fetch([], AS_OF)
+    assert {r.series for r in caught.value.records} == {"T10Y2Y"}

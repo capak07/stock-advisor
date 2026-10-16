@@ -13,8 +13,10 @@ from typing import Any
 import httpx
 
 from advisor.collectors.base import (
+    BUDGET_EXHAUSTED,
     Cadence,
     Category,
+    DeadlineExceeded,
     PartialFetch,
     RateLimiter,
     Scope,
@@ -73,8 +75,8 @@ class BlockchainStats:
         records: list[SeriesObservation] = []
         failures: list[str] = []
         for name in CHARTS:
-            check_deadline()
             try:
+                check_deadline()
                 response = get_with_retries(
                     self._client,
                     CHART_URL.format(name=name),
@@ -82,6 +84,10 @@ class BlockchainStats:
                     limiter=self._limiter,
                 )
                 rows = parse_chart(name, response.json(), as_of)
+            except DeadlineExceeded:
+                if not records:
+                    raise
+                raise PartialFetch(records, f"stopped at {name}: {BUDGET_EXHAUSTED}") from None
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 failures.append(f"{name}: {type(exc).__name__}: {exc}"[:200])
                 continue

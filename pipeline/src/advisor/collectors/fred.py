@@ -14,8 +14,10 @@ from datetime import date, datetime, timedelta
 import httpx
 
 from advisor.collectors.base import (
+    BUDGET_EXHAUSTED,
     Cadence,
     Category,
+    DeadlineExceeded,
     PartialFetch,
     RateLimiter,
     Scope,
@@ -85,8 +87,8 @@ class Fred:
         records: list[SeriesObservation] = []
         failures: list[str] = []
         for series in SERIES:
-            check_deadline()
             try:
+                check_deadline()
                 response = get_with_retries(
                     self._client,
                     FRED_URL,
@@ -94,6 +96,10 @@ class Fred:
                     limiter=self._limiter,
                 )
                 rows = parse_csv(series, response.text, start, end)
+            except DeadlineExceeded:
+                if not records:
+                    raise
+                raise PartialFetch(records, f"stopped at {series}: {BUDGET_EXHAUSTED}") from None
             except (httpx.HTTPError, ValueError) as exc:
                 failures.append(f"{series}: {type(exc).__name__}: {exc}"[:200])
                 continue

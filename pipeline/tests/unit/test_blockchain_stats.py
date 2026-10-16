@@ -1,10 +1,11 @@
 import json
+import time
 from datetime import UTC, date, datetime
 
 import httpx
 import pytest
 
-from advisor.collectors.base import PartialFetch, RateLimiter
+from advisor.collectors.base import PartialFetch, RateLimiter, deadline
 from advisor.collectors.blockchain_stats import CHARTS, BlockchainStats, parse_chart
 from fakes import FakeClock
 
@@ -60,3 +61,14 @@ def test_a_failing_chart_is_a_partial_result(fixtures_dir):
     with pytest.raises(PartialFetch, match=failed) as caught:
         serving(fixtures_dir, [], broken="difficulty").fetch([], AS_OF)
     assert len(caught.value.records) == 360
+
+
+def test_a_deadline_keeps_the_charts_already_fetched(fixtures_dir):
+    def handler(request: httpx.Request) -> httpx.Response:
+        time.sleep(0.2)  # the first answer arrives after the deadline
+        return httpx.Response(200, json=chart(fixtures_dir, request.url.path.removeprefix("/charts/")))
+
+    stats = BlockchainStats(httpx.Client(transport=httpx.MockTransport(handler)))
+    with deadline(time.monotonic() + 0.1), pytest.raises(PartialFetch, match="stopped at difficulty") as caught:
+        stats.fetch([], AS_OF)
+    assert {r.series for r in caught.value.records} == {"hash-rate"}

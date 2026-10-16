@@ -54,8 +54,8 @@ ANALYST_VERBS = frozenset({
     "initiates", "reiterates", "maintains", "starts", "resumes", "reinstates",
 })
 RATING = re.compile(
-    r"\b(?:target|rating|overweight|underweight|equal[- ]weight|outperform|underperform"
-    r"|market perform|sector perform|buy|sell|neutral|hold|coverage)\b",
+    r"\b(?:price target|target to \$\d|rating|overweight|underweight|equal[- ]weight"
+    r"|outperform|underperform|market perform|sector perform)",
     re.IGNORECASE,
 )
 
@@ -83,6 +83,7 @@ class TickerMap:
             self._add(short_name(directory_name), AssetRef(symbol, AssetType.STOCK))
         for symbol, name in coin_names.items():
             self._add(name, AssetRef(symbol, AssetType.CRYPTO))
+        # setdefault never overwrites, so a held lookalike such as Bitcoin Cash keeps its assets.
         for name in NOT_COINS:
             self._names.setdefault(tuple(words(name)), set())
 
@@ -123,5 +124,7 @@ class TickerMap:
             else:
                 start += 1
         if RATING.search(title) and sum(1 for refs, _ in matches if refs) > 1:
-            matches = [(refs, after) for refs, after in matches if after not in ANALYST_VERBS]
+            subjects = [(refs, after) for refs, after in matches if after not in ANALYST_VERBS]
+            if any(refs for refs, _ in subjects):
+                matches = subjects
         return set().union(*(refs for refs, _ in matches))

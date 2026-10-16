@@ -18,6 +18,9 @@ NAMES = {
     "NDAQ": "Nasdaq, Inc. - Common Stock",
     "MS": "Morgan Stanley Common Stock",
     "TSLA": "Tesla, Inc. - Common Stock",
+    "WMT": "Walmart Inc. Common Stock",
+    "COST": "Costco Wholesale Corporation - Common Stock",
+    "GS": "Goldman Sachs Group, Inc. (The) Common Stock",
 }
 COINS = {"BTC": "Bitcoin", "ETH": "Ethereum", "XLM": "Stellar"}
 
@@ -31,7 +34,11 @@ def coin(symbol: str) -> AssetRef:
 
 
 TARGETS = [
-    stock(s) for s in ("AAPL", "GOOG", "GOOGL", "TGT", "CNC", "CTSH", "RY.TO", "BBD-B.TO", "NDAQ", "MS", "TSLA")
+    stock(s)
+    for s in (
+        "AAPL", "GOOG", "GOOGL", "TGT", "CNC", "CTSH", "RY.TO", "BBD-B.TO", "NDAQ", "MS", "TSLA",
+        "WMT", "COST", "GS",
+    )
 ]
 TARGETS += [coin("BTC"), coin("ETH"), coin("XLM")]
 MAP = TickerMap(NAMES, COINS, TARGETS)
@@ -113,3 +120,14 @@ def test_the_broker_in_an_analyst_headline_is_not_the_subject():
     assert MAP.assets_in(item("Morgan Stanley Upgrades Tesla to Overweight")) == {stock("TSLA")}
     assert MAP.assets_in(item("Morgan Stanley Raises Its Dividend")) == {stock("MS")}
     assert MAP.assets_in(item("Tesla Cuts Prices as Analysts Say Buy")) == {stock("TSLA")}
+    assert MAP.assets_in(item("Goldman Sachs Raises Apple Price Target to $250")) == {stock("AAPL")}
+
+
+def test_companies_acting_in_one_headline_keep_their_news():
+    headline = "Walmart Raises Full-Year Target, Costco Wholesale Lifts Outlook"
+    assert MAP.assets_in(item(headline)) == {stock("WMT"), stock("COST")}
+
+
+def test_a_held_coin_named_like_a_lookalike_is_still_found():
+    held = TickerMap(NAMES, {**COINS, "BCH": "Bitcoin Cash"}, [*TARGETS, coin("BCH")])
+    assert held.assets_in(item("Bitcoin Cash Surges")) == {coin("BCH")}

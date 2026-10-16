@@ -16,6 +16,7 @@ from advisor.collectors.fomc import Fomc
 from advisor.collectors.fred import FRED_PER_MINUTE, Fred
 from advisor.collectors.kraken_ohlc import KRAKEN_PER_MINUTE, KrakenOhlc
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
+from advisor.collectors.news_feeds import FEED_PER_MINUTE, FEEDS, FeedNews
 from advisor.collectors.sec import SEC_PER_MINUTE, SecEdgar
 from advisor.collectors.sec_events import SecEvents
 from advisor.collectors.sec_holders import SecHolders
@@ -62,5 +63,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         CoinGecko(client, RateLimiter(per_minute=COINGECKO_PER_MINUTE, burst=1)),
         CoinbaseCandles(client, RateLimiter(per_minute=COINBASE_PER_MINUTE, burst=3)),
         KrakenOhlc(client, RateLimiter(per_minute=KRAKEN_PER_MINUTE, burst=1)),
+        *(FeedNews(feed, client, RateLimiter(per_minute=FEED_PER_MINUTE, burst=2)) for feed in FEEDS),
     ]
     return {collector.name: collector for collector in collectors}

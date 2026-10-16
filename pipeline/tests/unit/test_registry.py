@@ -37,6 +37,16 @@ EXPECTED = {
     "coingecko": (True, Scope.SYMBOLS, True, NONE),
     "coinbase_candles": (False, Scope.SYMBOLS, True, NONE),
     "kraken_ohlc": (False, Scope.SYMBOLS, True, NONE),
+    "nasdaq_news": (False, Scope.MARKET, True, US),
+    "cnbc_news": (False, Scope.MARKET, True, US),
+    "marketwatch_news": (False, Scope.MARKET, True, US),
+    "wsj_markets": (False, Scope.MARKET, True, US),
+    "prnewswire": (False, Scope.MARKET, True, US),
+    "globe_news": (False, Scope.MARKET, True, TSX),
+    "bnn_news": (False, Scope.MARKET, True, TSX),
+    "newsfile": (False, Scope.MARKET, True, TSX),
+    "decrypt_news": (False, Scope.MARKET, True, NONE),
+    "protos_news": (False, Scope.MARKET, True, NONE),
 }
 
 

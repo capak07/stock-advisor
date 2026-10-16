@@ -29,7 +29,7 @@ def test_an_already_published_slot_is_skipped(cli_env, monkeypatch, capsys):
 
 def test_force_kind_runs_anyway_and_a_failed_run_exits_1(cli_env, monkeypatch, capsys):
     monkeypatch.setattr(
-        "advisor.run.build_registry", lambda settings, client: fake_price_collectors()
+        "advisor.run.build_registry", lambda settings, client, **_: fake_price_collectors()
     )
     assert main(["--force-kind", "pre_open", *NOW_ARG]) == 1  # tiny fake universes are below both minimums
     assert '"status": "failed"' in capsys.readouterr().out

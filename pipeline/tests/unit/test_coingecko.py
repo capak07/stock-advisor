@@ -89,3 +89,8 @@ def test_matic_and_pol_held_together_are_both_priced_from_one_ticker(fixtures_di
     assert [(q.symbol, q.coin_id) for q in quotes] == [
         ("MATIC", "polygon-ecosystem-token"), ("POL", "polygon-ecosystem-token")
     ]
+
+
+def test_a_quote_carries_the_coins_name(fixtures_dir):
+    [quote] = parse_quotes(["BTC"], rows(fixtures_dir), AS_OF)
+    assert quote.name == "Bitcoin"  # the news stage finds coins by name

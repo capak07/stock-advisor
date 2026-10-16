@@ -39,6 +39,7 @@ class CryptoQuote(BaseModel):
 
     symbol: str
     coin_id: str
+    name: str | None = None  # "Bitcoin": headlines name coins, not tickers
     price_cad: float = Field(gt=0)
     market_cap_cad: float | None = None
     volume_24h_cad: float | None = None
@@ -73,6 +74,7 @@ def parse_quotes(
         quotes.append(CryptoQuote(
             symbol=symbol,
             coin_id=row["id"],
+            name=row.get("name"),
             price_cad=row["current_price"],
             market_cap_cad=row.get("market_cap"),
             volume_24h_cad=row.get("total_volume"),

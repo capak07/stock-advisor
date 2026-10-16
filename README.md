@@ -60,8 +60,9 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
    account or a key, and no data source needs one.
 6. Actions → `health` → Run workflow, then `run` → Run workflow → `pre_open`.
 
-**Upgrading an existing deployment:** apply migration 0004 (`python -m advisor.store.migrate`, as
-in step 2) in the same window as you deploy the matching code, between run slots. Code without the
+**Upgrading an existing deployment:** apply the new migrations (`python -m advisor.store.migrate`,
+as in step 2: `0004` for Plan 2b, `0005` for Plan 2f) in the same window as you deploy the matching
+code, between run slots. Code without the
 migration, or the migration without the code, only produces failed runs and emails; no data is
 damaged. Before deploying Plan 2d's code, add the `SEC_USER_AGENT` secret (step 5); without it every run is degraded and the health job emails you daily.
 
@@ -75,3 +76,7 @@ set -a; . ./.env.local; set +a
 scripts/in-docker.sh uv run python -m advisor.health                       # check every source
 scripts/in-docker.sh uv run python -m advisor.run --force-kind pre_open    # one pipeline run
 ```
+
+A local run scores no headline sentiment unless you add `--extra nlp` after `uv run`. That installs
+CPU PyTorch and transformers (about 900 MB), and the first scored run downloads the FinBERT model
+(about 440 MB) into the `advisor-hf` Docker volume. The next test run's `uv sync` removes the extra again.

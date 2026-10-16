@@ -1,19 +1,27 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d and Plan 2e reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
+These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and Plan 2f reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2g: 13F institutional ownership
 
 - **Source 11 (SEC 13F data sets plus OpenFIGI CUSIP mapping) moved out of Plan 2d.** It needs a persistent CUSIP → ticker map (about 6,500 CUSIPs, roughly 27 minutes at OpenFIGI's keyless 25 requests a minute, then only new CUSIPs each quarter) and about 100 MB of quarterly SEC data sets. Research: `.superpowers/research/plan-2b/sec.md` §5. Fixtures: `.superpowers/research/plan-2c-fixtures/sec/13f_*` and `openfigi_cusip_mapping_sample.json` (git-ignored).
 
-## Plan 2f: news and social
+## Plan 2i: social and attention
 
-- **Collectors covering both stocks and crypto** (Reddit, ApeWisdom; LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector. Plan 2e's crypto sources are crypto-only.
+- **Split out of Plan 2f**, which kept news. The sources are:
+  - ApeWisdom mention counts (44);
+  - Google Trends (46), best-effort, at most 50 symbols, holdings first;
+  - Wikipedia pageviews (47).
+
+  Reddit RSS (43) and StockTwits (45) are dropped because their terms forbid automated access. Research: `.superpowers/research/plan-2f/social.md`.
+- **Wikipedia needs a ticker → article map.** Build it once from Wikidata, commit it, and refresh it now and then; don't query SPARQL at run time. In Wikidata the ticker is qualifier P249 on stock exchange P414, with Nasdaq Q82059, NYSE Q13677 and TSX Q818723.
+- **Wikimedia's User-Agent policy** asks for contact information. A project URL meets it, so use the repo's URL, never an email.
+- **Collectors covering both stocks and crypto** (ApeWisdom; LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector. Plan 2e's crypto sources and Plan 2f's news sources keep them apart already.
 
 ## Plan 2h: options, catalysts and Canadian short positions
 
 - **Split out of Plan 2e**, which kept macro, crypto and on-chain. Sources: Yahoo option chains (18) and CBOE put/call ratios (19); openFDA (48), ClinicalTrials.gov (49), USAspending.gov (50) and House Clerk periodic transaction reports (51); the Canadian short-position report (15), kept only if a keyless file is confirmed.
-- **Catalysts name companies, not tickers:** drug sponsors, trial sponsors and contract recipients need a company-name → symbol map for both markets. Plan 2f's news mapping needs the same dictionary, so build it once.
+- **Catalysts name companies, not tickers:** drug sponsors, trial sponsors and contract recipients need a company-name → symbol map for both markets. Plan 2f built one; reuse `advisor.company_names` and `advisor.news.mapping.TickerMap`.
 - **House Clerk reports are PDFs.** Check that electronically filed reports read as text before committing to source 51.
 
 ## Plan 3: model and features
@@ -43,6 +51,13 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d and Plan 2e 
 - **Protocol TVL** (spec source 52 names chain and protocol TVL): Plan 2e collects chain TVL only. DeFi tokens such as UNI or AAVE belong to a protocol rather than a chain, and DefiLlama's `/protocols` list has a `symbol` per protocol. Add it if the crypto model's features need it.
 - **HY spread history:** FRED's `BAMLH0A0HYM2` CSV only goes back to 2023-10-16 (ICE licensing), so an 8-year backtest can't use it as is.
 - **Training histories:** the live collectors keep 30–60 days. Full histories exist: alternative.me `limit=0` (from 2018), DefiLlama's full chain series, and blockchain.com `timespan=all`. FOMC meetings older than the calendar page's 5 or so years are on `fomc_historical.htm`.
+- **News features are live only** (spec §5.1). The news stage merges them into each asset's `features_live` row: `news_stories_48h`, `news_outlets_48h`, `news_sentiment_mean`, `news_sentiment_trend` and `news_volume_z`. The volume z-score has a value only after 5 days of stored news.
+- **News matching quality:**
+  - Market-wide items match targets by name.
+  - One-word everyday names (`COMMON_WORDS`) count only with a tag or cashtag.
+  - Google News and Yahoo items count only for the stock they were fetched for.
+
+  Measure false matches on a week of real `news_items`, then tune the word list and the cap of 3 stories per outlet.
 
 ## Plans 4 and 5: recommendations and dashboard
 
@@ -51,7 +66,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d and Plan 2e 
 - **Crypto quote age:** each crypto row carries `quote_updated_at` and `quote_stale` (older than a day, e.g. served from cache). Show the age next to a stale CAD value.
 - **Watchlist coins:** check a coin with CoinGecko when it is added. A coin CoinGecko doesn't price is only listed in `crypto_unquoted`; it doesn't degrade the run.
 - **Source credits:** CoinGecko requires "Data provided by CoinGecko" wherever its data is shown, and FRED asks to be cited. alternative.me, DefiLlama and blockchain.com welcome a credit. Put a sources footer on the dashboard.
-- **`runs.summary`** gained `crypto` (held and watched coins) and `crypto_unquoted` in Plan 2e.
+- **`runs.summary`** gained `crypto` (held and watched coins) and `crypto_unquoted` in Plan 2e, and `news` (items, stories, rows, assets, sentiment status) in Plan 2f.
+- **Ticker Detail news:** read `news_items` by symbol and asset type, newest first. Google News links are Google's own redirect pages; show the outlet beside each title.
 - A table for holding-action outcomes. Spec §6.5 grades holding actions, but §8 has no table for them.
 - Decide spec §7.2 ("holdings analysis survives a later failure") against "failed runs are never published".
 - A `published_runs` view, so the dashboard never reads unpublished rows.
@@ -102,3 +118,14 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d and Plan 2e 
 - **blockchain.com** documents a newer gateway API, so the legacy `api.blockchain.info/charts` endpoints used here may be retired.
 - **FOMC calendar** is read from the page's `fomc-meeting__month` and `fomc-meeting__date` classes. A redesign makes the source PARTIAL; releases still arrive.
 - **Market-wide partial results** are neither cached nor backfilled per series. FRED is the first core source of this kind: a series that fails is absent for that run even if yesterday's cache has it, and the run is degraded.
+- **Google News from GitHub's IPs:** about 400 queries per run, one a second. A bot check or a 429 stops the source for the rest of the run, with holdings asked first, and the run is degraded because the source is core. If that happens often, query only holdings, watchlist and the top of the shortlist. Its robots.txt disallows `/rss/search`; the owner accepted that on 2026-10-16.
+- **News sources dropped in Plan 2f.** Research: `.superpowers/research/plan-2f/`. Protos replaces the dropped crypto feeds.
+  - Terms forbid automated access or storing: Seeking Alpha, Investing.com, Financial Post, CoinDesk, Cointelegraph.
+  - No working keyless feed: Benzinga (Cloudflare), GlobeNewswire (Akamai 403), Business Wire (no public feed), CNW (its RSS is gone, and its news sitemap isn't a feed).
+- **Short feed windows:** PR Newswire keeps about 90 minutes of releases and Newsfile 10 per industry, so two runs a day miss most of them. Google News, searched by company name, covers the important ones.
+- **BNN's dates:** it stamps UTC clock times with -0400 (`clock_is_utc`). Recheck if BNN fixes its feed: a correct offset would then put its items 4 hours early.
+- **FinBERT cost:**
+  - The `nlp` extra adds about 900 MB to the run's install (CPU PyTorch and transformers, from the uv cache), and the model about 440 MB (an Actions cache keyed on its revision).
+  - Loading the model takes about 25 s on a cold cache.
+  - Its CC BY-NC-SA 4.0 licence allows personal use only.
+- **news_items growth:** about 300 rows per run, so the 90-day prune keeps roughly 50,000 rows.

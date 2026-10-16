@@ -225,6 +225,12 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 
 - **Removed in Rev 2** because they need a key or an account: Alpaca, FMP, Finnhub (recommendations, earnings, news), Alpha Vantage, the Reddit API and Etherscan.
 - **Removed** because it now blocks scripts with a browser check: Stooq.
+- **Dropped in Plan 2f.** The owner chose to read terms as a personal feed reader would (2026-10-16).
+  - Terms forbid automated access: Seeking Alpha, Investing.com, Financial Post, CoinDesk, Cointelegraph, Reddit and StockTwits.
+  - No working keyless feed: Benzinga, GlobeNewswire, Business Wire and CNW.
+  - WSJ Markets comes from Dow Jones' current feed, and Protos replaces the dropped crypto feeds.
+  - The social sources (43–47) moved to Plan 2i.
+  - Google News stays, as the owner's accepted reading of its personal-feed-reader licence.
 - **Excluded** because they aren't free: X/Twitter, Bloomberg, Reuters, earnings-call transcripts, paid options flow.
 - **Hosting accounts** (not data sources): GitHub, Supabase, Vercel. SEC requests send a `User-Agent` containing an owner-chosen contact string, as SEC requires.
 - **Terms of use:** best-effort sources are fetched at low volume, cached, and used only for personal, non-commercial purposes. If a source's terms forbid automated use, it's removed rather than worked around.
@@ -250,7 +256,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 
    It runs only for a run that can still publish.
 5. **News processing.**
-   - De-duplicate across feeds by canonical URL, then by headline similarity (MinHash, Jaccard ≥ 0.8) within 48 hours.
+   - De-duplicate across feeds by canonical URL, then by headline similarity (Jaccard ≥ 0.8 over title words, computed exactly) within 48 hours.
    - Map each item to tickers using cashtags, symbols and a company-name dictionary for both markets.
    - Score each unique item with **FinBERT** (`ProsusAI/finbert`, CPU, model files cached).
    - Per ticker, compute sentiment mean and trend, a volume z-score, and **coverage breadth**.

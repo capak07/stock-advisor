@@ -1,11 +1,13 @@
+import dataclasses
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
 
-from advisor.collectors.base import PartialFetch, Scope, check_deadline
+from advisor.collectors.base import Category, PartialFetch, Scope, check_deadline
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
+from advisor.collectors.feeds import NewsItem, TickerNewsItem
 from advisor.models import AssetType, Market, RunKind, RunStatus
 from advisor.run import RunDeps, execute_run
 from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history
@@ -75,6 +77,7 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         },
         "priority": 0, "priority_unpriced": [], "unconfirmed_jumps": 0, "shortlist": 5,
         "crypto": 0, "crypto_unquoted": [],
+        "news": {"items": 0, "stories": 0, "rows": 0, "assets": 0, "sentiment": "not run"},
     }
     assert deps.collectors["yfinance_bars"].calls == [EVERYONE]  # one call for both markets
     assert health(db, outcome.run_id) == [
@@ -542,3 +545,93 @@ def test_without_crypto_no_crypto_source_is_asked(db, tmp_path):
     )
     assert outcome.status is RunStatus.SUCCESS
     assert [extra[name].calls for name in extra] == [[], [], []]
+
+
+def news_sources() -> dict[str, FakeCollector]:
+    """A per-stock source with one story per stock, and a market-wide feed with one tagged story."""
+
+    def per_stock(symbols):
+        return [
+            TickerNewsItem(
+                symbol=s, source="google_news", outlet="Reuters", title=f"{s} wins a big contract",
+                url=f"https://news.google.com/rss/articles/{s}", published_at=NOW - timedelta(hours=2),
+            )
+            for s in symbols
+        ]
+
+    def market_wide(_):
+        return [
+            NewsItem(
+                source="cnbc_news", outlet="CNBC", title="Dividend raised (NYSE: AAA)",
+                url="https://www.cnbc.com/aaa-dividend", published_at=NOW - timedelta(hours=1),
+            ),
+            NewsItem(
+                source="cnbc_news", outlet="CNBC", title="Bitcoin slides below $60,000",
+                url="https://www.cnbc.com/bitcoin", published_at=NOW - timedelta(hours=1),
+            ),
+        ]
+
+    return {
+        "google_news": FakeCollector(
+            "google_news", category=Category.NEWS, record_type=TickerNewsItem, records_for=per_stock
+        ),
+        "cnbc_news": FakeCollector(
+            "cnbc_news", core=False, category=Category.NEWS, scope=Scope.MARKET,
+            record_type=NewsItem, records_for=market_wide,
+        ),
+    }
+
+
+def test_the_news_stage_stores_stories_and_adds_news_features(db, tmp_path):
+    hold(db)
+    calls: list = []
+
+    def scorer(titles):
+        calls.append(sorted(titles))
+        return [0.5] * len(titles)
+
+    deps = dataclasses.replace(
+        make_deps(db, tmp_path, extra=news_sources()), news_scorer=lambda: scorer
+    )
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["news"] == {
+        "items": 8, "stories": 8, "rows": 7, "assets": 6, "sentiment": "finbert",
+    }  # the Bitcoin story names no target: no coin is held or watched
+    rows = db.execute(
+        "select symbol, asset_type, outlet, sentiment from news_items order by symbol, outlet"
+    ).fetchall()
+    assert [(r["symbol"], r["outlet"]) for r in rows] == [
+        ("AAA", "CNBC"), ("AAA", "Reuters"), ("BBB", "Reuters"), ("CCC", "Reuters"),
+        ("OTCX", "Reuters"), ("RY.TO", "Reuters"), ("TD.TO", "Reuters"),
+    ]
+    assert {r["sentiment"] for r in rows} == {0.5}
+    assert len(calls) == 1 and len(calls[0]) == 7  # one scoring pass, one headline per story kept
+    features = market_features(db, outcome.run_id)
+    assert features["AAA"]["news_stories_48h"] == 2
+    assert features["OTCX"]["last_close"] == 10.0  # merged into the holding's price row
+    assert features["OTCX"]["news_stories_48h"] == 1
+
+
+def test_a_coins_name_from_coingecko_finds_its_news(db, tmp_path):
+    hold_crypto(db)
+    extra = crypto_sources() | news_sources()
+    named = CryptoQuote(symbol="BTC", coin_id="bitcoin", name="Bitcoin", price_cad=117087.0, updated_at=NOW)
+    extra["coingecko"].records_for = lambda symbols: [named]
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    rows = db.execute("select symbol, asset_type, title from news_items where asset_type = 'crypto'").fetchall()
+    assert [(r["symbol"], r["title"]) for r in rows] == [("BTC", "Bitcoin slides below $60,000")]
+    assert outcome.summary["news"]["sentiment"] == "unavailable"  # tests run without FinBERT
+
+
+def test_a_failing_sentiment_model_leaves_stories_unscored_and_the_run_publishes(db, tmp_path):
+    def broken():
+        raise OSError("couldn't reach huggingface.co")
+
+    deps = dataclasses.replace(make_deps(db, tmp_path, extra=news_sources()), news_scorer=broken)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["news"]["sentiment"] == "failed: OSError: couldn't reach huggingface.co"
+    rows = db.execute("select sentiment from news_items").fetchall()
+    assert len(rows) == 6 and {r["sentiment"] for r in rows} == {None}  # a later run scores them

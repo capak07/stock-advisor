@@ -35,7 +35,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      - run: uv sync --locked --no-dev
+      - run: uv sync --locked --no-dev --extra nlp  # nlp: CPU PyTorch and transformers for FinBERT
+      - uses: actions/cache@v4  # the FinBERT model (about 440 MB); the key is its pinned revision
+        with:
+          path: ~/.cache/huggingface
+          key: finbert-0bc2ac10dda6929bcb1f77ccc43c7ec5c424f031  # FINBERT_REVISION in advisor/news/sentiment.py
       - uses: actions/cache/restore@v4
         with:
           path: pipeline/.cache

@@ -8,23 +8,33 @@ import contextlib
 import json
 import sys
 import time
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime, timedelta
 
 import psycopg
 
 from advisor import screener
-from advisor.collectors.base import Collector, CollectorResult, CollectorStatus, make_client
+from advisor.collectors.base import (
+    Category,
+    Collector,
+    CollectorResult,
+    CollectorStatus,
+    make_client,
+)
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.registry import build_registry
 from advisor.collectors.tracker import SourceTracker
+from advisor.company_names import CompanyNames
 from advisor.config import Settings
 from advisor.crypto_prices import BARS, CHECK, CRYPTO_STAGE, QUOTES, crypto_feature_rows
 from advisor.enrich import EnrichTargets, interleave, ranked_shortlist, run_enrichment
 from advisor.markets import MARKETS, market_of
 from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, RunStatus, SymbolInfo
+from advisor.news.mapping import TickerMap
+from advisor.news.sentiment import Scorer, load_finbert
+from advisor.news.stage import RECENT, process_news
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
 from advisor.screener import ScreenRow
@@ -35,7 +45,12 @@ MIN_PRICED_FRACTION = 0.5
 RUN_BUDGET_SECONDS = 30 * 60  # spec §3; GitHub kills the job at 40 minutes
 PRICES = "yfinance_bars"
 PRICE_STAGE = frozenset({PRICES, *(spec.universe_source for spec in MARKETS.values())})
+NEWS_HISTORY = timedelta(days=20)  # daily story counts behind the news volume z-score
+SCORING_RESERVE_SECONDS = 120  # FinBERT runs only with this much of the run budget left
 
+
+def no_scorer() -> Scorer | None:
+    return None
 
 
 @dataclass(frozen=True)
@@ -43,6 +58,8 @@ class RunDeps:
     conn: psycopg.Connection
     cache: DiskCache
     collectors: Mapping[str, Collector]
+    names: CompanyNames = field(default_factory=CompanyNames)  # Google News queries by these
+    news_scorer: Callable[[], Scorer | None] = no_scorer  # loads FinBERT; tests run without it
 
 
 @dataclass(frozen=True)
@@ -151,6 +168,49 @@ def priority_order(held: set[AssetRef], watch: set[AssetRef], asset_type: AssetT
     return held_symbols + watch_only
 
 
+def empty_news_summary() -> dict:
+    return {"items": 0, "stories": 0, "rows": 0, "assets": 0, "sentiment": "not run"}
+
+
+def news_stage(
+    deps: RunDeps,
+    run_id: int,
+    results: Mapping[str, CollectorResult],
+    targets: EnrichTargets,
+    coin_names: Mapping[str, str],
+    now_utc: datetime,
+    deadline_at: float,
+) -> dict:
+    """Stage 5: store the run's stories and merge per-asset news features into features_live."""
+    sources = {n for n, c in deps.collectors.items() if c.category is Category.NEWS}
+    repo.prune_news_items(deps.conn, now_utc)
+    if not sources:
+        return empty_news_summary()
+    items = [record for name in sources if name in results for record in results[name].records]
+    refs = [AssetRef(s, AssetType.STOCK) for s in targets.stocks]
+    refs += [AssetRef(s, AssetType.CRYPTO) for s in targets.crypto]
+    ticker_map = TickerMap(dict(deps.names.items()), coin_names, refs)
+    history = repo.news_daily_counts(
+        deps.conn, refs, now_utc - RECENT - NEWS_HISTORY, now_utc - RECENT
+    )
+    scorer: Scorer | None = None
+    if not items:
+        sentiment = "no items"
+    elif time.monotonic() > deadline_at - SCORING_RESERVE_SECONDS:
+        sentiment = "skipped: run budget"
+    else:
+        try:
+            scorer = deps.news_scorer()
+        except Exception as exc:  # a failed model download must not fail the run
+            sentiment = f"failed: {type(exc).__name__}: {exc}"[:200]
+        else:
+            sentiment = "finbert" if scorer is not None else "unavailable"
+    outcome = process_news(items, ticker_map, refs, now_utc, scorer=scorer, history=history)
+    repo.write_news_items(deps.conn, outcome.rows)
+    repo.merge_features_live(deps.conn, run_id, outcome.features, now_utc)
+    return {**outcome.summary, "sentiment": sentiment}
+
+
 def execute_run(
     deps: RunDeps,
     kind: RunKind,
@@ -165,12 +225,13 @@ def execute_run(
     floors = {m: freshness_floor(kind, now_utc, market=m) for m in Market}
     repo.sweep_abandoned_runs(conn, now_utc)
     run_id = repo.create_run(conn, kind, now_utc.astimezone(ET).date())
+    deadline_at = time.monotonic() + run_budget
     tracker = SourceTracker(
         deps.collectors,
         deps.cache,
         now_utc,
         repo.load_source_states(conn, deps.collectors),
-        deadline_at=time.monotonic() + run_budget,
+        deadline_at=deadline_at,
     )
 
     def fetch_prices(symbols: Sequence[str]) -> PriceFetch:
@@ -213,6 +274,7 @@ def execute_run(
             universes[market] = list(tracker.run(MARKETS[market].universe_source, []).records)
             if len(universes[market]) >= limits[market]:
                 repo.upsert_symbols(conn, market, universes[market])
+            deps.names.update({info.symbol: info.name for info in universes[market]})
         # A run that cannot publish skips the bulk fetch (about 7,400 Yahoo requests during a
         # TMX outage) but still retries the owner's unpriced holdings.
         universe_ok = all(len(universes[m]) >= limits[m] for m in Market)
@@ -246,13 +308,17 @@ def execute_run(
             priority_stocks=priority, crypto=crypto, ranked_stocks=interleave(*ranked.values())
         )
         enriched = universe_ok and prices_ok
+        news = empty_news_summary()
         if enriched:
-            run_enrichment(
+            results = run_enrichment(
                 tracker,
                 deps.collectors,
                 [name for name in deps.collectors if name not in PRICE_STAGE | CRYPTO_STAGE],
                 targets,
             )
+            # Stage 5: the news stage, over what the news sources fetched.
+            coin_names = {q.symbol: q.name for q in quotes.values() if q.name}
+            news = news_stage(deps, run_id, results, targets, coin_names, now_utc, deadline_at)
 
         summary = {
             "markets": {
@@ -276,6 +342,7 @@ def execute_run(
             "shortlist": len(targets.stocks) if enriched else 0,
             "crypto": len(crypto),
             "crypto_unquoted": sorted(set(crypto) - quotes.keys()),
+            "news": news,
         }
         held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
         held_crypto = {ref.symbol for ref in held if ref.asset_type is AssetType.CRYPTO}
@@ -344,7 +411,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{kind.value} already published today; nothing to do.")
             return 0
         with make_client() as client:
-            deps = RunDeps(conn, DiskCache(settings.cache_dir, clock=lambda: now), build_registry(settings, client))
+            names = CompanyNames()
+            deps = RunDeps(
+                conn,
+                DiskCache(settings.cache_dir, clock=lambda: now),
+                build_registry(settings, client, names=names),
+                names=names,
+                news_scorer=load_finbert,
+            )
             outcome = execute_run(deps, kind, now)
 
     print(json.dumps({"run_id": outcome.run_id, "status": outcome.status.value, **outcome.summary}))

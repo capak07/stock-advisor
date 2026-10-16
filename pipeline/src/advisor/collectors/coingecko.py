@@ -5,6 +5,9 @@ the top-ranked coin for each ticker. Many tokens share a ticker (12 coins call t
 and the top-ranked one is the real one. The keyless limit is small, unpublished and shared per
 IP, and failed calls count toward it too, so the request is tried at most twice, the retry
 honouring Retry-After. A quote not updated for a day is a dead listing and counts as missing.
+A coin CoinGecko doesn't price (an unknown ticker or a dead listing) is simply absent: the run's
+holdings check degrades the run for a held coin, and the run summary lists every unpriced coin in
+`crypto_unquoted`.
 """
 
 import time
@@ -18,7 +21,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from advisor.collectors.base import (
     Cadence,
     Category,
-    PartialFetch,
     RateLimiter,
     Scope,
     get_with_retries,
@@ -118,9 +120,4 @@ class CoinGecko:
             attempts=ATTEMPTS,
             sleep=self._sleep,
         )
-        quotes = parse_quotes(wanted, response.json(), as_of)
-        priced = {quote.symbol for quote in quotes}
-        missing = [symbol for symbol in wanted if symbol not in priced]
-        if missing:
-            raise PartialFetch(quotes, f"CoinGecko has no current CAD quote for {', '.join(missing)}")
-        return quotes
+        return parse_quotes(wanted, response.json(), as_of)

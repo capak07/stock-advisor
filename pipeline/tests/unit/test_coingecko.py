@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from advisor.collectors.base import PartialFetch
 from advisor.collectors.coingecko import CoinGecko, parse_quotes
 
 AS_OF = datetime(2026, 10, 15, 19, 25, tzinfo=UTC)
@@ -65,10 +64,11 @@ def test_fetch_asks_once_in_cad_for_every_ticker(fixtures_dir):
     assert [q.symbol for q in quotes] == ["ETH", "MATIC", "BTC"]
 
 
-def test_a_coin_coingecko_does_not_price_is_a_partial_result(fixtures_dir):
-    with pytest.raises(PartialFetch, match="no current CAD quote for NOTACOIN") as caught:
-        serving(lambda r: httpx.Response(200, json=rows(fixtures_dir))).fetch(["BTC", "NOTACOIN"], AS_OF)
-    assert [q.symbol for q in caught.value.records] == ["BTC"]
+def test_a_coin_coingecko_does_not_price_is_left_out(fixtures_dir):
+    quotes = serving(lambda r: httpx.Response(200, json=rows(fixtures_dir))).fetch(
+        ["BTC", "NOTACOIN"], AS_OF
+    )
+    assert [q.symbol for q in quotes] == ["BTC"]
 
 
 def test_a_rate_limited_call_is_retried_once_after_the_wait_coingecko_asks_for():

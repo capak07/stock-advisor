@@ -13,8 +13,21 @@ dependencies = [
   "tzdata>=2024.1",
 ]
 
+[project.optional-dependencies]
+# Headline sentiment (FinBERT, Plan 2f). The scheduled run installs it; tests run without it.
+nlp = ["torch>=2.4", "transformers>=4.44"]
+
 [dependency-groups]
 dev = ["pytest>=8.2", "ruff>=0.6"]
+
+[tool.uv.sources]
+# Linux (Docker, GitHub Actions) gets the CPU-only torch wheel, not the multi-GB CUDA build.
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true  # only torch comes from this index
 
 [build-system]
 requires = ["hatchling"]

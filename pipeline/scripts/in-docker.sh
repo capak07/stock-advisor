@@ -9,6 +9,7 @@ repo="$(cd .. && (pwd -W 2>/dev/null || pwd))"
 MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$repo:/repo" -w /repo/pipeline \
   -v advisor-venv:/opt/venv -v advisor-uv-cache:/root/.cache/uv \
+  -v advisor-hf:/root/.cache/huggingface \
   -e UV_PROJECT_ENVIRONMENT=/opt/venv -e UV_LINK_MODE=copy \
   -e TEST_DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:54329/advisor_test \
   -e DATABASE_URL -e ADMIN_DATABASE_URL -e ADVISOR_CACHE_DIR -e SEC_USER_AGENT \

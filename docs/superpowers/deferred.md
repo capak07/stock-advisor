@@ -61,6 +61,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
   - Short forms are missed: "Amazon" (short name "Amazon.com"), "Meta" ("Meta Platforms"), "Nvidia" (the directory says "NVIDIA").
   - Some one-word names still match ordinary words: "Arm", "Dover", "Carnival", "Mosaic", "Oracle of Omaha". "Bitcoin, Gold, Stocks Rally" reads as the coin Bitcoin Gold.
   - `outlet_key` joins "MarketBeat" and marketbeat.com, but not "Yahoo Finance" and finance.yahoo.com or "The Motley Fool" and fool.com, so those publishers can fill 6 of an asset's stories, not 3.
+  - **Brokers' own news is mostly their analysts' calls.** On the 2026-10-16 live run, 5 of RY.TO's 30 stories were RBC rating other companies, for example "Moody's (NYSE:MCO) Price Target Cut to $575.00 by Analysts at Royal Bank Of Canada" and "Royal Bank of Canada cuts target for Lockheed Martin stock". All five scored between −0.21 and −0.94, which drags the bank's sentiment down. Per-stock items skip the mapping's analyst-verb rule. Drop them when the stock's own name is the analyst ("by Analysts at <name>", "at <name>" after a rating change, "<name> cuts target for …"). This matters for RY, TD, BMO, BNS, CM, GS, MS and JPM.
 - **News volume z-score:** unbounded on sparse history. Daily counts of [0, 0, 0, 0, 1] and 10 stories today give about 24.5. Clip it or floor the spread before a model uses it.
 - **Missing versus zero:** when no news item came in at all (every news source failed), the run leaves the `news_*` features missing. When items came in but none for an asset, its counts are 0 and its sentiment is empty. Treat missing as unknown.
 - **`features_live` rows:** `merge_features_live` creates a row with only `news_*` keys for a shortlisted stock that had no row. A later plain `write_features_live` for the same run and asset would hit the unique key, so merge there too, or write before the news stage.
@@ -136,6 +137,9 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
   - The `nlp` extra adds about 900 MB to the run's install (CPU PyTorch and transformers, from the uv cache), and the model about 440 MB (an Actions cache keyed on its revision).
   - Loading the model takes about 25 s on a cold cache.
   - Its CC BY-NC-SA 4.0 licence allows personal use only.
-- **news_items growth:** about 300 rows per run, so the 90-day prune keeps roughly 50,000 rows.
+- **news_items growth** (measured on the 2026-10-16 live run):
+  - The first run stored 7,206 rows for 403 assets, from 10,846 items. That's 4.1 MB, about 590 bytes a row with indexes; Google's links average 240 characters.
+  - Later runs add only stories they haven't stored, estimated at about 1,800 a run. Over the 90-day prune that's roughly 230,000 rows and 130 MB, a quarter of Supabase's free 500 MB.
+  - If space gets tight, prune news after 30 days. The volume z-score needs only 21.
 - **Unscored duplicates:** say a story was stored unscored (scoring was skipped or failed), and a later run sees it under another item's key. That run doesn't write the row again, so the sentiment stays empty.
 - **Company names:** on 2026-10-16, `search_name` was checked against the full NASDAQ Trader and TMX directories (6,645 names). If Google News finds nothing for a holding, check its directory name: an unusual suffix leaves a quoted query that matches nothing.

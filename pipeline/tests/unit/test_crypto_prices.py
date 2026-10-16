@@ -35,6 +35,7 @@ def test_a_coin_with_a_quote_and_candles_gets_every_feature():
     assert features == {
         "price_cad": 117087.0, "market_cap_cad": 2.35e12, "volume_24h_cad": 5.8e10,
         "change_24h_pct": 0.56, "market_cap_rank": 1,
+        "quote_updated_at": "2026-10-14T12:15:00+00:00", "quote_stale": False,
         "last_close_usd": 82000.0, "history_days": 30, "last_day": "2026-10-13",
         "stale": False, "unconfirmed_price": False,
     }
@@ -47,3 +48,9 @@ def test_a_coin_with_only_a_quote_or_old_candles_still_gets_a_row():
     assert "last_close_usd" not in rows[AssetRef("BTC", AssetType.CRYPTO)]
     eth = rows[AssetRef("ETH", AssetType.CRYPTO)]
     assert (eth["stale"], eth["unconfirmed_price"], "price_cad" in eth) == (True, None, False)
+
+
+def test_a_quote_older_than_a_day_is_marked_stale():
+    old = QUOTE.model_copy(update={"updated_at": datetime(2026, 10, 12, 12, 0, tzinfo=UTC)})
+    [(_, features)] = crypto_feature_rows(["BTC"], {"BTC": old}, {}, {}, NOW)
+    assert (features["quote_updated_at"], features["quote_stale"]) == ("2026-10-12T12:00:00+00:00", True)

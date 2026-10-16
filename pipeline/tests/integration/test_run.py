@@ -480,6 +480,7 @@ def test_held_crypto_is_priced_in_the_holdings_phase(db, tmp_path):
     assert row["features"] == {
         "price_cad": 117087.0, "market_cap_cad": None, "volume_24h_cad": None,
         "change_24h_pct": None, "market_cap_rank": 1,
+        "quote_updated_at": "2026-10-14T12:15:00+00:00", "quote_stale": False,
         "last_close_usd": 82000.0, "history_days": 30, "last_day": "2026-10-13",
         "stale": False, "unconfirmed_price": False,
     }

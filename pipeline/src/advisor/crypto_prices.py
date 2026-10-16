@@ -10,7 +10,7 @@
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 
-from advisor.collectors.coingecko import CryptoQuote
+from advisor.collectors.coingecko import MAX_QUOTE_AGE, CryptoQuote
 from advisor.models import AssetRef, AssetType, DailyBar
 
 QUOTES = "coingecko"
@@ -53,6 +53,8 @@ def crypto_feature_rows(
                 volume_24h_cad=quote.volume_24h_cad,
                 change_24h_pct=quote.change_24h_pct,
                 market_cap_rank=quote.market_cap_rank,
+                quote_updated_at=quote.updated_at.isoformat(),
+                quote_stale=as_of - quote.updated_at > MAX_QUOTE_AGE,  # e.g. served from cache
             )
         if history:
             last = history[-1]

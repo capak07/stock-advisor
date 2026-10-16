@@ -10,7 +10,7 @@ Evidence, strongest first:
    "Royal Bank of Canada") and each held or watched coin its name ("Bitcoin"). The longest name
    wins where names overlap, so a headline about Apple Hospitality is not read as Apple. Share
    classes share a name, so "Alphabet" counts for both GOOG and GOOGL. A one-word name that is also
-   an everyday word ("Target", "Gap") counts only through tags or cashtags.
+   an everyday word ("Target", "Gap", "Stellar") counts only through tags or cashtags.
 
 Only targets (held, watched and shortlisted assets) are reported.
 """
@@ -35,15 +35,29 @@ WORD = re.compile(r"[A-Za-z0-9&]+(?:['’.\-][A-Za-z0-9&]+)*")
 US_EXCHANGES = frozenset({"NYSE American", "NYSE Arca", "NYSE", "NASDAQ", "Nasdaq"})
 # One-word company names that are also everyday words: tags and cashtags only.
 COMMON_WORDS = frozenset({
-    "Advance", "Alliance", "American", "Applied", "Ball", "Bank", "Best", "Block", "Bright",
-    "Capital", "Carrier", "Central", "Citizens", "Clear", "Compass", "Core", "Crown", "Delta",
-    "Dollar", "Eagle", "Element", "Energy", "Equity", "Evolution", "First", "Frontier", "Gap",
-    "General", "Global", "Gold", "Guardian", "Harmony", "Heritage", "Home", "Hope", "Insight",
-    "Liberty", "Match", "National", "Nature", "New", "Northern", "Pacific", "Pioneer", "Power",
-    "Premier", "Progressive", "Prosperity", "Quality", "Regions", "Reliance", "Republic",
-    "Royal", "Shell", "Sigma", "Snap", "Southern", "Sun", "Target", "Total", "Trade",
-    "Travelers", "Trust", "Union", "United", "Unity", "Universal", "Value", "Visa", "Western",
+    "Advance", "Alliance", "American", "Applied", "Avalanche", "Ball", "Bank", "Best", "Block",
+    "Bright", "Capital", "Carrier", "Central", "Citizens", "Clear", "Compass", "Core", "Cosmos",
+    "Crown", "Dash", "Delta", "Dollar", "Eagle", "Element", "Energy", "Equity", "Evolution", "First",
+    "Flare", "Flow", "Frontier", "Gap", "Gas", "General", "Global", "Gold", "Guardian", "Harmony",
+    "Helium", "Heritage", "Home", "Hope", "Immutable", "Insight", "Jupiter", "Liberty", "Maker",
+    "Mantle", "Match", "Nasdaq", "National", "Nature", "New", "Northern", "Optimism", "Pacific",
+    "Pioneer", "Polygon", "Power", "Premier", "Progressive", "Prosperity", "Quality", "Quant",
+    "Regions", "Reliance", "Render", "Republic", "Royal", "Shell", "Sigma", "Snap", "Sonic",
+    "Southern", "Stacks", "Stellar", "Sun", "Target", "Terra", "Total", "Trade", "Travelers",
+    "Trust", "Union", "United", "Unity", "Universal", "Value", "Visa", "Western",
 })
+# Names that start with a coin's name but are another coin; they match nothing unless held.
+NOT_COINS = ("Bitcoin Cash", "Bitcoin Gold", "Bitcoin SV", "Ethereum Classic")
+# "Morgan Stanley Upgrades Tesla to Overweight": the broker is not what the item is about.
+ANALYST_VERBS = frozenset({
+    "upgrades", "downgrades", "raises", "lowers", "cuts", "lifts", "boosts", "trims", "hikes",
+    "initiates", "reiterates", "maintains", "starts", "resumes", "reinstates",
+})
+RATING = re.compile(
+    r"\b(?:target|rating|overweight|underweight|equal[- ]weight|outperform|underperform"
+    r"|market perform|sector perform|buy|sell|neutral|hold|coverage)\b",
+    re.IGNORECASE,
+)
 
 
 def tsx_symbol(ticker: str) -> str:
@@ -69,6 +83,8 @@ class TickerMap:
             self._add(short_name(directory_name), AssetRef(symbol, AssetType.STOCK))
         for symbol, name in coin_names.items():
             self._add(name, AssetRef(symbol, AssetType.CRYPTO))
+        for name in NOT_COINS:
+            self._names.setdefault(tuple(words(name)), set())
 
     def _add(self, name: str, ref: AssetRef) -> None:
         key = tuple(words(name))
@@ -94,15 +110,18 @@ class TickerMap:
     def _named(self, title: str) -> set[AssetRef]:
         """Names in the title, longest first at each position, scanning left to right."""
         tokens = words(title)
-        found: set[AssetRef] = set()
+        matches: list[tuple[set[AssetRef], str]] = []  # each name's assets and the word after it
         start = 0
         while start < len(tokens):
             for size in range(min(LONGEST_NAME, len(tokens) - start), 0, -1):
                 refs = self._names.get(tuple(tokens[start:start + size]))
-                if refs:
-                    found |= refs
+                if refs is not None:
+                    after = tokens[start + size] if start + size < len(tokens) else ""
+                    matches.append((refs, after.lower()))
                     start += size
                     break
             else:
                 start += 1
-        return found
+        if RATING.search(title) and sum(1 for refs, _ in matches if refs) > 1:
+            matches = [(refs, after) for refs, after in matches if after not in ANALYST_VERBS]
+        return set().union(*(refs for refs, _ in matches))

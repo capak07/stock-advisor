@@ -15,8 +15,11 @@ NAMES = {
     "RY.TO": "Royal Bank of Canada",
     "BBD-B.TO": "Bombardier Inc.",
     "MSFT": "Microsoft Corporation - Common Stock",
+    "NDAQ": "Nasdaq, Inc. - Common Stock",
+    "MS": "Morgan Stanley Common Stock",
+    "TSLA": "Tesla, Inc. - Common Stock",
 }
-COINS = {"BTC": "Bitcoin", "ETH": "Ethereum"}
+COINS = {"BTC": "Bitcoin", "ETH": "Ethereum", "XLM": "Stellar"}
 
 
 def stock(symbol: str) -> AssetRef:
@@ -27,8 +30,10 @@ def coin(symbol: str) -> AssetRef:
     return AssetRef(symbol, AssetType.CRYPTO)
 
 
-TARGETS = [stock(s) for s in ("AAPL", "GOOG", "GOOGL", "TGT", "CNC", "CTSH", "RY.TO", "BBD-B.TO")]
-TARGETS += [coin("BTC"), coin("ETH")]
+TARGETS = [
+    stock(s) for s in ("AAPL", "GOOG", "GOOGL", "TGT", "CNC", "CTSH", "RY.TO", "BBD-B.TO", "NDAQ", "MS", "TSLA")
+]
+TARGETS += [coin("BTC"), coin("ETH"), coin("XLM")]
 MAP = TickerMap(NAMES, COINS, TARGETS)
 
 
@@ -88,3 +93,23 @@ def test_helpers():
     assert tsx_symbol("BBD.B") == "BBD-B.TO"
     assert tsx_symbol("RY") == "RY.TO"
     assert words("Apple's and Meta’s AT&T, Coca-Cola deal") == ["Apple", "and", "Meta", "AT&T", "Coca-Cola", "deal"]
+
+
+def test_market_wraps_do_not_name_nasdaq_inc():
+    assert MAP.assets_in(item("Nasdaq Falls as Yields Rise")) == set()
+
+
+def test_everyday_word_coin_names_need_a_cashtag():
+    assert MAP.assets_in(item("Stellar Quarter for Retailers")) == set()
+    assert MAP.assets_in(item("$XLM jumps")) == {coin("XLM")}
+
+
+def test_another_coin_named_after_bitcoin_is_not_bitcoin():
+    assert MAP.assets_in(item("Bitcoin Cash Plunges 20%")) == set()
+    assert MAP.assets_in(item("Bitcoin Rises Past $100,000")) == {coin("BTC")}
+
+
+def test_the_broker_in_an_analyst_headline_is_not_the_subject():
+    assert MAP.assets_in(item("Morgan Stanley Upgrades Tesla to Overweight")) == {stock("TSLA")}
+    assert MAP.assets_in(item("Morgan Stanley Raises Its Dividend")) == {stock("MS")}
+    assert MAP.assets_in(item("Tesla Cuts Prices as Analysts Say Buy")) == {stock("TSLA")}

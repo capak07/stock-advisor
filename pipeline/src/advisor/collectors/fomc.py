@@ -102,6 +102,8 @@ def parse_calendar(html: str, as_of: datetime) -> list[FomcEvent]:
         end = years[index + 1].start() if index + 1 < len(years) else len(html)
         panel = html[heading.end():end]
         year = int(heading.group(1))
+        if year < cutoff.year:
+            continue  # older panels can't hold a kept meeting, and their odd rows can't break this
         cells = zip(MONTH_CELL.findall(panel), DATE_CELL.findall(panel), strict=True)
         for month_cell, date_cell in cells:
             day = decision_day(year, month_cell, date_cell)

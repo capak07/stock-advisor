@@ -104,3 +104,14 @@ def test_an_unreadable_calendar_keeps_the_releases(fixtures_dir, page, message):
 def test_a_missing_feed_fails_the_source(fixtures_dir):
     with pytest.raises(httpx.HTTPStatusError, match="HTTP 404"):
         serving({CALENDAR_URL: httpx.Response(200, text=calendar(fixtures_dir))}).fetch([], AS_OF)
+
+
+def test_an_odd_row_in_an_old_years_panel_is_ignored(fixtures_dir):
+    old = (
+        '<h4><a id="1">2019 FOMC Meetings</a></h4>'
+        '<div class="fomc-meeting__month"><strong>January</strong></div>'
+        '<div class="fomc-meeting__month"><strong>March</strong></div>'
+        '<div class="fomc-meeting__date">29-30</div>'
+    )
+    meetings = parse_calendar(old + calendar(fixtures_dir), AS_OF)
+    assert [m.day for m in meetings] == [date(2026, 9, 16), date(2026, 10, 28), date(2026, 12, 9)]

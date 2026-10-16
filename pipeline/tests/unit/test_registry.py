@@ -30,6 +30,7 @@ EXPECTED = {
     "fomc": (False, Scope.MARKET, True, BOTH),
     "cnn_fear_greed": (False, Scope.MARKET, True, US),
     "crypto_fear_greed": (False, Scope.MARKET, True, NONE),
+    "blockchain_stats": (False, Scope.MARKET, True, NONE),
 }
 
 

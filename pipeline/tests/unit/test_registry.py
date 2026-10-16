@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -5,6 +6,7 @@ import httpx
 from advisor.collectors.base import Scope
 from advisor.collectors.registry import build_registry
 from advisor.config import Settings
+from advisor.crypto_prices import CRYPTO_STAGE
 from advisor.models import Market
 
 US = frozenset({Market.US})
@@ -59,3 +61,9 @@ def test_symbols_collectors_have_canaries_and_symbol_records():
             field = collector.record_type.model_fields["symbol"]
             assert field.annotation is str
             assert field.is_required()
+
+
+def test_the_crypto_holdings_stage_names_registered_sources():
+    registry = build()
+    assert CRYPTO_STAGE <= registry.keys()  # run.py skips stage names it can't find
+    assert registry["coingecko"].freshness == timedelta(days=2)  # held coins fall back to this

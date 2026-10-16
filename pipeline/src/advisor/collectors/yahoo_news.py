@@ -20,6 +20,7 @@ from advisor.collectors.base import (
     collect_per_symbol,
     get_with_retries,
 )
+from advisor.collectors.coins import throttled
 from advisor.collectors.feeds import TickerNewsItem, parse_feed
 from advisor.collectors.yfinance_bars import to_yahoo
 from advisor.models import AssetType, Market
@@ -77,4 +78,4 @@ class YahooNews:
                 if start <= entry.published_at <= as_of
             ]
 
-        return collect_per_symbol(symbols, one)
+        return collect_per_symbol(symbols, one, is_fatal=throttled)

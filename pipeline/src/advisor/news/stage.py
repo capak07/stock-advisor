@@ -11,6 +11,7 @@
    asset's daily story counts in news_items before them.
 """
 
+import re
 import statistics
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -70,6 +71,14 @@ def volume_z(recent: int, history: Sequence[int]) -> float | None:
     return (recent - statistics.fmean(history)) / spread if spread > 0 else None
 
 
+def outlet_key(outlet: str) -> str:
+    """One publisher however a source spells it: "MarketBeat", "marketbeat.com", "www.MarketBeat.com"."""
+    name = outlet.casefold().removeprefix("www.")
+    if "." in name and " " not in name:
+        name = name.rsplit(".", 1)[0]  # a host: drop the top-level domain
+    return re.sub(r"[^a-z0-9]", "", name)
+
+
 def process_news(
     items: Sequence[NewsItem],
     ticker_map: TickerMap,
@@ -83,15 +92,19 @@ def process_news(
     story_of = cluster(recent)
 
     chosen: dict[AssetRef, dict[str, NewsItem]] = defaultdict(dict)  # asset -> story -> item
-    for ref, item in sorted(attribute(recent, ticker_map), key=lambda p: p[1].published_at):
+    attributed = sorted(
+        attribute(recent, ticker_map),
+        key=lambda p: (p[1].published_at, story_key(p[1]), p[1].url, p[0]),
+    )
+    for ref, item in attributed:
         chosen[ref].setdefault(story_of[story_key(item)], item)  # the story's earliest item
     kept: dict[AssetRef, list[tuple[str, NewsItem]]] = {}
     for ref, stories in chosen.items():
         per_outlet: dict[str, int] = defaultdict(int)
         kept[ref] = []
-        for story, item in sorted(stories.items(), key=lambda s: s[1].published_at, reverse=True):
-            if per_outlet[item.outlet] < OUTLET_CAP:
-                per_outlet[item.outlet] += 1
+        for story, item in sorted(stories.items(), key=lambda s: (s[1].published_at, s[0]), reverse=True):
+            if per_outlet[outlet_key(item.outlet)] < OUTLET_CAP:
+                per_outlet[outlet_key(item.outlet)] += 1
                 kept[ref].append((story, item))
 
     headlines: dict[str, str] = {}
@@ -118,7 +131,7 @@ def process_news(
             for ref, stories in kept.items()
             for story, item in stories
         ),
-        key=lambda row: (row.ref, row.published_at),
+        key=lambda row: (row.ref, row.published_at, row.story_key, row.url),
     )
 
     features: list[tuple[AssetRef, dict]] = []
@@ -130,7 +143,7 @@ def process_news(
         last_day = sum(1 for _, item in stories if as_of - item.published_at <= RECENT)
         features.append((ref, {
             "news_stories_48h": len(stories),
-            "news_outlets_48h": len({item.outlet for _, item in stories}),
+            "news_outlets_48h": len({outlet_key(item.outlet) for _, item in stories}),
             "news_sentiment_mean": _mean(both),
             "news_sentiment_trend": (
                 _mean(newer) - _mean(older) if newer and older else None

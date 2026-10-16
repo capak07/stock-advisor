@@ -1,3 +1,4 @@
+import itertools
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -5,7 +6,7 @@ import pytest
 from advisor.collectors.feeds import NewsItem, TickerNewsItem
 from advisor.models import AssetRef, AssetType
 from advisor.news.mapping import TickerMap
-from advisor.news.stage import process_news, volume_z
+from advisor.news.stage import outlet_key, process_news, volume_z
 from advisor.news.stories import story_key
 
 AS_OF = datetime(2026, 10, 16, 12, 15, tzinfo=UTC)
@@ -111,3 +112,91 @@ def test_features_for_every_target():
 )
 def test_volume_z(recent, history, z):
     assert volume_z(recent, history) == (pytest.approx(z) if z is not None else None)
+
+
+def test_outlet_key():
+    assert outlet_key("MarketBeat") == outlet_key("marketbeat.com") == outlet_key("www.MarketBeat.com") == "marketbeat"
+    assert outlet_key("The Globe and Mail") == outlet_key("theglobeandmail.com")
+
+
+def test_one_publisher_spelled_two_ways_shares_the_cap():
+    titles = [
+        "Apple reports record services revenue",
+        "Apple opens new flagship store in Tokyo",
+        "Apple faces fresh antitrust probe in Europe",
+        "Apple announces battery recycling program",
+        "Apple names new chief for retail division",
+        "Apple expands satellite messaging service",
+    ]
+    outlets = ["MarketBeat", "marketbeat.com"] * 3
+    items = [ticker_item("AAPL", title, outlet, n) for n, (title, outlet) in enumerate(zip(titles, outlets, strict=True), start=1)]
+    outcome = process_news(items, MAP, TARGETS, AS_OF, scorer=None, history={})
+    assert len([row for row in outcome.rows if row.ref == AAPL]) == 3
+    assert dict(outcome.features)[AAPL]["news_outlets_48h"] == 1
+
+
+def test_window_edges():
+    titles = [
+        "Apple reports record services revenue",
+        "Apple opens new flagship store in Tokyo",
+        "Apple faces fresh antitrust probe in Europe",
+        "Apple announces battery recycling program",
+    ]
+    hours = [-1 / 60, 0, 48, 48 + 1 / 60]  # after as_of, at as_of, at the 48 h edge, just past it
+    items = [ticker_item("AAPL", title, "Reuters", h) for title, h in zip(titles, hours, strict=True)]
+    outcome = process_news(items, MAP, TARGETS, AS_OF, scorer=None, history={})
+    assert dict(outcome.features)[AAPL]["news_stories_48h"] == 2
+    assert all(row.published_at <= AS_OF for row in outcome.rows)
+
+
+def test_the_trend_splits_at_24_hours():
+    items = [
+        ticker_item("AAPL", "Apple reports record services revenue", "Reuters", 24),
+        ticker_item("AAPL", "Apple faces fresh antitrust probe in Europe", "CNBC", 24 + 1 / 60),
+    ]
+    scores = {items[0].title: 1.0, items[1].title: -1.0}
+    outcome = process_news(
+        items, MAP, TARGETS, AS_OF, scorer=lambda titles: [scores[t] for t in titles], history={}
+    )
+    features = dict(outcome.features)[AAPL]
+    assert features["news_sentiment_trend"] == pytest.approx(2.0)
+    assert features["news_sentiment_mean"] == pytest.approx(0.0)
+
+
+def test_the_trend_needs_both_days():
+    items = [
+        ticker_item("AAPL", "Apple reports record services revenue", "Reuters", 2),
+        ticker_item("AAPL", "Apple faces fresh antitrust probe in Europe", "CNBC", 5),
+    ]
+    scored = process_news(items, MAP, TARGETS, AS_OF, scorer=lambda titles: [0.5] * len(titles), history={})
+    features = dict(scored.features)[AAPL]
+    assert features["news_sentiment_mean"] == pytest.approx(0.5)
+    assert features["news_sentiment_trend"] is None
+
+    unscored = process_news(items, MAP, TARGETS, AS_OF, scorer=None, history={})
+    features = dict(unscored.features)[AAPL]
+    assert features["news_sentiment_mean"] is None
+    assert features["news_sentiment_trend"] is None
+    assert features["news_stories_48h"] == 2
+
+
+def test_selection_does_not_depend_on_input_order():
+    items = [
+        ticker_item("AAPL", "Apple reports record services revenue", "MarketBeat", 3),
+        ticker_item("AAPL", "Apple reports record services revenue", "marketbeat.com", 3),  # same story
+    ]
+    items += [
+        ticker_item("AAPL", title, "MarketBeat", 3)
+        for title in (
+            "Apple faces fresh antitrust probe in Europe",
+            "Apple opens new flagship store in Tokyo",
+            "Apple announces battery recycling program",
+            "Apple names new chief for retail division",
+        )
+    ]  # five MarketBeat stories at the same time: the cap must cut two, the same way every time
+    baseline = process_news(items, MAP, TARGETS, AS_OF, scorer=fake_scorer([]), history={})
+    assert len([row for row in baseline.rows if row.ref == AAPL]) == 3
+    for order in itertools.permutations(items):
+        outcome = process_news(list(order), MAP, TARGETS, AS_OF, scorer=fake_scorer([]), history={})
+        assert outcome.rows == baseline.rows
+        assert outcome.features == baseline.features

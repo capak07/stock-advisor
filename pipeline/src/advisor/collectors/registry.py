@@ -24,6 +24,7 @@ from advisor.collectors.sec_insiders import SecInsiders
 from advisor.collectors.sec_xbrl import SecXbrl
 from advisor.collectors.tmx_symbols import TmxSymbols
 from advisor.collectors.yahoo import YAHOO_PER_MINUTE
+from advisor.collectors.yahoo_news import YAHOO_NEWS_PER_MINUTE, YahooNews
 from advisor.collectors.yfinance_analyst import YFinanceAnalyst
 from advisor.collectors.yfinance_bars import YFinanceBars
 from advisor.collectors.yfinance_earnings import YFinanceEarnings
@@ -63,6 +64,7 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         CoinGecko(client, RateLimiter(per_minute=COINGECKO_PER_MINUTE, burst=1)),
         CoinbaseCandles(client, RateLimiter(per_minute=COINBASE_PER_MINUTE, burst=3)),
         KrakenOhlc(client, RateLimiter(per_minute=KRAKEN_PER_MINUTE, burst=1)),
+        YahooNews(client, RateLimiter(per_minute=YAHOO_NEWS_PER_MINUTE, burst=2)),
         *(FeedNews(feed, client, RateLimiter(per_minute=FEED_PER_MINUTE, burst=2)) for feed in FEEDS),
     ]
     return {collector.name: collector for collector in collectors}

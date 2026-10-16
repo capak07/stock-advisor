@@ -47,6 +47,7 @@ EXPECTED = {
     "newsfile": (False, Scope.MARKET, True, TSX),
     "decrypt_news": (False, Scope.MARKET, True, NONE),
     "protos_news": (False, Scope.MARKET, True, NONE),
+    "yahoo_news": (False, Scope.SYMBOLS, True, BOTH),
 }
 
 

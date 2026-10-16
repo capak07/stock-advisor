@@ -28,6 +28,8 @@ EXPECTED = {
     "sec_13dg": (False, Scope.SYMBOLS, True, US),
     "fred": (True, Scope.MARKET, True, BOTH),
     "fomc": (False, Scope.MARKET, True, BOTH),
+    "cnn_fear_greed": (False, Scope.MARKET, True, US),
+    "crypto_fear_greed": (False, Scope.MARKET, True, NONE),
 }
 
 

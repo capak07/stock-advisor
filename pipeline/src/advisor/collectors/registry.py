@@ -6,6 +6,7 @@ from advisor.collectors.base import Collector, RateLimiter
 from advisor.collectors.boc_valet import BankOfCanadaValet
 from advisor.collectors.finra_short_interest import FinraShortInterest
 from advisor.collectors.finra_short_volume import FinraShortVolume
+from advisor.collectors.fomc import Fomc
 from advisor.collectors.fred import FRED_PER_MINUTE, Fred
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.sec import SEC_PER_MINUTE, SecEdgar
@@ -46,5 +47,6 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         SecInsiders(sec),
         SecHolders(sec),
         Fred(client, RateLimiter(per_minute=FRED_PER_MINUTE, burst=3)),
+        Fomc(client),
     ]
     return {collector.name: collector for collector in collectors}

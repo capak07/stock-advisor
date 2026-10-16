@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:foaf="http://xmlns.com/foaf/0.1/" xmlns:og="http://ogp.me/ns#"
+  xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:schema="http://schema.org/"
+  xmlns:sioc="http://rdfs.org/sioc/ns#" xmlns:sioct="http://rdfs.org/sioc/types#"
+  xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+  xmlns:nasdaq="http://nasdaq.com/reference/feeds/1.0" version="2.0" xml:base="https://www.nasdaq.com/feed/rssoutbound">
+ <channel>
+  <title>Markets Feed</title>
+  <link>https://www.nasdaq.com/feed/rssoutbound</link>
+  <description>This feed is responsible for generating the rss feed related to the topic Markets</description>
+  <language>en</language>
+  <item>
+   <title>CFTC Chairman Michael Selig Says New Crypto Rules Are Coming Soon. Here's What Crypto Investors Need to Know.</title>
+   <link>https://www.nasdaq.com/articles/cftc-chairman-michael-selig-says-new-crypto-rules-are-coming-soon-heres-what-crypto</link>
+   <description>
+        Key PointsRegulatory agencies are looking to create rules for the crypto industry in the wake of the Clarity Act's failure to pass.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:40:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/cftc-chairman-michael-selig-says-new-crypto-rules-are-coming-soon-heres-what-crypto?time=1792150800</guid>
+   <dc:creator>The Motley Fool</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>XRP</nasdaq:tickers>
+  </item>
+<item>
+   <title>Element Extends Partnership With Waymo To Launch Robotaxi In Canada </title>
+   <link>https://www.nasdaq.com/articles/element-extends-partnership-waymo-launch-robotaxi-canada</link>
+   <description>
+        (RTTNews) - Element Fleet Management Corp. (EFN.TO), a Canadian mobility solutions firm, on Friday announced the expansion of its partnership with Alphabet Inc.'s (GOOG) self-driving subsidiary Waymo to support the launch of its robotaxi services in Toronto, marking Waymo's entry
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:37:42 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/element-extends-partnership-waymo-launch-robotaxi-canada?time=1792150662</guid>
+   <dc:creator>RTTNews</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>GOOG,GOOGL</nasdaq:tickers>
+  </item>
+<item>
+   <title>CHMP Backs Ionis TRYNGOLZA For Severe Hypertriglyceridemia In Europe </title>
+   <link>https://www.nasdaq.com/articles/chmp-backs-ionis-tryngolza-severe-hypertriglyceridemia-europe</link>
+   <description>
+        (RTTNews) - On Friday, Ionis Pharmaceuticals (IONS) announced that the European Medicines Agency's Committee for Medicinal Products for Human Use (CHMP) has recommended approval of TRYNGOLZA (olezarsen) for adults with severe hypertriglyceridemia (sHTG).
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:36:52 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/chmp-backs-ionis-tryngolza-severe-hypertriglyceridemia-europe?time=1792150612</guid>
+   <dc:creator>RTTNews</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>IONS</nasdaq:tickers>
+  </item>
+<item>
+   <title>Oracle's Cloud Backlog Just Hit $664 Billion. Here's What a $1,000 Investment Could Be Worth If It Converts to Revenue on Schedule.</title>
+   <link>https://www.nasdaq.com/articles/oracles-cloud-backlog-just-hit-664-billion-heres-what-1000-investment-could-be-worth-if-it</link>
+   <description>
+        Key PointsA $1,000 investment could grow a lot by 2029, if it meets Wall Street's earnings estimate and the stock trades at the same price-to-earnings multiple.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:35:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/oracles-cloud-backlog-just-hit-664-billion-heres-what-1000-investment-could-be-worth-if-it?time=1792150500</guid>
+   <dc:creator>The Motley Fool</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>ORCL,ORCL,MSFT,GOOGL,AMZN,GS,GOOG</nasdaq:tickers>
+  </item>
+<item>
+   <title>CoreWeave Stock Is Crashing. This Could Be Great News for SpaceX Investors.</title>
+   <link>https://www.nasdaq.com/articles/coreweave-stock-crashing-could-be-great-news-spacex-investors</link>
+   <description>
+        Key PointsCoreWeave has borrowed over $50 billion to build artificial intelligence (AI) data centers.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:35:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/coreweave-stock-crashing-could-be-great-news-spacex-investors?time=1792150500</guid>
+   <dc:creator>The Motley Fool</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>CRWV</nasdaq:tickers>
+  </item>
+<item>
+   <title>Bowman Acquires Geospatial Software Firm Dymaptic </title>
+   <link>https://www.nasdaq.com/articles/bowman-acquires-geospatial-software-firm-dymaptic</link>
+   <description>
+        (RTTNews) - Bowman Consulting Group Ltd. (BWMN) announced on Friday that it has acquired Dymaptic, a Portland-based provider of AI-powered geospatial solutions. Financial terms of the deal were not disclosed.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:34:31 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/bowman-acquires-geospatial-software-firm-dymaptic?time=1792150471</guid>
+   <dc:creator>RTTNews</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>BWMN</nasdaq:tickers>
+  </item>
+<item>
+   <title>Eli Lilly's Biggest Shareholder Is Selling $347 Million of Stock. Should You Sell Too?</title>
+   <link>https://www.nasdaq.com/articles/eli-lillys-biggest-shareholder-selling-347-million-stock-should-you-sell-too</link>
+   <description>
+        Key PointsThe sale has nothing to do with the stock's potential, however.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:30:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/eli-lillys-biggest-shareholder-selling-347-million-stock-should-you-sell-too?time=1792150200</guid>
+   <dc:creator>The Motley Fool</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>LLY,LLY</nasdaq:tickers>
+  </item>
+<item>
+   <title>Meet the New Nasdaq-100 Stock That’s Crushing Nvidia, Micron, and Sandisk. Is It Too Late to Buy?</title>
+   <link>https://www.nasdaq.com/articles/meet-new-nasdaq-100-stock-thats-crushing-nvidia-micron-and-sandisk-it-too-late-buy</link>
+   <description>
+        Key PointsAI stocks have been known for explosive gains in recent years and have driven the S&amp;amp;P 500 higher.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:25:02 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/meet-new-nasdaq-100-stock-thats-crushing-nvidia-micron-and-sandisk-it-too-late-buy?time=1792149902</guid>
+   <dc:creator>The Motley Fool</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>MRNA,MRNA</nasdaq:tickers>
+  </item>
+<item>
+   <title>Here's What Your Social Security Benefit Would Be at 62 and 70 If You Qualified for the Average Check at 67</title>
+   <link>https://www.nasdaq.com/articles/heres-what-your-social-security-benefit-would-be-62-and-70-if-you-qualified-average-check</link>
+   <description>
+        Key PointsThe average Social Security benefit is $2,088 per month as of August 2026.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:20:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/heres-what-your-social-security-benefit-would-be-62-and-70-if-you-qualified-average-check?time=1792149600</guid>
+   <dc:creator>The Motley Fool</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers></nasdaq:tickers>
+  </item>
+<item>
+   <title>Turkish Airlines Signs MoU With CFM To Buy More Than 300 LEAP-1B Engines </title>
+   <link>https://www.nasdaq.com/articles/turkish-airlines-signs-mou-cfm-buy-more-300-leap-1b-engines</link>
+   <description>
+        (RTTNews) - GE Aerospace (GE) Friday said Turkish Airlines and CFM International, a joint venture between GE Aerospace and Safran, have signed a memorandum of understanding for more than 300 LEAP-1B engines, including spares, to power 100 firm and 50 optional Boeing 737 MAX aircr
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:18:25 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/turkish-airlines-signs-mou-cfm-buy-more-300-leap-1b-engines?time=1792149505</guid>
+   <dc:creator>RTTNews</dc:creator>
+   <category>Markets</category>
+   <nasdaq:tickers>GE</nasdaq:tickers>
+  </item>
+ </channel>
+</rss>

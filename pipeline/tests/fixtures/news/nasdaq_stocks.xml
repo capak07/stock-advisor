@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:foaf="http://xmlns.com/foaf/0.1/" xmlns:og="http://ogp.me/ns#"
+  xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:schema="http://schema.org/"
+  xmlns:sioc="http://rdfs.org/sioc/ns#" xmlns:sioct="http://rdfs.org/sioc/types#"
+  xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+  xmlns:nasdaq="http://nasdaq.com/reference/feeds/1.0" version="2.0" xml:base="https://www.nasdaq.com/feed/rssoutbound">
+ <channel>
+  <title>Stocks Feed</title>
+  <link>https://www.nasdaq.com/feed/rssoutbound</link>
+  <description>This feed is responsible for generating the rss feed related to the topic Stocks</description>
+  <language>en</language>
+  <item>
+   <title>Stocks Settle Mixed as Broader Market Recovers from Chip Stock Rout</title>
+   <link>https://www.nasdaq.com/articles/stocks-settle-mixed-broader-market-recovers-chip-stock-rout</link>
+   <description>
+        The S&amp;P 500 Index ($SPX ) (SPY ) closed up by +0.33% on Thursday, the Dow Jones Industrial Average ($DOWI ) (DIA ) closed up by +1.08%, and the Nasdaq 100 Index ($IUXX ) (QQQ ) closed down -0.05%.  December E-mini S&amp;P futures (ESZ26 ) rose +0.28%, and December E-mini...
+    </description>
+   <pubDate>Fri, 16 Oct 2026 11:14:21 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/stocks-settle-mixed-broader-market-recovers-chip-stock-rout?time=1792149261</guid>
+   <dc:creator>Barchart</dc:creator>
+   <category>Stocks</category>
+   <nasdaq:tickers>MSTR,SNDK,GLXY,TRI,AMGN,COIN,JAZZ,STX,WDC,AMD,SPY,KMB,ADSK,IP,ALNY,ORCL,QQQ,NOW,ADBE,HPE,HOOD,CRM,BIIB,MRVL,INTU,IONS,RKLB,BMNR,LLY,LRCX,DIA,FMC,DELL,MARA,KLAC,NVDA,VRTX,WDAY,INTC,PAG,APLD,TEAM,RIOT,GILD,REGN</nasdaq:tickers>
+  </item>
+<item>
+   <title>CTSH Crosses Above Average Analyst Target</title>
+   <link>https://www.nasdaq.com/articles/ctsh-crosses-above-average-analyst-target-0</link>
+   <description>
+        In recent trading, shares of Cognizant Technology Solutions Corp. (Symbol: CTSH) have crossed above the average analyst 12-month target price of $64.09, changing hands for $65.78/share.  When a stock reaches the target an analyst has set, the analyst logically has two ways to rea
+    </description>
+   <pubDate>Fri, 16 Oct 2026 10:35:49 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/ctsh-crosses-above-average-analyst-target-0?time=1792146949</guid>
+   <dc:creator>BNK Invest</dc:creator>
+   <category>Markets,Stocks,ETFs</category>
+   <nasdaq:tickers>CTSH</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.stockrsi.com/ctsh/">CTSH RSI</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.holdingschannel.com/hedge-funds/holding-ctsh/">Top Ten Hedge Funds Holding CTSH</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.cheapstockschannel.com/cheap-energy-shares/">Cheap Energy Shares</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>Becton, Dickinson Reaches Analyst Target Price</title>
+   <link>https://www.nasdaq.com/articles/becton-dickinson-reaches-analyst-target-price</link>
+   <description>
+        In recent trading, shares of Becton, Dickinson &amp;amp; Co (Symbol: BDX) have crossed above the average analyst 12-month target price of $189.73, changing hands for $193.76/share.  When a stock reaches the target an analyst has set, the analyst logically has two ways to react: downg
+    </description>
+   <pubDate>Fri, 16 Oct 2026 10:35:47 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/becton-dickinson-reaches-analyst-target-price?time=1792146947</guid>
+   <dc:creator>BNK Invest</dc:creator>
+   <category>Markets,Stocks,ETFs</category>
+   <nasdaq:tickers>BDX</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.stockrsi.com/bdx/">Becton, Dickinson RSI</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.holdingschannel.com/insider-buying/bdx-insider-buying/">BDX Insider Buying</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.dividendchannel.com/consumer-goods-dividend-stocks/">Consumer Goods Dividend Stocks</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>ERIC Crosses Above Average Analyst Target</title>
+   <link>https://www.nasdaq.com/articles/eric-crosses-above-average-analyst-target</link>
+   <description>
+        In recent trading, shares of Ericsson (Symbol: ERIC) have crossed above the average analyst 12-month target price of $9.70, changing hands for $10.71/share.  When a stock reaches the target an analyst has set, the analyst logically has two ways to react: downgrade on valuation, o
+    </description>
+   <pubDate>Fri, 16 Oct 2026 10:35:44 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/eric-crosses-above-average-analyst-target?time=1792146944</guid>
+   <dc:creator>BNK Invest</dc:creator>
+   <category>Markets,Stocks,ETFs</category>
+   <nasdaq:tickers>ERIC</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.stockoptionschannel.com/symbol/eric/">ERIC Options Chain</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.marketcaphistory.com/eric/">ERIC market cap history</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.etfchannel.com/etf-fund-flows/">ETF Fund Flows</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>Estee Lauder Reaches Analyst Target Price</title>
+   <link>https://www.nasdaq.com/articles/estee-lauder-reaches-analyst-target-price-0</link>
+   <description>
+        In recent trading, shares of Estee Lauder Cos., Inc.  (Symbol: EL) have crossed above the average analyst 12-month target price of $106.19, changing hands for $107.19/share.  When a stock reaches the target an analyst has set, the analyst logically has two ways to react: downgrad
+    </description>
+   <pubDate>Fri, 16 Oct 2026 10:35:42 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/estee-lauder-reaches-analyst-target-price-0?time=1792146942</guid>
+   <dc:creator>BNK Invest</dc:creator>
+   <category>Markets,Stocks,ETFs</category>
+   <nasdaq:tickers>EL</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.holdingschannel.com/institutional/holders-of-el/">Institutional Holders of EL</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.averageannualreturn.com/el/">EL Average Annual Return</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.cheapstockschannel.com/cheap-industrials-shares/">Cheap Industrials Shares</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>Roblox Reaches Analyst Target Price</title>
+   <link>https://www.nasdaq.com/articles/roblox-reaches-analyst-target-price</link>
+   <description>
+        In recent trading, shares of Roblox Corp (Symbol: RBLX) have crossed above the average analyst 12-month target price of $50.85, changing hands for $51.13/share.  When a stock reaches the target an analyst has set, the analyst logically has two ways to react: downgrade on valuatio
+    </description>
+   <pubDate>Fri, 16 Oct 2026 10:35:37 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/roblox-reaches-analyst-target-price?time=1792146937</guid>
+   <dc:creator>BNK Invest</dc:creator>
+   <category>Markets,Stocks,ETFs</category>
+   <nasdaq:tickers>RBLX</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.holdingschannel.com/funds/holding-rblx/">Funds Holding RBLX</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.holdingschannel.com/institutional/holders-of-rblx/">Institutional Holders of RBLX</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.dividendchannel.com/slideshows/best-dividend-stocks/">Best Dividend Stocks Analysts Like</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>JP Morgan Upgrades Brighthouse Financial, Inc. - Preferred Stock to Neutral from Underweight</title>
+   <link>https://www.nasdaq.com/articles/jp-morgan-upgrades-brighthouse-financial-inc-preferred-stock-neutral-underweight-0</link>
+   <description>
+        Fintel reports that on October 15, 2026, JP Morgan upgraded their outlook for Brighthouse Financial, Inc. - Preferred Stock (NASDAQGS:BHFAM) from Underweight to Neutral. Brighthouse Financial, Inc., based in the United States, operates primarily in the insurance industry, focusin
+    </description>
+   <pubDate>Fri, 16 Oct 2026 08:31:17 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/jp-morgan-upgrades-brighthouse-financial-inc-preferred-stock-neutral-underweight-0?time=1792139477</guid>
+   <dc:creator>Fintel</dc:creator>
+   <category>Stocks</category>
+   <nasdaq:tickers>BHFAM</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://fintel.io/n/us/bhfam">Check out our Unique Analysis of Insider Sentiment for Brighthouse Financial, Inc. - Preferred Stock</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://fintel.io/sopt/us/bhfam">Find out what the Options Markets think of Brighthouse Financial, Inc. - Preferred Stock</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://fintel.io/seps/us/bhfam">See our take on Brighthouse Financial, Inc. - Preferred Stock Upcoming Earnings</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>Buy 5 Top-Ranked Non-Tech Nasdaq Stocks to Maximize Q4 Gains</title>
+   <link>https://www.nasdaq.com/articles/buy-5-top-ranked-non-tech-nasdaq-stocks-maximize-q4-gains</link>
+   <description>
+        ROST, ROKU, APA, CORT and HALO are five non-tech Nasdaq stocks riding strong growth trends and rising earnings estimates, positioning them for potential gains in Q4.
+
+    </description>
+   <pubDate>Fri, 16 Oct 2026 08:30:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/buy-5-top-ranked-non-tech-nasdaq-stocks-maximize-q4-gains?time=1792139400</guid>
+   <dc:creator>Zacks</dc:creator>
+   <category>Stocks</category>
+   <nasdaq:tickers>APA,ROST,HALO,CORT,ROKU</nasdaq:tickers>
+  </item>
+<item>
+   <title>NEM to Report Q3 Earnings: What's in the Offing for the Stock?</title>
+   <link>https://www.nasdaq.com/articles/nem-report-q3-earnings-whats-offing-stock</link>
+   <description>
+        Newmont heads into Q3 earnings with higher gold prices supporting revenues and margins, but weaker production and higher costs could weigh on results.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 08:30:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/nem-report-q3-earnings-whats-offing-stock?time=1792139400</guid>
+   <dc:creator>Zacks</dc:creator>
+   <category>Stocks</category>
+   <nasdaq:tickers>NEM,FCX,RS,FNV</nasdaq:tickers>
+  </item>
+<item>
+   <title>Bull of the Day: ASE Technology Holding Co (ASX)</title>
+   <link>https://www.nasdaq.com/articles/bull-day-ase-technology-holding-co-asx</link>
+   <description>
+        ASE Technology Holding Co (ASX) is the world's largest provider of outsourced semiconductor assembly and test (OSAT) services.
+    </description>
+   <pubDate>Fri, 16 Oct 2026 07:00:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/bull-day-ase-technology-holding-co-asx?time=1792134000</guid>
+   <dc:creator>Zacks</dc:creator>
+   <category>Stocks,Investing,How to Invest</category>
+   <nasdaq:tickers>TSM,AMKR,ASX</nasdaq:tickers>
+  </item>
+ </channel>
+</rss>

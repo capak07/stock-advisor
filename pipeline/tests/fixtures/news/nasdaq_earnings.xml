@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:content="http://purl.org/rss/1.0/modules/content/"
+  xmlns:foaf="http://xmlns.com/foaf/0.1/" xmlns:og="http://ogp.me/ns#"
+  xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:schema="http://schema.org/"
+  xmlns:sioc="http://rdfs.org/sioc/ns#" xmlns:sioct="http://rdfs.org/sioc/types#"
+  xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:xsd="http://www.w3.org/2001/XMLSchema#"
+  xmlns:nasdaq="http://nasdaq.com/reference/feeds/1.0" version="2.0" xml:base="https://www.nasdaq.com/feed/rssoutbound">
+ <channel>
+  <title>Earnings Feed</title>
+  <link>https://www.nasdaq.com/feed/rssoutbound</link>
+  <description>This feed is responsible for generating the rss feed related to the topic Earnings</description>
+  <language>en</language>
+  <item>
+   <title>Pre-Market Earnings Report for October 16, 2026 :  TRV, TFC, MTB, CFG, RF</title>
+   <link>https://www.nasdaq.com/articles/pre-market-earnings-report-october-16-2026-trv-tfc-mtb-cfg-rf</link>
+   <description>
+        The following companies are expected to report earnings prior to market open on 10/16/2026.  Visit our Earnings Calendar for a full list of expected earnings releases.The Travelers Companies, Inc. (TRV)is reporting for the quarter ending September 30, 2026. The insurance (propert
+    </description>
+   <pubDate>Thu, 15 Oct 2026 20:00:01 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/pre-market-earnings-report-october-16-2026-trv-tfc-mtb-cfg-rf?time=1792094401</guid>
+   <dc:creator>NASDAQ.com</dc:creator>
+   <category>Earnings</category>
+   <nasdaq:tickers>TRV,TRV,TFC,MTB,CFG,R</nasdaq:tickers>
+  </item>
+<item>
+   <title>After-Hours Earnings Report for October 15, 2026 :  IBKR, JBHT, AA, INDB, CNS, SFNC, LOOP</title>
+   <link>https://www.nasdaq.com/articles/after-hours-earnings-report-october-15-2026-ibkr-jbht-aa-indb-cns-sfnc-loop</link>
+   <description>
+        The following companies are expected to report earnings after hours on 10/15/2026.  Visit our Earnings Calendar for a full list of expected earnings releases.Interactive Brokers Group, Inc. (IBKR)is reporting for the quarter ending September 30, 2026. The investment bankers compa
+    </description>
+   <pubDate>Thu, 15 Oct 2026 18:00:01 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/after-hours-earnings-report-october-15-2026-ibkr-jbht-aa-indb-cns-sfnc-loop?time=1792087201</guid>
+   <dc:creator>NASDAQ.com</dc:creator>
+   <category>Earnings</category>
+   <nasdaq:tickers>IBKR,IBKR,JBHT,AA,INDB,CNS,SFNC</nasdaq:tickers>
+  </item>
+<item>
+   <title>5 Copper and Precious Metals Stocks Likely to Beat Q3 Estimates</title>
+   <link>https://www.nasdaq.com/articles/5-copper-and-precious-metals-stocks-likely-beat-q3-estimates</link>
+   <description>
+        Five mining and precious-metals royalty companies, FCX, FNV, LUNMF, OR and WPM are poised to beat third-quarter 2026 earnings estimates as elevated metal prices support growth.
+    </description>
+   <pubDate>Thu, 15 Oct 2026 14:06:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/5-copper-and-precious-metals-stocks-likely-beat-q3-estimates?time=1792073160</guid>
+   <dc:creator>Zacks</dc:creator>
+   <category>Earnings</category>
+   <nasdaq:tickers>FCX,FNV,OR,WPM</nasdaq:tickers>
+  </item>
+<item>
+   <title>Broad-Based Growth Meets Bank Caution: The Evolving Q3 Earnings Picture</title>
+   <link>https://www.nasdaq.com/articles/broad-based-growth-meets-bank-caution-evolving-q3-earnings-picture-0</link>
+   <description>
+        Despite headline earnings misses by JPMorgan and Bank of America, Q3 results from these banks and their peers have been very strong. Interest rate volatility, alongside a potential deceleration in trading revenue from recent cyclical highs, is likely driving the weak post-earnings reactions. 
+    </description>
+   <pubDate>Wed, 14 Oct 2026 22:26:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/broad-based-growth-meets-bank-caution-evolving-q3-earnings-picture-0?time=1792016760</guid>
+   <dc:creator>Zacks</dc:creator>
+   <category>Earnings,US Markets</category>
+   <nasdaq:tickers>BAC,JPM,C</nasdaq:tickers>
+  </item>
+<item>
+   <title>Broad-Based Growth Meets Bank Caution: The Evolving Q3 Earnings Picture</title>
+   <link>https://www.nasdaq.com/articles/broad-based-growth-meets-bank-caution-evolving-q3-earnings-picture</link>
+   <description>
+        Despite headline earnings misses by JPMorgan and Bank of America, Q3 results from these banks and their peers have been very strong. Interest rate volatility, alongside a potential deceleration in trading revenue from recent cyclical highs, is likely driving the weak post-earnings reactions. 
+    </description>
+   <pubDate>Wed, 14 Oct 2026 22:24:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/broad-based-growth-meets-bank-caution-evolving-q3-earnings-picture?time=1792016640</guid>
+   <dc:creator>Zacks</dc:creator>
+   <category>Earnings</category>
+   <nasdaq:tickers>BAC,JPM,C</nasdaq:tickers>
+  </item>
+<item>
+   <title>Pre-Market Earnings Report for October 15, 2026 :  TSM, SCHW, PLD, BNY, USB, PNC, MRSH, ERIC, FHN, CMC, MAN, BSVN</title>
+   <link>https://www.nasdaq.com/articles/pre-market-earnings-report-october-15-2026-tsm-schw-pld-bny-usb-pnc-mrsh-eric-fhn-cmc-man</link>
+   <description>
+        The following companies are expected to report earnings prior to market open on 10/15/2026.  Visit our Earnings Calendar for a full list of expected earnings releases.Taiwan Semiconductor Manufacturing Company Ltd. (TSM)is reporting for the quarter ending September 30, 2026. The
+    </description>
+   <pubDate>Wed, 14 Oct 2026 20:00:02 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/pre-market-earnings-report-october-15-2026-tsm-schw-pld-bny-usb-pnc-mrsh-eric-fhn-cmc-man?time=1792008002</guid>
+   <dc:creator>NASDAQ.com</dc:creator>
+   <category>Earnings</category>
+   <nasdaq:tickers>TSM,TSM,SCHW,PLD,BNY,USB,PNC,MRSH,ERIC,FHN,CMC,MAN,BSV</nasdaq:tickers>
+  </item>
+<item>
+   <title>What AZZ (AZZ) Said on Its Q2 Earnings Call</title>
+   <link>https://www.nasdaq.com/articles/what-azz-azz-said-its-q2-earnings-call</link>
+   <description>
+        These 2 Must-Watch Firms Could Get a Boost From Earnings ReportsAZZ (NYSE:AZZ) reported record fiscal 2027 second-quarter sales of $486.9 million, up 16.7% from the prior-year period, as both its Metal Coatings and Precoat Metals segments posted double-digit revenue growth. The c
+    </description>
+   <pubDate>Wed, 14 Oct 2026 18:02:33 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/what-azz-azz-said-its-q2-earnings-call?time=1792000953</guid>
+   <dc:creator>MarketBeat</dc:creator>
+   <category>Earnings,Stocks,Management</category>
+   <nasdaq:tickers>AZZ</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.marketbeat.com/">Stock Market News from MarketBeat</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.earlybirdpublishing.com/">MarketBeat's Pre-Market Newsletter</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.dividendstocks.com/">Dividend Investing Tools</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>After-Hours Earnings Report for October 14, 2026 :  HOMB, EQBK, CMTL</title>
+   <link>https://www.nasdaq.com/articles/after-hours-earnings-report-october-14-2026-homb-eqbk-cmtl</link>
+   <description>
+        The following companies are expected to report earnings after hours on 10/14/2026.  Visit our Earnings Calendar for a full list of expected earnings releases.Home BancShares, Inc. (HOMB)is reporting for the quarter ending September 30, 2026. The banks (southeast) company's consen
+    </description>
+   <pubDate>Wed, 14 Oct 2026 18:00:01 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/after-hours-earnings-report-october-14-2026-homb-eqbk-cmtl?time=1792000801</guid>
+   <dc:creator>NASDAQ.com</dc:creator>
+   <category>Earnings</category>
+   <nasdaq:tickers>HOMB,HOMB,EQBK,CMT</nasdaq:tickers>
+  </item>
+<item>
+   <title>PBF Energy's Stunning Rally Faces a Critical Test</title>
+   <link>https://www.nasdaq.com/articles/pbf-energys-stunning-rally-faces-critical-test</link>
+   <description>
+        Few stocks have had a year like PBF Energy (NYSE: PBF).
+
+The independent refiner has gone from a money-losing operation in 2025, weighed down by a damaged California plant, to one of the most profitable names in its industry. Its shares have followed, as the stock is up more tha
+    </description>
+   <pubDate>Wed, 14 Oct 2026 17:20:00 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/pbf-energys-stunning-rally-faces-critical-test?time=1791998400</guid>
+   <dc:creator>MarketBeat</dc:creator>
+   <category>Earnings,Energy,Stocks,Management</category>
+   <nasdaq:tickers>PBF</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.marketbeat.com/">Stock Market News from MarketBeat</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.earlybirdpublishing.com/">MarketBeat's Pre-Market Newsletter</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.dividendstocks.com/">Dividend Investing Tools</nasdaq:partnerlink>
+  </item>
+<item>
+   <title>Fastenal Q3 Earnings Call Highlights</title>
+   <link>https://www.nasdaq.com/articles/fastenal-q3-earnings-call-highlights</link>
+   <description>
+        MarketBeat Week in Review &amp;ndash; 07/13- 07/17Fastenal (NASDAQ:FAST) reported third-quarter 2026 sales growth of 15.5% and operating-margin expansion, as the industrial distributor cited market-share gains with larger customers, new contract wins and increased use of technology-enabled
+    </description>
+   <pubDate>Wed, 14 Oct 2026 17:02:49 +0000</pubDate>
+   <guid isPermaLink="true">https://www.nasdaq.com/articles/fastenal-q3-earnings-call-highlights?time=1791997369</guid>
+   <dc:creator>MarketBeat</dc:creator>
+   <category>Earnings,Stocks,Management</category>
+   <nasdaq:tickers>FAST</nasdaq:tickers>
+   <nasdaq:partnerlink url="https://www.marketbeat.com/">Stock Market News from MarketBeat</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.earlybirdpublishing.com/">MarketBeat's Pre-Market Newsletter</nasdaq:partnerlink>
+   <nasdaq:partnerlink url="https://www.dividendstocks.com/">Dividend Investing Tools</nasdaq:partnerlink>
+  </item>
+ </channel>
+</rss>

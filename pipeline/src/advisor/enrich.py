@@ -76,6 +76,13 @@ def symbols_for(collector: Collector, targets: EnrichTargets) -> list[str]:
     return symbols
 
 
+def wanted(collector: Collector, symbols: Sequence[str], targets: EnrichTargets) -> bool:
+    """SYMBOLS collectors need targets; a crypto-only market-wide source needs some crypto."""
+    if collector.scope is Scope.SYMBOLS:
+        return bool(symbols)
+    return AssetType.STOCK in collector.asset_types or bool(targets.crypto)
+
+
 def run_enrichment(
     tracker: SourceTracker,
     collectors: Mapping[str, Collector],
@@ -84,14 +91,12 @@ def run_enrichment(
     *,
     workers: int = ENRICH_WORKERS,
 ) -> dict[str, CollectorResult]:
-    """Run each named collector once, concurrently; SYMBOLS collectors with no targets are skipped."""
+    """Run each named collector once, concurrently, skipping those with nothing to do."""
     jobs: dict[str, list[str]] = {}
     for name in names:
-        collector = collectors[name]
-        symbols = symbols_for(collector, targets)
-        if collector.scope is Scope.SYMBOLS and not symbols:
-            continue
-        jobs[name] = symbols
+        symbols = symbols_for(collectors[name], targets)
+        if wanted(collectors[name], symbols, targets):
+            jobs[name] = symbols
     if not jobs:
         return {}
     with ThreadPoolExecutor(max_workers=workers) as pool:

@@ -1,15 +1,20 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c and Plan 2d reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
+These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d and Plan 2e reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2g: 13F institutional ownership
 
 - **Source 11 (SEC 13F data sets plus OpenFIGI CUSIP mapping) moved out of Plan 2d.** It needs a persistent CUSIP → ticker map (about 6,500 CUSIPs, roughly 27 minutes at OpenFIGI's keyless 25 requests a minute, then only new CUSIPs each quarter) and about 100 MB of quarterly SEC data sets. Research: `.superpowers/research/plan-2b/sec.md` §5. Fixtures: `.superpowers/research/plan-2c-fixtures/sec/13f_*` and `openfigi_cusip_mapping_sample.json` (git-ignored).
 
-## Plan 2e
+## Plan 2f: news and social
 
-- **Collectors covering both stocks and crypto** (LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector.
-- **Crypto holdings priced in phase 1:** CoinGecko is core for crypto (2e).
+- **Collectors covering both stocks and crypto** (Reddit, ApeWisdom; LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector. Plan 2e's crypto sources are crypto-only.
+
+## Plan 2h: options, catalysts and Canadian short positions
+
+- **Split out of Plan 2e**, which kept macro, crypto and on-chain. Sources: Yahoo option chains (18) and CBOE put/call ratios (19); openFDA (48), ClinicalTrials.gov (49), USAspending.gov (50) and House Clerk periodic transaction reports (51); the Canadian short-position report (15), kept only if a keyless file is confirmed.
+- **Catalysts name companies, not tickers:** drug sponsors, trial sponsors and contract recipients need a company-name → symbol map for both markets. Plan 2f's news mapping needs the same dictionary, so build it once.
+- **House Clerk reports are PDFs.** Check that electronically filed reports read as text before committing to source 51.
 
 ## Plan 3: model and features
 
@@ -32,9 +37,16 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c and Plan 2d reviews d
 - **XBRL facts are raw.** `sec_xbrl` keeps every listed concept and every re-reported or restated duplicate with its `filed` date. Features pick a concept per period by `METRICS` priority, take the latest fact filed on or before `as_of`, derive Q4 as FY minus 9M, and compute single quarters of cash-flow items from year-to-date facts (research `sec.md` §2.4–2.5).
 - **Insider and holder signals.** Count only codes P and S from non-derivative rows for insider buying and selling, and treat `planned` (10b5-1) sales as weaker. For 13D/G, a 0-share 13G/A can be an index giant's entity realignment rather than an exit.
 - **Amendments:** a Form 4/A restates trades already in the original Form 4, and both are stored (`form` tells them apart; the XML doesn't name the original's accession). Count a trade once: for the same owners, trade date, code and shares, keep the latest `accepted_at`. Do the same for 13D/G amendments of one reporting person.
+- **FRED dates are observation dates.** A month's CPI and unemployment rate are published about two weeks into the next month and are later revised. Backtests must apply release lags; point-in-time vintages (ALFRED) need a key.
+- **Crypto history:** Coinbase gives 290 finished daily USD candles per coin in one request. 12-month momentum needs 365, so fetch a second window when the crypto model needs it. Altcoins are measured against BTC (spec §5.4), so price BTC whenever any crypto is held or watched.
+- **Macro event:** "days to the next FOMC decision" comes from the `fomc` source's `meeting` records. The decision is at 14:00 ET on the meeting's last day.
+- **Protocol TVL** (spec source 52 names chain and protocol TVL): Plan 2e collects chain TVL only. DeFi tokens such as UNI or AAVE belong to a protocol rather than a chain, and DefiLlama's `/protocols` list has a `symbol` per protocol. Add it if the crypto model's features need it.
 
 ## Plans 4 and 5: recommendations and dashboard
 
+- **Crypto Buy and Add:** a coin whose `unconfirmed_price` is true (Coinbase and Kraken more than 2% apart on the latest day) is blocked like a stock's `unconfirmed_jump`.
+- **Source credits:** CoinGecko requires "Data provided by CoinGecko" wherever its data is shown, and FRED asks to be cited. alternative.me, DefiLlama and blockchain.com welcome a credit. Put a sources footer on the dashboard.
+- **`runs.summary`** gained `crypto` (held and watched coins) and `crypto_unquoted` in Plan 2e.
 - A table for holding-action outcomes. Spec §6.5 grades holding actions, but §8 has no table for them.
 - Decide spec §7.2 ("holdings analysis survives a later failure") against "failed runs are never published".
 - A `published_runs` view, so the dashboard never reads unpublished rows.
@@ -77,3 +89,10 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c and Plan 2d reviews d
   - Untested: that a timeout counts, that a 404 resets the counter, and that `DeadlineExceeded` does neither.
 - **Form 4 details:** a reporting owner's name can be empty; `acquired` is False when the A/D code is missing; no unit test covers rows skipped for a missing code, share count or date.
 - **Runner coverage:** no runner-level test of a PER_RUN source (such as `sec_8k`) falling back to its cache within `freshness`.
+- **CoinGecko's keyless limit** is unpublished and shared per IP, and GitHub's runners share IPs. The source makes one call per run, with one retry after Retry-After. If 429s become common, holdings are valued from the last quote (2-day freshness) and the run is degraded. A free Demo key would need an account, which R7 rules out.
+- **Terms to watch:**
+  - FRED's FAQ says "Don't do any data mining, scraping or extraction of FRED data", while its terms forbid only disruptive scraping. The pipeline makes 9 requests a day, cached for the day, for personal use.
+  - CNN's terms allow downloads "for your personal use only". Its endpoint is unofficial and gated by a Referer check.
+  - CoinGecko's terms forbid storing its data beyond a cache refreshed daily; only each run's features keep a quote.
+- **blockchain.com** documents a newer gateway API, so the legacy `api.blockchain.info/charts` endpoints used here may be retired.
+- **FOMC calendar** is read from the page's `fomc-meeting__month` and `fomc-meeting__date` classes. A redesign makes the source PARTIAL; releases still arrive.

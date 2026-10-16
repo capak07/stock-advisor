@@ -96,3 +96,12 @@ def test_symbols_for_sends_only_the_markets_a_collector_covers():
     assert symbols_for(tsx_only, TWO_MARKETS) == ["SHOP.TO", "RY.TO"]
     assert symbols_for(both, TWO_MARKETS) == ["OTCX", "SHOP.TO", "AAA", "RY.TO"]
     assert symbols_for(mixed, TWO_MARKETS) == ["OTCX", "BTC", "AAA"]  # crypto is never filtered
+
+
+def test_a_crypto_market_source_runs_only_when_crypto_is_held_or_watched(tmp_path):
+    for crypto, expected in (([], []), (["BTC"], [[]])):
+        fear = FakeCollector("fear", scope=Scope.MARKET, asset_types=frozenset({AssetType.CRYPTO}))
+        tracker = SourceTracker({"fear": fear}, DiskCache(tmp_path), NOW, {})
+        targets = EnrichTargets(priority_stocks=["OTCX"], crypto=crypto, ranked_stocks=["AAA"])
+        run_enrichment(tracker, {"fear": fear}, ["fear"], targets)
+        assert fear.calls == expected

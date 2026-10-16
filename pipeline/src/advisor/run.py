@@ -17,13 +17,15 @@ import psycopg
 from advisor import screener
 from advisor.collectors.base import Collector, CollectorResult, CollectorStatus, make_client
 from advisor.collectors.cache import DiskCache
+from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.registry import build_registry
 from advisor.collectors.tracker import SourceTracker
 from advisor.config import Settings
+from advisor.crypto_prices import BARS, CHECK, CRYPTO_STAGE, QUOTES, crypto_feature_rows
 from advisor.enrich import EnrichTargets, interleave, ranked_shortlist, run_enrichment
 from advisor.markets import MARKETS, market_of
 from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, RunStatus, SymbolInfo
-from advisor.prices import PriceFetch, fetch_daily_bars
+from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
 from advisor.screener import ScreenRow
 from advisor.store import repo
@@ -192,6 +194,19 @@ def execute_run(
             conn, run_id, live_feature_rows(priority_rows, flagged, floors), now_utc
         )
 
+        # Held and watched crypto too; CoinGecko's CAD quote is what values a crypto holding.
+        quotes: dict[str, CryptoQuote] = {}
+        if crypto:
+
+            def crypto_records(name: str) -> list:
+                return list(tracker.run(name, crypto).records) if name in deps.collectors else []
+
+            quotes = {quote.symbol: quote for quote in crypto_records(QUOTES)}
+            candles, checks = group_bars(crypto_records(BARS)), group_bars(crypto_records(CHECK))
+            repo.write_features_live(
+                conn, run_id, crypto_feature_rows(crypto, quotes, candles, checks, now_utc), now_utc
+            )
+
         # Phase 2: each market's universe, then one price fetch for everything not yet priced.
         universes: dict[Market, list[SymbolInfo]] = {}
         for market in Market:
@@ -235,7 +250,7 @@ def execute_run(
             run_enrichment(
                 tracker,
                 deps.collectors,
-                [name for name in deps.collectors if name not in PRICE_STAGE],
+                [name for name in deps.collectors if name not in PRICE_STAGE | CRYPTO_STAGE],
                 targets,
             )
 
@@ -259,14 +274,17 @@ def execute_run(
                 1 for s, days in flagged.items() if s in bars and bars[s][-1].day in days
             ),
             "shortlist": len(targets.stocks) if enriched else 0,
+            "crypto": len(crypto),
+            "crypto_unquoted": sorted(set(crypto) - quotes.keys()),
         }
         held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
+        held_crypto = {ref.symbol for ref in held if ref.asset_type is AssetType.CRYPTO}
         status = decide_status(
             tracker.merged(),
             deps.collectors,
             universe_ok=universe_ok,
             prices_ok=prices_ok,
-            holdings_ok=held_stocks <= bars.keys(),
+            holdings_ok=held_stocks <= bars.keys() and held_crypto <= quotes.keys(),
         )
         if status is RunStatus.FAILED:
             summary["failed_reason"] = [

@@ -1,10 +1,11 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
 
 from advisor.collectors.base import PartialFetch, Scope, check_deadline
 from advisor.collectors.cache import DiskCache
+from advisor.collectors.coingecko import CryptoQuote
 from advisor.models import AssetType, Market, RunKind, RunStatus
 from advisor.run import RunDeps, execute_run
 from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history
@@ -73,6 +74,7 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
             },
         },
         "priority": 0, "priority_unpriced": [], "unconfirmed_jumps": 0, "shortlist": 5,
+        "crypto": 0, "crypto_unquoted": [],
     }
     assert deps.collectors["yfinance_bars"].calls == [EVERYONE]  # one call for both markets
     assert health(db, outcome.run_id) == [
@@ -417,3 +419,125 @@ def test_a_source_past_the_run_budget_fails_and_the_run_still_publishes(db, tmp_
     assert outcome.status is RunStatus.SUCCESS  # the price fakes never consult the deadline
     assert run_row(db, outcome.run_id)["published"] is True
     assert ("slow", "failed") in health(db, outcome.run_id)
+
+
+CRYPTO = frozenset({AssetType.CRYPTO})
+
+
+def crypto_sources(quoted=("BTC",), kraken_close=82100.0) -> dict[str, FakeCollector]:
+    """CoinGecko, Coinbase and Kraken fakes: Coinbase's 30 finished days end 2026-10-13 at 82,000."""
+
+    def quote(symbol: str) -> CryptoQuote:
+        return CryptoQuote(
+            symbol=symbol, coin_id=symbol.lower(), price_cad=117087.0, market_cap_rank=1,
+            updated_at=NOW,
+        )
+
+    def candles(symbols):
+        start = date(2026, 9, 14)
+        return [b for s in symbols for b in history(s, 30, 82000.0, source="coinbase", start=start)]
+
+    return {
+        "coingecko": FakeCollector(
+            "coingecko", asset_types=CRYPTO, record_type=CryptoQuote,
+            records_for=lambda symbols: [quote(s) for s in symbols if s in quoted],
+        ),
+        "coinbase_candles": FakeCollector(
+            "coinbase_candles", core=False, asset_types=CRYPTO, records_for=candles
+        ),
+        "kraken_ohlc": FakeCollector(
+            "kraken_ohlc", core=False, asset_types=CRYPTO,
+            records_for=lambda symbols: [
+                bar(s, date(2026, 10, 13), kraken_close, source="kraken") for s in symbols
+            ],
+        ),
+    }
+
+
+def hold_crypto(db, symbol="BTC"):
+    db.execute(
+        "insert into lots (account, symbol, asset_type, qty, price, currency, bought_at)"
+        " values ('crypto', %s, 'crypto', 0.5, 100000, 'CAD', '2026-09-01')",
+        (symbol,),
+    )
+
+
+def test_held_crypto_is_priced_in_the_holdings_phase(db, tmp_path):
+    hold_crypto(db)
+    extra = crypto_sources()
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
+
+    assert outcome.status is RunStatus.SUCCESS
+    for name in extra:  # once each, for the coins, and not again in enrichment
+        assert extra[name].calls == [["BTC"]]
+    row = db.execute(
+        "select asset_type, features from features_live where run_id = %s and symbol = 'BTC'",
+        (outcome.run_id,),
+    ).fetchone()
+    assert row["asset_type"] == "crypto"
+    assert row["features"] == {
+        "price_cad": 117087.0, "market_cap_cad": None, "volume_24h_cad": None,
+        "change_24h_pct": None, "market_cap_rank": 1,
+        "last_close_usd": 82000.0, "history_days": 30, "last_day": "2026-10-13",
+        "stale": False, "unconfirmed_price": False,
+    }
+    assert (outcome.summary["crypto"], outcome.summary["crypto_unquoted"]) == (1, [])
+
+
+def test_a_held_coin_without_a_cad_quote_degrades_the_run(db, tmp_path):
+    hold_crypto(db)
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=crypto_sources(quoted=())), RunKind.PRE_OPEN, NOW,
+        min_universe=SMALL,
+    )
+    assert outcome.status is RunStatus.DEGRADED  # the holding can't be valued in CAD
+    assert outcome.summary["crypto_unquoted"] == ["BTC"]
+
+
+def test_a_watched_coin_without_a_quote_stays_summary_only(db, tmp_path):
+    db.execute("insert into watchlist (symbol, asset_type) values ('ETH', 'crypto')")
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=crypto_sources(quoted=())), RunKind.PRE_OPEN, NOW,
+        min_universe=SMALL,
+    )
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["crypto_unquoted"] == ["ETH"]
+
+
+def test_exchanges_that_disagree_leave_the_latest_crypto_price_unconfirmed(db, tmp_path):
+    hold_crypto(db)
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=crypto_sources(kraken_close=90000.0)), RunKind.PRE_OPEN,
+        NOW, min_universe=SMALL,
+    )
+    assert market_features(db, outcome.run_id)["BTC"]["unconfirmed_price"] is True
+
+
+def test_a_failing_coingecko_values_holdings_from_its_last_quote(db, tmp_path):
+    hold_crypto(db)
+    extra = crypto_sources()
+    extra["coingecko"].freshness = timedelta(days=2)  # as the real source: quotes are cached
+    execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    extra["coingecko"].error = httpx.HTTPStatusError(
+        "HTTP 429", request=httpx.Request("GET", "https://api.coingecko.com"),
+        response=httpx.Response(429),
+    )
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_CLOSE, NOW, min_universe=SMALL
+    )
+    assert outcome.status is RunStatus.DEGRADED  # a core source served from cache
+    assert outcome.summary["crypto_unquoted"] == []
+    assert ("coingecko", "stale") in health(db, outcome.run_id)
+    assert market_features(db, outcome.run_id)["BTC"]["price_cad"] == 117087.0
+
+
+def test_without_crypto_no_crypto_source_is_asked(db, tmp_path):
+    hold(db)
+    extra = crypto_sources()
+    outcome = execute_run(
+        make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
+    assert outcome.status is RunStatus.SUCCESS
+    assert [extra[name].calls for name in extra] == [[], [], []]

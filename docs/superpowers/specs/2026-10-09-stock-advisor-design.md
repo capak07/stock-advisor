@@ -198,7 +198,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 | 12 | fundamentals | SEC 13D/13G | US | daily | Activist and large stakes |
 | 13 | fundamentals | FINRA short interest | US | weekly | Twice-monthly settlement files |
 | 14 | fundamentals | FINRA Reg SHO daily short volume | US | daily | One file per day |
-| 15 | fundamentals | Canadian short-position report | TSX | weekly | Twice-monthly. Kept only if a keyless file is confirmed (Plan 2e) |
+| 15 | fundamentals | Canadian short-position report | TSX | weekly | Twice-monthly. Kept only if a keyless file is confirmed (Plan 2h) |
 | 16 | fundamentals | Yahoo analyst data ⚠ | US, TSX | daily | Targets, recommendation counts, rating changes |
 | 17 | fundamentals | Yahoo earnings dates and surprises ⚠ | US, TSX | daily | Upcoming dates, EPS estimate, actual and surprise. Core (catalysts) |
 | 18 | options | Yahoo option chains ⚠ | US | per_run | Implied volatility, per-ticker put/call. Shortlist only |

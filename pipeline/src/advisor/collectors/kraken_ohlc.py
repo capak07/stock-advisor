@@ -20,13 +20,15 @@ from advisor.collectors.base import (
     collect_per_symbol,
     get_with_retries,
 )
-from advisor.collectors.coins import listed_as
+from advisor.collectors.coins import ExchangeThrottled, listed_as, throttled
 from advisor.models import AssetType, DailyBar, Market
 
 OHLC_URL = "https://api.kraken.com/0/public/OHLC"
 KRAKEN_PER_MINUTE = 40  # Kraken asks for at most one public call per second
 KRAKEN_NAMES = {"BTC": "XBT", "DOGE": "XDG"}
 UNKNOWN_PAIR = "EQuery:Unknown asset pair"
+THROTTLED = ("EAPI:Rate limit exceeded", "EGeneral:Temporary lockout")
+ATTEMPTS = 2  # a throttled exchange must not stall the holdings phase
 CHECK_DAYS = 35
 
 
@@ -83,10 +85,14 @@ class KrakenOhlc:
                 OHLC_URL,
                 params={"pair": kraken_pair(symbol), "interval": 1440, "since": since},
                 limiter=self._limiter,
+                attempts=ATTEMPTS,
             )
             payload = response.json()
             if UNKNOWN_PAIR in (payload.get("error") or []):
                 return []  # not listed on Kraken
+            errors = payload.get("error") or []
+            if any(error.startswith(THROTTLED) for error in errors):
+                raise ExchangeThrottled(f"Kraken: {', '.join(errors)}")
             return parse_ohlc(symbol, payload, as_of)
 
-        return collect_per_symbol(symbols, one)
+        return collect_per_symbol(symbols, one, is_fatal=throttled)

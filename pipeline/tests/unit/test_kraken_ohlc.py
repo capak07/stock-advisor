@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from advisor.collectors.base import PartialFetch
+from advisor.collectors.coins import ExchangeThrottled
 from advisor.collectors.kraken_ohlc import KrakenOhlc, kraken_pair, parse_ohlc
 
 AS_OF = datetime(2026, 10, 15, 19, 25, tzinfo=UTC)
@@ -62,3 +63,11 @@ def test_another_kraken_error_fails_the_coin():
     invalid = httpx.Response(200, json={"error": ["EGeneral:Invalid arguments"]})
     with pytest.raises(PartialFetch, match="BTC: ValueError: Kraken: EGeneral:Invalid arguments"):
         serving(lambda r: invalid, []).fetch(["BTC"], AS_OF)
+
+
+def test_a_kraken_rate_limit_answer_stops_the_loop():
+    seen: list = []
+    collector = serving(lambda r: httpx.Response(200, json={"error": ["EAPI:Rate limit exceeded"]}), seen)
+    with pytest.raises(ExchangeThrottled, match="EAPI:Rate limit exceeded"):
+        collector.fetch(["BTC", "ETH"], AS_OF)
+    assert len(seen) == 1

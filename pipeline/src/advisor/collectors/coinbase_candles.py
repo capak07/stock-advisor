@@ -6,7 +6,8 @@ Coinbase lists USD products only (its one CAD product is USDC-CAD); CAD values c
 CoinGecko. A coin Coinbase doesn't list (404) simply has no candles.
 """
 
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -19,13 +20,14 @@ from advisor.collectors.base import (
     collect_per_symbol,
     get_with_retries,
 )
-from advisor.collectors.coins import listed_as
+from advisor.collectors.coins import listed_as, throttled
 from advisor.models import AssetType, DailyBar, Market
 
 CANDLES_URL = "https://api.exchange.coinbase.com/products/{product}/candles"
 COINBASE_PER_MINUTE = 300  # the documented public limit is 10 per second
 HISTORY_DAYS = 290  # one request; Coinbase refuses more than 300 candles
 ONE_DAY = 86400
+ATTEMPTS = 2  # a throttled exchange must not stall the holdings phase
 
 
 def parse_candles(symbol: str, rows: Sequence[Sequence[float]], as_of: datetime) -> list[DailyBar]:
@@ -57,9 +59,16 @@ class CoinbaseCandles:
     canary_requires_records = True
     max_symbols = None
 
-    def __init__(self, client: httpx.Client, limiter: RateLimiter | None = None) -> None:
+    def __init__(
+        self,
+        client: httpx.Client,
+        limiter: RateLimiter | None = None,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
         self._client = client
         self._limiter = limiter
+        self._sleep = sleep
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[DailyBar]:
         today = as_of.astimezone(UTC).date()
@@ -77,6 +86,8 @@ class CoinbaseCandles:
                     CANDLES_URL.format(product=product),
                     params=window,
                     limiter=self._limiter,
+                    attempts=ATTEMPTS,
+                    sleep=self._sleep,
                 )
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 404:
@@ -84,4 +95,4 @@ class CoinbaseCandles:
                 raise
             return parse_candles(symbol, response.json(), as_of)
 
-        return collect_per_symbol(symbols, one)
+        return collect_per_symbol(symbols, one, is_fatal=throttled)

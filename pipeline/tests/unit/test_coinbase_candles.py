@@ -64,3 +64,18 @@ def test_another_error_fails_only_that_coin(fixtures_dir):
     with pytest.raises(PartialFetch, match="1 of 2 symbols failed; first: ETH: HTTPStatusError") as caught:
         serving(answer, []).fetch(["ETH", "BTC"], AS_OF)
     assert {bar.symbol for bar in caught.value.records} == {"BTC"}
+
+
+def test_a_throttling_exchange_stops_the_loop_after_two_attempts():
+    seen: list = []
+    sleeps: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url)
+        return httpx.Response(429, headers={"Retry-After": "60"}, json={"message": "rate limit"})
+
+    collector = CoinbaseCandles(httpx.Client(transport=httpx.MockTransport(handler)), sleep=sleeps.append)
+    with pytest.raises(httpx.HTTPStatusError, match="HTTP 429"):
+        collector.fetch(["BTC", "ETH"], AS_OF)
+    assert len(seen) == 2  # two attempts for BTC; ETH is never asked
+    assert len(sleeps) == 1

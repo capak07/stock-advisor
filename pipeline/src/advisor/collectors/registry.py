@@ -14,6 +14,7 @@ from advisor.collectors.finra_short_interest import FinraShortInterest
 from advisor.collectors.finra_short_volume import FinraShortVolume
 from advisor.collectors.fomc import Fomc
 from advisor.collectors.fred import FRED_PER_MINUTE, Fred
+from advisor.collectors.google_news import GOOGLE_NEWS_PER_MINUTE, GoogleNews
 from advisor.collectors.kraken_ohlc import KRAKEN_PER_MINUTE, KrakenOhlc
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.news_feeds import FEED_PER_MINUTE, FEEDS, FeedNews
@@ -28,12 +29,16 @@ from advisor.collectors.yahoo_news import YAHOO_NEWS_PER_MINUTE, YahooNews
 from advisor.collectors.yfinance_analyst import YFinanceAnalyst
 from advisor.collectors.yfinance_bars import YFinanceBars
 from advisor.collectors.yfinance_earnings import YFinanceEarnings
+from advisor.company_names import CompanyNames
 from advisor.config import Settings
 
 FINRA_PER_MINUTE = 60
 
 
-def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collector]:
+def build_registry(
+    settings: Settings, client: httpx.Client, *, names: CompanyNames | None = None
+) -> dict[str, Collector]:
+    """`names` is filled by the run once the universes are loaded; Google News queries by them."""
     finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
     yahoo = RateLimiter(per_minute=YAHOO_PER_MINUTE, burst=2)  # shared by Yahoo's per-symbol collectors
     sec = SecEdgar(  # shared by every SEC collector
@@ -65,6 +70,7 @@ def build_registry(settings: Settings, client: httpx.Client) -> dict[str, Collec
         CoinbaseCandles(client, RateLimiter(per_minute=COINBASE_PER_MINUTE, burst=3)),
         KrakenOhlc(client, RateLimiter(per_minute=KRAKEN_PER_MINUTE, burst=1)),
         YahooNews(client, RateLimiter(per_minute=YAHOO_NEWS_PER_MINUTE, burst=2)),
+        GoogleNews(client, RateLimiter(per_minute=GOOGLE_NEWS_PER_MINUTE, burst=1), names=names),
         *(FeedNews(feed, client, RateLimiter(per_minute=FEED_PER_MINUTE, burst=2)) for feed in FEEDS),
     ]
     return {collector.name: collector for collector in collectors}

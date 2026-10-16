@@ -48,6 +48,7 @@ EXPECTED = {
     "decrypt_news": (False, Scope.MARKET, True, NONE),
     "protos_news": (False, Scope.MARKET, True, NONE),
     "yahoo_news": (False, Scope.SYMBOLS, True, BOTH),
+    "google_news": (True, Scope.SYMBOLS, True, BOTH),
 }
 
 

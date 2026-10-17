@@ -4,6 +4,7 @@ import { Plus, X } from 'lucide-react'
 import { useActionState, useEffect, useState, useTransition } from 'react'
 import { addWatch, removeWatch } from '@/app/(app)/watchlist/actions'
 import { useToast } from '@/components/Toast'
+import { useFieldErrors } from '@/components/useFieldErrors'
 import type { AssetType } from '@/lib/portfolio/types'
 import type { FormState } from '@/lib/trade-form'
 import { WATCH_TYPES, type WatchType } from '@/lib/watch-form'
@@ -21,8 +22,8 @@ export function AddWatch() {
   const [state, action, pending] = useActionState<FormState, FormData>(addWatch, {})
   const [symbol, setSymbol] = useState('')
   const [type, setType] = useState<WatchType>('us')
-  const [editedAt, setEditedAt] = useState(0)
-  const error = state.errors?.symbol && editedAt <= (state.at ?? 0) ? state.errors.symbol : undefined
+  const { error: fieldError, touch } = useFieldErrors(state)
+  const error = fieldError('symbol')
 
   useEffect(() => {
     if (state.ok && state.message) toast(state.message)
@@ -46,7 +47,7 @@ export function AddWatch() {
           value={symbol}
           onChange={(e) => {
             setSymbol(e.target.value)
-            setEditedAt(Date.now())
+            touch('symbol')
           }}
         />
         <span className="error">{error}</span>

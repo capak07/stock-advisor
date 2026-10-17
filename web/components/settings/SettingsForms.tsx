@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState, useSyncExternalStore } from 'react
 import { saveSettings } from '@/app/(app)/settings/actions'
 import { Tabs } from '@/components/Tabs'
 import { useToast } from '@/components/Toast'
+import { useFieldErrors } from '@/components/useFieldErrors'
 import { applyTheme, savedTheme, type ThemeChoice } from '@/lib/theme'
 import type { FormState } from '@/lib/trade-form'
 
@@ -53,12 +54,10 @@ export function CostsForm({ initial, changed }: { initial: SettingsValues; chang
   const toast = useToast()
   const [state, action, pending] = useActionState<FormState, FormData>(saveSettings, {})
   const [values, setValues] = useState(initial)
-  const [edited, setEdited] = useState<Record<string, number>>({})
+  const { error, touch } = useFieldErrors(state)
   useEffect(() => {
     if (state.ok && state.message) toast(state.message)
   }, [state, toast])
-  const error = (name: string) =>
-    state.errors?.[name] && !((edited[name] ?? 0) > (state.at ?? 0)) ? state.errors[name] : undefined
 
   const field = (f: (typeof FIELDS)[number]) => (
     <label key={f.name} className={`setting field ${error(f.name) ? 'invalid' : ''}`}>
@@ -74,7 +73,7 @@ export function CostsForm({ initial, changed }: { initial: SettingsValues; chang
           value={values[f.name]}
           onChange={(e) => {
             setValues((v) => ({ ...v, [f.name]: e.target.value }))
-            setEdited((m) => ({ ...m, [f.name]: Date.now() }))
+            touch(f.name)
           }}
         />
         <span className="unit">{f.unit}</span>

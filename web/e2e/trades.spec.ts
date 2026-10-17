@@ -94,3 +94,30 @@ test('a sell shows its gain at average cost and reduces the holding', async ({ p
   const [held] = await sql`select (select sum(qty) from lots) - (select sum(qty) from sells) as qty`
   expect(Number(held.qty)).toBe(6)
 })
+
+test.describe('with the device clock an hour ahead of the server', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date(Date.now() + 3_600_000))
+  })
+
+  test('a field error still shows', async ({ page }) => {
+    const drawer = await openBuy(page)
+    await drawer.getByLabel('Symbol').fill('RY.TO')
+    await drawer.getByLabel('Quantity').fill('0')
+    await drawer.getByLabel('Price (CAD)').fill('184')
+    await drawer.getByRole('button', { name: 'Save buy' }).click()
+    await expect(drawer.getByText('Enter a quantity above 0.')).toBeVisible()
+  })
+
+  test('the unlisted-stock question still shows, and confirming saves the buy', async ({ page }) => {
+    const drawer = await openBuy(page)
+    await drawer.getByLabel('Symbol').fill('XEQT.TO')
+    await drawer.getByLabel('Quantity').fill('20')
+    await drawer.getByLabel('Price (CAD)').fill('35')
+    await drawer.getByRole('button', { name: 'Save buy' }).click()
+    await expect(drawer.getByText(/XEQT\.TO isn't in the US or TSX stock lists/)).toBeVisible()
+    await drawer.getByLabel('Save it anyway').check()
+    await drawer.getByRole('button', { name: 'Save buy' }).click()
+    await expect(page.getByRole('status')).toHaveText('Buy saved: 20 XEQT.TO in TFSA')
+  })
+})

@@ -4,6 +4,7 @@ import { Minus, Plus, TriangleAlert } from 'lucide-react'
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
 import { addBuy, addSell } from '@/app/(app)/trades'
 import { Drawer } from '@/components/Drawer'
+import { useFieldErrors } from '@/components/useFieldErrors'
 import { useToast } from '@/components/Toast'
 import { shortDay } from '@/lib/dates'
 import { fmtMoney, fmtQty } from '@/lib/format'
@@ -13,22 +14,6 @@ import type { Account } from '@/lib/portfolio/types'
 import type { SellOption } from '@/lib/portfolio/view'
 import { normalizeSymbol, tradeCurrency } from '@/lib/symbols'
 import { parseAmount, type FormState } from '@/lib/trade-form'
-
-/**
- * A field's error from the last answer, until the owner edits the field. Every field is
- * controlled: React resets uncontrolled fields after each action, which would wipe what the
- * owner typed whenever the server answers with an error.
- */
-function useFieldErrors(state: FormState) {
-  const [edited, setEdited] = useState<Record<string, number>>({})
-  const editedSince = (name: string) => (edited[name] ?? 0) > (state.at ?? 0)
-  const error = (name: string) => {
-    const message = state.errors?.[name]
-    return message && !editedSince(name) ? message : undefined
-  }
-  const touch = (name: string) => setEdited((e) => ({ ...e, [name]: Date.now() }))
-  return { error, touch, editedSince }
-}
 
 function Foot({ pending, label, icon, onCancel }: { pending: boolean; label: string; icon?: React.ReactNode; onCancel: () => void }) {
   return (

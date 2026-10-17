@@ -46,6 +46,31 @@ test.describe('watchlist', () => {
   })
 })
 
+test.describe('with the device clock an hour ahead of the server', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date(Date.now() + 3_600_000))
+  })
+
+  test('a duplicate watchlist symbol shows its error', async ({ page }) => {
+    await seedSymbols([{ symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' }])
+    await page.goto('/watchlist')
+    await page.getByLabel('Symbol', { exact: true }).fill('SHOP.TO')
+    await page.getByLabel('Type').selectOption('TSX stock')
+    await page.getByRole('button', { name: 'Add' }).click()
+    await expect(page.getByRole('status')).toHaveText('SHOP.TO added to the watchlist')
+    await page.getByLabel('Symbol', { exact: true }).fill('SHOP.TO')
+    await page.getByRole('button', { name: 'Add' }).click()
+    await expect(page.getByText('SHOP.TO is already on the watchlist.')).toBeVisible()
+  })
+
+  test('a fee out of range shows its error', async ({ page }) => {
+    await page.goto('/settings')
+    await page.getByLabel(/USD conversion fee/).fill('12')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByText('Enter a fee from 0 to 10%.')).toBeVisible()
+  })
+})
+
 test.describe('settings', () => {
   test('saves costs and guidelines, and names a value out of range', async ({ page }) => {
     await page.goto('/settings')

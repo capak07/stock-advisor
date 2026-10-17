@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ActionsCard, BreakdownCard, HoldingsCard, WarningsCard } from '@/components/portfolio/Cards'
+import { TradeButtons } from '@/components/portfolio/TradeForms'
 import { ValueCard } from '@/components/portfolio/ValueCard'
 import { ownerClient } from '@/lib/auth'
 import { loadPortfolio } from '@/lib/data/portfolio'
@@ -39,6 +40,7 @@ export default async function PortfolioPage() {
             {accounts} · values in CAD at the latest Bank of Canada rate{rate}
           </p>
         </div>
+        <TradeButtons sellable={view.sellable} rates={[...data.fx.rates]} today={today} />
       </div>
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>

@@ -58,6 +58,19 @@ in, or delete the row and add the trade again.
    Data API): `SUPABASE_URL` (the project URL) and `SUPABASE_PUBLISHABLE_KEY` (the publishable
    key). Neither is sent to the browser; both are safe to expose anyway, because row-level
    security only lets the owner read or write.
-3. In Supabase, keep sign-ups off (Authentication → Sign In / Providers → Email: "Allow new users
+3. The dashboard reads through Supabase's Data API as the `authenticated` role. In Project
+   Settings → Data API, the `public` schema must be exposed. The migrations grant `authenticated`
+   nothing; Supabase projects normally grant it table privileges by default. If a page fails with
+   "permission denied for table …", run this in the SQL editor:
+
+   ```sql
+   grant usage on schema public to authenticated;
+   grant select on all tables in schema public to authenticated;
+   grant insert, update, delete on watchlist, lots, sells to authenticated;
+   grant update on settings to authenticated;
+   ```
+
+   Row-level security still limits every row to the owner.
+4. In Supabase, keep sign-ups off (Authentication → Sign In / Providers → Email: "Allow new users
    to sign up" off) and the owner's id in `app_config`, as in the root README's deployment steps.
-4. Deploy, then sign in with the owner's email and password.
+5. Deploy, then sign in with the owner's email and password.

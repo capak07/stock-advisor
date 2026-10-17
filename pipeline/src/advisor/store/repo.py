@@ -9,7 +9,16 @@ from psycopg.types.json import Jsonb
 
 from advisor.collectors.base import CollectorResult
 from advisor.collectors.runner import SourceState
-from advisor.models import ET, AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
+from advisor.models import (
+    ET,
+    AssetRef,
+    AssetType,
+    DailyClose,
+    Market,
+    RunKind,
+    RunStatus,
+    SymbolInfo,
+)
 from advisor.news.stage import NewsRow, StoredNews
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
@@ -258,3 +267,100 @@ def recent_news(
                 StoredNews(row["url"], row["title"], row["published_at"], row["story_key"])
             )
     return dict(stored)
+
+
+# Price history for the dashboard (Plan 5a).
+
+
+def write_daily_closes(conn: psycopg.Connection, closes: Sequence[DailyClose]) -> None:
+    """Store closes. A close already stored for that day is replaced: Yahoo re-adjusts history."""
+    if not closes:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into daily_closes (symbol, asset_type, day, close, currency)"
+            " values (%s, %s, %s, %s, %s)"
+            " on conflict (symbol, asset_type, day) do update"
+            " set close = excluded.close, currency = excluded.currency"
+            " where daily_closes.close <> excluded.close"
+            " or daily_closes.currency <> excluded.currency",
+            [(c.ref.symbol, c.ref.asset_type.value, c.day, c.close, c.currency) for c in closes],
+        )
+
+
+def stored_closes(
+    conn: psycopg.Connection, refs: Iterable[AssetRef], since: date
+) -> dict[AssetRef, dict[date, float]]:
+    """Each asset's stored closes on or after `since`."""
+    wanted = set(refs)
+    if not wanted:
+        return {}
+    rows = conn.execute(
+        "select symbol, asset_type, day, close from daily_closes"
+        " where day >= %s and symbol = any(%s)",
+        (since, sorted({ref.symbol for ref in wanted})),
+    ).fetchall()
+    closes: dict[AssetRef, dict[date, float]] = defaultdict(dict)
+    for row in rows:
+        ref = AssetRef(row["symbol"], AssetType(row["asset_type"]))
+        if ref in wanted:
+            closes[ref][row["day"]] = float(row["close"])
+    return dict(closes)
+
+
+def rescale_closes(conn: psycopg.Connection, ref: AssetRef, before: date, factor: float) -> int:
+    """Multiply an asset's closes before `before` by `factor`; returns how many rows changed."""
+    return conn.execute(
+        "update daily_closes set close = close * %s"
+        " where symbol = %s and asset_type = %s and day < %s",
+        (factor, ref.symbol, ref.asset_type.value, before),
+    ).rowcount
+
+
+def earliest_closes(conn: psycopg.Connection, refs: Iterable[AssetRef]) -> dict[AssetRef, date]:
+    """The first stored day of each asset that has any closes."""
+    wanted = set(refs)
+    if not wanted:
+        return {}
+    rows = conn.execute(
+        "select symbol, asset_type, min(day) as day from daily_closes"
+        " where symbol = any(%s) group by symbol, asset_type",
+        (sorted({ref.symbol for ref in wanted}),),
+    ).fetchall()
+    found = {AssetRef(r["symbol"], AssetType(r["asset_type"])): r["day"] for r in rows}
+    return {ref: day for ref, day in found.items() if ref in wanted}
+
+
+def first_buys(conn: psycopg.Connection) -> dict[AssetRef, date]:
+    """The first buy date of every asset ever bought, held or sold since."""
+    rows = conn.execute(
+        "select symbol, asset_type, min(bought_at) as day from lots group by symbol, asset_type"
+    ).fetchall()
+    return {AssetRef(r["symbol"], AssetType(r["asset_type"])): r["day"] for r in rows}
+
+
+def write_fx_rates(conn: psycopg.Connection, rates: Sequence[tuple[date, float]]) -> None:
+    """Store USD/CAD by day; a revised rate replaces the stored one."""
+    if not rates:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into fx_rates (day, usd_cad) values (%s, %s)"
+            " on conflict (day) do update set usd_cad = excluded.usd_cad"
+            " where fx_rates.usd_cad <> excluded.usd_cad",
+            list(rates),
+        )
+
+
+def earliest_fx_rate(conn: psycopg.Connection) -> date | None:
+    return conn.execute("select min(day) as day from fx_rates").fetchone()["day"]
+
+
+def prune_daily_closes(conn: psycopg.Connection, before: date, keep: Iterable[str]) -> int:
+    """Delete closes from before `before`, except for assets ever bought and the `keep` symbols."""
+    return conn.execute(
+        "delete from daily_closes c where c.day < %s and c.symbol <> all(%s)"
+        " and not exists (select 1 from lots l"
+        "   where l.symbol = c.symbol and l.asset_type = c.asset_type)",
+        (before, list(keep)),
+    ).rowcount

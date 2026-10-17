@@ -289,3 +289,32 @@ def test_pipeline_reads_settings_but_cannot_change_them(db):
         ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 db.execute(statement)
+
+
+def test_the_owner_reads_price_history_and_only_the_pipeline_writes_it(owned_db):
+    owned_db.execute("insert into daily_closes values ('AAPL', 'stock', '2026-10-13', 228, 'USD')")
+    owned_db.execute("insert into fx_rates values ('2026-10-13', 1.3712)")
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert len(owned_db.execute("select * from daily_closes").fetchall()) == 1
+        assert len(owned_db.execute("select * from fx_rates").fetchall()) == 1
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute("insert into daily_closes values ('MSFT', 'stock', '2026-10-13', 410, 'USD')")
+        assert owned_db.execute("update fx_rates set usd_cad = 1").rowcount == 0
+        assert owned_db.execute("delete from daily_closes").rowcount == 0
+    with acting_as(owned_db, "authenticated", STRANGER):
+        assert owned_db.execute("select * from daily_closes").fetchall() == []
+        assert owned_db.execute("select * from fx_rates").fetchall() == []
+    with acting_as(owned_db, "pipeline_rw"):
+        owned_db.execute("insert into daily_closes values ('MSFT', 'stock', '2026-10-13', 410, 'USD')")
+        assert owned_db.execute("update fx_rates set usd_cad = 1.3715").rowcount == 1
+
+
+@pytest.mark.parametrize(
+    ("symbol", "asset_type", "currency"),
+    [("aapl", "stock", "USD"), ("RY.TSX", "stock", "CAD"), ("btc", "crypto", "USD"), ("AAPL", "stock", "EUR")],
+)
+def test_malformed_closes_are_rejected(db, symbol, asset_type, currency):
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            "insert into daily_closes values (%s, %s, '2026-10-13', 10, %s)", (symbol, asset_type, currency)
+        )

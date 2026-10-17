@@ -40,6 +40,15 @@ class AssetRef(NamedTuple):
     asset_type: AssetType
 
 
+class DailyClose(NamedTuple):
+    """A stored daily close (Plan 5a): Yahoo's adjusted close for a stock, Coinbase's for a coin."""
+
+    ref: AssetRef
+    day: date
+    close: float
+    currency: str  # "USD" or "CAD"
+
+
 class SymbolInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 

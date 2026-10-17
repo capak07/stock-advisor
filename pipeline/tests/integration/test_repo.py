@@ -4,7 +4,7 @@ import psycopg
 import pytest
 
 from advisor.collectors.base import CollectorResult, CollectorStatus
-from advisor.models import AssetRef, AssetType, Market, RunKind, RunStatus, SymbolInfo
+from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus, SymbolInfo
 from advisor.news.stage import NewsRow, StoredNews
 from advisor.store import repo
 from fakes import info
@@ -270,3 +270,84 @@ def test_recent_news_returns_each_assets_rows_since_a_time(db):
             published_at=NOW - timedelta(hours=10), story_key="new",
         )],
     }
+
+
+AAPL = AssetRef("AAPL", AssetType.STOCK)
+
+
+def daily(symbol: str, day: date, close: float, asset_type: AssetType = AssetType.STOCK) -> DailyClose:
+    return DailyClose(AssetRef(symbol, asset_type), day, close, "USD")
+
+
+def test_closes_are_stored_and_a_refreshed_close_replaces_the_old_one(db):
+    repo.write_daily_closes(db, [daily("AAPL", date(2026, 10, 12), 227.5), daily("AAPL", date(2026, 10, 13), 228.0)])
+    repo.write_daily_closes(db, [daily("AAPL", date(2026, 10, 13), 228.4)])  # Yahoo re-adjusted it
+    repo.write_daily_closes(db, [])
+    assert repo.stored_closes(db, [AAPL], date(2026, 10, 1)) == {
+        AAPL: {date(2026, 10, 12): 227.5, date(2026, 10, 13): 228.4},
+    }
+    assert repo.stored_closes(db, [AAPL], date(2026, 10, 13)) == {AAPL: {date(2026, 10, 13): 228.4}}
+    assert repo.earliest_closes(db, [AAPL, AssetRef("MSFT", AssetType.STOCK)]) == {AAPL: date(2026, 10, 12)}
+
+
+def test_a_coin_and_a_stock_can_share_a_symbol(db):
+    day = date(2026, 10, 13)
+    repo.write_daily_closes(db, [daily("LINK", day, 5.1), daily("LINK", day, 24.9, AssetType.CRYPTO)])
+    stock, coin = AssetRef("LINK", AssetType.STOCK), AssetRef("LINK", AssetType.CRYPTO)
+    assert repo.stored_closes(db, [stock, coin], day) == {stock: {day: 5.1}, coin: {day: 24.9}}
+    assert repo.stored_closes(db, [coin], day) == {coin: {day: 24.9}}
+
+
+def test_closes_before_a_day_can_be_rescaled(db):
+    repo.write_daily_closes(db, [daily("AAPL", date(2026, 6, d), 200.0) for d in (1, 2, 3)])
+    assert repo.rescale_closes(db, AAPL, date(2026, 6, 3), 0.5) == 2
+    assert repo.stored_closes(db, [AAPL], date(2026, 6, 1)) == {
+        AAPL: {date(2026, 6, 1): 100.0, date(2026, 6, 2): 100.0, date(2026, 6, 3): 200.0},
+    }
+
+
+def test_first_buys_cover_assets_sold_since(db):
+    for symbol, asset_type, account, currency, fx, day in [
+        ("AAPL", "stock", "tfsa", "USD", 1.36, "2025-05-12"),
+        ("AAPL", "stock", "tfsa", "USD", 1.37, "2026-01-05"),
+        ("BTC", "crypto", "crypto", "CAD", None, "2026-02-01"),
+    ]:
+        db.execute(
+            "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"
+            " values (%s, %s, %s, 1, 10, %s, %s, %s)",
+            (account, symbol, asset_type, currency, fx, day),
+        )
+    db.execute(
+        "insert into sells (account, symbol, asset_type, qty, price, currency, fx_rate_cad, sold_at)"
+        " values ('tfsa', 'AAPL', 'stock', 2, 12, 'USD', 1.38, '2026-03-02')"
+    )
+    assert repo.first_buys(db) == {
+        AAPL: date(2025, 5, 12), AssetRef("BTC", AssetType.CRYPTO): date(2026, 2, 1),
+    }
+
+
+def test_usd_cad_rates_are_stored_and_revised(db):
+    assert repo.earliest_fx_rate(db) is None
+    repo.write_fx_rates(db, [(date(2026, 10, 12), 1.37), (date(2026, 10, 13), 1.3712)])
+    repo.write_fx_rates(db, [(date(2026, 10, 13), 1.3715)])  # the bank revised it
+    repo.write_fx_rates(db, [])
+    rows = db.execute("select day, usd_cad from fx_rates order by day").fetchall()
+    assert [(r["day"], float(r["usd_cad"])) for r in rows] == [
+        (date(2026, 10, 12), 1.37), (date(2026, 10, 13), 1.3715),
+    ]
+    assert repo.earliest_fx_rate(db) == date(2026, 10, 12)
+
+
+def test_old_closes_are_pruned_except_holdings_and_benchmarks(db):
+    old, recent = date(2024, 9, 2), date(2026, 10, 13)
+    repo.write_daily_closes(db, [
+        daily("AAPL", old, 150.0), daily("SPY", old, 540.0), daily("PLTR", old, 30.0),
+        daily("PLTR", recent, 182.7),
+    ])
+    db.execute(
+        "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"
+        " values ('tfsa', 'AAPL', 'stock', 1, 150, 'USD', 1.35, '2024-09-02')"
+    )
+    assert repo.prune_daily_closes(db, date(2024, 10, 14), ["SPY", "XIU.TO"]) == 1
+    rows = db.execute("select symbol, day from daily_closes order by symbol, day").fetchall()
+    assert [(r["symbol"], r["day"]) for r in rows] == [("AAPL", old), ("PLTR", recent), ("SPY", old)]

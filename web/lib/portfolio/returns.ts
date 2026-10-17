@@ -29,7 +29,9 @@ function tradingDays(trades: readonly Trade[], prices: PriceBook, start: string)
  * Time-weighted growth, so buys and sells don't count as gains or losses. Each day's return is
  * (value at the close + sell proceeds) / (yesterday's value + buy cost) − 1: buys put money in
  * before the close, sells take it out after. Trades on days without a close (a coin bought on a
- * Saturday) count on the next trading day. An asset without a close yet is valued at cost.
+ * Saturday) count on the next trading day. An asset with no closes at all is valued at cost. Before
+ * its first close an asset is valued at that first close, so a coin bought before its stored history
+ * begins shows its gain on the buy day instead of as one day's jump when the history starts.
  */
 export function growth(trades: readonly Trade[], prices: PriceBook, fx: FxRates): Growth | null {
   const ordered = inOrder(trades)
@@ -66,7 +68,7 @@ export function growth(trades: readonly Trade[], prices: PriceBook, fx: FxRates)
     let value = 0
     for (const [key, asset] of held) {
       if (asset.qty <= QTY_EPSILON) continue
-      const close = prices.on(key, day)
+      const close = prices.on(key, day) ?? prices.first(key)
       const cad = close === null ? null : fx.toCad(close, day)
       value += cad === null ? asset.costCad : asset.qty * cad
     }

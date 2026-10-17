@@ -51,10 +51,12 @@ describe('PriceBook', () => {
     expect(book.on('stock:SPY', '2026-10-03')?.close).toBe(510)
     expect(book.latest('stock:SPY')?.day).toBe('2026-10-02')
     expect(book.days('stock:SPY')).toEqual(['2026-10-01', '2026-10-02'])
+    expect(book.first('stock:SPY')?.day).toBe('2026-10-01')
   })
 
   it('knows nothing about an asset without closes', () => {
     expect(book.on('stock:XIU.TO', '2026-10-03')).toBeNull()
     expect(book.latest('crypto:BTC')).toBeNull()
+    expect(book.first('crypto:BTC')).toBeNull()
   })
 })

@@ -68,6 +68,11 @@ export class PriceBook {
     return this.byKey.get(key)?.at(-1) ?? null
   }
 
+  /** The earliest close, or null for an asset without closes. */
+  first(key: string): Close | null {
+    return this.byKey.get(key)?.[0] ?? null
+  }
+
   days(key: string): string[] {
     return (this.byKey.get(key) ?? []).map((c) => c.day)
   }

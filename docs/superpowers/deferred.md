@@ -80,7 +80,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
   - The status bar's Paper badges are static until picks are graded live (Plan 4). The missed-slot notice and the next run's time need the schedule in TypeScript (Plan 5c).
   - Plan 5c: Picks, Ticker detail, Track record, Source health, file import, and the watchlist's verdict columns.
   - No way to edit or delete a trade in the dashboard yet. Plan 5c adds a list of recent trades with Delete; deleting avoids the NOT VALID `*_usd_needs_fx_rate` check that blocks updating old USD rows. Until then, `web/README.md` ("Fix a mistaken trade") explains the table-editor workaround.
-- **Portfolio returns (Plan 5b):** time-weighted. A day's buys count from the start of that day and its sells at the close, so a buy at the close dilutes that day's return slightly; counting buys at the close instead would let a large buy into a small position show a huge return. Trades on days without a close count on the next trading day, and an asset without a close is valued at cost.
+- **Portfolio returns (Plan 5b):** time-weighted. A day's buys count from the start of that day and its sells at the close, so a buy at the close dilutes that day's return slightly; counting buys at the close instead would let a large buy into a small position show a huge return. Trades on days without a close count on the next trading day, an asset with no closes at all is valued at cost, and before its first close (a coin bought more than 290 days ago) at that first close, so its early gain lands on the buy day.
 - **Coin values (Plan 5b):** from Coinbase's USD closes at the Bank of Canada rate, the same source as the chart, not CoinGecko's CAD quote in `features_live`.
 - **Unlisted stocks (Plan 5b):** a held stock Yahoo can't price leaves every run degraded, so the buy form asks for confirmation when a stock isn't in the US or TSX lists (ETFs aren't). The watchlist accepts them with a note.
 
@@ -106,7 +106,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
 ## Operational and minor
 
 - **yfinance cache lock:** yfinance's timezone cache sometimes reports "database is locked" during a threaded download and drops a symbol. It hit RY.TO in phase 1 of the 2026-10-16 live run (phase 2's retry priced it) and SPY in Plan 5a's backfill (the next run fetched it). If it recurs, give yfinance a per-run cache folder or download without threads.
-- **Coin history** reaches 290 days, one Coinbase request. A coin bought earlier has no closes before then; fetch older candles in more requests if the portfolio chart needs them.
+- **Coin history** reaches 290 days, one Coinbase request. A coin bought earlier has no closes before then; the portfolio chart values such a coin at its first close until then; fetch older candles in more requests, back to the first buy, to chart that stretch.
 
 - **Breaker and deadlines:** a `DeadlineExceeded` failure counts toward the circuit breaker.
 - **Stale versus partial:** a call whose fetched symbols all fail while the window served the rest reports STALE, not PARTIAL, and counts toward the breaker.

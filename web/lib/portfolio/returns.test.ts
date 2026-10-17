@@ -89,6 +89,13 @@ describe('growth', () => {
     expect(g.portfolio.map((v) => +v.toFixed(4))).toEqual([1.0714, 1.1786])
   })
 
+  it("values an asset at its first close before then, so a gain since the buy lands on the buy day", () => {
+    // Bought on the first day for 1,000; the first stored close is two trading days later.
+    const coin = series('CAD', [['2026-10-05', 120], ['2026-10-06', 132]])
+    const g = growth([trade({ symbol: 'BTC', assetType: 'crypto', account: 'crypto' })], book([['crypto:BTC', coin]]), FX)!
+    expect(g.portfolio.map((v) => +v.toFixed(4))).toEqual([1.2, 1.2, 1.2, 1.32])
+  })
+
   it('keeps the value at cost for an asset that never had a close', () => {
     const g = growth([trade({ symbol: 'NEWCO' })], book(), FX)!
     expect(g.portfolio).toEqual([1, 1, 1, 1])

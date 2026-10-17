@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Track Record · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .record { display: grid; gap: 14px; }
+  .record-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 639px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stat { display: grid; gap: 3px; }
+  .stat b { font: 600 20px/1.1 var(--font-mono) !important; letter-spacing: -0.02em; }
+  .tag { font: 500 11px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; padding: 5px 8px; border-radius: 999px; }
+  .tag.live { background: var(--gain-soft); color: var(--gain); }
+  .tag.back { background: var(--muted); color: var(--muted-foreground); }
+  .calib svg { width: 100%; height: auto; display: block; }
+  .calib text { font-family: var(--font-mono); font-size: 10px; fill: var(--muted-foreground); }
+  .calib .axis { stroke: var(--border); }
+</style>
+</head>
+<body data-page="track" data-states="paper:Paper period|empty:No graded picks yet">
+<main class="page">
+  <div class="section-head enter" style="margin-bottom:0">
+    <div>
+      <h1>Track record</h1>
+      <p class="sub">Every pick is graded against its market's benchmark when its exit date passes or its stop is hit</p>
+    </div>
+    <div class="tabs" data-tabs="market"><button class="tab" data-tab="us" aria-selected="true">US</button><button class="tab" data-tab="tsx">TSX</button></div>
+  </div>
+
+  <div class="card" data-show="empty">
+    <div class="empty"><i data-lucide="chart-line"></i><strong>No graded picks yet</strong>
+      <span style="max-width:460px">The first picks are graded when their exit dates pass, two days to four weeks after they appear.
+        Backtest results appear here once the model is trained.</span></div>
+  </div>
+
+  <!-- ===== US ===== -->
+  <div class="grid gap-4" data-panel="us" data-group="market" data-hide="empty">
+    <div class="banner warn"><i data-lucide="flask-conical"></i>
+      <div><strong>Paper period.</strong> 37 of 100 US Swing picks graded live, so live numbers are still early.
+        Position picks count as validated on backtest only until 50 are graded live.</div></div>
+
+    <section class="grid gap-4 lg:grid-cols-2">
+      <div class="card card-pad record enter">
+        <div class="record-head"><h2>Live</h2><span class="tag live">since Oct 1, 2026</span></div>
+        <div class="stats">
+          <div class="stat"><span class="label">Graded</span><b>37</b><span class="sub">Swing 33 · Position 4</span></div>
+          <div class="stat"><span class="label">Beat SPY</span><b>57%</b><span class="sub">21 of 37</span></div>
+          <div class="stat"><span class="label">Stops hit</span><b>11%</b><span class="sub">4 of 37</span></div>
+          <div class="stat"><span class="label">Excess return</span><b class="gain">+0.8%</b><span class="sub">per pick, before costs</span></div>
+          <div class="stat"><span class="label">After costs</span><b class="gain">+0.2%</b><span class="sub">incl. USD conversion</span></div>
+          <div class="stat"><span class="label">Calibration</span><b>3.8 pts</b><span class="sub">limit 5 · few picks yet</span></div>
+        </div>
+      </div>
+      <div class="card card-pad record enter">
+        <div class="record-head"><h2>Backtest</h2><span class="tag back">walk-forward 2018 to 2026</span></div>
+        <div class="stats">
+          <div class="stat"><span class="label">Graded</span><b>4,812</b><span class="sub">Swing 3,977 · Position 835</span></div>
+          <div class="stat"><span class="label">Beat SPY</span><b>56%</b><span class="sub">2,695 of 4,812</span></div>
+          <div class="stat"><span class="label">Stops hit</span><b>9%</b><span class="sub">433 of 4,812</span></div>
+          <div class="stat"><span class="label">Excess return</span><b class="gain">+1.1%</b><span class="sub">per pick, before costs</span></div>
+          <div class="stat"><span class="label">After costs</span><b class="gain">+0.6%</b><span class="sub">incl. USD conversion</span></div>
+          <div class="stat"><span class="label">Calibration</span><b>1.4 pts</b><span class="sub">passes the 5-point gate</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div class="card card-pad calib enter">
+        <div class="section-head" style="margin-bottom:6px"><h2>Calibration</h2><span class="sub">stated chance against how often it happened</span></div>
+        <div id="calib"></div>
+        <div class="legend" style="margin-top:8px">
+          <span><i style="background:var(--muted-foreground)"></i>Perfect</span>
+          <span><i style="background:var(--chart-1)"></i>Backtest</span>
+          <span><i style="background:var(--chart-4);height:8px;width:8px;border-radius:999px"></i>Live, sized by picks</span>
+        </div>
+      </div>
+      <div class="card card-pad enter">
+        <div class="section-head" style="margin-bottom:8px"><h2>By horizon and risk</h2><span class="sub">share that beat SPY</span></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th></th><th class="r">Picks</th><th class="r">Live</th><th class="r">Backtest</th><th class="r">After costs</th></tr></thead>
+            <tbody>
+              <tr><td>Swing 5 days</td><td class="r num">11</td><td class="r num">55%</td><td class="r num">54%</td><td class="r num gain">+0.3%</td></tr>
+              <tr><td>Swing 10 days</td><td class="r num">14</td><td class="r num">57%</td><td class="r num">56%</td><td class="r num gain">+0.5%</td></tr>
+              <tr><td>Swing 20 days</td><td class="r num">8</td><td class="r num">63%</td><td class="r num">57%</td><td class="r num gain">+0.8%</td></tr>
+              <tr><td>Position</td><td class="r num">4</td><td class="r num">50%</td><td class="r num">58%</td><td class="r num gain">+1.6%</td></tr>
+              <tr><td><span class="badge"><span class="dot low"></span>Low risk</span></td><td class="r num">15</td><td class="r num">60%</td><td class="r num">57%</td><td class="r num gain">+0.5%</td></tr>
+              <tr><td><span class="badge"><span class="dot medium"></span>Medium risk</span></td><td class="r num">16</td><td class="r num">56%</td><td class="r num">56%</td><td class="r num gain">+0.6%</td></tr>
+              <tr><td><span class="badge"><span class="dot high"></span>High risk</span></td><td class="r num">6</td><td class="r num">50%</td><td class="r num">54%</td><td class="r num gain">+0.9%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card card-pad enter">
+      <div class="section-head"><h2>Every graded pick</h2><span class="sub">live only · newest first</span></div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead><tr><th>Exit</th><th>Symbol</th><th>Style</th><th class="r">Stated</th><th class="r">Return</th><th class="r">SPY</th><th class="r">Excess</th><th class="r">After costs</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td class="num">Oct 16</td><td class="sym">NOW</td><td>Swing · 10d</td><td class="r num">62%</td><td class="r num gain">+4.1%</td><td class="r num">+0.9%</td><td class="r num gain">+3.2%</td><td class="r num gain">+0.1%</td><td><span class="chip add">Beat</span></td></tr>
+            <tr><td class="num">Oct 15</td><td class="sym">TSLA</td><td>Swing · 10d</td><td class="r num">59%</td><td class="r num loss">−6.0%</td><td class="r num">+0.4%</td><td class="r num loss">−6.4%</td><td class="r num loss">−9.5%</td><td><span class="chip sell">Stop hit</span></td></tr>
+            <tr><td class="num">Oct 14</td><td class="sym">BRK.B</td><td>Swing · 10d</td><td class="r num">61%</td><td class="r num gain">+2.8%</td><td class="r num">+1.1%</td><td class="r num gain">+1.7%</td><td class="r num loss">−1.4%</td><td><span class="chip add">Beat</span></td></tr>
+            <tr><td class="num">Oct 10</td><td class="sym">AVGO</td><td>Swing · 5d</td><td class="r num">58%</td><td class="r num gain">+1.2%</td><td class="r num">+1.6%</td><td class="r num loss">−0.4%</td><td class="r num loss">−3.5%</td><td><span class="chip sell">Missed</span></td></tr>
+            <tr><td class="num">Oct 9</td><td class="sym">MA</td><td>Swing · 20d</td><td class="r num">64%</td><td class="r num gain">+3.5%</td><td class="r num">+0.7%</td><td class="r num gain">+2.8%</td><td class="r num loss">−0.3%</td><td><span class="chip add">Beat</span></td></tr>
+            <tr><td class="num">Oct 8</td><td class="sym">UNH</td><td>Swing · 5d</td><td class="r num">60%</td><td class="r num loss">−1.9%</td><td class="r num">−0.2%</td><td class="r num loss">−1.7%</td><td class="r num loss">−4.8%</td><td><span class="chip sell">Missed</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="sub" style="margin:10px 0 0">After costs subtracts the round trip: 3.1% for US picks (USD conversion 1.5% each way and the spread).</p>
+    </section>
+
+    <div class="banner info"><i data-lucide="info"></i>
+      <div><strong>Backtests overstate results.</strong> Free data under-represents companies that were delisted, so the backtest
+        misses many of the losers a real investor would have held. Weigh the live record more.</div></div>
+  </div>
+
+  <!-- ===== TSX ===== -->
+  <div class="grid gap-4" data-panel="tsx" data-group="market" data-hide="empty" hidden>
+    <div class="banner warn"><i data-lucide="flask-conical"></i>
+      <div><strong>Paper period.</strong> 12 of 100 TSX Swing picks graded live.</div></div>
+    <section class="grid gap-4 lg:grid-cols-2">
+      <div class="card card-pad record">
+        <div class="record-head"><h2>Live</h2><span class="tag live">since Oct 1, 2026</span></div>
+        <div class="stats">
+          <div class="stat"><span class="label">Graded</span><b>12</b><span class="sub">Swing 12</span></div>
+          <div class="stat"><span class="label">Beat XIU.TO</span><b>50%</b><span class="sub">6 of 12</span></div>
+          <div class="stat"><span class="label">After costs</span><b class="gain">+0.3%</b><span class="sub">spread only</span></div>
+        </div>
+      </div>
+      <div class="card card-pad record">
+        <div class="record-head"><h2>Backtest</h2><span class="tag back">walk-forward 2018 to 2026</span></div>
+        <div class="stats">
+          <div class="stat"><span class="label">Graded</span><b>1,906</b><span class="sub">Swing 1,588 · Position 318</span></div>
+          <div class="stat"><span class="label">Beat XIU.TO</span><b>54%</b><span class="sub">1,029 of 1,906</span></div>
+          <div class="stat"><span class="label">After costs</span><b class="gain">+0.5%</b><span class="sub">spread only</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+  window.initPage = () => {
+    // Calibration: stated chance (x) against observed hit rate (y), backtest line and live dots sized by count.
+    const backtest = [[0.575, 0.565], [0.625, 0.612], [0.675, 0.668], [0.725, 0.708]];
+    const live = [[0.575, 0.52, 14], [0.625, 0.6, 12], [0.675, 0.71, 7], [0.725, 0.75, 4]];
+    const W = 360; const H = 250; const P = { l: 40, r: 12, t: 12, b: 34 };
+    const lo = 0.45; const hi = 0.8;
+    const x = (v) => P.l + ((v - lo) / (hi - lo)) * (W - P.l - P.r);
+    const y = (v) => H - P.b - ((v - lo) / (hi - lo)) * (H - P.t - P.b);
+    const ticks = [0.5, 0.6, 0.7, 0.8];
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Calibration: stated chance against observed hit rate">`;
+    ticks.forEach((t) => {
+      svg += `<line class="axis" x1="${P.l}" x2="${W - P.r}" y1="${y(t)}" y2="${y(t)}"/><text x="${P.l - 6}" y="${y(t) + 3}" text-anchor="end">${Math.round(t * 100)}%</text>`;
+      svg += `<text x="${x(t)}" y="${H - P.b + 16}" text-anchor="middle">${Math.round(t * 100)}%</text>`;
+    });
+    svg += `<line x1="${x(lo)}" y1="${y(lo)}" x2="${x(hi)}" y2="${y(hi)}" stroke="var(--muted-foreground)" stroke-dasharray="4 4" opacity="0.7"/>`;
+    svg += `<polyline points="${backtest.map(([a, b]) => `${x(a)},${y(b)}`).join(' ')}" fill="none" stroke="var(--chart-1)" stroke-width="2"/>`;
+    backtest.forEach(([a, b]) => { svg += `<circle cx="${x(a)}" cy="${y(b)}" r="3" fill="var(--chart-1)"/>`; });
+    live.forEach(([a, b, n]) => { svg += `<circle cx="${x(a)}" cy="${y(b)}" r="${3 + Math.sqrt(n) * 1.6}" fill="var(--chart-5)" stroke="var(--chart-4)" stroke-width="1.5"><title>${n} live picks stated ${Math.round(a * 100)}%, beat ${Math.round(b * 100)}%</title></circle>`; });
+    svg += `<text x="${(P.l + W - P.r) / 2}" y="${H - 4}" text-anchor="middle">stated chance to beat the benchmark</text>`;
+    svg += `<text transform="translate(11 ${(P.t + H - P.b) / 2}) rotate(-90)" text-anchor="middle">how often it did</text></svg>`;
+    document.getElementById('calib').innerHTML = svg;
+  };
+</script>
+</body>
+</html>

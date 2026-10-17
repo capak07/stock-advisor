@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Source Health · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 767px) { .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .summary .card { padding: 14px 16px; display: grid; gap: 4px; }
+  .summary b { font: 600 22px/1.1 var(--font-mono) !important; }
+  .usage { height: 8px; border-radius: 999px; background: var(--muted); overflow: hidden; margin-top: 6px; }
+  .usage span { display: block; height: 100%; background: var(--chart-1); transform-origin: left; animation: band-grow 400ms ease-out both; }
+  #sources tbody tr.has-error { cursor: pointer; }
+  #sources tr.err td { white-space: normal; padding-top: 0; color: var(--muted-foreground); font: 12px/1.5 var(--font-mono) !important; background: var(--muted); }
+  #sources tr.err[hidden] { display: none; }
+  .core { font: 500 10px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted-foreground); margin-left: 6px; }
+  .filter { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  @media (max-width: 639px) {
+    #sources thead { display: none; }
+    #sources, #sources tbody { display: block; }
+    #sources tr:not(.err) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name status" "meta meta"; gap: 4px 10px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+    #sources td { display: none; padding: 0; border: 0; }
+    #sources td:nth-child(1) { display: block; grid-area: name; }
+    #sources td:nth-child(3) { display: block; grid-area: status; }
+    #sources td:nth-child(4) { display: block; grid-area: meta; text-align: left !important; }
+    #sources td:nth-child(4)::after { content: attr(data-meta); color: var(--muted-foreground); }
+    #sources tr.err:not([hidden]) { display: block; } #sources tr.err td { display: block; padding: 8px 10px; }
+    .table-scroll { overflow: visible; margin: 0; padding: 0; }
+  }
+</style>
+</head>
+<body data-page="sources">
+<main class="page">
+  <div class="section-head enter" style="margin-bottom:0">
+    <div>
+      <h1>Source health</h1>
+      <p class="sub">The 33 keyless sources behind each run · from the live run at 15:10 and the daily check at 15:09</p>
+    </div>
+    <div class="filter tabs" data-tabs="filter"><button class="tab" data-tab="all" aria-selected="true">All 33</button><button class="tab" data-tab="problems">Problems 3</button><button class="tab" data-tab="core">Core 8</button></div>
+  </div>
+
+  <section class="summary stagger">
+    <div class="card"><span class="label">This run</span><b>30<span class="muted" style="font-size:15px">/33 OK</span></b><span class="sub">2 partial · 1 stale · none failed</span></div>
+    <div class="card"><span class="label">Daily check</span><b class="gain">33<span class="muted" style="font-size:15px">/33 OK</span></b><span class="sub">today 15:09 · every canary</span></div>
+    <div class="card"><span class="label">Core sources</span><b>8<span class="muted" style="font-size:15px">/8 OK</span></b><span class="sub">a core failure degrades the run</span></div>
+    <div class="card"><span class="label">Database</span><b>14<span class="muted" style="font-size:15px"> MB</span></b><span class="sub">of Supabase's free 500 MB</span><div class="usage"><span style="width:2.8%"></span></div></div>
+  </section>
+
+  <section class="card card-pad enter">
+    <div class="table-scroll">
+      <table class="data-table" id="sources">
+        <thead><tr><th>Source</th><th>Kind</th><th>This run</th><th class="r">Time</th><th class="r">Records</th><th class="r">Fails in a row</th><th>Breaker</th><th>Daily check</th></tr></thead>
+        <tbody id="source-rows"></tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin:12px 0 0">"From cache" means the source's daily or weekly window was still fresh, so the run reused it. Click a problem row to see its error.</p>
+  </section>
+</main>
+
+<script>
+  // Real results from the 2026-10-16 live check: [source, kind, status, ms, records, fails, error].
+  const ROWS = [
+    ['sec_form4', 'Filings', 'partial', 430383, 5575, 0, 'PartialFetch: stopped after 41 of 300 symbols; COHR: DocumentBudgetExhausted'],
+    ['sec_13dg', 'Filings', 'partial', 331144, 506, 0, 'PartialFetch: stopped after 122 of 300 symbols; DIS: DocumentBudgetExhausted'],
+    ['yfinance_analyst', 'Market data', 'stale', 25073, 2, 1, 'SilentFailure: 25 empty Yahoo answers in a row (blocked or rate-limited?). Served the 15:09 values.'],
+    ['yfinance_bars', 'Prices', 'ok', 185484, 472845, 0], ['nasdaq_symbols', 'Prices', 'ok', 0, 5969, 0], ['tmx_symbols', 'Prices', 'ok', 0, 676, 0],
+    ['boc_valet', 'Prices', 'ok', 0, 329, 0], ['finra_short_volume', 'Market data', 'ok', 262, 301, 0], ['finra_short_interest', 'Market data', 'ok', 1356, 301, 0],
+    ['yfinance_earnings', 'Market data', 'ok', 239044, 9659, 0], ['sec_xbrl', 'Filings', 'ok', 271508, 99328, 0], ['sec_8k', 'Filings', 'ok', 232017, 1024, 0],
+    ['fred', 'Macro', 'ok', 0, 2353, 0], ['fomc', 'Macro', 'ok', 194, 26, 0], ['cnn_fear_greed', 'Macro', 'ok', 174, 44, 0],
+    ['coingecko', 'Crypto', 'ok', 170, 1, 0], ['coinbase_candles', 'Crypto', 'ok', 0, 290, 0], ['kraken_ohlc', 'Crypto', 'ok', 0, 34, 0],
+    ['crypto_fear_greed', 'Crypto', 'ok', 0, 30, 0], ['blockchain_stats', 'Crypto', 'ok', 0, 296, 0], ['defillama_tvl', 'Crypto', 'ok', 174, 60, 0],
+    ['google_news', 'News', 'ok', 405927, 7612, 0], ['yahoo_news', 'News', 'ok', 223596, 4153, 0], ['nasdaq_news', 'News', 'ok', 2110, 45, 0],
+    ['cnbc_news', 'News', 'ok', 4283, 88, 0], ['marketwatch_news', 'News', 'ok', 175, 20, 0], ['wsj_markets', 'News', 'ok', 29, 50, 0],
+    ['prnewswire', 'News', 'ok', 228, 36, 0], ['globe_news', 'News', 'ok', 461, 171, 0], ['bnn_news', 'News', 'ok', 259, 96, 0],
+    ['newsfile', 'News', 'ok', 6045, 50, 0], ['decrypt_news', 'News', 'ok', 130, 37, 0], ['protos_news', 'News', 'ok', 131, 10, 0],
+  ];
+  const CORE = new Set(['coingecko', 'fred', 'google_news', 'nasdaq_symbols', 'sec_xbrl', 'tmx_symbols', 'yfinance_bars', 'yfinance_earnings']);
+  const time = (ms) => (ms === 0 ? 'from cache' : ms < 1000 ? `${ms} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 1000)} s`);
+
+  window.initPage = () => {
+    const body = document.getElementById('source-rows');
+    body.innerHTML = ROWS.map(([name, kind, status, ms, records, fails, error], i) => `
+      <tr class="${error ? 'has-error' : ''}" data-row="${i}" data-core="${CORE.has(name)}" data-problem="${status !== 'ok'}">
+        <td><span class="sym">${name}</span>${CORE.has(name) ? '<span class="core">core</span>' : ''}</td>
+        <td class="sub">${kind}</td>
+        <td><span class="badge"><span class="dot ${status}"></span>${status}</span></td>
+        <td class="r num" data-meta=" · ${records.toLocaleString('en-CA')} records">${time(ms)}</td>
+        <td class="r num">${records.toLocaleString('en-CA')}</td>
+        <td class="r num">${fails}</td>
+        <td class="sub">closed</td>
+        <td><span class="badge"><span class="dot ok"></span>ok</span></td>
+      </tr>
+      ${error ? `<tr class="err" data-err="${i}" hidden><td colspan="8">${error}</td></tr>` : ''}`).join('');
+    body.addEventListener('click', (event) => {
+      const row = event.target.closest('tr.has-error');
+      if (row) { const err = body.querySelector(`[data-err="${row.dataset.row}"]`); err.hidden = !err.hidden; }
+    });
+    document.addEventListener('tabchange', (event) => {
+      if (event.detail.group !== 'filter') return;
+      const f = event.detail.value;
+      body.querySelectorAll('tr[data-row]').forEach((tr) => {
+        tr.hidden = (f === 'problems' && tr.dataset.problem !== 'true') || (f === 'core' && tr.dataset.core !== 'true');
+        const err = body.querySelector(`[data-err="${tr.dataset.row}"]`);
+        if (err && tr.hidden) err.hidden = true;
+      });
+    });
+  };
+</script>
+</body>
+</html>

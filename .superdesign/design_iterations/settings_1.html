@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Settings · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .settings { max-width: 760px; display: grid; gap: 16px; }
+  .setting { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 24px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .setting .with-unit { width: 190px; }
+  .setting:last-of-type { border-bottom: 0; }
+  @media (max-width: 639px) { .setting { grid-template-columns: minmax(0, 1fr); } }
+  .setting strong { font-size: 13.5px; font-weight: 600; }
+  .setting p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted-foreground); }
+  .with-unit { position: relative; }
+  .with-unit .input { padding-right: 70px !important; text-align: right; }
+  .with-unit span.unit { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted-foreground); pointer-events: none; }
+</style>
+</head>
+<body data-page="settings">
+<main class="page">
+  <div class="enter"><h1>Settings</h1><p class="sub">Costs and guidelines the recommendations use. Changes apply from the next run.</p></div>
+
+  <div class="settings">
+    <form class="card card-pad enter" data-mock-form data-toast="Settings saved: they apply from the next run">
+      <h2 style="margin-bottom:4px">Costs</h2>
+      <label class="setting field">
+        <span><strong>USD conversion fee</strong><p>Charged on each US buy and each US sell. A US pick must beat twice this, plus the spread.</p></span>
+        <span class="with-unit"><input class="input num-input" value="1.5" inputmode="decimal" required><span class="unit">% each way</span><span class="error">Enter a fee.</span></span>
+      </label>
+      <label class="setting field">
+        <span><strong>Crypto spread</strong><p>Wealthsimple's crypto spread, paid on the way in and out.</p></span>
+        <span class="with-unit"><input class="input num-input" value="2.0" inputmode="decimal" required><span class="unit">% each way</span><span class="error">Enter a spread.</span></span>
+      </label>
+      <h2 style="margin:18px 0 4px">TFSA trading guideline</h2>
+      <p class="sub" style="margin:0 0 4px">The CRA can tax frequent TFSA trading as business income. There's no official cutoff; these only set when warnings appear. Not tax advice.</p>
+      <label class="setting field">
+        <span><strong>Round trips a year</strong><p>Warn as TFSA buy-and-sell round trips in the last 12 months approach this.</p></span>
+        <span class="with-unit"><input class="input num-input" value="24" inputmode="numeric" required><span class="unit">a year</span><span class="error">Enter a number.</span></span>
+      </label>
+      <label class="setting field">
+        <span><strong>Short holds</strong><p>Warn when this share of holds over 12 months lasted under 30 days.</p></span>
+        <span class="with-unit"><input class="input num-input" value="50" inputmode="numeric" required><span class="unit">% of holds</span><span class="error">Enter a share.</span></span>
+      </label>
+      <div class="flex items-center justify-between gap-3 flex-wrap" style="margin-top:14px">
+        <span class="sub">Last changed Oct 12, 2026</span>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+
+    <section class="card card-pad enter">
+      <h2 style="margin-bottom:4px">Appearance</h2>
+      <div class="setting" style="border-bottom:0">
+        <span><strong>Theme</strong><p>Saved on this device only.</p></span>
+        <div class="tabs" data-tabs="theme"><button class="tab" data-tab="system">System</button><button class="tab" data-tab="light">Light</button><button class="tab" data-tab="dark">Dark</button></div>
+        <script>
+          // Mark the theme in effect: ?theme=, else the saved choice, else System.
+          (() => {
+            let pref = new URLSearchParams(window.location.search).get('theme');
+            try { pref = pref || localStorage.getItem('ledger-theme'); } catch { /* storage blocked */ }
+            const tab = document.querySelector(`[data-tabs="theme"] [data-tab="${pref || 'system'}"]`) || document.querySelector('[data-tabs="theme"] [data-tab="system"]');
+            tab.setAttribute('aria-selected', 'true');
+          })();
+        </script>
+      </div>
+    </section>
+
+    <section class="card card-pad enter">
+      <h2 style="margin-bottom:4px">Account</h2>
+      <div class="setting" style="border-bottom:0">
+        <span><strong>Signed in as the owner</strong><p>This dashboard has one account. Sign-ups are turned off.</p></span>
+        <a class="btn btn-secondary" href="login_1.html"><i data-lucide="log-out"></i>Sign out</a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+  window.initPage = () => {
+    document.addEventListener('tabchange', (event) => {
+      if (event.detail.group !== 'theme') return;
+      const choice = event.detail.value;
+      const dark = choice === 'dark' || (choice === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', dark);
+      try { if (choice === 'system') localStorage.removeItem('ledger-theme'); else localStorage.setItem('ledger-theme', choice); } catch { /* storage blocked */ }
+    });
+  };
+</script>
+</body>
+</html>

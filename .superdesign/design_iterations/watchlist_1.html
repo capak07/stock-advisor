@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Watchlist · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .add-row { display: grid; grid-template-columns: minmax(0, 1fr) 170px auto; gap: 10px; align-items: start; }
+  @media (max-width: 639px) { .add-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .add-row .btn { grid-column: 1 / 3; } }
+  .watch-row { display: grid; grid-template-columns: 110px 70px 86px minmax(0, 1fr) 96px 36px; gap: 12px; align-items: center; padding: 12px 4px; border-bottom: 1px solid var(--border); transition: background 150ms; }
+  .watch-row:hover { background: var(--accent); }
+  .watch-row:last-child { border-bottom: 0; }
+  .watch-row.removing { animation: collapse 200ms ease-in forwards; overflow: hidden; }
+  @keyframes collapse { to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } }
+  .watch-row.row-added { animation: highlight 400ms ease-out; }
+  @media (max-width: 767px) {
+    .watch-row { grid-template-columns: minmax(0, 1fr) auto 36px; grid-template-areas: "sym verdict x" "detail detail detail"; gap: 4px 10px; }
+    .watch-row .w-sym { grid-area: sym; } .watch-row .w-verdict { grid-area: verdict; } .watch-row .w-x { grid-area: x; }
+    .watch-row .w-detail { grid-area: detail; } .watch-row .w-type, .watch-row .w-price { display: none; }
+  }
+  .watch-head { display: grid; grid-template-columns: 110px 70px 86px minmax(0, 1fr) 96px 36px; gap: 12px; padding: 0 4px 10px; border-bottom: 1px solid var(--border); }
+  @media (max-width: 767px) { .watch-head { display: none; } }
+</style>
+</head>
+<body data-page="watchlist" data-states="verdicts:With model|before:Before the model">
+<main class="page">
+  <div class="enter">
+    <h1>Watchlist</h1>
+    <p class="sub">Any US stock, TSX stock or coin. Watched symbols are priced first and get a verdict every run.</p>
+  </div>
+
+  <section class="card card-pad enter" aria-labelledby="add-h">
+    <h2 id="add-h" style="margin-bottom:12px">Add a symbol</h2>
+    <form data-mock-form data-toast="NVDA added to the watchlist" class="add-row">
+      <label class="field"><span class="sr-only">Symbol</span><input class="input num-input" placeholder="Symbol, e.g. NVDA, SHOP.TO or ETH" required><span class="error">Enter a symbol.</span></label>
+      <label class="field"><span class="sr-only">Type</span><select class="select"><option>US stock</option><option>TSX stock</option><option>Crypto</option></select></label>
+      <button type="submit" class="btn btn-primary"><i data-lucide="plus"></i>Add</button>
+    </form>
+  </section>
+
+  <section class="card card-pad enter" aria-labelledby="list-h">
+    <div class="section-head"><h2 id="list-h">Watching 6</h2><span class="sub" data-hide="before">verdicts from the 15:31 run</span></div>
+    <div class="before-note banner info" data-show="before" style="margin-bottom:12px"><i data-lucide="info"></i><div>Verdicts appear once the model runs. Until then, watched symbols are still priced first and collected.</div></div>
+    <div class="watch-head label"><span>Symbol</span><span>Type</span><span data-hide="before">Verdict</span><span data-hide="before">Why</span><span style="text-align:right">Price</span><span></span></div>
+    <div id="watch-list">
+      <div class="watch-row"><a class="w-sym" href="ticker_1.html"><span class="sym">AMD</span><br><span class="sub">Advanced Micro Devices</span></a><span class="w-type sub">US</span>
+        <span class="w-verdict" data-hide="before"><span class="chip buy">Buy</span></span><span class="w-detail sub" data-hide="before">Swing · hold ~10 days · exit by Oct 30 · 64% to beat SPY · also today's #1 US pick</span>
+        <span class="w-price num" style="text-align:right">US$164.20</span><button class="icon-btn w-x" data-remove aria-label="Remove AMD"><i data-lucide="x"></i></button></div>
+      <div class="watch-row"><a class="w-sym" href="ticker_1.html"><span class="sym">PLTR</span><br><span class="sub">Palantir</span></a><span class="w-type sub">US</span>
+        <span class="w-verdict" data-hide="before"><span class="chip hold">Hold</span></span><span class="w-detail sub" data-hide="before">51% to beat SPY at its best horizon; not enough to buy</span>
+        <span class="w-price num" style="text-align:right">US$182.70</span><button class="icon-btn w-x" data-remove aria-label="Remove PLTR"><i data-lucide="x"></i></button></div>
+      <div class="watch-row"><a class="w-sym" href="ticker_1.html"><span class="sym">DOL.TO</span><br><span class="sub">Dollarama</span></a><span class="w-type sub">TSX</span>
+        <span class="w-verdict" data-hide="before"><span class="chip hold">Hold</span></span><span class="w-detail sub" data-hide="before">54% to beat XIU.TO over 20 days</span>
+        <span class="w-price num" style="text-align:right">C$191.30</span><button class="icon-btn w-x" data-remove aria-label="Remove DOL.TO"><i data-lucide="x"></i></button></div>
+      <div class="watch-row"><a class="w-sym" href="ticker_1.html"><span class="sym">CNR.TO</span><br><span class="sub">CN Rail</span></a><span class="w-type sub">TSX</span>
+        <span class="w-verdict" data-hide="before"><span class="chip buy">Buy</span></span><span class="w-detail sub" data-hide="before">Position · hold ~3 months · exit by Jan 19 · 58% to beat XIU.TO</span>
+        <span class="w-price num" style="text-align:right">C$142.85</span><button class="icon-btn w-x" data-remove aria-label="Remove CNR.TO"><i data-lucide="x"></i></button></div>
+      <div class="watch-row"><a class="w-sym" href="ticker_1.html"><span class="sym">SOL</span><br><span class="sub">Solana</span></a><span class="w-type sub">Crypto</span>
+        <span class="w-verdict" data-hide="before"><span class="chip hold">Hold</span></span><span class="w-detail sub" data-hide="before">49% to beat BTC over 10 days</span>
+        <span class="w-price num" style="text-align:right">C$271.40</span><button class="icon-btn w-x" data-remove aria-label="Remove SOL"><i data-lucide="x"></i></button></div>
+      <div class="watch-row"><a class="w-sym" href="ticker_1.html"><span class="sym">LINK</span><br><span class="sub">Chainlink</span></a><span class="w-type sub">Crypto</span>
+        <span class="w-verdict" data-hide="before"><span class="chip avoid">Avoid</span></span><span class="w-detail sub" data-hide="before">At most 42% to beat BTC at every horizon</span>
+        <span class="w-price num" style="text-align:right">C$24.90</span><button class="icon-btn w-x" data-remove aria-label="Remove LINK"><i data-lucide="x"></i></button></div>
+    </div>
+  </section>
+</main>
+
+<script>
+  window.initPage = () => {
+    const list = document.getElementById('watch-list');
+    const count = () => { document.getElementById('list-h').textContent = `Watching ${list.querySelectorAll('.watch-row:not(.removing)').length}`; };
+    // Remove: the row collapses (200 ms), then it's gone.
+    list.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-remove]');
+      if (!button) return;
+      const row = button.closest('.watch-row');
+      row.style.maxHeight = `${row.offsetHeight}px`;
+      row.classList.add('removing');
+      row.addEventListener('animationend', () => { row.remove(); count(); }, { once: true });
+      Ledger.toast(`${row.querySelector('.sym').textContent} removed from the watchlist`);
+      count();
+    });
+    // Add: a new row slides in highlighted.
+    window.onMockSave = () => {
+      const row = list.firstElementChild.cloneNode(true);
+      row.querySelector('.sym').textContent = 'NVDA';
+      row.querySelector('.w-sym .sub').textContent = 'NVIDIA';
+      row.querySelector('.w-verdict').innerHTML = '<span class="chip hold">New</span>';
+      row.querySelector('.w-detail').textContent = 'Gets its first verdict at the next run (pre-open, 08:15)';
+      row.querySelector('.w-price').textContent = 'US$182.00';
+      row.querySelector('[data-remove]').setAttribute('aria-label', 'Remove NVDA');
+      row.classList.add('row-added');
+      list.prepend(row);
+      count();
+    };
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Today's Picks · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .pick-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+  .pick { display: grid; gap: 12px; padding: 16px; align-content: start; transition: box-shadow 150ms, transform 150ms; }
+  .pick:hover { box-shadow: var(--shadow-md); }
+  .pick-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .pick-rank { font: 500 12px/1 var(--font-mono); color: var(--muted-foreground); }
+  .pick-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; margin: 0; }
+  .pick-facts div { display: grid; gap: 2px; }
+  .pick-facts dt { font: 500 10.5px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); }
+  .pick-facts dd { margin: 0; font-size: 13px; }
+  .pick-facts dd .sub { font-family: var(--font-sans) !important; letter-spacing: 0; }
+  .pick-why { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; font-size: 13px; }
+  .pick-why li { display: flex; gap: 7px; align-items: flex-start; }
+  .pick-why svg { width: 14px; height: 14px; flex: none; margin-top: 3px; }
+  .pick-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .verdict { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .verdict:last-child { border-bottom: 0; padding-bottom: 0; }
+  .verdict .sub { grid-column: 2 / 4; }
+</style>
+</head>
+<body data-page="picks" data-states="picks:Picks|none:No picks yet|failed:Model check failed">
+<main class="page">
+  <div class="section-head enter" style="margin-bottom:0">
+    <div>
+      <h1>Today's Picks</h1>
+      <p class="sub">From the 15:31 pre-close run · at most 10 Swing and 10 Position picks per market, 3 per sector</p>
+    </div>
+    <div class="tabs" data-tabs="market"><button class="tab" data-tab="us" aria-selected="true">US</button><button class="tab" data-tab="tsx">TSX</button></div>
+  </div>
+
+  <!-- ===== US ===== -->
+  <div class="grid gap-4" data-panel="us" data-group="market">
+    <div class="banner warn" data-show="picks"><i data-lucide="flask-conical"></i>
+      <div><strong>Not yet validated.</strong> 37 of 100 US Swing picks have been graded live. Position picks are validated on backtest only. Treat these as a paper trial.</div></div>
+
+    <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]" style="align-items:start">
+      <div class="grid gap-5">
+        <!-- Picks -->
+        <div data-show="picks">
+          <div class="list-head"><h2>Swing <span class="sub">2 days to 4 weeks</span></h2><span class="sub num">5 picks</span></div>
+          <div class="pick-grid stagger">
+            <article class="card pick">
+              <div class="pick-head">
+                <div><span class="pick-rank">#1</span> <a href="ticker_1.html" class="sym" style="font-size:15px">AMD</a><div class="sub">Advanced Micro Devices · Semiconductors</div></div>
+                <span class="badge"><span class="dot medium"></span>Medium risk</span>
+              </div>
+              <div>
+                <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −3.1%</span><span>q50 +2.4%</span><span class="gain">q90 +7.9%</span></div>
+                <div class="range wide" data-q10="-3.1" data-q50="2.4" data-q90="7.9" data-span="10" style="margin-top:4px"></div>
+                <div class="sub">Likely 10-day return relative to SPY</div>
+              </div>
+              <dl class="pick-facts">
+                <div><dt>Beats SPY</dt><dd class="num" style="font-weight:600">64%</dd></div>
+                <div><dt>Hold</dt><dd>~10 trading days · exit by Oct 30</dd></div>
+                <div><dt>Stop</dt><dd class="num">US$152.40 <span class="sub">2 × ATR</span></dd></div>
+                <div><dt>Max size</dt><dd class="num">3% · C$1,027</dd></div>
+                <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">3.1% round trip <span class="sub">USD conversion 1.5% each way + spread</span></dd></div>
+              </dl>
+              <ul class="pick-why">
+                <li><i data-lucide="trending-up" class="gain"></i>Beat SPY by 9.8% over 63 days</li>
+                <li><i data-lucide="trending-up" class="gain"></i>Last EPS beat estimates by 12%</li>
+                <li><i data-lucide="trending-up" class="gain"></i>Insiders net buyers over 90 days</li>
+              </ul>
+              <p class="sub" style="margin:0"><i data-lucide="calendar" style="width:13px;height:13px;display:inline;vertical-align:-2px"></i> Earnings Oct 28, inside the hold · 8-K Oct 15</p>
+              <div class="pick-foot"><span class="sub">Adds 1 to your TFSA round-trip count</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="AMD">I bought this</button></div>
+            </article>
+            <article class="card pick">
+              <div class="pick-head">
+                <div><span class="pick-rank">#2</span> <a href="ticker_1.html" class="sym" style="font-size:15px">CRM</a><div class="sub">Salesforce · Software</div></div>
+                <span class="badge"><span class="dot medium"></span>Medium risk</span>
+              </div>
+              <div>
+                <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −2.2%</span><span>q50 +1.6%</span><span class="gain">q90 +5.0%</span></div>
+                <div class="range wide" data-q10="-2.2" data-q50="1.6" data-q90="5.0" data-span="10" style="margin-top:4px"></div>
+                <div class="sub">Likely 5-day return relative to SPY</div>
+              </div>
+              <dl class="pick-facts">
+                <div><dt>Beats SPY</dt><dd class="num" style="font-weight:600">61%</dd></div>
+                <div><dt>Hold</dt><dd>~5 trading days · exit by Oct 23</dd></div>
+                <div><dt>Stop</dt><dd class="num">US$248.10 <span class="sub">2 × ATR</span></dd></div>
+                <div><dt>Max size</dt><dd class="num">3% · C$1,027</dd></div>
+                <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">3.1% round trip <span class="sub">USD conversion 1.5% each way + spread</span></dd></div>
+              </dl>
+              <ul class="pick-why">
+                <li><i data-lucide="trending-up" class="gain"></i>21-day momentum in the 88th percentile</li>
+                <li><i data-lucide="trending-up" class="gain"></i>Short-volume ratio down 9 points this month</li>
+                <li><i data-lucide="trending-down" class="loss"></i>News sentiment slightly negative</li>
+              </ul>
+              <p class="sub" style="margin:0">No catalysts inside the hold</p>
+              <div class="pick-foot"><span class="sub">Adds 1 to your TFSA round-trip count</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="CRM">I bought this</button></div>
+            </article>
+            <article class="card pick">
+              <div class="pick-head">
+                <div><span class="pick-rank">#3</span> <a href="ticker_1.html" class="sym" style="font-size:15px">LLY</a><div class="sub">Eli Lilly · Pharmaceuticals</div></div>
+                <span class="badge"><span class="dot medium"></span>Medium risk</span>
+              </div>
+              <div>
+                <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −4.0%</span><span>q50 +2.2%</span><span class="gain">q90 +8.1%</span></div>
+                <div class="range wide" data-q10="-4.0" data-q50="2.2" data-q90="8.1" data-span="10" style="margin-top:4px"></div>
+                <div class="sub">Likely 20-day return relative to SPY</div>
+              </div>
+              <dl class="pick-facts">
+                <div><dt>Beats SPY</dt><dd class="num" style="font-weight:600">60%</dd></div>
+                <div><dt>Hold</dt><dd>~20 trading days · exit by Nov 13</dd></div>
+                <div><dt>Stop</dt><dd class="num">US$742.00 <span class="sub">2 × ATR</span></dd></div>
+                <div><dt>Max size</dt><dd class="num">3% · C$1,027</dd></div>
+                <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">3.1% round trip <span class="sub">USD conversion 1.5% each way + spread</span></dd></div>
+              </dl>
+              <ul class="pick-why">
+                <li><i data-lucide="trending-up" class="gain"></i>Revenue up 31% year over year</li>
+                <li><i data-lucide="trending-up" class="gain"></i>Operating margin rising for 4 quarters</li>
+                <li><i data-lucide="trending-down" class="loss"></i>P/E in the top decile of US stocks</li>
+              </ul>
+              <p class="sub" style="margin:0"><i data-lucide="calendar" style="width:13px;height:13px;display:inline;vertical-align:-2px"></i> FDA advisory meeting Nov 3, inside the hold</p>
+              <div class="pick-foot"><span class="sub">Adds 1 to your TFSA round-trip count</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="LLY">I bought this</button></div>
+            </article>
+            <article class="card pick">
+              <div class="pick-head">
+                <div><span class="pick-rank">#4</span> <a href="ticker_1.html" class="sym" style="font-size:15px">COST</a><div class="sub">Costco · Retail</div></div>
+                <span class="badge"><span class="dot low"></span>Low risk</span>
+              </div>
+              <div>
+                <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −2.6%</span><span>q50 +1.4%</span><span class="gain">q90 +4.9%</span></div>
+                <div class="range wide" data-q10="-2.6" data-q50="1.4" data-q90="4.9" data-span="10" style="margin-top:4px"></div>
+                <div class="sub">Likely 20-day return relative to SPY</div>
+              </div>
+              <dl class="pick-facts">
+                <div><dt>Beats SPY</dt><dd class="num" style="font-weight:600">58%</dd></div>
+                <div><dt>Hold</dt><dd>~20 trading days · exit by Nov 13</dd></div>
+                <div><dt>Stop</dt><dd class="num">US$905.00 <span class="sub">2 × ATR</span></dd></div>
+                <div><dt>Max size</dt><dd class="num">5% · C$1,712</dd></div>
+                <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">3.1% round trip <span class="sub">USD conversion 1.5% each way + spread</span></dd></div>
+              </dl>
+              <ul class="pick-why">
+                <li><i data-lucide="trending-up" class="gain"></i>Low 60-day volatility for its returns</li>
+                <li><i data-lucide="trending-up" class="gain"></i>Monthly sales above estimates</li>
+              </ul>
+              <p class="sub" style="margin:0">No catalysts inside the hold</p>
+              <div class="pick-foot"><span class="sub">Adds 1 to your TFSA round-trip count</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="COST">I bought this</button></div>
+            </article>
+          </div>
+
+          <div class="list-head" style="margin-top:22px"><h2>Position <span class="sub">1 to 6 months</span></h2><span class="sub num">2 picks · validated on backtest only</span></div>
+          <div class="pick-grid stagger">
+            <article class="card pick">
+              <div class="pick-head">
+                <div><span class="pick-rank">#1</span> <a href="ticker_1.html" class="sym" style="font-size:15px">GOOGL</a><div class="sub">Alphabet · Internet</div></div>
+                <span class="badge"><span class="dot medium"></span>Medium risk</span>
+              </div>
+              <div>
+                <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −6.8%</span><span>q50 +4.9%</span><span class="gain">q90 +16.0%</span></div>
+                <div class="range wide" data-q10="-6.8" data-q50="4.9" data-q90="16" data-span="20" style="margin-top:4px"></div>
+                <div class="sub">Likely 63-day return relative to SPY</div>
+              </div>
+              <dl class="pick-facts">
+                <div><dt>Beats SPY</dt><dd class="num" style="font-weight:600">62%</dd></div>
+                <div><dt>Hold</dt><dd>~3 months · exit by Jan 19</dd></div>
+                <div><dt>Stop</dt><dd class="num">US$198.30 <span class="sub">3 × ATR</span></dd></div>
+                <div><dt>Max size</dt><dd class="num">3% · C$1,027</dd></div>
+                <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">3.1% round trip <span class="sub">USD conversion 1.5% each way + spread</span></dd></div>
+              </dl>
+              <ul class="pick-why">
+                <li><i data-lucide="trending-up" class="gain"></i>Free-cash-flow yield 3.9%, top quintile</li>
+                <li><i data-lucide="trending-up" class="gain"></i>Revenue up 14% year over year</li>
+              </ul>
+              <p class="sub" style="margin:0"><i data-lucide="calendar" style="width:13px;height:13px;display:inline;vertical-align:-2px"></i> Earnings Oct 28</p>
+              <div class="pick-foot"><span class="sub">A long hold keeps TFSA trades low</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="GOOGL">I bought this</button></div>
+            </article>
+            <article class="card pick">
+              <div class="pick-head">
+                <div><span class="pick-rank">#2</span> <a href="ticker_1.html" class="sym" style="font-size:15px">JPM</a><div class="sub">JPMorgan Chase · Banks</div></div>
+                <span class="badge"><span class="dot low"></span>Low risk</span>
+              </div>
+              <div>
+                <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −9.0%</span><span>q50 +6.1%</span><span class="gain">q90 +20.2%</span></div>
+                <div class="range wide" data-q10="-9" data-q50="6.1" data-q90="20.2" data-span="22" style="margin-top:4px"></div>
+                <div class="sub">Likely 126-day return relative to SPY</div>
+              </div>
+              <dl class="pick-facts">
+                <div><dt>Beats SPY</dt><dd class="num" style="font-weight:600">60%</dd></div>
+                <div><dt>Hold</dt><dd>~6 months · exit by Apr 17</dd></div>
+                <div><dt>Stop</dt><dd class="num">US$262.00 <span class="sub">15% cap</span></dd></div>
+                <div><dt>Max size</dt><dd class="num">5% · C$1,712</dd></div>
+                <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">3.1% round trip <span class="sub">USD conversion 1.5% each way + spread</span></dd></div>
+              </dl>
+              <ul class="pick-why">
+                <li><i data-lucide="trending-up" class="gain"></i>Yield curve steepening helps banks</li>
+                <li><i data-lucide="trending-up" class="gain"></i>13F holders added 2.4% last quarter</li>
+              </ul>
+              <p class="sub" style="margin:0">US dividends in a TFSA lose 15% to withholding tax</p>
+              <div class="pick-foot"><span class="sub">A long hold keeps TFSA trades low</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="JPM">I bought this</button></div>
+            </article>
+          </div>
+        </div>
+
+        <!-- No picks yet -->
+        <div class="card" data-show="none">
+          <div class="empty"><i data-lucide="sparkles"></i><strong>No picks yet</strong>
+            <span style="max-width:460px">Picks come from the model, which isn't trained yet. Until then nothing here is a suggestion to buy.
+              Your holdings and the data behind them are on My Portfolio.</span>
+            <a class="btn btn-secondary btn-sm" href="portfolio_1.html" style="margin-top:6px">Go to My Portfolio</a></div>
+        </div>
+        <!-- Model check failed -->
+        <div class="card" data-show="failed">
+          <div class="empty"><i data-lucide="shield-alert" style="color:var(--loss)"></i><strong>No US picks today: model check failed</strong>
+            <span style="max-width:480px">The US model's calibration error is 7.2 points; the limit is 5. Picks stay off until a retrained model passes.
+              Watchlist verdicts and holding actions still run, on trailing stops and position sizes.</span>
+            <a class="btn btn-secondary btn-sm" href="track_record_1.html" style="margin-top:6px">See the model's metrics</a></div>
+        </div>
+      </div>
+
+      <!-- Verdicts and exit-early flags -->
+      <aside class="grid gap-4">
+        <div class="card card-pad">
+          <div class="section-head" style="margin-bottom:2px"><h2>Watchlist verdicts</h2><a href="watchlist_1.html" class="sub">Edit</a></div>
+          <div data-hide="none">
+            <div class="verdict"><span class="sym">AMD</span><span class="sub" style="grid-column:auto">US</span><span class="chip buy">Buy</span><span class="sub">Swing · ~10 days · exit by Oct 30 · 64%</span></div>
+            <div class="verdict"><span class="sym">PLTR</span><span class="sub" style="grid-column:auto">US</span><span class="chip hold">Hold</span><span class="sub">Beats SPY 51% at its best horizon</span></div>
+            <div class="verdict"><span class="sym">DOL.TO</span><span class="sub" style="grid-column:auto">TSX</span><span class="chip hold">Hold</span><span class="sub">Beats XIU.TO 54% over 20 days</span></div>
+            <div class="verdict"><span class="sym">SOL</span><span class="sub" style="grid-column:auto">Crypto</span><span class="chip hold">Hold</span><span class="sub">Beats BTC 49% over 10 days</span></div>
+            <div class="verdict"><span class="sym">LINK</span><span class="sub" style="grid-column:auto">Crypto</span><span class="chip avoid">Avoid</span><span class="sub">At most 42% at every horizon</span></div>
+          </div>
+          <p class="sub" data-show="none" style="margin:10px 0 0">Verdicts appear once the model runs.</p>
+        </div>
+        <div class="card card-pad" data-hide="none">
+          <h2 style="margin-bottom:6px">Exit early</h2>
+          <div class="verdict"><span class="sym">CRWD</span><span class="sub" style="grid-column:auto">Swing · Oct 9</span><span class="chip sell">Exit</span><span class="sub">Chance to beat SPY fell to 40%</span></div>
+          <div class="verdict"><span class="sym">TSLA</span><span class="sub" style="grid-column:auto">Swing · Oct 7</span><span class="chip sell">Exit</span><span class="sub">Stop US$402.10 hit at Wednesday's close</span></div>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <!-- ===== TSX ===== -->
+  <div class="grid gap-4" data-panel="tsx" data-group="market" hidden>
+    <div class="banner warn" data-show="picks"><i data-lucide="flask-conical"></i>
+      <div><strong>Not yet validated.</strong> 12 of 100 TSX Swing picks have been graded live. TSX stocks have thinner data: no SEC filings or options.</div></div>
+    <div data-show="picks">
+      <div class="list-head"><h2>Swing <span class="sub">2 days to 4 weeks</span></h2><span class="sub num">2 picks</span></div>
+      <div class="pick-grid stagger">
+        <article class="card pick">
+          <div class="pick-head">
+            <div><span class="pick-rank">#1</span> <a href="ticker_1.html" class="sym" style="font-size:15px">ATD.TO</a><div class="sub">Alimentation Couche-Tard · Retail</div></div>
+            <span class="badge"><span class="dot low"></span>Low risk</span>
+          </div>
+          <div>
+            <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −2.7%</span><span>q50 +1.9%</span><span class="gain">q90 +6.0%</span></div>
+            <div class="range wide" data-q10="-2.7" data-q50="1.9" data-q90="6" data-span="10" style="margin-top:4px"></div>
+            <div class="sub">Likely 10-day return relative to XIU.TO</div>
+          </div>
+          <dl class="pick-facts">
+            <div><dt>Beats XIU.TO</dt><dd class="num" style="font-weight:600">62%</dd></div>
+            <div><dt>Hold</dt><dd>~10 trading days · exit by Oct 30</dd></div>
+            <div><dt>Stop</dt><dd class="num">C$71.40 <span class="sub">2 × ATR</span></dd></div>
+            <div><dt>Max size</dt><dd class="num">5% · C$1,712</dd></div>
+            <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">0.20% round trip <span class="sub">spread only, no conversion</span></dd></div>
+          </dl>
+          <ul class="pick-why">
+            <li><i data-lucide="trending-up" class="gain"></i>Beat XIU.TO by 5.1% over 63 days</li>
+            <li><i data-lucide="trending-up" class="gain"></i>News coverage up: 9 stories in 48 hours</li>
+          </ul>
+          <p class="sub" style="margin:0">No catalysts inside the hold</p>
+          <div class="pick-foot"><span class="sub">Adds 1 to your TFSA round-trip count</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="ATD.TO">I bought this</button></div>
+        </article>
+        <article class="card pick">
+          <div class="pick-head">
+            <div><span class="pick-rank">#2</span> <a href="ticker_1.html" class="sym" style="font-size:15px">CLS.TO</a><div class="sub">Celestica · Technology</div></div>
+            <span class="badge"><span class="dot high"></span>High risk</span>
+          </div>
+          <div>
+            <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −6.4%</span><span>q50 +3.0%</span><span class="gain">q90 +11.8%</span></div>
+            <div class="range wide" data-q10="-6.4" data-q50="3" data-q90="11.8" data-span="14" style="margin-top:4px"></div>
+            <div class="sub">Likely 5-day return relative to XIU.TO</div>
+          </div>
+          <dl class="pick-facts">
+            <div><dt>Beats XIU.TO</dt><dd class="num" style="font-weight:600">60%</dd></div>
+            <div><dt>Hold</dt><dd>~5 trading days · exit by Oct 23</dd></div>
+            <div><dt>Stop</dt><dd class="num">C$301.00 <span class="sub">2 × ATR</span></dd></div>
+            <div><dt>Max size</dt><dd class="num">1.5% · C$514</dd></div>
+            <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">0.20% round trip <span class="sub">spread only, no conversion</span></dd></div>
+          </dl>
+          <ul class="pick-why">
+            <li><i data-lucide="trending-up" class="gain"></i>21-day momentum in the 95th percentile</li>
+            <li><i data-lucide="trending-down" class="loss"></i>60-day volatility in the top decile</li>
+          </ul>
+          <p class="sub" style="margin:0"><i data-lucide="calendar" style="width:13px;height:13px;display:inline;vertical-align:-2px"></i> Earnings Oct 22, inside the hold</p>
+          <div class="pick-foot"><span class="sub">Adds 1 to your TFSA round-trip count</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="CLS.TO">I bought this</button></div>
+        </article>
+      </div>
+      <div class="list-head" style="margin-top:22px"><h2>Position <span class="sub">1 to 6 months</span></h2><span class="sub num">1 pick · validated on backtest only</span></div>
+      <div class="pick-grid stagger">
+        <article class="card pick">
+          <div class="pick-head">
+            <div><span class="pick-rank">#1</span> <a href="ticker_1.html" class="sym" style="font-size:15px">CSU.TO</a><div class="sub">Constellation Software · Software</div></div>
+            <span class="badge"><span class="dot medium"></span>Medium risk</span>
+          </div>
+          <div>
+            <div class="flex justify-between num" style="font-size:12px"><span class="loss">q10 −10.5%</span><span>q50 +7.2%</span><span class="gain">q90 +24.0%</span></div>
+            <div class="range wide" data-q10="-10.5" data-q50="7.2" data-q90="24" data-span="26" style="margin-top:4px"></div>
+            <div class="sub">Likely 126-day return relative to XIU.TO</div>
+          </div>
+          <dl class="pick-facts">
+            <div><dt>Beats XIU.TO</dt><dd class="num" style="font-weight:600">61%</dd></div>
+            <div><dt>Hold</dt><dd>~6 months · exit by Apr 17</dd></div>
+            <div><dt>Stop</dt><dd class="num">C$3,920 <span class="sub">3 × ATR</span></dd></div>
+            <div><dt>Max size</dt><dd class="num">3% · C$1,027</dd></div>
+            <div style="grid-column:1/3"><dt>Est. cost</dt><dd class="num">0.20% round trip <span class="sub">spread only, no conversion</span></dd></div>
+          </dl>
+          <ul class="pick-why">
+            <li><i data-lucide="trending-up" class="gain"></i>Beat XIU.TO by 6.3% over 126 days</li>
+            <li><i data-lucide="trending-up" class="gain"></i>Low drawdowns for its sector</li>
+          </ul>
+          <p class="sub" style="margin:0">No catalysts inside the hold</p>
+          <div class="pick-foot"><span class="sub">A long hold keeps TFSA trades low</span><button class="btn btn-primary btn-sm" data-open="buy-drawer" data-pick="CSU.TO">I bought this</button></div>
+        </article>
+      </div>
+    </div>
+    <div class="card" data-show="none failed">
+      <div class="empty"><i data-lucide="sparkles"></i><strong>No TSX picks yet</strong>
+        <span style="max-width:460px">TSX picks start once the TSX model is trained and passes its checks.</span></div>
+    </div>
+  </div>
+</main>
+
+<!-- "I bought this" -->
+<div class="drawer" id="buy-drawer" role="dialog" aria-modal="true" aria-labelledby="buy-h" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="drawer-head"><h2 id="buy-h">Add a buy</h2><button class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+  <form data-mock-form data-toast="Buy saved and linked to the pick" style="display:contents">
+    <div class="drawer-body">
+      <div class="banner info"><i data-lucide="link"></i><div>Linked to <strong id="buy-pick">AMD</strong> from the 15:31 run, so it's graded as yours.</div></div>
+      <label class="field"><span>Account</span><select class="select"><option>TFSA</option><option>RRSP</option><option>FHSA</option><option>Non-registered</option></select></label>
+      <label class="field"><span>Symbol</span><input class="input num-input" id="buy-symbol" value="AMD" required><span class="error">Enter a symbol.</span></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="field"><span>Quantity</span><input class="input num-input" inputmode="decimal" placeholder="5" required><span class="error">Enter a quantity.</span></label>
+        <label class="field"><span>Price (USD)</span><input class="input num-input" inputmode="decimal" placeholder="164.20" required><span class="error">Enter a price.</span></label>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="field"><span>Date</span><input class="input num-input" type="date" value="2026-10-16" required></label>
+        <label class="field"><span>USD/CAD rate</span><input class="input num-input" value="1.3712"><span class="hint">Bank of Canada, Oct 16</span></label>
+      </div>
+    </div>
+    <div class="drawer-foot"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button type="submit" class="btn btn-primary"><i data-lucide="plus"></i>Save buy</button></div>
+  </form>
+</div>
+
+<script>
+  window.initPage = () => {
+    // "I bought this" fills in the pick it came from.
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-pick]');
+      if (!button) return;
+      document.getElementById('buy-pick').textContent = button.dataset.pick;
+      document.getElementById('buy-symbol').value = button.dataset.pick;
+    }, true);
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>BRK.B · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .price-big { font: 600 30px/1 var(--font-mono) !important; letter-spacing: -0.02em; }
+  .factor { display: grid; grid-template-columns: 1fr 120px; gap: 4px 14px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .factor:last-child { border-bottom: 0; }
+  .factor .bar { position: relative; height: 6px; border-radius: 3px; background: var(--muted); }
+  .factor .bar span { position: absolute; top: 0; height: 100%; border-radius: 3px; transform-origin: left; animation: band-grow 300ms ease-out both; }
+  .factor .bar::after { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 12px; background: var(--muted-foreground); opacity: 0.6; }
+  .news-item { display: grid; grid-template-columns: 52px 1fr; gap: 3px 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .news-item:last-child { border-bottom: 0; }
+  .news-item a:hover { text-decoration: underline !important; }
+  .sent { font: 600 11.5px/1 var(--font-mono) !important; padding: 5px 6px; border-radius: var(--radius-sm); text-align: center; align-self: start; }
+  .sent.pos { color: var(--gain); background: var(--gain-soft); }
+  .sent.neg { color: var(--loss); background: var(--loss-soft); }
+  .sent.neu { color: var(--hold); background: var(--hold-soft); }
+  .source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; font-size: 13px; }
+  .source-grid span { display: flex; align-items: center; gap: 7px; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 639px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .kpi { display: grid; gap: 4px; }
+  .kpi b { font: 600 17px/1.1 var(--font-mono) !important; }
+</style>
+</head>
+<body data-page="ticker">
+<main class="page">
+  <div class="enter">
+    <a href="portfolio_1.html" class="sub inline-flex items-center gap-1"><i data-lucide="arrow-left" style="width:14px;height:14px"></i>My Portfolio</a>
+    <div class="flex flex-wrap items-end justify-between gap-4" style="margin-top:10px">
+      <div>
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1"><h1 class="num" style="font-size:26px !important">BRK.B</h1><span class="sub">Berkshire Hathaway · US · Financials · NYSE</span></div>
+        <div class="flex flex-wrap items-baseline gap-3" style="margin-top:8px">
+          <span class="price-big">US$480.00</span><span class="num gain">+2.85 · +0.6% today</span><span class="sub">at the 15:31 run</span>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="badge">You hold 4 · TFSA</span>
+        <span class="chip hold">Hold</span>
+        <span class="badge"><span class="dot low"></span>Low risk</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Price and forecast -->
+  <section class="card card-pad enter" aria-labelledby="chart-h">
+    <div class="section-head">
+      <h2 id="chart-h">Price and forecast</h2>
+      <div class="flex flex-wrap gap-2">
+        <div class="tabs" data-tabs="range"><button class="tab" data-tab="21">1M</button><button class="tab" data-tab="63">3M</button><button class="tab" data-tab="126" aria-selected="true">6M</button><button class="tab" data-tab="252">1Y</button></div>
+        <div class="tabs" data-tabs="horizon" aria-label="Forecast horizon in trading days">
+          <button class="tab" data-tab="5">5d</button><button class="tab" data-tab="10">10d</button><button class="tab" data-tab="20" aria-selected="true">20d</button>
+          <button class="tab" data-tab="63">63d</button><button class="tab" data-tab="126">126d</button>
+        </div>
+      </div>
+    </div>
+    <div id="price-chart"></div>
+    <div class="legend" style="margin-top:8px">
+      <span><i style="background:var(--chart-1)"></i>Price</span>
+      <span><i style="background:var(--chart-4)"></i>Median forecast</span>
+      <span><i style="background:var(--chart-5);height:8px"></i>Likely range, q10 to q90</span>
+    </div>
+    <div class="kpis" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div class="kpi"><span class="label">Beats SPY</span><b id="k-p">58%</b><span class="sub" id="k-p-sub">over 20 trading days</span></div>
+      <div class="kpi"><span class="label">Median</span><b id="k-mid">+0.9%</b><span class="sub">relative to SPY</span></div>
+      <div class="kpi"><span class="label">Exit by</span><b id="k-exit">Nov 13</b><span class="sub">NYSE calendar</span></div>
+      <div class="kpi"><span class="label">Trailing stop</span><b>US$441.00</b><span class="sub">highest close − 2.5 × ATR</span></div>
+    </div>
+  </section>
+
+  <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]" style="align-items:start">
+    <div class="grid gap-4">
+      <div class="card card-pad enter">
+        <div class="section-head" style="margin-bottom:4px"><h2>Top factors</h2><span class="sub">what moves the forecast, and which way</span></div>
+        <div class="factor"><span>Beat SPY by 4.1% over 63 days <span class="sub">· 72nd percentile</span></span><div class="bar"><span style="left:50%;width:34%;background:var(--gain)"></span></div></div>
+        <div class="factor"><span>Free-cash-flow yield 6.2% <span class="sub">· top quintile</span></span><div class="bar"><span style="left:50%;width:26%;background:var(--gain)"></span></div></div>
+        <div class="factor"><span>13F holders added 2.1% last quarter</span><div class="bar"><span style="left:50%;width:14%;background:var(--gain)"></span></div></div>
+        <div class="factor"><span>21-day momentum −1.2% <span class="sub">· 38th percentile</span></span><div class="bar"><span style="left:38%;width:12%;background:var(--loss)"></span></div></div>
+        <div class="factor"><span>News sentiment +0.10, trend +0.07 <span class="sub">· live only</span></span><div class="bar"><span style="left:50%;width:6%;background:var(--gain)"></span></div></div>
+      </div>
+      <div class="card card-pad enter">
+        <h2 style="margin-bottom:10px">Catalysts</h2>
+        <div class="grid gap-2" style="font-size:13px">
+          <span class="flex items-center gap-2"><i data-lucide="calendar" style="width:15px;height:15px"></i>Q3 results Nov 1, inside the 20-day hold <span class="sub">· not within 5 days, so no Review yet</span></span>
+          <span class="flex items-center gap-2 sub"><i data-lucide="file-text" style="width:15px;height:15px"></i>No 8-K in the last 3 days</span>
+        </div>
+      </div>
+      <div class="card card-pad enter">
+        <div class="section-head" style="margin-bottom:10px"><h2>Sources</h2><span class="sub">24 of the 25 sources that cover US stocks contributed</span></div>
+        <div class="source-grid">
+          <span><span class="dot ok"></span>Prices · Yahoo</span><span><span class="dot ok"></span>Fundamentals · SEC XBRL</span>
+          <span><span class="dot ok"></span>Insider trades · Form 4</span><span><span class="dot ok"></span>Large holders · 13D/G</span>
+          <span><span class="dot ok"></span>Short volume · FINRA</span><span><span class="dot ok"></span>Short interest · FINRA</span>
+          <span><span class="dot ok"></span>Earnings dates · Yahoo</span><span><span class="dot stale"></span>Analysts · Yahoo <span class="sub">stale</span></span>
+          <span><span class="dot ok"></span>News · 12 feeds</span><span><span class="dot ok"></span>Macro · FRED, FOMC, CNN</span>
+        </div>
+      </div>
+      <div class="card card-pad enter">
+        <div class="section-head" style="margin-bottom:6px"><h2>Past picks</h2><span class="sub">2 graded · 1 beat SPY</span></div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Style</th><th class="r">Beats SPY</th><th class="r">Return</th><th class="r">SPY</th><th class="r">Excess</th><th>Result</th></tr></thead>
+            <tbody>
+              <tr><td class="num">Sep 22</td><td>Swing · 10d</td><td class="r num">61%</td><td class="r num gain">+2.8%</td><td class="r num">+1.1%</td><td class="r num gain">+1.7%</td><td><span class="chip add">Beat</span></td></tr>
+              <tr><td class="num">Aug 14</td><td>Position · 63d</td><td class="r num">59%</td><td class="r num gain">+3.9%</td><td class="r num">+5.2%</td><td class="r num loss">−1.3%</td><td><span class="chip sell">Missed</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- News (real headlines from the 2026-10-16 live run) -->
+    <div class="card card-pad enter" aria-labelledby="news-h">
+      <div class="section-head" style="margin-bottom:4px"><h2 id="news-h">News</h2><span class="sub">48 hours</span></div>
+      <div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr));margin:6px 0 4px">
+        <div class="kpi"><span class="label">Stories</span><b>34</b></div>
+        <div class="kpi"><span class="label">Outlets</span><b>24</b></div>
+        <div class="kpi"><span class="label">Sentiment</span><b class="gain">+0.10</b></div>
+        <div class="kpi"><span class="label">Trend</span><b class="gain">+0.07</b></div>
+      </div>
+      <div class="stagger">
+        <div class="news-item"><span class="sent neu">+0.03</span><a href="#">IPO Stock Of The Week: Bending Spoons Defies Gravity After $330 Million Berkshire Investment</a><span></span><span class="sub">finance.yahoo.com · 2:53 PM</span></div>
+        <div class="news-item"><span class="sent pos">+0.90</span><a href="#">Why Bending Spoons Stock Soared 27% This Week</a><span></span><span class="sub">fool.com · 1:59 PM</span></div>
+        <div class="news-item"><span class="sent pos">+0.73</span><a href="#">Coca-Cola, Visa and Mastercard Hit Records as Investors Rotate Out of Chip Stocks</a><span></span><span class="sub">finance.yahoo.com · 1:53 PM</span></div>
+        <div class="news-item"><span class="sent neu">+0.01</span><a href="#">Buffett ends his 20-year $47B pledge to the Gates Foundation</a><span></span><span class="sub">thestreet.com · 1:07 PM</span></div>
+        <div class="news-item"><span class="sent neu">+0.08</span><a href="#">Promising Financial Stocks To Watch Today - October 16th</a><span></span><span class="sub">MarketBeat · 12:08 PM</span></div>
+        <div class="news-item"><span class="sent neu">−0.04</span><a href="#">Berkshire Hathaway stock: Results are due November 1, 2026 for Berkshire Hathaway stock</a><span></span><span class="sub">ad-hoc-news.de · 11:31 AM</span></div>
+        <div class="news-item"><span class="sent pos">+0.29</span><a href="#">What State Street Financial Select Sector SPDR (XLF) Sold: Berkshire Leads on Wednesday</a><span></span><span class="sub">Yahoo Finance · 7:05 AM</span></div>
+        <div class="news-item"><span class="sent neu">+0.02</span><a href="#">Greg Abel Keeps Berkshire Hathaway's $356 Billion Portfolio Anchored in Three Megacap Stocks</a><span></span><span class="sub">BigGo Finance · 5:55 AM</span></div>
+        <div class="news-item"><span class="sent pos">+0.25</span><a href="#">Berkshire Hathaway: Abel Pushes Into New Territory With Bending Spoons Investment</a><span></span><span class="sub">Morningstar · 5:13 AM</span></div>
+        <div class="news-item"><span class="sent neu">+0.04</span><a href="#">How Homebuilder Expansion At Berkshire Hathaway (BRK.A) Has Changed Its Investment Story</a><span></span><span class="sub">finance.yahoo.com · 5:08 AM</span></div>
+        <div class="news-item"><span class="sent neu">+0.00</span><a href="#">Buffett's Berkshire Is Going Long on Homebuilders. Here's Why I'm Moving in the Opposite Direction</a><span></span><span class="sub">fool.com · 3:40 AM</span></div>
+        <div class="news-item"><span class="sent neg">−0.22</span><a href="#">Earnings Calendar for:</a><span></span><span class="sub">Yahoo Finance · Oct 15, 5:53 PM</span></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%">Show all 34 stories</button>
+      <p class="sub" style="margin:8px 0 0">Headlines link to the publisher. Google News links open Google's redirect page. Sentiment is FinBERT, from −1 to +1.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+  window.initPage = () => {
+    const prices = Ledger.walk({ seed: 11, n: 252, end: 480, vol: 0.0085, drift: 0.0002 });
+    const dates = Ledger.tradingDays(252);
+    // Forecast quantiles (return relative to SPY, %) and the chance to beat SPY, by horizon in trading days.
+    const HORIZONS = {
+      5: { q10: -2.1, q50: 0.4, q90: 2.9, p: 55, exit: 'Oct 23' },
+      10: { q10: -3.0, q50: 0.6, q90: 4.1, p: 57, exit: 'Oct 30' },
+      20: { q10: -4.2, q50: 0.9, q90: 5.8, p: 58, exit: 'Nov 13' },
+      63: { q10: -7.5, q50: 2.1, q90: 10.8, p: 61, exit: 'Jan 19' },
+      126: { q10: -10.9, q50: 3.8, q90: 16.2, p: 63, exit: 'Apr 17' },
+    };
+    let span = 126; let horizon = 20;
+    const cone = (h) => ({ ...HORIZONS[h], label: `+${h} trading days`, short: `+${h}d` });
+    const chart = Ledger.lineChart(document.getElementById('price-chart'), {
+      series: prices.slice(-span), dates: dates.slice(-span), cone: cone(horizon), height: 280,
+      format: (v) => `$${v.toFixed(0)}`, label: 'BRK.B price with the forecast cone',
+    });
+    const fmt = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%`;
+    document.addEventListener('tabchange', (event) => {
+      if (event.detail.group === 'range') {
+        span = Number(event.detail.value);
+        chart.setSeries(prices.slice(-span), [], dates.slice(-span));
+      }
+      if (event.detail.group === 'horizon') {
+        horizon = Number(event.detail.value);
+        const h = HORIZONS[horizon];
+        chart.setCone(cone(horizon));
+        document.getElementById('k-p').textContent = `${h.p}%`;
+        document.getElementById('k-p-sub').textContent = `over ${horizon} trading days`;
+        document.getElementById('k-mid').textContent = fmt(h.q50);
+        document.getElementById('k-exit').textContent = h.exit;
+      }
+    });
+  };
+</script>
+</body>
+</html>

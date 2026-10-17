@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Portfolio · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .value-big { font: 600 34px/1.05 var(--font-mono) !important; letter-spacing: -0.03em; }
+  .expand { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 200ms ease-out, opacity 200ms; opacity: 0; }
+  .expand.open { grid-template-rows: 1fr; opacity: 1; }
+  .expand > div { overflow: hidden; }
+  .hold-toggle { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-top: 10px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); cursor: pointer; text-align: left; }
+  .hold-toggle:hover { background: var(--accent); }
+  .hold-toggle svg { width: 16px; height: 16px; transition: transform 200ms; }
+  .hold-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .hold-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .hold-row:last-child { border-bottom: 0; }
+  .warning { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+  .warning:last-child { border-bottom: 0; padding-bottom: 0; }
+  .warning svg { width: 16px; height: 16px; color: var(--attention); margin-top: 2px; }
+  .warning strong { font-size: 13px; font-weight: 600; }
+  .warning p { grid-column: 2; margin: 0; font-size: 12.5px; color: var(--muted-foreground); }
+  .stack { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--muted); }
+  .stack span { display: block; height: 100%; transform-origin: left; animation: band-grow 400ms ease-out both; }
+  .stack-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: 12px; color: var(--muted-foreground); }
+  .stack-legend b { color: var(--foreground); font-weight: 500; font-family: var(--font-mono); }
+  .warn-cell { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+  .warn-cell svg { width: 14px; height: 14px; color: var(--attention); }
+  #holdings td:last-child { white-space: normal; min-width: 150px; max-width: 190px; }
+  /* Phones: each holding becomes a stacked row (symbol and action, account value and P/L, range, note). */
+  @media (max-width: 639px) {
+    #holdings thead { display: none; }
+    #holdings, #holdings tbody { display: block; }
+    #holdings tr { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "sym sym act" "acct val pl" "rng rng rng" "note note note"; gap: 6px 10px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    #holdings tr:last-child { border-bottom: 0; }
+    #holdings td { display: none; padding: 0; border: 0; white-space: normal; max-width: none; min-width: 0; }
+    #holdings td:nth-child(1) { display: block; grid-area: acct; }
+    #holdings td:nth-child(2) { display: block; grid-area: sym; }
+    #holdings td:nth-child(2) br { display: none; }
+    #holdings td:nth-child(2) .sub::before { content: " · "; }
+    #holdings td:nth-child(4) { display: block; grid-area: val; text-align: left !important; }
+    #holdings td:nth-child(4)::before { content: "C$"; }
+    #holdings td:nth-child(5) { display: block; grid-area: pl; }
+    #holdings td:nth-child(5) br { display: none; }
+    #holdings td:nth-child(5) .sub::before { content: " · "; }
+    #holdings td:nth-child(6) { display: block; grid-area: act; justify-self: end; }
+    #holdings td:nth-child(7) { display: block; grid-area: rng; }
+    #holdings td:last-child:has(.warn-cell) { display: block; grid-area: note; }
+    #holdings td[hidden] { display: none !important; }
+    .table-scroll { overflow: visible; margin: 0; padding: 0; }
+  }
+  .before-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 12.5px; color: var(--muted-foreground); margin-bottom: 12px; }
+  .before-note svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
+</style>
+</head>
+<body data-page="portfolio" data-states="full:With model|before:Before the model|stale:Stale run">
+<main class="page">
+  <div class="section-head enter" style="margin-bottom:0">
+    <div>
+      <h1>My Portfolio</h1>
+      <p class="sub">TFSA and Crypto accounts · values in CAD at the latest Bank of Canada rate (1.3712)</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button class="btn btn-secondary" data-open="import-drawer"><i data-lucide="file-up"></i>Import file</button>
+      <button class="btn btn-secondary" data-open="sell-drawer"><i data-lucide="minus"></i>Sell</button>
+      <button class="btn btn-primary" data-open="buy-drawer"><i data-lucide="plus"></i>Buy</button>
+    </div>
+  </div>
+
+  <!-- Value and returns -->
+  <section class="card card-pad enter" aria-labelledby="value-h">
+    <div class="flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <span class="label" id="value-h">Portfolio value</span>
+        <div class="value-big" style="margin-top:8px">C$34,237</div>
+        <div class="num" style="margin-top:6px;font-size:13px">
+          <span class="gain">+C$1,950 unrealized</span>
+          <span class="muted">· cost C$32,287</span>
+        </div>
+      </div>
+      <div class="grid gap-3 justify-items-end">
+        <div class="tabs" data-tabs="period">
+          <button class="tab" data-tab="1m">1M</button><button class="tab" data-tab="3m">3M</button>
+          <button class="tab" data-tab="12m">12M</button><button class="tab" data-tab="all" aria-selected="true">All</button>
+        </div>
+        <div class="num" style="font-size:13px;text-align:right">
+          <span class="muted" id="ret-label">since the first buy, May 12, 2025</span><br>
+          Portfolio <b data-ret="port" class="gain">+6.0%</b>
+          <span class="muted">· XIU.TO</span> <span data-ret="xiu">+4.1%</span>
+          <span class="muted">· SPY in CAD</span> <span data-ret="spy">+5.2%</span>
+        </div>
+      </div>
+    </div>
+    <div id="value-chart" style="margin-top:14px"></div>
+    <div class="legend" style="margin-top:6px">
+      <span><i style="background:var(--chart-1)"></i>Portfolio</span>
+      <span><i style="background:var(--chart-2)"></i>XIU.TO</span>
+      <span><i style="background:var(--chart-3)"></i>SPY in CAD</span>
+    </div>
+  </section>
+
+  <section class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style="align-items:start">
+    <!-- Actions -->
+    <div class="card card-pad enter" aria-labelledby="actions-h">
+      <div class="section-head"><h2 id="actions-h">Actions</h2><span class="sub">Sell → Trim → Review → Add → Hold</span></div>
+      <div data-hide="before">
+        <div class="action-grid stagger">
+          <a class="action-card sell attention" href="ticker_1.html">
+            <div class="flex items-center justify-between"><span class="chip sell">Sell</span><span class="sub">TFSA</span></div>
+            <div><span class="sym">SHOP.TO</span> <span class="sub">Shopify</span></div>
+            <p style="font-size:13px;margin:0">Trailing stop C$146.10 hit; it closed at C$141.00.</p>
+            <div class="num loss" style="font-size:13px">−C$405 · −16.1%</div>
+          </a>
+          <a class="action-card trim attention" href="ticker_1.html">
+            <div class="flex items-center justify-between"><span class="chip trim">Trim</span><span class="sub">TFSA</span></div>
+            <div><span class="sym">NVDA</span> <span class="sub">NVIDIA</span></div>
+            <p style="font-size:13px;margin:0">5.8% of the portfolio; Medium risk allows 3%. Sell about 4 of 8 shares.</p>
+            <div class="num gain" style="font-size:13px">+C$937 · +88.6%</div>
+          </a>
+          <a class="action-card review" href="ticker_1.html">
+            <div class="flex items-center justify-between"><span class="chip review">Review</span><span class="sub">TFSA · Hold</span></div>
+            <div><span class="sym">AAPL</span> <span class="sub">Apple</span></div>
+            <p style="font-size:13px;margin:0">Earnings Oct 30, in 3 trading days. Check before acting.</p>
+            <div class="num gain" style="font-size:13px">+C$540 · +20.9%</div>
+          </a>
+          <a class="action-card add" href="ticker_1.html">
+            <div class="flex items-center justify-between"><span class="chip add">Add</span><span class="sub">TFSA</span></div>
+            <div><span class="sym">RY.TO</span> <span class="sub">Royal Bank</span></div>
+            <p style="font-size:13px;margin:0">Would be a Buy today: 61% to beat XIU.TO over 21 days, below its max size.</p>
+            <div class="num gain" style="font-size:13px">+C$260 · +7.6%</div>
+          </a>
+        </div>
+        <button class="hold-toggle" data-expand="hold-list" aria-expanded="false" aria-controls="hold-list">
+          <span class="chip hold">Hold</span>
+          <span style="flex:1;font-size:13px">6 holdings · <span class="muted">BRK.B, TD.TO, CNQ.TO, MSFT, BTC, ETH</span></span>
+          <i data-lucide="chevron-down"></i>
+        </button>
+        <div class="expand" id="hold-list"><div>
+          <div class="card" style="margin-top:8px">
+            <div class="hold-row"><span><span class="sym">BRK.B</span> <span class="sub">Berkshire Hathaway</span></span><span class="num sub">hold ~20 days · exit by Nov 13</span></div>
+            <div class="hold-row"><span><span class="sym">TD.TO</span> <span class="sub">TD Bank</span></span><span class="num sub">hold ~14 days · exit by Nov 5</span></div>
+            <div class="hold-row"><span><span class="sym">CNQ.TO</span> <span class="sub">Canadian Natural</span></span><span class="num sub">hold ~10 days · exit by Oct 30</span></div>
+            <div class="hold-row"><span><span class="sym">MSFT</span> <span class="sub">Microsoft</span></span><span class="num sub">hold ~40 days · exit by Dec 11</span></div>
+            <div class="hold-row"><span><span class="sym">BTC</span> <span class="sub">Bitcoin</span></span><span class="num sub">hold ~20 days · exit by Nov 13</span></div>
+            <div class="hold-row"><span><span class="sym">ETH</span> <span class="sub">Ether</span></span><span class="num sub">hold ~10 days · exit by Oct 30</span></div>
+          </div>
+        </div></div>
+      </div>
+      <div class="empty" data-show="before">
+        <i data-lucide="sparkles"></i>
+        <strong>No actions yet</strong>
+        <span style="max-width:440px">Sell, Trim, Review, Add and Hold come from the model, which isn't trained yet.
+          Until then, this page shows values and P/L, and the warnings that don't need the model.</span>
+      </div>
+    </div>
+
+    <!-- Warnings and breakdown -->
+    <aside class="grid gap-4">
+      <div class="card card-pad enter" aria-labelledby="warn-h">
+        <div class="section-head" style="margin-bottom:2px"><h2 id="warn-h">Warnings</h2><span class="sub">not tax advice</span></div>
+        <div class="warning"><i data-lucide="triangle-alert"></i><strong>Technology is 31% of the portfolio</strong>
+          <p>Above the 25% guideline: MSFT, AAPL, SHOP.TO and NVDA.</p></div>
+        <div class="warning" data-hide="before"><i data-lucide="triangle-alert"></i><strong>NVDA is above its max size</strong>
+          <p>5.8% of the portfolio; Medium risk allows 3%.</p></div>
+        <div class="warning"><i data-lucide="triangle-alert"></i><strong>TFSA: 19 round trips in 12 months</strong>
+          <p>Your guideline is 24. Frequent TFSA trading can make gains taxable as business income.</p></div>
+        <div class="warning"><i data-lucide="triangle-alert"></i><strong>ETH: superficial-loss window</strong>
+          <p>You sold ETH at a loss on Oct 3. Buying it back before Nov 2 denies that loss.</p></div>
+      </div>
+      <div class="card card-pad enter" aria-labelledby="mix-h">
+        <h2 id="mix-h" style="margin-bottom:12px">Breakdown</h2>
+        <div class="grid gap-4">
+          <div data-hide="before">
+            <span class="label">By risk</span>
+            <div class="stack" style="margin-top:8px"><span style="width:25.8%;background:var(--risk-low)"></span><span style="width:30.6%;background:var(--risk-medium)"></span><span style="width:43.6%;background:var(--risk-high)"></span></div>
+            <div class="stack-legend"><span>Low <b>25.8%</b></span><span>Medium <b>30.6%</b></span><span>High <b>43.6%</b></span><span>Very high <b>0%</b></span></div>
+          </div>
+          <div>
+            <span class="label">By market</span>
+            <div class="stack" style="margin-top:8px"><span style="width:32.8%;background:var(--chart-1)"></span><span style="width:29.7%;background:var(--chart-2)"></span><span style="width:37.5%;background:var(--chart-3)"></span></div>
+            <div class="stack-legend"><span>US <b>32.8%</b></span><span>TSX <b>29.7%</b></span><span>Crypto <b>37.5%</b></span></div>
+          </div>
+          <div>
+            <span class="label">By account</span>
+            <div class="stack" style="margin-top:8px"><span style="width:62.5%;background:var(--chart-1)"></span><span style="width:37.5%;background:var(--chart-3)"></span></div>
+            <div class="stack-legend"><span>TFSA <b>62.5%</b></span><span>Crypto <b>37.5%</b></span></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <!-- Holdings -->
+  <section class="card card-pad enter" aria-labelledby="hold-h">
+    <div class="section-head"><h2 id="hold-h">Holdings</h2><span class="sub">10 positions · 2 accounts</span></div>
+    <div class="before-note" data-show="before"><i data-lucide="info"></i>
+      <span>Actions, likely ranges, trailing stops, exit dates and risk levels appear once the model runs.</span></div>
+    <div class="table-scroll">
+      <table class="data-table" id="holdings">
+        <thead><tr>
+          <th>Account</th><th>Symbol</th><th>Market</th><th class="r">Value C$</th><th class="r">P/L C$</th>
+          <th data-hide="before">Action</th><th data-hide="before">Likely range</th><th class="r" data-hide="before">Trailing stop</th>
+          <th data-hide="before">Exit by</th><th data-hide="before">Risk</th><th>Notes</th>
+        </tr></thead>
+        <tbody>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">SHOP.TO</span><br><span class="sub">Shopify</span></a></td><td>TSX</td>
+            <td class="r num">2,115</td><td class="r num loss">−405<br><span class="sub loss">−16.1%</span></td>
+            <td data-hide="before"><span class="chip sell">Sell</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-9.8" data-q50="-2.6" data-q90="4.1"></div><span class="sub num">10d</span></div></td>
+            <td class="r num" data-hide="before">146.10</td><td class="num" data-hide="before">—</td>
+            <td data-hide="before"><span class="badge"><span class="dot high"></span>High</span></td>
+            <td><span class="warn-cell"><i data-lucide="triangle-alert"></i>Stop hit</span></td></tr>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">NVDA</span><br><span class="sub">NVIDIA</span></a></td><td>US</td>
+            <td class="r num">1,995</td><td class="r num gain">+937<br><span class="sub gain">+88.6%</span></td>
+            <td data-hide="before"><span class="chip trim">Trim</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-6.2" data-q50="0.4" data-q90="7.4"></div><span class="sub num">20d</span></div></td>
+            <td class="r num" data-hide="before">US$163.40</td><td class="num" data-hide="before">Nov 13</td>
+            <td data-hide="before"><span class="badge"><span class="dot medium"></span>Medium</span></td>
+            <td><span class="warn-cell" data-hide="before"><i data-lucide="triangle-alert"></i>Above max size</span></td></tr>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">AAPL</span><br><span class="sub">Apple</span></a></td><td>US</td>
+            <td class="r num">3,124</td><td class="r num gain">+540<br><span class="sub gain">+20.9%</span></td>
+            <td data-hide="before"><span class="chip hold">Hold</span> <span class="chip review">Review</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-4.8" data-q50="0.3" data-q90="5.2"></div><span class="sub num">10d</span></div></td>
+            <td class="r num" data-hide="before">US$209.80</td><td class="num" data-hide="before">Oct 30</td>
+            <td data-hide="before"><span class="badge"><span class="dot medium"></span>Medium</span></td>
+            <td><span class="warn-cell"><i data-lucide="calendar"></i>Earnings Oct 30</span></td></tr>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">RY.TO</span><br><span class="sub">Royal Bank</span></a></td><td>TSX</td>
+            <td class="r num">3,680</td><td class="r num gain">+260<br><span class="sub gain">+7.6%</span></td>
+            <td data-hide="before"><span class="chip add">Add</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-3.1" data-q50="1.6" data-q90="6.4"></div><span class="sub num">21d</span></div></td>
+            <td class="r num" data-hide="before">171.20</td><td class="num" data-hide="before">Nov 16</td>
+            <td data-hide="before"><span class="badge"><span class="dot low"></span>Low</span></td>
+            <td class="sub">—</td></tr>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">BRK.B</span><br><span class="sub">Berkshire Hathaway</span></a></td><td>US</td>
+            <td class="r num">2,630</td><td class="r num gain">+155<br><span class="sub gain">+6.3%</span></td>
+            <td data-hide="before"><span class="chip hold">Hold</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-4.2" data-q50="0.9" data-q90="5.8"></div><span class="sub num">20d</span></div></td>
+            <td class="r num" data-hide="before">US$441.00</td><td class="num" data-hide="before">Nov 13</td>
+            <td data-hide="before"><span class="badge"><span class="dot low"></span>Low</span></td>
+            <td class="sub">—</td></tr>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">TD.TO</span><br><span class="sub">TD Bank</span></a></td><td>TSX</td>
+            <td class="r num">2,520</td><td class="r num gain">+180<br><span class="sub gain">+7.7%</span></td>
+            <td data-hide="before"><span class="chip hold">Hold</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-3.6" data-q50="0.5" data-q90="4.9"></div><span class="sub num">10d</span></div></td>
+            <td class="r num" data-hide="before">79.10</td><td class="num" data-hide="before">Nov 5</td>
+            <td data-hide="before"><span class="badge"><span class="dot low"></span>Low</span></td>
+            <td class="sub">—</td></tr>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">CNQ.TO</span><br><span class="sub">Canadian Natural</span></a></td><td>TSX</td>
+            <td class="r num">1,860</td><td class="r num gain">+100<br><span class="sub gain">+5.7%</span></td>
+            <td data-hide="before"><span class="chip hold">Hold</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-5.4" data-q50="0.2" data-q90="5.9"></div><span class="sub num">10d</span></div></td>
+            <td class="r num" data-hide="before">42.30</td><td class="num" data-hide="before">Oct 30</td>
+            <td data-hide="before"><span class="badge"><span class="dot medium"></span>Medium</span></td>
+            <td class="sub">—</td></tr>
+          <tr><td class="sub">TFSA</td><td><a href="ticker_1.html"><span class="sym">MSFT</span><br><span class="sub">Microsoft</span></a></td><td>US</td>
+            <td class="r num">3,493</td><td class="r num gain">+123<br><span class="sub gain">+3.7%</span></td>
+            <td data-hide="before"><span class="chip hold">Hold</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-7.1" data-q50="1.4" data-q90="9.6"></div><span class="sub num">63d</span></div></td>
+            <td class="r num" data-hide="before">US$398.50</td><td class="num" data-hide="before">Dec 11</td>
+            <td data-hide="before"><span class="badge"><span class="dot medium"></span>Medium</span></td>
+            <td class="sub">—</td></tr>
+          <tr><td class="sub">Crypto</td><td><a href="ticker_1.html"><span class="sym">BTC</span><br><span class="sub">Bitcoin</span></a></td><td class="sub">—</td>
+            <td class="r num">7,600</td><td class="r num gain">+600<br><span class="sub gain">+8.6%</span></td>
+            <td data-hide="before"><span class="chip hold">Hold</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-8.9" data-q50="0.8" data-q90="10.2"></div><span class="sub num">20d</span></div></td>
+            <td class="r num" data-hide="before">139,800</td><td class="num" data-hide="before">Nov 13</td>
+            <td data-hide="before"><span class="badge"><span class="dot high"></span>High</span></td>
+            <td class="sub">Taxable: est. +C$300</td></tr>
+          <tr><td class="sub">Crypto</td><td><a href="ticker_1.html"><span class="sym">ETH</span><br><span class="sub">Ether</span></a></td><td class="sub">—</td>
+            <td class="r num">5,220</td><td class="r num loss">−540<br><span class="sub loss">−9.4%</span></td>
+            <td data-hide="before"><span class="chip hold">Hold</span></td>
+            <td data-hide="before"><div class="flex items-center gap-2"><div class="range" data-q10="-11.6" data-q50="-0.4" data-q90="10.9"></div><span class="sub num">10d</span></div></td>
+            <td class="r num" data-hide="before">4,020</td><td class="num" data-hide="before">Oct 30</td>
+            <td data-hide="before"><span class="badge"><span class="dot high"></span>High</span></td>
+            <td><span class="warn-cell"><i data-lucide="triangle-alert"></i>Loss window to Nov 2</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- Add a buy -->
+<div class="drawer" id="buy-drawer" role="dialog" aria-modal="true" aria-labelledby="buy-h" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="drawer-head"><h2 id="buy-h">Add a buy</h2><button class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+  <form data-mock-form data-toast="Buy saved: 10 RY.TO in TFSA" style="display:contents">
+    <div class="drawer-body">
+      <label class="field"><span>Account</span>
+        <select class="select" required><option value="tfsa">TFSA</option><option value="rrsp">RRSP</option><option value="fhsa">FHSA</option><option value="non_registered">Non-registered</option><option value="crypto">Crypto</option></select></label>
+      <label class="field"><span>Symbol</span><input class="input num-input" name="symbol" placeholder="AAPL, RY.TO or BTC" required>
+        <span class="hint">US: AAPL · TSX: RY.TO · crypto: BTC</span><span class="error">Enter a symbol.</span></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="field"><span>Quantity</span><input class="input num-input" inputmode="decimal" placeholder="10" required><span class="error">Enter a quantity.</span></label>
+        <label class="field"><span>Price (CAD)</span><input class="input num-input" inputmode="decimal" placeholder="184.00" required><span class="error">Enter a price.</span></label>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="field"><span>Date</span><input class="input num-input" type="date" value="2026-10-16" required></label>
+        <label class="field"><span>USD/CAD rate</span><input class="input num-input" value="1.3712" disabled><span class="hint">US buys only · Bank of Canada, Oct 16</span></label>
+      </div>
+      <label class="field"><span>From a pick <span class="muted">(optional)</span></span>
+        <select class="select"><option>None</option><option>RY.TO · Swing · Oct 16 pre-open</option></select></label>
+      <label class="field"><span>Notes <span class="muted">(optional)</span></span><input class="input" placeholder="Why you bought"></label>
+    </div>
+    <div class="drawer-foot"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button type="submit" class="btn btn-primary"><i data-lucide="plus"></i>Save buy</button></div>
+  </form>
+</div>
+
+<!-- Add a sell -->
+<div class="drawer" id="sell-drawer" role="dialog" aria-modal="true" aria-labelledby="sell-h" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="drawer-head"><h2 id="sell-h">Add a sell</h2><button class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+  <form data-mock-form data-toast="Sell saved: 15 SHOP.TO from TFSA" style="display:contents">
+    <div class="drawer-body">
+      <label class="field"><span>Holding</span>
+        <select class="select" required><option>SHOP.TO · TFSA · 15 shares</option><option>NVDA · TFSA · 8 shares</option><option>ETH · Crypto · 1.2</option></select></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="field"><span>Quantity</span><input class="input num-input" inputmode="decimal" value="15" required><span class="error">Enter a quantity.</span></label>
+        <label class="field"><span>Price (CAD)</span><input class="input num-input" inputmode="decimal" placeholder="141.00" required><span class="error">Enter a price.</span></label>
+      </div>
+      <label class="field"><span>Date</span><input class="input num-input" type="date" value="2026-10-16" required></label>
+      <div class="card card-pad" style="background:var(--muted)">
+        <span class="label">At average cost</span>
+        <div class="num loss" style="font-size:18px;font-weight:600;margin-top:6px">−C$405 realized</div>
+        <p class="sub" style="margin:4px 0 0">In a TFSA this loss can't be claimed. Not tax advice.</p>
+      </div>
+    </div>
+    <div class="drawer-foot"><button type="button" class="btn btn-secondary" data-close>Cancel</button><button type="submit" class="btn btn-primary">Save sell</button></div>
+  </form>
+</div>
+
+<!-- Import a broker file -->
+<div class="drawer" id="import-drawer" role="dialog" aria-modal="true" aria-labelledby="import-h" aria-hidden="true">
+  <div class="grab"></div>
+  <div class="drawer-head"><h2 id="import-h">Import a file</h2><button class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+  <form data-mock-form data-toast="Imported 24 transactions" style="display:contents">
+    <div class="drawer-body">
+      <div class="flex gap-2 sub"><span class="badge">1 · File</span><span class="badge" style="border-color:var(--foreground);color:var(--foreground)">2 · Columns</span><span class="badge">3 · Review</span></div>
+      <div class="card card-pad" style="display:flex;gap:10px;align-items:center"><i data-lucide="file-spreadsheet" style="width:18px;height:18px"></i>
+        <span style="flex:1"><span style="font-weight:500">activities-2026-10.csv</span><br><span class="sub">Wealthsimple activity export · 24 rows</span></span></div>
+      <span class="label">Match the columns</span>
+      <table class="data-table">
+        <thead><tr><th>In the file</th><th>Means</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td class="num">date</td><td><select class="select"><option>Date</option></select></td><td class="num sub">2026-10-03</td></tr>
+          <tr><td class="num">activity_type</td><td><select class="select"><option>Buy or sell</option></select></td><td class="num sub">Sell</td></tr>
+          <tr><td class="num">symbol</td><td><select class="select"><option>Symbol</option></select></td><td class="num sub">ETH</td></tr>
+          <tr><td class="num">quantity</td><td><select class="select"><option>Quantity</option></select></td><td class="num sub">0.5</td></tr>
+          <tr><td class="num">price</td><td><select class="select"><option>Price</option></select></td><td class="num sub">4,410.00</td></tr>
+          <tr><td class="num">account</td><td><select class="select"><option>Account</option></select></td><td class="num sub">Crypto</td></tr>
+        </tbody>
+      </table>
+      <label class="field"><span>Confirm the file</span><input class="input" value="activities-2026-10.csv" required></label>
+    </div>
+    <div class="drawer-foot"><button type="button" class="btn btn-secondary" data-close>Back</button><button type="submit" class="btn btn-primary">Review 24 rows</button></div>
+  </form>
+</div>
+
+<script>
+  window.initPage = () => {
+    // Growth of each line since the window starts, from one seeded daily series per line.
+    const DAYS = 374;  // trading days since the first buy, May 12, 2025
+    const dates = Ledger.tradingDays(DAYS);
+    const indexPath = (seed, total, vol) => {
+      const raw = Ledger.walk({ seed, n: DAYS, end: 1, vol, drift: 0 });
+      return raw.map((v, i) => (v / raw[0]) * Math.pow((1 + total) * raw[0], i / (DAYS - 1)));
+    };
+    const lines = { port: indexPath(7, 0.06, 0.0045), xiu: indexPath(21, 0.041, 0.0032), spy: indexPath(33, 0.052, 0.0036) };
+    const WINDOWS = {
+      '1m': { days: 21, label: 'over the last month' },
+      '3m': { days: 63, label: 'over 3 months' },
+      '12m': { days: 252, label: 'over 12 months' },
+      all: { days: DAYS, label: 'since the first buy, May 12, 2025' },
+    };
+    const window_ = (key) => {
+      const n = WINDOWS[key].days;
+      const pct = (values) => { const s = values.slice(-n); return s.map((v) => (v / s[0] - 1) * 100); };
+      return { port: pct(lines.port), xiu: pct(lines.xiu), spy: pct(lines.spy), dates: dates.slice(-n) };
+    };
+    const fmt = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%`;
+    const first = window_('all');
+    const chart = Ledger.lineChart(document.getElementById('value-chart'), {
+      series: first.port, dates: first.dates, height: 230, format: fmt,
+      benchmarks: [{ values: first.xiu, color: 'var(--chart-2)' }, { values: first.spy, color: 'var(--chart-3)' }],
+      label: 'Portfolio return against XIU.TO and SPY in CAD',
+    });
+    const retEls = Object.fromEntries([...document.querySelectorAll('[data-ret]')].map((el) => [el.dataset.ret, el]));
+    const setReturns = (w, animate) => {
+      for (const key of ['port', 'xiu', 'spy']) {
+        const value = w[key][w[key].length - 1];
+        if (animate) Ledger.tweenNumber(retEls[key], value, fmt); else { retEls[key].textContent = fmt(value); retEls[key].dataset.value = String(value); }
+      }
+      retEls.port.classList.toggle('gain', w.port[w.port.length - 1] >= 0);
+      retEls.port.classList.toggle('loss', w.port[w.port.length - 1] < 0);
+    };
+    setReturns(first, false);
+    document.addEventListener('tabchange', (event) => {
+      if (event.detail.group !== 'period') return;
+      const w = window_(event.detail.value);
+      document.getElementById('ret-label').textContent = WINDOWS[event.detail.value].label;
+      chart.setSeries(w.port, [{ values: w.xiu, color: 'var(--chart-2)' }, { values: w.spy, color: 'var(--chart-3)' }], w.dates);
+      setReturns(w, true);
+    });
+
+    // The Hold group opens in place.
+    document.querySelectorAll('[data-expand]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const open = button.getAttribute('aria-expanded') !== 'true';
+        button.setAttribute('aria-expanded', String(open));
+        document.getElementById(button.dataset.expand).classList.toggle('open', open);
+      });
+    });
+
+    // A saved buy shows up as a highlighted row.
+    window.onMockSave = (form) => {
+      if (!form.dataset.toast.startsWith('Buy')) return;
+      const row = document.querySelector('#holdings tbody tr:nth-child(4)').cloneNode(true);
+      row.classList.add('row-added');
+      row.querySelector('.r.num').textContent = '1,840';
+      document.querySelector('#holdings tbody').prepend(row);
+      Ledger.initRanges(row);
+    };
+  };
+</script>
+</body>
+</html>

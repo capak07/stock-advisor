@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sign in · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="dashboard_1.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flowbite@2.0.0/dist/flowbite.min.js" defer></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+<link rel="stylesheet" href="theme_1.css">
+<link rel="stylesheet" href="dashboard_1.css">
+<style>
+  .login-wrap { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+  .login { width: 100%; max-width: 380px; display: grid; gap: 18px; }
+  .login .card { padding: 24px; display: grid; gap: 14px; }
+  .theme-corner { position: fixed; top: 14px; right: 14px; }
+</style>
+</head>
+<body data-page="login">
+<button class="icon-btn theme-corner" data-theme-toggle aria-label="Switch between light and dark"><i data-lucide="moon"></i></button>
+<main class="login-wrap">
+  <div class="login enter">
+    <div class="brand" style="justify-content:center;padding:0"><span class="brand-mark">A</span>ADVISOR</div>
+    <form class="card" data-mock-form data-toast="Signed in">
+      <div><h1 style="font-size:19px !important">Sign in</h1><p class="sub" style="margin:4px 0 0">Your portfolio, picks and track record.</p></div>
+      <label class="field"><span>Email</span><input class="input" type="email" autocomplete="username" placeholder="you@example.com" required><span class="error">Enter your email.</span></label>
+      <label class="field"><span>Password</span><input class="input" type="password" autocomplete="current-password" required><span class="error">Enter your password.</span></label>
+      <button type="submit" class="btn btn-primary" style="width:100%;padding:11px 14px">Sign in</button>
+      <p class="sub" style="margin:0;text-align:center">One owner, no sign-ups.</p>
+    </form>
+    <p class="sub" style="margin:0;text-align:center;font-size:12px">Not financial or tax advice. Forecasts are probabilistic and can be wrong.</p>
+  </div>
+</main>
+<script>
+  window.initPage = () => {
+    window.onMockSave = () => { window.location.href = 'portfolio_1.html'; };
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,155 @@
+/* Ledger: the stock-advisor dashboard theme (superdesign step 2).
+ *
+ * Ink on warm paper in light mode, graphite in dark mode (class "dark").
+ * The interface itself is monochrome. Colour is kept for meaning:
+ * gains and losses, the five holding actions, the four risk levels and source status.
+ * Numbers use Geist Mono so prices, P/L and percentages line up in columns.
+ * No blue or indigo anywhere.
+ */
+:root {
+  --background: oklch(0.9850 0.0030 85);
+  --foreground: oklch(0.2100 0.0060 60);
+  --card: oklch(1.0000 0 0);
+  --card-foreground: oklch(0.2100 0.0060 60);
+  --popover: oklch(1.0000 0 0);
+  --popover-foreground: oklch(0.2100 0.0060 60);
+  --primary: oklch(0.2100 0.0060 60);
+  --primary-foreground: oklch(0.9850 0.0030 85);
+  --secondary: oklch(0.9550 0.0050 85);
+  --secondary-foreground: oklch(0.2100 0.0060 60);
+  --muted: oklch(0.9550 0.0050 85);
+  --muted-foreground: oklch(0.5000 0.0110 70);
+  --accent: oklch(0.9400 0.0070 85);
+  --accent-foreground: oklch(0.2100 0.0060 60);
+  --destructive: oklch(0.5500 0.1900 27);
+  --destructive-foreground: oklch(0.9850 0.0030 85);
+  --border: oklch(0.9050 0.0060 85);
+  --input: oklch(0.8700 0.0070 85);
+  --ring: oklch(0.5000 0.0110 70);
+
+  /* Meaning. Each colour has a strong tone (text, dots, bars) and a soft tone (badge fill). */
+  --gain: oklch(0.4950 0.1300 155);
+  --gain-soft: oklch(0.9500 0.0400 155);
+  --loss: oklch(0.5250 0.1850 27);
+  --loss-soft: oklch(0.9500 0.0300 27);
+  --attention: oklch(0.5150 0.1100 75);          /* Review, warnings, Paper */
+  --attention-soft: oklch(0.9600 0.0500 85);
+  --trim: oklch(0.5200 0.1500 48);
+  --trim-soft: oklch(0.9500 0.0400 55);
+  --hold: oklch(0.5000 0.0110 70);
+  --hold-soft: oklch(0.9400 0.0060 85);
+  --risk-low: oklch(0.5050 0.1000 165);
+
+  --chart-1: oklch(0.2100 0.0060 60);            /* the portfolio, the price */
+  --chart-2: oklch(0.6000 0.1400 50);            /* XIU.TO */
+  --chart-3: oklch(0.5500 0.0200 250);           /* SPY */
+  --chart-4: oklch(0.5300 0.1400 155);           /* forecast median */
+  --chart-5: oklch(0.5300 0.1400 155 / 0.14);    /* forecast cone */
+
+  --sidebar: oklch(0.9700 0.0040 85);
+  --sidebar-foreground: oklch(0.2100 0.0060 60);
+  --sidebar-primary: oklch(0.2100 0.0060 60);
+  --sidebar-primary-foreground: oklch(0.9850 0.0030 85);
+  --sidebar-accent: oklch(0.9300 0.0070 85);
+  --sidebar-accent-foreground: oklch(0.2100 0.0060 60);
+  --sidebar-border: oklch(0.9050 0.0060 85);
+  --sidebar-ring: oklch(0.5000 0.0110 70);
+
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 0.5rem;
+  --shadow-2xs: 0 1px 1px 0 hsl(30 10% 15% / 0.04);
+  --shadow-xs: 0 1px 2px 0 hsl(30 10% 15% / 0.05);
+  --shadow-sm: 0 1px 2px 0 hsl(30 10% 15% / 0.06), 0 1px 3px -1px hsl(30 10% 15% / 0.06);
+  --shadow: 0 1px 3px 0 hsl(30 10% 15% / 0.07), 0 2px 4px -2px hsl(30 10% 15% / 0.06);
+  --shadow-md: 0 2px 6px -1px hsl(30 10% 15% / 0.08), 0 4px 8px -4px hsl(30 10% 15% / 0.06);
+  --shadow-lg: 0 6px 16px -4px hsl(30 10% 15% / 0.10), 0 4px 6px -4px hsl(30 10% 15% / 0.06);
+  --shadow-xl: 0 12px 28px -8px hsl(30 10% 15% / 0.14);
+  --shadow-2xl: 0 24px 48px -12px hsl(30 10% 15% / 0.20);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+.dark {
+  --background: oklch(0.1650 0.0040 60);
+  --foreground: oklch(0.9400 0.0040 85);
+  --card: oklch(0.2000 0.0050 60);
+  --card-foreground: oklch(0.9400 0.0040 85);
+  --popover: oklch(0.2150 0.0050 60);
+  --popover-foreground: oklch(0.9400 0.0040 85);
+  --primary: oklch(0.9400 0.0040 85);
+  --primary-foreground: oklch(0.1650 0.0040 60);
+  --secondary: oklch(0.2500 0.0060 60);
+  --secondary-foreground: oklch(0.9400 0.0040 85);
+  --muted: oklch(0.2400 0.0060 60);
+  --muted-foreground: oklch(0.6900 0.0100 70);
+  --accent: oklch(0.2700 0.0070 60);
+  --accent-foreground: oklch(0.9400 0.0040 85);
+  --destructive: oklch(0.6900 0.1800 25);
+  --destructive-foreground: oklch(0.1650 0.0040 60);
+  --border: oklch(0.2900 0.0060 60);
+  --input: oklch(0.3300 0.0070 60);
+  --ring: oklch(0.6900 0.0100 70);
+
+  --gain: oklch(0.7600 0.1500 155);
+  --gain-soft: oklch(0.3000 0.0600 155);
+  --loss: oklch(0.6900 0.1800 25);
+  --loss-soft: oklch(0.3000 0.0700 25);
+  --attention: oklch(0.8000 0.1300 80);
+  --attention-soft: oklch(0.3200 0.0600 80);
+  --trim: oklch(0.7400 0.1500 55);
+  --trim-soft: oklch(0.3100 0.0600 55);
+  --hold: oklch(0.7400 0.0100 70);
+  --hold-soft: oklch(0.2700 0.0060 60);
+  --risk-low: oklch(0.7300 0.1100 165);
+
+  --chart-1: oklch(0.9400 0.0040 85);
+  --chart-2: oklch(0.7400 0.1400 55);
+  --chart-3: oklch(0.6800 0.0300 250);
+  --chart-4: oklch(0.7600 0.1500 155);
+  --chart-5: oklch(0.7600 0.1500 155 / 0.16);
+
+  --sidebar: oklch(0.1850 0.0050 60);
+  --sidebar-foreground: oklch(0.9400 0.0040 85);
+  --sidebar-primary: oklch(0.9400 0.0040 85);
+  --sidebar-primary-foreground: oklch(0.1650 0.0040 60);
+  --sidebar-accent: oklch(0.2600 0.0070 60);
+  --sidebar-accent-foreground: oklch(0.9400 0.0040 85);
+  --sidebar-border: oklch(0.2900 0.0060 60);
+  --sidebar-ring: oklch(0.6900 0.0100 70);
+
+  /* Dark mode draws edges with borders, not shadows. */
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: 0 8px 24px -8px hsl(0 0% 0% / 0.5);
+  --shadow-xl: 0 12px 32px -8px hsl(0 0% 0% / 0.55);
+  --shadow-2xl: 0 24px 48px -12px hsl(0 0% 0% / 0.6);
+}
+
+/* Aliases, declared for both modes so each one resolves against its own mode's colours
+   (a var() in a custom property is resolved where it is declared, then inherited). */
+:root,
+.dark {
+  --action-sell: var(--loss);
+  --action-trim: var(--trim);
+  --action-review: var(--attention);
+  --action-add: var(--gain);
+  --action-hold: var(--hold);
+  --risk-medium: var(--attention);
+  --risk-high: var(--trim);
+  --risk-very-high: var(--loss);
+  --status-ok: var(--gain);
+  --status-partial: var(--attention);
+  --status-stale: var(--trim);
+  --status-failed: var(--loss);
+  --status-skipped: var(--hold);
+}

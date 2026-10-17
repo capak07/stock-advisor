@@ -12,6 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
+import httpx
 import psycopg
 
 from advisor import screener
@@ -26,11 +27,13 @@ from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.registry import build_registry
 from advisor.collectors.tracker import SourceTracker
+from advisor.collectors.yfinance_bars import Downloader, yahoo_download
 from advisor.company_names import CompanyNames
 from advisor.config import Settings
 from advisor.crypto_prices import BARS, CHECK, CRYPTO_STAGE, QUOTES, crypto_feature_rows
 from advisor.enrich import EnrichTargets, interleave, ranked_shortlist, run_enrichment
-from advisor.markets import MARKETS, market_of
+from advisor.history import record as record_price_history
+from advisor.markets import BENCHMARKS, MARKETS, market_of
 from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, RunStatus, SymbolInfo
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
@@ -60,6 +63,9 @@ class RunDeps:
     collectors: Mapping[str, Collector]
     names: CompanyNames = field(default_factory=CompanyNames)  # Google News queries by these
     news_scorer: Callable[[], Scorer | None] = no_scorer  # loads FinBERT; tests run without it
+    # The price-history backfill's Yahoo download and Bank of Canada client; tests leave them off.
+    download: Downloader | None = None
+    http: httpx.Client | None = None
 
 
 @dataclass(frozen=True)
@@ -223,6 +229,33 @@ def news_stage(
     return {**outcome.summary, "sentiment": sentiment}
 
 
+def record_history(
+    deps: RunDeps,
+    now_utc: datetime,
+    bars: Mapping[str, Sequence[DailyBar]],
+    candles: Mapping[str, Sequence[DailyBar]],
+    stocks: Sequence[str],
+    coins: Sequence[str],
+    results: Mapping[str, CollectorResult],
+) -> dict:
+    """Store the dashboard's daily closes and USD/CAD (Plan 5a). Errors land in the summary."""
+    valet = results.get("boc_valet")
+    try:
+        return record_price_history(
+            deps.conn,
+            today=now_utc.astimezone(ET).date(),
+            stocks=stocks,
+            stock_bars=bars,
+            coins=coins,
+            coin_bars=candles,
+            valet=valet.records if valet is not None else [],
+            download=deps.download,
+            http=deps.http,
+        )
+    except Exception as exc:  # the price history is for the dashboard; it never fails a run
+        return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+
+
 def execute_run(
     deps: RunDeps,
     kind: RunKind,
@@ -259,8 +292,8 @@ def execute_run(
         crypto = priority_order(held, watch, AssetType.CRYPTO)
 
         # Phase 1: holdings and watchlist of both markets are priced and saved before anything
-        # else can fail.
-        first = fetch_prices(priority) if priority else PriceFetch({}, {})
+        # else can fail. The benchmarks come along for the dashboard's price history.
+        first = fetch_prices([*priority, *BENCHMARKS])
         bars, flagged = dict(first.bars), dict(first.flagged)
         priority_rows = [screener.price_stats(s, bars[s]) for s in priority if s in bars]
         repo.write_features_live(
@@ -269,6 +302,7 @@ def execute_run(
 
         # Held and watched crypto too; CoinGecko's CAD quote is what values a crypto holding.
         quotes: dict[str, CryptoQuote] = {}
+        candles: dict[str, list[DailyBar]] = {}
         if crypto:
 
             def crypto_records(name: str) -> list:
@@ -321,6 +355,7 @@ def execute_run(
         )
         enriched = universe_ok and prices_ok
         news = empty_news_summary()
+        price_history: dict = {}
         if enriched:
             results = run_enrichment(
                 tracker,
@@ -331,6 +366,10 @@ def execute_run(
             # Stage 5: the news stage, over what the news sources fetched.
             coin_names = {q.symbol: q.name for q in quotes.values() if q.name}
             news = news_stage(deps, run_id, results, targets, coin_names, now_utc, deadline_at)
+            # Price history for the dashboard (Plan 5a), only from a run that can publish: a failed
+            # run's prices may be why it failed. Its errors land in the summary, never fail the run.
+            stocks = [*priority, *targets.ranked_stocks, *BENCHMARKS]
+            price_history = record_history(deps, now_utc, bars, candles, stocks, crypto, results)
 
         summary = {
             "markets": {
@@ -355,6 +394,7 @@ def execute_run(
             "crypto": len(crypto),
             "crypto_unquoted": sorted(set(crypto) - quotes.keys()),
             "news": news,
+            "history": price_history,
         }
         held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
         held_crypto = {ref.symbol for ref in held if ref.asset_type is AssetType.CRYPTO}
@@ -430,6 +470,8 @@ def main(argv: list[str] | None = None) -> int:
                 build_registry(settings, client, names=names),
                 names=names,
                 news_scorer=load_finbert,
+                download=yahoo_download,
+                http=client,
             )
             outcome = execute_run(deps, kind, now)
 

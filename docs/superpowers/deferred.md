@@ -68,6 +68,11 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
 
 ## Plans 4 and 5: recommendations and dashboard
 
+- **Price history (Plan 5a):** `daily_closes` and `fx_rates` feed the charts and CAD values.
+  - Stock closes are adjusted for splits and dividends, so returns from them are total returns, and the latest close is the actual price.
+  - Coin closes are in USD; convert them, and US holdings, with the `fx_rates` row of the same day (the latest one for today's value).
+  - The run summary's `history` says what was stored, backfilled, rescaled after a split, or missed.
+
 - **Crypto Buy and Add:** a coin whose `unconfirmed_price` is true (Coinbase and Kraken more than 2% apart on the latest day) is blocked like a stock's `unconfirmed_jump`. `None` means Kraken had no close to compare, and crypto gets no jump rule (`find_jumps` isn't applied to Coinbase candles), so a coin only Coinbase lists has no price sanity check: treat `None` as unconfirmed, or apply the jump rule to crypto.
 - **Crypto currency:** Coinbase candles, and so ATR and the highest close since purchase, are in USD, while lots and `price_cad` are in CAD. Stops, trailing stops and graded returns must use one currency: convert the candles with the Bank of Canada FXUSDCAD rate (`boc_valet`) or CoinGecko's CAD/USD ratio, or work in USD with the entry converted at the buy date's rate.
 - **Crypto quote age:** each crypto row carries `quote_updated_at` and `quote_stale` (older than a day, e.g. served from cache). Show the age next to a stale CAD value.
@@ -89,6 +94,9 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
 - **Run summary `shortlist`:** the per-market `shortlist` excludes priority symbols but the top-level `shortlist` includes them. Rename one before the dashboard shows them side by side.
 
 ## Operational and minor
+
+- **yfinance cache lock:** yfinance's timezone cache sometimes reports "database is locked" during a threaded download and drops a symbol. It hit RY.TO in phase 1 of the 2026-10-16 live run (phase 2's retry priced it) and SPY in Plan 5a's backfill (the next run fetched it). If it recurs, give yfinance a per-run cache folder or download without threads.
+- **Coin history** reaches 290 days, one Coinbase request. A coin bought earlier has no closes before then; fetch older candles in more requests if the portfolio chart needs them.
 
 - **Breaker and deadlines:** a `DeadlineExceeded` failure counts toward the circuit breaker.
 - **Stale versus partial:** a call whose fetched symbols all fail while the window served the rest reports STALE, not PARTIAL, and counts toward the breaker.

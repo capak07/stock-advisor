@@ -238,7 +238,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 
 ### 4.3 Run stages
 
-1. **Holdings first.** Price the held and watched stocks of both markets, and save their features before anything else can fail.
+1. **Holdings first.** Price the held and watched stocks of both markets, and save their features before anything else can fail. SPY and XIU.TO are priced with them.
 2. **Universes.**
    - Load the US universe (source 1) and the TSX universe (source 2), applying the market rules in §3.
    - SPY, XIU.TO and sector ETFs are loaded as benchmarks only and are never picked.
@@ -264,7 +264,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 7. **Model.** Predictions for every horizon (§5).
 8. **Recommender and portfolio advisor** (§6, §7).
 9. **Grader.** Grade every pick and holding action whose horizon ended (§6.5).
-10. **Publish.** Write a run summary (per-market counts included), then set `published = true`.
+10. **Publish.** Store the day's closes and USD/CAD for the dashboard (`daily_closes`, `fx_rates`, §8). Write a run summary (per-market counts included), then set `published = true`.
 
 ## 5. Prediction
 
@@ -468,6 +468,8 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 | `holding_actions` | run_id, **account**, symbol, asset_type, action (sell / trim / add / hold), review, reasons (jsonb), trailing_stop, q10, q50, q90, exit_by, warnings (jsonb) |
 | `news_items` | id, symbol, published_at, outlet, url, title, sentiment, cluster_id. Pruned after 90 days |
 | `models` | version, kind (stock_us / stock_tsx / crypto), trained_at, metrics (jsonb), calibration_error, active |
+| `daily_closes` | symbol, asset_type, day, close, currency. Yahoo's adjusted closes for holdings, the watchlist, the shortlist and SPY and XIU.TO, reaching a year back or to the first buy; Coinbase closes in USD for held and watched coins. Pruned after 2 years, except symbols ever bought and the benchmarks |
+| `fx_rates` | day, usd_cad. The Bank of Canada's daily rate, reaching a year back or to the first buy |
 
 - **Symbol formats** are enforced by CHECK constraints:
   - US stocks: `^[A-Z]{1,5}(\.[A-Z])?$`

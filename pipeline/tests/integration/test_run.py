@@ -2,13 +2,15 @@ import dataclasses
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
+import pandas as pd
 import pytest
 
 from advisor.collectors.base import Category, PartialFetch, Scope, check_deadline
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.feeds import NewsItem, TickerNewsItem
-from advisor.models import AssetRef, AssetType, Market, RunKind, RunStatus
+from advisor.collectors.series import SeriesObservation
+from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus
 from advisor.news.stage import NewsRow
 from advisor.run import RunDeps, empty_news_summary, execute_run
 from advisor.store import repo
@@ -80,8 +82,11 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         "priority": 0, "priority_unpriced": [], "unconfirmed_jumps": 0, "shortlist": 5,
         "crypto": 0, "crypto_unquoted": [],
         "news": {"items": 0, "stories": 0, "rows": 0, "assets": 0, "sentiment": "not run"},
+        # 70 closes for each shortlisted stock and for SPY and XIU.TO
+        "history": {"closes": 490, "backfilled": [], "fx": 0, "rescaled": [], "pruned": 0},
     }
-    assert deps.collectors["yfinance_bars"].calls == [EVERYONE]  # one call for both markets
+    # The benchmarks are priced with the holdings, then one call covers both markets.
+    assert deps.collectors["yfinance_bars"].calls == [["SPY", "XIU.TO"], EVERYONE]
     assert health(db, outcome.run_id) == [
         ("nasdaq_symbols", "ok"), ("tmx_symbols", "ok"), ("yfinance_bars", "ok"),
     ]
@@ -98,7 +103,7 @@ def test_holdings_of_both_markets_are_priced_first_and_get_features(db, tmp_path
     deps = make_deps(db, tmp_path)
     outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
 
-    assert deps.collectors["yfinance_bars"].calls == [["OTCX", "SHOP.TO"], EVERYONE]
+    assert deps.collectors["yfinance_bars"].calls == [["OTCX", "SHOP.TO", "SPY", "XIU.TO"], EVERYONE]
     features = market_features(db, outcome.run_id)
     assert sorted(features) == ["OTCX", "SHOP.TO"]
     assert features["OTCX"] == {
@@ -180,10 +185,10 @@ def test_partial_prices_degrade_the_run(db, tmp_path):
 def test_a_source_failing_in_one_phase_reports_one_partial_row(db, tmp_path):
     hold(db)
 
-    def records_for(symbols):
-        if list(symbols) != ["OTCX"]:
+    def records_for(symbols):  # phase 1 (the holding and the benchmarks) works, the bulk fetch fails
+        if "SPY" not in symbols:
             raise httpx.ConnectError("down")
-        return history("OTCX", 70, start=FRESH_START)
+        return [b for s in symbols for b in history(s, 70, start=FRESH_START)]
 
     prices = FakeCollector("yfinance_bars", records_for=records_for)
     outcome = execute_run(
@@ -279,16 +284,16 @@ def test_a_truncated_universe_fails_the_run_and_keeps_that_markets_symbols(db, t
     assert outcome.summary["markets"]["TSX"]["shortlist"] == 0
     assert outcome.summary["shortlist"] == 0
     assert extra["news"].calls == []  # a run that cannot publish spends no enrichment calls
-    assert deps.collectors["yfinance_bars"].calls == []  # no bulk Yahoo fetch for a run that cannot publish
+    # Only the benchmarks (no holdings here): no bulk Yahoo fetch for a run that cannot publish.
+    assert deps.collectors["yfinance_bars"].calls == [["SPY", "XIU.TO"]]
 
 
 def test_a_run_that_cannot_publish_still_retries_unpriced_holdings(db, tmp_path):
     hold(db)
 
-    def records_for(symbols):  # phase 1 misses the holding; the retry finds it
-        if list(symbols) == ["OTCX"] and not prices.calls[:-1]:
-            return []
-        return [b for s in symbols for b in history(s, 70, start=FRESH_START)]
+    def records_for(symbols):  # phase 1 misses the holding (not the benchmarks); the retry finds it
+        missing = {"OTCX"} if "SPY" in symbols else set()
+        return [b for s in symbols if s not in missing for b in history(s, 70, start=FRESH_START)]
 
     prices = FakeCollector("yfinance_bars", best_effort=True, records_for=records_for)
     deps = make_deps(db, tmp_path, prices=prices)
@@ -296,7 +301,7 @@ def test_a_run_that_cannot_publish_still_retries_unpriced_holdings(db, tmp_path)
         deps, RunKind.PRE_OPEN, NOW, min_universe={Market.US: 3, Market.TSX: 300}
     )
 
-    assert prices.calls == [["OTCX"], ["OTCX"]]  # the retry, but no bulk fetch
+    assert prices.calls == [["OTCX", "SPY", "XIU.TO"], ["OTCX"]]  # the retry, but no bulk fetch
     assert outcome.status is RunStatus.FAILED
     assert outcome.summary["failed_reason"] == ["TSX: universe too small (2 < 300)"]
     assert outcome.summary["priority_unpriced"] == []
@@ -353,16 +358,16 @@ def test_a_holding_missed_in_phase_one_is_retried_and_saved_in_phase_two(db, tmp
     hold(db)
     prices = FakeCollector(  # Yahoo silently answers nothing for the lone holding at first
         "yfinance_bars",
-        records_for=lambda syms: (
-            [] if list(syms) == ["OTCX"]
-            else [b for s in syms for b in history(s, 70, start=FRESH_START)]
-        ),
+        records_for=lambda syms: [  # phase 1 answers only the benchmarks
+            b for s in syms if not ("SPY" in syms and s == "OTCX")
+            for b in history(s, 70, start=FRESH_START)
+        ],
     )
     outcome = execute_run(
         make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
     )
 
-    assert prices.calls == [["OTCX"], ["AAA", "BBB", "CCC", "OTCX", "RY.TO", "TD.TO"]]
+    assert prices.calls == [["OTCX", "SPY", "XIU.TO"], ["AAA", "BBB", "CCC", "OTCX", "RY.TO", "TD.TO"]]
     assert outcome.status is RunStatus.SUCCESS
     assert outcome.summary["priority_unpriced"] == []
     assert market_features(db, outcome.run_id)["OTCX"] == {
@@ -746,3 +751,159 @@ def test_a_story_stored_by_an_earlier_run_is_not_stored_twice(db, tmp_path):
         "select outlet from news_items where symbol = 'OTCX' and title = 'OTCX wins a big contract'"
     ).fetchall()
     assert [r["outlet"] for r in rows] == ["Earlier Wire"]
+
+
+def closes_by_symbol(db):
+    rows = db.execute(
+        "select symbol, currency, count(*) as n from daily_closes"
+        " group by symbol, currency order by symbol"
+    ).fetchall()
+    return [(r["symbol"], r["currency"], r["n"]) for r in rows]
+
+
+def test_a_run_stores_closes_for_holdings_watchlist_shortlist_and_benchmarks(db, tmp_path):
+    hold(db)
+    db.execute("insert into watchlist (symbol, asset_type) values ('NVDA', 'stock')")
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert closes_by_symbol(db) == [
+        ("AAA", "USD", 70), ("BBB", "USD", 70), ("CCC", "USD", 70), ("NVDA", "USD", 70),
+        ("OTCX", "USD", 70), ("RY.TO", "CAD", 70), ("SPY", "USD", 70), ("TD.TO", "CAD", 70),
+        ("XIU.TO", "CAD", 70),
+    ]
+    assert outcome.summary["history"] == {
+        "closes": 630, "backfilled": [], "fx": 0, "rescaled": [], "pruned": 0,
+    }  # no backfill: these tests leave the Yahoo download off
+
+
+def test_held_coins_get_coinbase_closes_in_usd(db, tmp_path):
+    hold_crypto(db)
+    execute_run(make_deps(db, tmp_path, extra=crypto_sources()), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    row = db.execute(
+        "select count(*) as n, min(currency) as currency, max(close) as close from daily_closes"
+        " where symbol = 'BTC' and asset_type = 'crypto'"
+    ).fetchone()
+    assert (row["n"], row["currency"], float(row["close"])) == (30, "USD", 82000.0)
+
+
+def valet_source(records):
+    return FakeCollector(
+        "boc_valet", core=False, scope=Scope.MARKET, record_type=SeriesObservation,
+        records_for=lambda _: records,
+    )
+
+
+def test_the_first_run_backfills_a_year_of_closes_and_usd_cad(db, tmp_path, fixtures_dir):
+    hold(db)  # bought 2026-09-01, so a year back is the start
+    calls = []
+
+    def download(tickers, start, end):
+        calls.append((sorted(tickers), start, end))
+        index = pd.DatetimeIndex([pd.Timestamp("2025-10-14"), pd.Timestamp("2025-10-15")])
+        columns = pd.MultiIndex.from_product([tickers, ["Open", "High", "Low", "Close", "Volume"]])
+        return pd.DataFrame([[9, 9, 9, 9.0, 100] * len(tickers)] * 2, index=index, columns=columns)
+
+    body = (fixtures_dir / "boc" / "valet_observations_recent10.json").read_bytes()
+    asked = []
+
+    def bank(request):
+        asked.append(request.url.params["start_date"])
+        return httpx.Response(200, content=body)
+
+    run_rate = SeriesObservation(series="FXUSDCAD", day=date(2026, 10, 13), value=1.3712)
+    with httpx.Client(transport=httpx.MockTransport(bank)) as client:
+        deps = dataclasses.replace(
+            make_deps(db, tmp_path, extra={"boc_valet": valet_source([run_rate])}),
+            download=download, http=client,
+        )
+        outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert calls == [(["OTCX", "SPY", "XIU.TO"], date(2025, 10, 14), date(2026, 10, 15))]
+    history = outcome.summary["history"]
+    assert history["backfilled"] == ["OTCX", "SPY", "XIU.TO"]
+    first = db.execute("select min(day) as day from daily_closes where symbol = 'SPY'").fetchone()
+    assert first["day"] == date(2025, 10, 14)
+    assert asked == ["2025-10-14"]  # the run had only Oct 13; the bank fills the year
+    rates = db.execute("select count(*) as n, max(day) as last from fx_rates").fetchone()
+    assert history["fx"] == rates["n"] >= 10 and rates["last"] == date(2026, 10, 13)
+    assert outcome.status is RunStatus.SUCCESS
+
+
+def test_a_failed_backfill_is_reported_and_the_run_still_publishes(db, tmp_path):
+    hold(db)
+
+    def download(tickers, start, end):
+        raise RuntimeError("Yahoo said no")
+
+    deps = dataclasses.replace(make_deps(db, tmp_path), download=download)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert run_row(db, outcome.run_id)["published"] is True
+    history = outcome.summary["history"]
+    assert history["backfill_error"] == "RuntimeError: Yahoo said no"
+    assert history["closes"] == 560  # the holding, 5 shortlisted stocks and 2 benchmarks, 70 each
+
+
+def test_a_split_rescales_the_stored_history(db, tmp_path):
+    # Before a 2-for-1 split OTCX closed at 20; the fresh, re-adjusted bars say 10 from Aug 5.
+    otcx = AssetRef("OTCX", AssetType.STOCK)
+    repo.write_daily_closes(db, [
+        DailyClose(otcx, date(2026, 7, 1) + timedelta(days=i), 20.0, "USD") for i in range(70)
+    ])
+    hold(db)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.summary["history"]["rescaled"] == ["OTCX"]
+    stored = repo.stored_closes(db, [otcx], date(2026, 7, 1))[otcx]
+    assert set(stored.values()) == {10.0}  # July rescaled, the fresh window replaced
+    assert min(stored) == date(2026, 7, 1)
+
+
+def test_a_symbol_yahoo_drops_from_the_backfill_is_named_and_asked_again(db, tmp_path):
+    hold(db)
+    calls = []
+
+    def download(tickers, start, end):  # Yahoo leaves the holding out of the answer
+        calls.append(sorted(tickers))
+        answered = [t for t in tickers if t != "OTCX"]
+        index = pd.DatetimeIndex([pd.Timestamp("2025-10-14")])
+        columns = pd.MultiIndex.from_product([answered, ["Open", "High", "Low", "Close", "Volume"]])
+        return pd.DataFrame([[9, 9, 9, 9.0, 100] * len(answered)], index=index, columns=columns)
+
+    deps = dataclasses.replace(make_deps(db, tmp_path), download=download)
+    first = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert first.summary["history"]["backfilled"] == ["SPY", "XIU.TO"]
+    assert first.summary["history"]["backfill_missing"] == ["OTCX"]
+
+    second = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert calls[-1] == ["OTCX"]  # only the one still short
+    assert second.summary["history"]["backfill_missing"] == ["OTCX"]
+
+
+def test_a_bank_of_canada_outage_is_reported_and_the_run_keeps_its_closes(db, tmp_path):
+    hold(db)
+    run_rate = SeriesObservation(series="FXUSDCAD", day=date(2026, 10, 13), value=1.3712)
+    down = httpx.MockTransport(lambda request: httpx.Response(404, text="not found"))
+    with httpx.Client(transport=down) as client:
+        deps = dataclasses.replace(
+            make_deps(db, tmp_path, extra={"boc_valet": valet_source([run_rate])}), http=client
+        )
+        outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    history = outcome.summary["history"]
+    assert history["fx_error"].startswith("HTTPStatusError: HTTP 404")
+    assert history["fx"] == 1 and history["closes"] == 560  # the run's own rate and closes are kept
+
+
+def test_a_run_that_cannot_publish_leaves_the_price_history_alone(db, tmp_path):
+    hold(db)
+    deps = dataclasses.replace(
+        make_deps(db, tmp_path), download=lambda *args: pytest.fail("no backfill for a failed run")
+    )
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe={Market.US: 3, Market.TSX: 300})
+
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.summary["history"] == {}
+    assert closes_by_symbol(db) == []

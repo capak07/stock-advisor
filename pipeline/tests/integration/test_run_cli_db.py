@@ -31,6 +31,9 @@ def test_force_kind_runs_anyway_and_a_failed_run_exits_1(cli_env, monkeypatch, c
     monkeypatch.setattr(
         "advisor.run.build_registry", lambda settings, client, **_: fake_price_collectors()
     )
+    monkeypatch.setattr(  # a run that cannot publish leaves the price history alone
+        "advisor.run.yahoo_download", lambda *args: pytest.fail("the CLI test must not reach Yahoo")
+    )
     assert main(["--force-kind", "pre_open", *NOW_ARG]) == 1  # tiny fake universes are below both minimums
     assert '"status": "failed"' in capsys.readouterr().out
     assert cli_env.execute("select count(*) as n from runs").fetchone()["n"] == 2

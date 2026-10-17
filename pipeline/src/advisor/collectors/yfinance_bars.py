@@ -51,6 +51,9 @@ def _yahoo_download(tickers: list[str], start: date, end: date) -> pd.DataFrame:
     )
 
 
+yahoo_download: Downloader = _yahoo_download  # the price-history backfill downloads the same way
+
+
 def parse_frame(frame: pd.DataFrame | None, yahoo_to_symbol: dict[str, str]) -> list[DailyBar]:
     if frame is None or frame.empty:
         return []

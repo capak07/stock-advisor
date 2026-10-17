@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { resetData } from './db'
+import { resetData, seedPortfolio, seedRun, sql } from './db'
 
 test.beforeEach(resetData)
 
@@ -30,11 +30,27 @@ test.describe('on a phone', () => {
   })
 
   test('no page is wider than the screen', async ({ page }) => {
+    // Pages with content: holdings with long names, notes, the chart, warnings, watchlist rows.
+    await seedPortfolio()
+    await sql`update symbols set name = 'Royal Bank of Canada Global Diversified Holdings and Trust Incorporated' where symbol = 'RY.TO'`
+    await sql`update symbols set name = 'Apple Inc. Consumer Electronics and Services Worldwide Corporation' where symbol = 'AAPL'`
+    await sql`insert into watchlist (symbol, asset_type) values ('SHOP.TO', 'stock'), ('SOL', 'crypto')`
+    await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
     for (const [path, heading] of [['/', 'My Portfolio'], ['/watchlist', 'Watchlist'], ['/settings', 'Settings']]) {
       await page.goto(path)
       await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
       expect(overflow, path).toBeLessThanOrEqual(0)
+      if (path === '/') {
+        // The holdings table sits in a scroller, so the page itself never widens: check that the
+        // phone layout stacks the rows, so the table fits without scrolling sideways.
+        await expect(page.locator('#holdings tbody tr')).toHaveCount(3)
+        const scrolls = await page.evaluate(() => {
+          const box = document.querySelector('.table-scroll')!
+          return box.scrollWidth - box.clientWidth
+        })
+        expect(scrolls, 'holdings table scrolls sideways').toBeLessThanOrEqual(0)
+      }
     }
   })
 })

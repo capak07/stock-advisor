@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { daysAgo, resetData, seedCloses, seedFx, seedLot, seedSell, seedSymbols, weekdays } from './db'
+import { resetData, seedPortfolio } from './db'
 
 test.beforeEach(resetData)
 
@@ -12,26 +12,6 @@ test('an empty portfolio invites the first buy', async ({ page }) => {
   await expect(page.getByText('No actions yet')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sell' })).toHaveCount(0)
 })
-
-/** RY.TO and AAPL in the TFSA, ETH in the crypto account (part sold at a loss 5 days ago). */
-async function seedPortfolio() {
-  const days = weekdays(daysAgo(60))
-  const allDays = Array.from({ length: 61 }, (_, i) => daysAgo(60 - i)).filter((d) => d < daysAgo(0))
-  await seedSymbols([
-    { symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' },
-    { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
-  ])
-  await seedFx(days, 1.4)
-  await seedCloses('XIU.TO', 'stock', 'CAD', days, 40, 0.05)
-  await seedCloses('SPY', 'stock', 'USD', days, 500, 0.5)
-  await seedCloses('RY.TO', 'stock', 'CAD', days, 170, 0.25)
-  await seedCloses('AAPL', 'stock', 'USD', days, 200, 0.5)
-  await seedCloses('ETH', 'crypto', 'USD', allDays, 3000, -5)
-  await seedLot({ account: 'tfsa', symbol: 'RY.TO', asset_type: 'stock', qty: 10, price: 170, currency: 'CAD', bought_at: days[0] })
-  await seedLot({ account: 'tfsa', symbol: 'AAPL', asset_type: 'stock', qty: 5, price: 200, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
-  await seedLot({ account: 'crypto', symbol: 'ETH', asset_type: 'crypto', qty: 2, price: 4200, currency: 'CAD', bought_at: days[0] })
-  await seedSell({ account: 'crypto', symbol: 'ETH', asset_type: 'crypto', qty: 1, price: 3900, currency: 'CAD', sold_at: daysAgo(5) })
-}
 
 test('holdings are valued in CAD, charted against both benchmarks, and warned about', async ({ page }) => {
   await seedPortfolio()

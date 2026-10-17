@@ -10,7 +10,9 @@ Plans: `docs/superpowers/plans/`
 ## Layout
 
 - `pipeline/` — Python 3.12 data pipeline (uv)
+- `web/` — the owner's dashboard: Next.js on Vercel (see `web/README.md`)
 - `supabase/migrations/` — Postgres schema, row-level security, and roles (append-only)
+- `supabase/config.toml` — the local Supabase stack the dashboard's tests run against
 - `.github/workflows/` — `ci.yml` (tests on push), `run.yml` (scheduled pipeline runs),
   `health.yml` (daily live check of every data source)
 
@@ -27,6 +29,8 @@ cd pipeline
 uv run ruff check .                    # lint runs on the host
 scripts/in-docker.sh uv run pytest -q  # tests run in a Linux container
 ```
+
+The dashboard runs on the host with Node 24; `web/README.md` has its local stack and tests.
 
 Why a container: on this Windows machine, Application Control blocks the libpq DLLs bundled with psycopg, so anything that imports psycopg runs in Linux. `scripts/in-docker.sh` mounts the repo, keeps its own virtualenv in a Docker volume, and points tests at `advisor-pg`. CI runs on Ubuntu directly.
 
@@ -59,6 +63,9 @@ Why a container: on this Windows machine, Application Control blocks the libpq D
    as `stock-advisor you@example.com`. SEC requires a contact in every request; it is not an
    account or a key, and no data source needs one.
 6. Actions → `health` → Run workflow, then `run` → Run workflow → `pre_open`.
+7. **Vercel**: import the repository with **Root Directory** `web`, and add `SUPABASE_URL` and
+   `SUPABASE_PUBLISHABLE_KEY` from the Supabase project (Project Settings → API Keys and Data API).
+   Sign in with the owner from step 3. `web/README.md` has the details.
 
 **Upgrading an existing deployment:** apply the new migrations (`python -m advisor.store.migrate`,
 as in step 2: `0004` for Plan 2b, `0005` for Plan 2f, `0006` for Plan 5a) in the same window as you deploy the matching

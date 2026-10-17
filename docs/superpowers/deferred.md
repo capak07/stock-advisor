@@ -72,12 +72,22 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
   - Stock closes are adjusted for splits and dividends, so returns from them are total returns, and the latest close is the actual price.
   - Coin closes are in USD; convert them, and US holdings, with the `fx_rates` row of the same day (the latest one for today's value).
   - The run summary's `history` says what was stored, backfilled, rescaled after a split, or missed.
+  - Plan 5b values holdings and charts portfolio returns from them; the ticker chart (Plan 5c) reads them too.
+
+- **Dashboard before the model (Plan 5b):** the portfolio shows values, P/L, returns, warnings and a breakdown by market and account.
+  - Waiting for `holding_actions` and picks (Plan 4): action cards, likely ranges, trailing stops, exit dates, risk levels, the breakdown by risk and the max-size warning. The holdings table places its cells by class, so these columns can be added.
+  - Waiting for data no plan collects yet: the sector warning (`symbols.sector` is never filled; a fundamentals plan should fill it) and the note on US dividend payers in a TFSA.
+  - The status bar's Paper badges are static until picks are graded live (Plan 4). The missed-slot notice and the next run's time need the schedule in TypeScript (Plan 5c).
+  - Plan 5c: Picks, Ticker detail, Track record, Source health, file import, and the watchlist's verdict columns.
+- **Portfolio returns (Plan 5b):** time-weighted. A day's buys count from the start of that day and its sells at the close, so a buy at the close dilutes that day's return slightly; counting buys at the close instead would let a large buy into a small position show a huge return. Trades on days without a close count on the next trading day, and an asset without a close is valued at cost.
+- **Coin values (Plan 5b):** from Coinbase's USD closes at the Bank of Canada rate, the same source as the chart, not CoinGecko's CAD quote in `features_live`.
+- **Unlisted stocks (Plan 5b):** a held stock Yahoo can't price leaves every run degraded, so the buy form asks for confirmation when a stock isn't in the US or TSX lists (ETFs aren't). The watchlist accepts them with a note.
 
 - **Crypto Buy and Add:** a coin whose `unconfirmed_price` is true (Coinbase and Kraken more than 2% apart on the latest day) is blocked like a stock's `unconfirmed_jump`. `None` means Kraken had no close to compare, and crypto gets no jump rule (`find_jumps` isn't applied to Coinbase candles), so a coin only Coinbase lists has no price sanity check: treat `None` as unconfirmed, or apply the jump rule to crypto.
 - **Crypto currency:** Coinbase candles, and so ATR and the highest close since purchase, are in USD, while lots and `price_cad` are in CAD. Stops, trailing stops and graded returns must use one currency: convert the candles with the Bank of Canada FXUSDCAD rate (`boc_valet`) or CoinGecko's CAD/USD ratio, or work in USD with the entry converted at the buy date's rate.
 - **Crypto quote age:** each crypto row carries `quote_updated_at` and `quote_stale` (older than a day, e.g. served from cache). Show the age next to a stale CAD value.
 - **Watchlist coins:** check a coin with CoinGecko when it is added. A coin CoinGecko doesn't price is only listed in `crypto_unquoted`; it doesn't degrade the run.
-- **Source credits:** CoinGecko requires "Data provided by CoinGecko" wherever its data is shown, and FRED asks to be cited. alternative.me, DefiLlama and blockchain.com welcome a credit. Put a sources footer on the dashboard.
+- **Source credits:** CoinGecko requires "Data provided by CoinGecko" wherever its data is shown, and FRED asks to be cited. alternative.me, DefiLlama and blockchain.com welcome a credit. The dashboard footer credits Yahoo Finance, Coinbase and the Bank of Canada (Plan 5b); add each source when a page first shows its data.
 - **`runs.summary`** gained `crypto` (held and watched coins) and `crypto_unquoted` in Plan 2e, and `news` (items, stories, rows, assets, sentiment status) in Plan 2f.
 - **Ticker Detail news:** read `news_items` by symbol and asset type, newest first. Google News links are Google's own redirect pages; show the outlet beside each title.
 - **News text is untrusted:** titles, outlets and links come from third-party feeds. Render them as text, never as HTML. `parse_feed` keeps only http and https links.
@@ -88,7 +98,6 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
 - Show missed or dropped schedule slots on the dashboard.
 - Indexes on `picks.run_id` and `source_health.run_id`, added with their first readers.
 - **Old USD lots and sells:** pre-rev-2 USD lots and sells have no `fx_rate_cad`, and the `*_usd_needs_fx_rate` check (NOT VALID) still applies on UPDATE. Editing such a row fails until a rate is backfilled. Backfill from Bank of Canada rates first.
-- **`settings.updated_at`** has no trigger. The Settings page must set it, or add a trigger.
 - **Failed-run counts:** a failed run's per-market `priced` and `fresh` count only priority symbols.
 - **`runs.summary` shape:** it changed in Plan 2b, from flat keys to `{"markets": {"US": …, "TSX": …}, …}`. The dashboard must read both shapes, or ignore runs from before the change.
 - **Run summary `shortlist`:** the per-market `shortlist` excludes priority symbols but the top-level `shortlist` includes them. Rename one before the dashboard shows them side by side.

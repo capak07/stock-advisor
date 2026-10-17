@@ -484,8 +484,9 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 ## 9. Dashboard (web/)
 
 - **Stack:** Next.js (App Router) and `@supabase/ssr` with Supabase Auth (email and password, single user, sign-ups disabled), deployed on Vercel.
-- **Charts:** TradingView `lightweight-charts` (Apache-2.0) for price charts and forecast cones, and Recharts for track-record and calibration charts.
-- **Visual design:** follows the **superdesign workflow in the workspace CLAUDE.md**: layout, then theme, then animation, then HTML, with owner sign-off at each step.
+- **Charts:** the Ledger mockups' own SVG line chart, ported as a component and drawn at the container's width (owner decision 2026-10-16: no chart library). Price history comes from `daily_closes` and `fx_rates` (§8). The ticker page adds the forecast cone.
+- **Data access:** pages and forms talk to Supabase only from the server (server components and server actions), as the signed-in owner, so `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` never reach the browser. Row-level security is what limits reads and writes.
+- **Visual design:** follows the **superdesign workflow in the workspace CLAUDE.md**: layout, then theme, then animation, then HTML, with owner sign-off at each step. The approved design is "Ledger": `.superdesign/design_iterations/` (`theme_1.css`, `dashboard_1.css`, `dashboard_1.js` and one HTML page per screen).
 - **Disclaimer:** "Not financial or tax advice. Forecasts are probabilistic and can be wrong."
 
 | Page | Contents |
@@ -537,7 +538,9 @@ Informational only, labeled "not tax advice". These rules add warnings and never
   - RLS and pipeline-role invariants on every table;
   - symbol-format constraints for all three formats;
   - migration runner (no-op, rollback, baseline).
-- **Dashboard:** Playwright tests for login; adding a buy, a sell and a watchlist item; every page rendering with seed data; and the stale and paper banners.
+- **Dashboard:**
+  - Vitest unit tests for the portfolio maths (average cost, CAD values, time-weighted returns against the benchmarks, TFSA-frequency and superficial-loss warnings), chart geometry and form checks;
+  - Playwright tests against the local Supabase stack (`supabase/config.toml`) for login, a signed-in account that isn't the owner, adding a buy, a sell and a watchlist item, settings, every page rendering with seed data, and the stale and paper banners.
 - **CI:** `ci.yml` runs all of the above on every push.
 - **Live checks:** `health.yml` fetches every source's canary daily.
 
@@ -553,8 +556,9 @@ stock-advisor/
       store/{db, migrate, repo}.py
     scripts/in-docker.sh    run tests in Linux (dev machine blocks psycopg's DLLs)
     tests/{fixtures/, unit/, integration/}
-  web/                      Next.js dashboard
+  web/                      Next.js dashboard: app/, components/, lib/ (unit-tested), e2e/ (Playwright)
   supabase/migrations/      append-only SQL: schema, RLS, roles
+  supabase/config.toml      the local Supabase stack the dashboard's tests run against
   .github/workflows/{run.yml, train.yml, health.yml, ci.yml}
   docs/superpowers/{specs, plans, deferred.md}
 ```

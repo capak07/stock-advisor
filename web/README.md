@@ -41,6 +41,16 @@ on the **local** stack between tests (`e2e/db.ts` refuses any other database) an
 users there: the owner and a second account that must see no data. On Windows they use the
 installed Microsoft Edge; elsewhere run `npx playwright install chromium` once.
 
+## Fix a mistaken trade
+
+The dashboard adds buys and sells but doesn't edit or delete them yet (Plan 5c adds a list of
+trades with Delete). Until then, in the Supabase dashboard, open Table Editor → `lots` (buys) or
+`sells`, find the row by symbol and date, and edit or delete it. The next page load recomputes
+values, returns and warnings.
+
+An old USD row from before spec rev 2 can't be edited until it has an `fx_rate_cad`. Fill one
+in, or delete the row and add the trade again.
+
 ## Deploy (Vercel, free tier)
 
 1. Import the repository in Vercel and set **Root Directory** to `web`.

@@ -860,6 +860,31 @@ def test_a_split_rescales_the_stored_history(db, tmp_path):
     assert min(stored) == date(2026, 7, 1)
 
 
+def test_a_rescale_whose_write_fails_is_undone_so_the_next_run_rescales_once(
+    db, tmp_path, monkeypatch
+):
+    otcx = AssetRef("OTCX", AssetType.STOCK)
+    repo.write_daily_closes(db, [
+        DailyClose(otcx, date(2026, 7, 1) + timedelta(days=i), 20.0, "USD") for i in range(70)
+    ])
+    hold(db)
+
+    def lost_connection(conn, closes):
+        raise RuntimeError("connection lost")
+
+    monkeypatch.setattr(repo, "write_daily_closes", lost_connection)
+    first = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert first.summary["history"] == {"error": "RuntimeError: connection lost"}
+    stored = repo.stored_closes(db, [otcx], date(2026, 7, 1))[otcx]
+    assert set(stored.values()) == {20.0}  # July wasn't halved without the fresh closes
+
+    monkeypatch.undo()
+    second = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert second.summary["history"]["rescaled"] == ["OTCX"]
+    stored = repo.stored_closes(db, [otcx], date(2026, 7, 1))[otcx]
+    assert set(stored.values()) == {10.0}  # halved once, not twice
+
+
 def test_a_symbol_yahoo_drops_from_the_backfill_is_named_and_asked_again(db, tmp_path):
     hold(db)
     calls = []

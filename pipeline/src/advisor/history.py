@@ -83,7 +83,8 @@ def rebase_factor(stored: Mapping[date, float], fresh: Sequence[DailyClose]) -> 
 def store_closes(conn: psycopg.Connection, closes: Sequence[DailyClose]) -> list[str]:
     """Write closes, first rescaling older stored ones that Yahoo re-adjusted.
 
-    Returns the rescaled symbols.
+    Both happen in one transaction: a rescale kept without its fresh closes would be found, and
+    applied, again by the next run. Returns the rescaled symbols.
     """
     by_ref: dict[AssetRef, list[DailyClose]] = defaultdict(list)
     for close in closes:
@@ -92,12 +93,13 @@ def store_closes(conn: psycopg.Connection, closes: Sequence[DailyClose]) -> list
         return []
     stored = repo.stored_closes(conn, by_ref, min(c.day for c in closes))
     rescaled = []
-    for ref, fresh in by_ref.items():
-        factor = rebase_factor(stored.get(ref, {}), fresh)
-        if factor is not None:
-            repo.rescale_closes(conn, ref, min(c.day for c in fresh), factor)
-            rescaled.append(ref.symbol)
-    repo.write_daily_closes(conn, closes)
+    with conn.transaction():
+        for ref, fresh in by_ref.items():
+            factor = rebase_factor(stored.get(ref, {}), fresh)
+            if factor is not None:
+                repo.rescale_closes(conn, ref, min(c.day for c in fresh), factor)
+                rescaled.append(ref.symbol)
+        repo.write_daily_closes(conn, closes)
     return sorted(rescaled)
 
 

@@ -1,11 +1,13 @@
 'use client'
 
 import { Plus, X } from 'lucide-react'
+import Link from 'next/link'
 import { useActionState, useEffect, useState, useTransition } from 'react'
 import { addWatch, removeWatch } from '@/app/(app)/watchlist/actions'
 import { useToast } from '@/components/Toast'
 import { useFieldErrors } from '@/components/useFieldErrors'
 import type { AssetType } from '@/lib/portfolio/types'
+import { tickerHref } from '@/lib/ticker'
 import type { FormState } from '@/lib/trade-form'
 import { WATCH_TYPES, type WatchType } from '@/lib/watch-form'
 
@@ -107,7 +109,9 @@ export function WatchList({ rows }: { rows: WatchRow[] }) {
             className={`watch-row plain ${removing === row.symbol ? 'removing' : ''}`}
           >
             <span className="w-sym">
-              <span className="sym">{row.symbol}</span>
+              <Link className="sym" href={tickerHref(row.symbol, row.assetType)}>
+                {row.symbol}
+              </Link>
               {row.name && (
                 <>
                   <br />

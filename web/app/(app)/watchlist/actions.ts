@@ -16,6 +16,7 @@ export async function addWatch(_: FormState, form: FormData): Promise<FormState>
   if (error?.code === '23505') return { errors: { symbol: `${parsed.symbol} is already on the watchlist.` }, at: Date.now() }
   if (error) return { message: `It wasn't added: ${error.message}`, at: Date.now() }
   revalidatePath('/watchlist')
+  revalidatePath('/ticker/[symbol]', 'page')
   const listed = parsed.assetType === 'crypto' || (await isListedStock(supabase, parsed.symbol))
   return {
     ok: true,
@@ -31,5 +32,6 @@ export async function removeWatch(symbol: string, assetType: AssetType): Promise
   const { error } = await supabase.from('watchlist').delete().eq('symbol', symbol).eq('asset_type', assetType)
   if (error) return { message: `It wasn't removed: ${error.message}`, at: Date.now() }
   revalidatePath('/watchlist')
+  revalidatePath('/ticker/[symbol]', 'page')
   return { ok: true, message: `${symbol} removed from the watchlist`, at: Date.now() }
 }

@@ -132,3 +132,26 @@
   #sources tr.err td { display: block; padding: 8px 10px; }
   .sources-card .table-scroll { overflow: visible; margin: 0; padding: 0; }
 }
+
+/* ---------- ticker_1.html (no factor bars until the model, Plan 3) ---------- */
+.ticker-symbol { font-size: 26px !important; } /* inline in the mockup, which React can't mark !important */
+.price-big { font: 600 30px/1 var(--font-mono) !important; letter-spacing: -0.02em; }
+.news-item { display: grid; grid-template-columns: 52px 1fr; gap: 3px 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.news-item:last-child { border-bottom: 0; }
+.news-item a { overflow-wrap: anywhere; }
+.news-item a:hover { text-decoration: underline !important; }
+.sent { font: 600 11.5px/1 var(--font-mono) !important; padding: 5px 6px; border-radius: var(--radius-sm); text-align: center; align-self: start; }
+.sent.pos { color: var(--gain); background: var(--gain-soft); }
+.sent.neg { color: var(--loss); background: var(--loss-soft); }
+.sent.neu { color: var(--hold); background: var(--hold-soft); }
+.source-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; font-size: 13px; }
+.source-grid > span { display: flex; align-items: center; gap: 7px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 639px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { display: grid; gap: 4px; }
+.kpi b { font: 600 17px/1.1 var(--font-mono) !important; }
+a.sym:hover, .sym a:hover { text-decoration: underline !important; }
+.text-link { text-decoration: underline !important; text-underline-offset: 2px; }
+.find { position: relative; }
+.find svg { position: absolute; left: 10px; top: 50%; width: 15px; height: 15px; transform: translateY(-50%); color: var(--muted-foreground); pointer-events: none; }
+.find .input { padding-left: 32px; }

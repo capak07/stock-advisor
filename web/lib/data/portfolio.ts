@@ -34,11 +34,19 @@ const toTrade = (side: Trade['side'], day: string, row: TradeRow): RecordedTrade
 
 const TRADE_COLUMNS = 'id, account, symbol, asset_type, qty, price, currency, fx_rate_cad'
 
-/** Every buy (`lots`) and sell (`sells`). Postgres numerics arrive as strings. */
-export async function loadTrades(supabase: Supabase): Promise<RecordedTrade[]> {
+/** Every buy (`lots`) and sell (`sells`), or only one asset's. Postgres numerics arrive as strings. */
+export async function loadTrades(supabase: Supabase, only?: AssetRef): Promise<RecordedTrade[]> {
+  const lotsQuery = () => {
+    const query = supabase.from('lots').select(`${TRADE_COLUMNS}, bought_at`)
+    return only ? query.eq('symbol', only.symbol).eq('asset_type', only.assetType) : query
+  }
+  const sellsQuery = () => {
+    const query = supabase.from('sells').select(`${TRADE_COLUMNS}, sold_at`)
+    return only ? query.eq('symbol', only.symbol).eq('asset_type', only.assetType) : query
+  }
   const [lots, sells] = await Promise.all([
-    fetchAll((from, to) => supabase.from('lots').select(`${TRADE_COLUMNS}, bought_at`).order('id').range(from, to)),
-    fetchAll((from, to) => supabase.from('sells').select(`${TRADE_COLUMNS}, sold_at`).order('id').range(from, to)),
+    fetchAll((from, to) => lotsQuery().order('id').range(from, to)),
+    fetchAll((from, to) => sellsQuery().order('id').range(from, to)),
   ])
   return [
     ...(lots as (TradeRow & { bought_at: string })[]).map((r) => toTrade('buy', r.bought_at, r)),

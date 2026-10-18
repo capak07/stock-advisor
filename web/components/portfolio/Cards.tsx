@@ -1,9 +1,11 @@
 import { Info, Sparkles, TriangleAlert } from 'lucide-react'
+import Link from 'next/link'
 import { fmtAmount, fmtPct } from '@/lib/format'
 import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 import type { Slice } from '@/lib/portfolio/valuation'
 import type { HoldingRow } from '@/lib/portfolio/view'
 import type { Warning } from '@/lib/portfolio/warnings'
+import { tickerHref } from '@/lib/ticker'
 
 /** Sell, Trim, Review, Add and Hold come from the model (Plan 4); until then, this says so. */
 export function ActionsCard() {
@@ -137,7 +139,9 @@ export function HoldingsCard({ holdings, accounts }: { holdings: HoldingRow[]; a
                   <tr key={h.key}>
                     <td className="sub h-acct">{ACCOUNT_LABELS[h.account]}</td>
                     <td className="h-sym">
-                      <span className="sym">{h.symbol}</span>
+                      <Link className="sym" href={tickerHref(h.symbol, h.market === null ? 'crypto' : 'stock')}>
+                        {h.symbol}
+                      </Link>
                       {h.name && (
                         <>
                           <br />

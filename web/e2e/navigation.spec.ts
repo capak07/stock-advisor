@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { resetData, seedPortfolio, seedRun, sql } from './db'
+import { resetData, seedHealth, seedNews, seedPortfolio, seedRun, seedSources, sql } from './db'
 
 test.beforeEach(resetData)
 
@@ -37,8 +37,22 @@ test.describe('on a phone', () => {
     await sql`update symbols set name = 'Royal Bank of Canada Global Diversified Holdings and Trust Incorporated' where symbol = 'RY.TO'`
     await sql`update symbols set name = 'Apple Inc. Consumer Electronics and Services Worldwide Corporation' where symbol = 'AAPL'`
     await sql`insert into watchlist (symbol, asset_type) values ('SHOP.TO', 'stock'), ('SOL', 'crypto')`
-    await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
-    for (const [path, heading] of [['/', 'My Portfolio'], ['/watchlist', 'Watchlist'], ['/settings', 'Settings']]) {
+    const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    await seedSources()
+    await seedHealth(runId, new Date().toISOString(), [
+      { source: 'sec_form4', status: 'partial', error: `PartialFetch: ${'DocumentBudgetExhausted; '.repeat(12)}` },
+    ])
+    await seedNews([
+      { symbol: 'RY.TO', asset_type: 'stock', hoursAgo: 2, outlet: 'finance.yahoo.com', url: 'https://finance.yahoo.com/x', title: `RBC ${'quarterly-results-'.repeat(8)}beat`, sentiment: 0.4 },
+    ])
+    const pages = [
+      ['/', 'My Portfolio'],
+      ['/watchlist', 'Watchlist'],
+      ['/ticker/RY.TO', 'RY.TO'],
+      ['/sources', 'Source health'],
+      ['/settings', 'Settings'],
+    ]
+    for (const [path, heading] of pages) {
       await page.goto(path)
       await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)

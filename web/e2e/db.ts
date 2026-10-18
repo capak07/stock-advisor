@@ -128,6 +128,24 @@ export async function seedHealth(
   }
 }
 
+export async function seedNews(
+  rows: { symbol: string; asset_type: 'stock' | 'crypto'; hoursAgo: number; outlet: string; url: string; title: string; sentiment: number | null }[],
+) {
+  for (const [i, { hoursAgo, ...r }] of rows.entries()) {
+    await sql`insert into news_items ${sql({
+      ...r,
+      published_at: new Date(Date.now() - hoursAgo * 3_600_000),
+      cluster_id: `story-${i}`,
+      story_key: `key-${i}`,
+    })}`
+  }
+}
+
+export async function seedFeatures(runId: number, symbol: string, assetType: 'stock' | 'crypto', features: JSONValue) {
+  await sql`insert into features_live (run_id, symbol, asset_type, features, as_of)
+            values (${runId}, ${symbol}, ${assetType}, ${sql.json(features)}, now())`
+}
+
 /** RY.TO and AAPL in the TFSA, ETH in the crypto account (part sold at a loss 5 days ago). */
 export async function seedPortfolio() {
   const days = weekdays(daysAgo(60))

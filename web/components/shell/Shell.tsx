@@ -6,6 +6,7 @@ import type { Run } from '@/lib/runs'
 import { STATUS_DOT, runLabel, runSources, runWhen, staleNotice } from '@/lib/runs'
 import { ThemeToggle } from '../ThemeToggle'
 import { ToastProvider } from '../Toast'
+import { FindTicker } from './FindTicker'
 import { BottomTabs, SidebarLinks } from './Navigation'
 import { RunsPill, type RunView } from './RunsPill'
 
@@ -47,6 +48,7 @@ export function Shell({
           <Link className="brand" href="/">
             {brand}ADVISOR
           </Link>
+          <FindTicker />
           <SidebarLinks />
           <div className="sidebar-foot">
             <form action={signOut}>

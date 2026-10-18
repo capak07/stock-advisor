@@ -169,7 +169,7 @@ export function readRows(rows: readonly (readonly string[])[], options: ReadOpti
 
     let symbol = normalizeSymbol(at(row, 'symbol'))
     const currency = at(row, 'currency').toUpperCase()
-    if (assetType === 'stock' && currency === 'CAD' && /^[A-Z]{1,5}([.-][A-Z]{1,2})?$/.test(symbol)) {
+    if (assetType === 'stock' && currency === 'CAD' && !symbol.endsWith('.TO') && /^[A-Z]{1,5}([.-][A-Z]{1,2})?$/.test(symbol)) {
       symbol = normalizeSymbol(`${symbol.replace('.', '-')}.TO`)
     }
     if (!isValidSymbol(symbol, assetType)) {

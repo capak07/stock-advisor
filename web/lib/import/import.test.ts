@@ -82,6 +82,21 @@ describe('readRows', () => {
     expect(rows[2].trade?.assetType).toBe('crypto')
   })
 
+  it('keeps a TSX symbol already written with .TO, and a dotted class as it is', () => {
+    const rows = readRows(
+      [
+        header,
+        ['2026-10-03', 'Buy', 'RY.TO', '10', '184.50', 'CAD', 'TFSA'],
+        ['2026-10-04', 'Buy', 'RCI.B.TO', '5', '60', 'CAD', 'TFSA'],
+      ],
+      options,
+    )
+    expect(rows.map((r) => [r.status, r.trade?.symbol])).toEqual([
+      ['ready', 'RY.TO'],
+      ['ready', 'RCI-B.TO'],
+    ])
+  })
+
   it('leaves out what is not a trade, and says why each bad row is wrong', () => {
     const rows = readRows(
       [

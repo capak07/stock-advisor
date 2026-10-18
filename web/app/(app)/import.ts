@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { todayInToronto } from '@/lib/dates'
 import { must } from '@/lib/data/fetch'
 import { loadFx, loadTrades } from '@/lib/data/portfolio'
-import type { ImportTrade } from '@/lib/import/rows'
+import { sameTrade, type ImportTrade } from '@/lib/import/rows'
 import { buildLedger } from '@/lib/portfolio/ledger'
 import { ACCOUNTS } from '@/lib/portfolio/types'
 import type { Trade } from '@/lib/portfolio/types'
@@ -47,9 +47,9 @@ function checked(t: ImportTrade, today: string): string | null {
 }
 
 /**
- * Add a file's trades (Plan 5c). All or nothing: every trade is checked again, sells must not
- * exceed what's held once the file's buys are in, and USD trades without a rate get the Bank of
- * Canada's for their day.
+ * Add a file's trades (Plan 5c). All or nothing: every trade is checked again, trades already
+ * recorded are skipped, sells must not exceed what's held once the file's buys are in, and USD
+ * trades without a rate get the Bank of Canada's for their day.
  */
 export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
   if (!Array.isArray(trades) || trades.length === 0) return failed('There are no trades to import.')
@@ -62,8 +62,11 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
 
   const supabase = await createClient()
   const [existing, fx] = await Promise.all([loadTrades(supabase), loadFx(supabase)])
+  // The review only knew the trades recorded when the page loaded; another tab may have added some.
+  const fresh = trades.filter((t) => !existing.some((e) => sameTrade(e, t)))
+  if (fresh.length === 0) return failed(`All ${trades.length} of these trades are already recorded.`)
   const incoming: Trade[] = []
-  for (const t of trades) {
+  for (const t of fresh) {
     const currency = tradeCurrency(t.assetType, t.symbol)
     const rate = currency === 'USD' ? (t.fxRate ?? fx.on(t.day)) : null
     if (currency === 'USD' && rate === null) {
@@ -116,5 +119,7 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
   }
   revalidatePath('/')
   const n = incoming.length
-  return { ok: true, message: `Imported ${n} ${n === 1 ? 'trade' : 'trades'}`, at: Date.now() }
+  const skipped = trades.length - n
+  const note = skipped > 0 ? ` (${skipped} already recorded, skipped)` : ''
+  return { ok: true, message: `Imported ${n} ${n === 1 ? 'trade' : 'trades'}${note}`, at: Date.now() }
 }

@@ -138,7 +138,8 @@ export interface ReadOptions {
   rateFrom: string | null
 }
 
-const sameTrade = (a: Omit<Trade, 'currency' | 'fxRateCad'>, b: Omit<Trade, 'currency' | 'fxRateCad'>) =>
+/** The same trade: side, account, asset, day, quantity and price; the rate doesn't count. */
+export const sameTrade = (a: Omit<Trade, 'currency' | 'fxRateCad'>, b: Omit<Trade, 'currency' | 'fxRateCad'>) =>
   a.side === b.side &&
   a.account === b.account &&
   a.symbol === b.symbol &&

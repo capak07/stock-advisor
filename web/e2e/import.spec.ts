@@ -60,6 +60,18 @@ test('importing the same file again adds nothing', async ({ page }) => {
   await expect(drawer.getByRole('button', { name: 'Import 0 trades' })).toBeDisabled()
 })
 
+test("a trade recorded after the file was reviewed isn't imported twice", async ({ page }) => {
+  const drawer = await upload(page, csv(`${daysAgo(30)},Buy,RY,10,184.50,CAD,TFSA`, `${daysAgo(25)},Buy,RY,5,186,CAD,TFSA`))
+  await drawer.getByRole('button', { name: 'Review 2 rows' }).click()
+  await expect(drawer.getByText(/ready to import/)).toHaveText('2 ready to import')
+  // Another tab records one of them meanwhile.
+  await seedLot({ account: 'tfsa', symbol: 'RY.TO', asset_type: 'stock', qty: 10, price: 184.5, currency: 'CAD', bought_at: daysAgo(30) })
+  await drawer.getByRole('button', { name: 'Import 2 trades' }).click()
+  await expect(page.getByRole('status')).toHaveText('Imported 1 trade (1 already recorded, skipped)')
+  const [{ n }] = await sql`select count(*)::int as n from lots`
+  expect(n).toBe(2)
+})
+
 test('a sell of more than is held refuses the whole file', async ({ page }) => {
   const drawer = await upload(
     page,

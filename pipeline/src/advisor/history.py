@@ -7,8 +7,9 @@
 - A symbol ever bought, a watched stock and the benchmarks reach back a year, or to the first buy
   if that's earlier. The first run that finds one short backfills it from Yahoo in one call. Yahoo
   sometimes drops a symbol from a download (yfinance's cache can report "database is locked");
-  it stays short, so the next run asks again. Coins need no backfill: every run already fetches
-  290 days of candles.
+  it stays short, so the next run asks again.
+- Every run fetches 290 days of a coin's candles. A coin ever bought reaches back a year, or to
+  its first buy, through Coinbase's older candles, 300 days a request (Plan 5c).
 - After two years, closes are pruned, except for symbols ever bought and the benchmarks.
 
 **Splits and dividends.** Yahoo re-adjusts every close before a split or ex-dividend day. When a
@@ -21,7 +22,7 @@ day, not all of them, so it changes nothing.
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from statistics import median
 
 import httpx
@@ -29,6 +30,8 @@ import psycopg
 
 from advisor.collectors.base import get_with_retries
 from advisor.collectors.boc_valet import VALET_URL, parse_observations
+from advisor.collectors.coinbase_candles import CANDLES_URL, ONE_DAY, parse_candles
+from advisor.collectors.coins import listed_as
 from advisor.collectors.series import SeriesObservation
 from advisor.collectors.yfinance_bars import SYMBOLS_PER_DOWNLOAD, Downloader, parse_frame, to_yahoo
 from advisor.markets import BENCHMARKS, market_of
@@ -43,6 +46,7 @@ OVERLAP_DAYS = 5  # the oldest fresh days compared with stored closes
 REBASE_TOLERANCE = 0.002  # within 0.2%: the same adjustment
 REBASE_AGREEMENT = 0.01  # days within 1% of the median ratio agree on it
 USD_CAD = "FXUSDCAD"
+COIN_WINDOW = timedelta(days=300)  # Coinbase answers at most 300 daily candles a request
 BENCHMARK_REFS = tuple(AssetRef(symbol, AssetType.STOCK) for symbol in BENCHMARKS)
 
 
@@ -138,6 +142,47 @@ def download_closes(
     return closes
 
 
+def coin_backfill_starts(
+    today: date, first_buys: Mapping[AssetRef, date], earliest: Mapping[AssetRef, date]
+) -> dict[AssetRef, date]:
+    """Where each coin ever bought should start, for those whose stored closes don't reach it."""
+    year_ago = today - HISTORY
+    starts = {
+        ref: min(year_ago, day) for ref, day in first_buys.items() if ref.asset_type is AssetType.CRYPTO
+    }
+    return {
+        ref: start
+        for ref, start in starts.items()
+        if ref not in earliest or earliest[ref] > start + SLACK
+    }
+
+
+def fetch_coin_closes(client: httpx.Client, ref: AssetRef, start: date, end: date) -> list[DailyClose]:
+    """Coinbase's daily USD closes from `start` up to, not including, `end`, 300 days a request.
+
+    A coin Coinbase doesn't list (404) has none.
+    """
+    product = f"{listed_as(ref.symbol)}-USD"
+    closes: list[DailyClose] = []
+    window = start
+    while window < end:
+        stop = min(window + COIN_WINDOW, end)
+        try:
+            response = get_with_retries(
+                client,
+                CANDLES_URL.format(product=product),
+                params={"granularity": ONE_DAY, "start": f"{window}T00:00:00Z", "end": f"{stop}T00:00:00Z"},
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return []
+            raise
+        bars = parse_candles(ref.symbol, response.json(), datetime.combine(stop, time(), UTC))
+        closes += [DailyClose(ref, bar.day, bar.close, "USD") for bar in bars if bar.day >= window]
+        window = stop
+    return closes
+
+
 def usd_cad(records: Iterable[SeriesObservation]) -> list[tuple[date, float]]:
     return sorted({record.day: record.value for record in records if record.series == USD_CAD}.items())
 
@@ -189,6 +234,23 @@ def record(
                 summary["backfill_missing"] = missing  # still short, so the next run asks again
         except Exception as exc:  # Yahoo is unofficial: a failed backfill waits for the next run
             summary["backfill_error"] = f"{type(exc).__name__}: {exc}"[:200]
+
+    earliest_coins = repo.earliest_closes(conn, [ref for ref in buys if ref.asset_type is AssetType.CRYPTO])
+    coin_starts = coin_backfill_starts(today, buys, earliest_coins)
+    if coin_starts and http is not None:
+        try:
+            fetched = [
+                close
+                for ref, start in sorted(coin_starts.items())
+                for close in fetch_coin_closes(http, ref, start, earliest_coins.get(ref, today))
+            ]
+            store_closes(conn, fetched)
+            got = {c.ref for c in fetched}
+            summary["backfilled"] = sorted([*summary["backfilled"], *(ref.symbol for ref in got)])
+            if missing := sorted(ref.symbol for ref in coin_starts if ref not in got):
+                summary["backfill_missing"] = sorted([*summary.get("backfill_missing", []), *missing])
+        except Exception as exc:  # Coinbase's history waits for the next run
+            summary["coin_backfill_error"] = f"{type(exc).__name__}: {exc}"[:200]
 
     rates = usd_cad(valet)
     repo.write_fx_rates(conn, rates)

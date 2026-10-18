@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pandas as pd
@@ -9,8 +9,10 @@ from advisor.history import (
     BENCHMARK_REFS,
     backfill_starts,
     closes_from_bars,
+    coin_backfill_starts,
     currency_of,
     download_closes,
+    fetch_coin_closes,
     fetch_usd_cad,
     fx_backfill_start,
     rebase_factor,
@@ -139,3 +141,45 @@ def test_the_fx_backfill_starts_at_the_oldest_buy_or_a_year_back():
     assert fx_backfill_start(TODAY, {AAPL: date(2025, 5, 12)}, None) == date(2025, 5, 12)
     assert fx_backfill_start(TODAY, {}, date(2026, 6, 16)) == date(2025, 10, 14)  # 120 days stored
     assert fx_backfill_start(TODAY, {}, date(2025, 10, 16)) is None  # within a week of a year
+
+
+def test_coins_ever_bought_reach_back_a_year_or_to_their_first_buy():
+    eth = AssetRef("ETH", AssetType.CRYPTO)
+    starts = coin_backfill_starts(
+        TODAY,
+        {BTC: date(2026, 9, 1), eth: date(2024, 3, 4), AAPL: date(2024, 1, 2)},
+        {BTC: date(2025, 12, 28), eth: date(2024, 3, 6)},  # ETH's stored closes reach its first buy
+    )
+    assert starts == {BTC: date(2025, 10, 14)}  # stocks are Yahoo's backfill, not this one
+
+
+def candle_rows(start: date, stop: date, close: float) -> list[list[float]]:
+    """Coinbase's answer: [time, low, high, open, close, volume], newest first."""
+    days = [start + timedelta(days=i) for i in range((stop - start).days)]
+    stamp = lambda day: datetime(day.year, day.month, day.day, tzinfo=UTC).timestamp()  # noqa: E731
+    return [[stamp(d), close, close, close, close, 1.0] for d in reversed(days)]
+
+
+def test_the_coin_backfill_asks_coinbase_300_days_at_a_time():
+    asked = []
+
+    def handler(request):
+        start = date.fromisoformat(request.url.params["start"][:10])
+        stop = date.fromisoformat(request.url.params["end"][:10])
+        asked.append((request.url.path, start, stop))
+        return httpx.Response(200, json=candle_rows(start, stop, 60000.0))
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        closes = fetch_coin_closes(client, BTC, date(2025, 1, 1), date(2026, 1, 15))
+    assert asked == [
+        ("/products/BTC-USD/candles", date(2025, 1, 1), date(2025, 10, 28)),
+        ("/products/BTC-USD/candles", date(2025, 10, 28), date(2026, 1, 15)),
+    ]
+    assert len(closes) == (date(2026, 1, 15) - date(2025, 1, 1)).days
+    assert (closes[0].day, closes[-1].day) == (date(2025, 1, 1), date(2026, 1, 14))
+    assert {(c.ref, c.currency) for c in closes} == {(BTC, "USD")}
+
+
+def test_a_coin_coinbase_doesnt_list_has_no_backfill():
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(404))) as client:
+        assert fetch_coin_closes(client, AssetRef("XYZ", AssetType.CRYPTO), date(2025, 1, 1), TODAY) == []

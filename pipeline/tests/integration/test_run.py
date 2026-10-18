@@ -939,3 +939,47 @@ def test_a_run_writes_the_registry_to_sources(db, tmp_path):
     execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     names = [r["name"] for r in db.execute("select name from sources order by name").fetchall()]
     assert names == sorted(deps.collectors)
+
+
+def coinbase(asked, *, listed=True):
+    """A Coinbase that answers each candle request with a close of 60,000 for every day asked."""
+
+    def handler(request):
+        if request.url.host != "api.exchange.coinbase.com":
+            return httpx.Response(404)  # the Bank of Canada isn't under test here
+        start = date.fromisoformat(request.url.params["start"][:10])
+        stop = date.fromisoformat(request.url.params["end"][:10])
+        asked.append((start, stop))
+        if not listed:
+            return httpx.Response(404)
+        days = [start + timedelta(days=i) for i in range((stop - start).days)]
+        stamp = lambda d: datetime(d.year, d.month, d.day, tzinfo=UTC).timestamp()  # noqa: E731
+        return httpx.Response(200, json=[[stamp(d), 6e4, 6e4, 6e4, 6e4, 1.0] for d in reversed(days)])
+
+    return httpx.MockTransport(handler)
+
+
+def test_a_held_coin_is_backfilled_from_coinbase_to_a_year_back(db, tmp_path):
+    hold_crypto(db)  # bought 2026-09-01; the run's own candles start 2026-09-14
+    asked = []
+    with httpx.Client(transport=coinbase(asked)) as client:
+        deps = dataclasses.replace(make_deps(db, tmp_path, extra=crypto_sources()), http=client)
+        outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert asked == [(date(2025, 10, 14), date(2026, 8, 10)), (date(2026, 8, 10), date(2026, 9, 14))]
+    assert outcome.summary["history"]["backfilled"] == ["BTC"]
+    row = db.execute(
+        "select min(day) as first, count(*) as n from daily_closes where symbol = 'BTC' and asset_type = 'crypto'"
+    ).fetchone()
+    assert (row["first"], row["n"]) == (date(2025, 10, 14), 335 + 30)
+
+
+def test_a_coin_coinbase_doesnt_list_is_named_and_the_run_publishes(db, tmp_path):
+    hold_crypto(db)
+    asked = []
+    with httpx.Client(transport=coinbase(asked, listed=False)) as client:
+        deps = dataclasses.replace(make_deps(db, tmp_path, extra=crypto_sources()), http=client)
+        outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["history"]["backfill_missing"] == ["BTC"]

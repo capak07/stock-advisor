@@ -941,6 +941,21 @@ def test_a_run_writes_the_registry_to_sources(db, tmp_path):
     assert names == sorted(deps.collectors)
 
 
+def test_a_registry_that_cant_be_written_is_reported_and_the_run_publishes(
+    db, tmp_path, monkeypatch
+):
+    def refused(conn, collectors):
+        raise RuntimeError("new row violates check constraint")
+
+    monkeypatch.setattr(repo, "write_sources", refused)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    row = run_row(db, outcome.run_id)
+    assert row["published"] is True
+    assert row["summary"]["sources_error"] == "RuntimeError: new row violates check constraint"
+
+
 def coinbase(asked, *, listed=True):
     """A Coinbase that answers each candle request with a close of 60,000 for every day asked."""
 

@@ -109,7 +109,10 @@ def main(argv: list[str] | None = None) -> int:
     rows: list[tuple[CollectorResult, int]] = []
     with connect(settings.database_url) as conn, make_client() as client:
         collectors = build_registry(settings, client)
-        repo.write_sources(conn, collectors)  # what the dashboard's Source health page lists
+        try:
+            repo.write_sources(conn, collectors)  # what the dashboard's Source health page lists
+        except Exception as exc:  # the registry only feeds the dashboard; the check carries on
+            print(f"sources not written: {type(exc).__name__}: {exc}", file=sys.stderr)
         states = repo.load_source_states(conn, collectors)
         for result, failures in iter_checks(collectors, DiskCache(settings.cache_dir), states, now):
             repo.record_source_health(conn, None, result, failures, now, context="health")

@@ -1,9 +1,13 @@
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
+import httpx
 import psycopg
 import pytest
 
 from advisor.collectors.base import Cadence, Category, CollectorResult, CollectorStatus
+from advisor.collectors.registry import build_registry
+from advisor.config import Settings
 from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus, SymbolInfo
 from advisor.news.stage import NewsRow, StoredNews
 from advisor.store import repo
@@ -373,3 +377,12 @@ def test_sources_mirror_the_registry(db):
         ("coins", "prices", True, "per_run", ["crypto"], []),
         ("fred", "macro", False, "daily", ["stock"], ["TSX", "US"]),
     ]  # "gone" left the registry, so it left the table
+
+
+def test_the_real_registry_fits_the_sources_table(db):
+    # The table's CHECK lists copy the Python enums; a new category or cadence needs a migration.
+    with httpx.Client() as client:
+        collectors = build_registry(Settings("postgresql://x", Path(".cache")), client)
+    repo.write_sources(db, collectors)
+    names = [r["name"] for r in db.execute("select name from sources order by name").fetchall()]
+    assert names == sorted(collectors)

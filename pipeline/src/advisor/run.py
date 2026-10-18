@@ -270,7 +270,11 @@ def execute_run(
     floors = {m: freshness_floor(kind, now_utc, market=m) for m in Market}
     repo.sweep_abandoned_runs(conn, now_utc)
     run_id = repo.create_run(conn, kind, now_utc.astimezone(ET).date())
-    repo.write_sources(conn, deps.collectors)  # what the dashboard's Source health page lists
+    sources_error: str | None = None
+    try:
+        repo.write_sources(conn, deps.collectors)  # what the dashboard's Source health page lists
+    except Exception as exc:  # the registry only feeds the dashboard; it never fails a run
+        sources_error = f"{type(exc).__name__}: {exc}"[:200]
     deadline_at = time.monotonic() + run_budget
     tracker = SourceTracker(
         deps.collectors,
@@ -412,6 +416,8 @@ def execute_run(
                 for p in passes.values()
                 for reason in p.failed_reasons(prices_checked=universe_ok)
             ]
+        if sources_error is not None:
+            summary["sources_error"] = sources_error
     except Exception as exc:
         with contextlib.suppress(Exception):  # never let bookkeeping hide the real error
             record_health()

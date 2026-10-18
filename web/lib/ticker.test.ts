@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { addDays } from './dates'
 import { FxRates } from './portfolio/lookup'
 import type { Close } from './portfolio/types'
-import { fmtScore, inRange, lastMove, priceSeries, safeLink, tickerHref, tone } from './ticker'
+import { fmtScore, inRange, lastMove, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
 
 const FX = new FxRates([
   { day: '2026-10-01', usdCad: 1.4 },
@@ -29,11 +30,30 @@ describe('priceSeries', () => {
 describe('ranges and the last move', () => {
   const series = { days: Array.from({ length: 30 }, (_, i) => `d${i}`), values: Array.from({ length: 30 }, (_, i) => 100 + i), currency: 'CAD' as const }
 
-  it('keeps the last 21 trading days plus the close before', () => {
-    const month = inRange(series, '1m')
-    expect(month.days).toHaveLength(22)
-    expect(month.days[0]).toBe('d8')
-    expect(inRange(series, '1y').days).toHaveLength(30)
+  /** Closes from `from` to `to`, every day or only on weekdays. */
+  const dated = (from: string, to: string, weekdaysOnly = false): PriceSeries => {
+    const days: string[] = []
+    for (let day = from; day <= to; day = addDays(day, 1)) {
+      const weekday = new Date(`${day}T12:00:00Z`).getUTCDay()
+      if (!weekdaysOnly || (weekday !== 0 && weekday !== 6)) days.push(day)
+    }
+    return { days, values: days.map((_, i) => 100 + i), currency: 'CAD' }
+  }
+
+  it('cuts a range by calendar date, from the last close on or before its cutoff', () => {
+    // A coin closes every day: its month and year are a month and a year of days.
+    const daily = dated('2025-09-01', '2026-10-16')
+    const month = inRange(daily, '1m')
+    const year = inRange(daily, '1y')
+    expect([month.days[0], month.days.at(-1)]).toEqual(['2026-09-15', '2026-10-16'])
+    expect(month.values[0]).toBe(daily.values[daily.days.indexOf('2026-09-15')])
+    expect([year.days[0], year.days.at(-1)]).toEqual(['2025-10-16', '2026-10-16'])
+    // A stock to Wednesday Oct 14: the month's cutoff is Sunday Sep 13, so it starts on Friday Sep 11.
+    expect(inRange(dated('2026-01-01', '2026-10-14', true), '1m').days[0]).toBe('2026-09-11')
+  })
+
+  it('starts at the first close when none is as old as the range', () => {
+    expect(inRange(dated('2026-08-01', '2026-10-16'), '6m').days[0]).toBe('2026-08-01')
   })
 
   it('gives the latest close and its move from the one before', () => {

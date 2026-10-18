@@ -24,3 +24,18 @@ export const longDay = (day: string): string =>
     year: 'numeric',
     timeZone: 'UTC',
   })
+
+const clock = new Intl.DateTimeFormat('en-CA', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Toronto' })
+const dated = new Intl.DateTimeFormat('en-CA', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZone: 'America/Toronto',
+})
+
+/** A moment on Toronto's clock: "2:53 p.m." today, "Oct 15, 5:53 p.m." on an earlier day. */
+export const timeOrDate = (iso: string, now: Date = new Date()): string => {
+  const at = new Date(iso)
+  return todayInToronto(at) === todayInToronto(now) ? clock.format(at) : dated.format(at)
+}

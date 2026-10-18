@@ -10,6 +10,8 @@ test('the sidebar reaches every page and marks the current one', async ({ page }
   await sidebar.getByRole('link', { name: 'Watchlist' }).click()
   await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: 'Watchlist' })).toHaveAttribute('aria-current', 'page')
+  await sidebar.getByRole('link', { name: 'Sources' }).click()
+  await expect(page.getByRole('heading', { name: 'Source health' })).toBeVisible()
   await sidebar.getByRole('link', { name: 'Settings' }).click()
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 })

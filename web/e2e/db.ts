@@ -11,7 +11,9 @@ export const sql = postgres(DB_URL, { onnotice: () => {} })
 
 /** Everything the owner or a run writes, emptied between tests. Users and app_config stay. */
 export async function resetData() {
-  await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols restart identity cascade`
+  // runs cascades to source_health and features_live
+  await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols, news_items, sources
+            restart identity cascade`
   await sql`update settings set usd_fx_fee_pct = 1.5, crypto_fee_pct = 2.0, tfsa_round_trips_warn = 24,
             tfsa_short_hold_share_warn = 0.5, updated_at = now() where id = 1`
 }
@@ -87,9 +89,43 @@ export async function seedRun(run: {
   summary?: JSONValue
 }) {
   const finished = new Date(run.finished)
-  await sql`insert into runs (kind, et_date, started_at, finished_at, status, published, sources_ok, sources_total, summary)
+  const [row] = await sql`insert into runs (kind, et_date, started_at, finished_at, status, published, sources_ok, sources_total, summary)
             values (${run.kind}, ${todayInToronto(finished)}, ${new Date(finished.getTime() - 15 * 60_000)}, ${finished},
-                    ${run.status}, ${run.published}, 30, 33, ${sql.json(run.summary ?? {})})`
+                    ${run.status}, ${run.published}, 30, 33, ${sql.json(run.summary ?? {})}) returning id`
+  return row.id as number
+}
+
+/** A small registry like the pipeline's: US-only filings, a source for both markets, a coin source. */
+export const SOURCES = [
+  { name: 'yfinance_bars', category: 'prices', core: true, cadence: 'per_run', asset_types: ['stock'], markets: ['TSX', 'US'] },
+  { name: 'google_news', category: 'news', core: true, cadence: 'per_run', asset_types: ['crypto', 'stock'], markets: ['TSX', 'US'] },
+  { name: 'sec_form4', category: 'fundamentals', core: false, cadence: 'daily', asset_types: ['stock'], markets: ['US'] },
+  { name: 'sec_8k', category: 'catalysts', core: false, cadence: 'daily', asset_types: ['stock'], markets: ['US'] },
+  { name: 'coingecko', category: 'prices', core: true, cadence: 'per_run', asset_types: ['crypto'], markets: [] },
+]
+
+export async function seedSources() {
+  await sql`insert into sources ${sql(SOURCES, 'name', 'category', 'core', 'cadence', 'asset_types', 'markets')}`
+}
+
+/** Health rows for a run, or for a daily check when `runId` is null. */
+export async function seedHealth(
+  runId: number | null,
+  attemptedAt: string,
+  rows: { source: string; status: string; latency_ms?: number; records?: number; error?: string; consecutive_failures?: number }[],
+) {
+  for (const r of rows) {
+    await sql`insert into source_health ${sql({
+      run_id: runId,
+      context: runId === null ? 'health' : 'run',
+      latency_ms: 100,
+      records: 10,
+      error: null,
+      consecutive_failures: 0,
+      attempted_at: attemptedAt,
+      ...r,
+    })}`
+  }
 }
 
 /** RY.TO and AAPL in the TFSA, ETH in the crypto account (part sold at a loss 5 days ago). */

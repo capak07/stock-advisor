@@ -64,9 +64,9 @@ export function Shell({
             </Link>
             <RunsPill runs={views} />
             {sources && (
-              <span className="pill hide-sm">
+              <Link className="pill hide-sm" href="/sources">
                 <span className="num">{sources}</span>&nbsp;sources
-              </span>
+              </Link>
             )}
             {/* Every market is in its paper period until picks are graded live (spec §6.6, Plan 4). */}
             <span className="pill hide-sm" title="No picks graded live yet">

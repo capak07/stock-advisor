@@ -998,3 +998,16 @@ def test_a_coin_coinbase_doesnt_list_is_named_and_the_run_publishes(db, tmp_path
 
     assert outcome.status is RunStatus.SUCCESS
     assert outcome.summary["history"]["backfill_missing"] == ["BTC"]
+
+
+def test_a_coinbase_failure_during_the_coin_backfill_is_recorded_and_the_run_publishes(db, tmp_path):
+    hold_crypto(db)
+    refused = httpx.MockTransport(lambda request: httpx.Response(400, text="bad request"))
+    with httpx.Client(transport=refused) as client:
+        deps = dataclasses.replace(make_deps(db, tmp_path, extra=crypto_sources()), http=client)
+        outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    history = outcome.summary["history"]
+    assert history["coin_backfill_error"].startswith("HTTPStatusError: HTTP 400")
+    assert history["backfilled"] == []  # nothing came back, so the next run asks again

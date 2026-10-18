@@ -91,7 +91,7 @@
 /* ---------- Trade list (Plan 5c, in the portfolio page's table style) ---------- */
 #trades td.t-meta { display: none; }
 #trades td.t-del { width: 1%; text-align: right; }
-.trade-confirm { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; white-space: normal; max-width: 340px; }
+.trade-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; white-space: normal; }
 @media (max-width: 639px) {
   #trades thead { display: none; }
   #trades, #trades tbody { display: block; }
@@ -103,6 +103,8 @@
   #trades td.t-amount::before { content: "C$"; }
   #trades td.t-meta { display: block; grid-area: meta; }
   #trades td.t-del { display: block; grid-area: del; }
+  #trades tr.trade-ask { display: block; padding: 0 0 10px; }
+  #trades td.t-ask { display: block; }
   .trade-confirm { justify-content: flex-start; }
 }
 

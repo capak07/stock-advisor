@@ -48,3 +48,21 @@ test('the latest ten trades show until all are asked for', async ({ page }) => {
   await page.getByRole('button', { name: 'Show all 12' }).click()
   await expect(rows(page)).toHaveCount(12)
 })
+
+test('the Delete confirmation spans the row, on desktop and on a phone', async ({ page }) => {
+  await lot(10, daysAgo(40))
+  await lot(5, daysAgo(30))
+  await seedSell({ account: 'tfsa', symbol: 'RY.TO', asset_type: 'stock', qty: 12, price: 180, currency: 'CAD', sold_at: daysAgo(10) })
+  await page.goto('/')
+  await page.getByRole('button', { name: `Delete the buy of 5 RY.TO on ${longDay(daysAgo(30))}` }).click()
+
+  const confirm = page.getByRole('group', { name: 'Delete this buy?' })
+  for (const size of [null, { width: 390, height: 844 }]) {
+    if (size) await page.setViewportSize(size)
+    const box = await confirm.boundingBox()
+    const del = await page.getByRole('button', { name: 'Delete', exact: true }).boundingBox()
+    const keep = await page.getByRole('button', { name: 'Keep' }).boundingBox()
+    expect(box!.width).toBeGreaterThan(300)
+    expect(Math.abs(del!.y - keep!.y)).toBeLessThan(4)
+  }
+})

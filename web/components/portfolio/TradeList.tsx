@@ -1,7 +1,7 @@
 'use client'
 
 import { Trash2 } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { Fragment, useState, useTransition } from 'react'
 import { deleteTrade } from '@/app/(app)/trades'
 import { useToast } from '@/components/Toast'
 import { longDay } from '@/lib/dates'
@@ -54,7 +54,8 @@ export function TradeList({ lines }: { lines: TradeLine[] }) {
             {shown.map((line) => {
               const what = line.side === 'buy' ? 'Buy' : 'Sell'
               return (
-                <tr key={line.key}>
+                <Fragment key={line.key}>
+                <tr>
                   <td className="num t-day">{longDay(line.day)}</td>
                   <td className="sub t-acct">{ACCOUNT_LABELS[line.account]}</td>
                   <td className="t-what">
@@ -68,21 +69,7 @@ export function TradeList({ lines }: { lines: TradeLine[] }) {
                     {fmtPrice(line.price, line.currency)}
                   </td>
                   <td className="t-del">
-                    {asking === line.key ? (
-                      <span className="trade-confirm" role="group" aria-label={`Delete this ${line.side}?`}>
-                        <span className="sub">
-                          {line.strandsSells
-                            ? `Later sells of ${line.symbol} would then exceed what you held.`
-                            : "This can't be undone."}
-                        </span>
-                        <button type="button" className="btn btn-primary btn-sm" disabled={pending} onClick={() => remove(line)}>
-                          {pending ? 'Deleting…' : 'Delete'}
-                        </button>
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAsking(null)}>
-                          Keep
-                        </button>
-                      </span>
-                    ) : (
+                    {asking !== line.key && (
                       <button
                         type="button"
                         className="icon-btn"
@@ -94,6 +81,26 @@ export function TradeList({ lines }: { lines: TradeLine[] }) {
                     )}
                   </td>
                 </tr>
+                {asking === line.key && (
+                  <tr className="trade-ask">
+                    <td colSpan={7} className="t-ask">
+                      <div className="trade-confirm" role="group" aria-label={`Delete this ${line.side}?`}>
+                        <span className="sub">
+                          {line.strandsSells
+                            ? `Later sells of ${line.symbol} would then exceed what you held.`
+                            : "This can't be undone."}
+                        </span>
+                        <button type="button" className="btn btn-primary btn-sm" disabled={pending} onClick={() => remove(line)}>
+                          {pending ? 'Deleting…' : 'Delete'}
+                        </button>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAsking(null)}>
+                          Keep
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
           </tbody>

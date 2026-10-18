@@ -1,10 +1,12 @@
 import type { Metadata } from 'next'
 import { ActionsCard, BreakdownCard, HoldingsCard, WarningsCard } from '@/components/portfolio/Cards'
 import { TradeButtons } from '@/components/portfolio/TradeForms'
+import { TradeList } from '@/components/portfolio/TradeList'
 import { ValueCard } from '@/components/portfolio/ValueCard'
 import { ownerClient } from '@/lib/auth'
 import { loadPortfolio } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
+import { tradeList } from '@/lib/portfolio/trade-list'
 import { portfolioView } from '@/lib/portfolio/view'
 
 export const metadata: Metadata = { title: 'My Portfolio' }
@@ -51,6 +53,7 @@ export default async function PortfolioPage() {
         </aside>
       </section>
       <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} />
+      {data.trades.length > 0 && <TradeList lines={tradeList(data.trades, data.fx)} />}
     </main>
   )
 }

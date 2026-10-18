@@ -2,13 +2,14 @@ import 'server-only'
 import { addDays } from '../dates'
 import { FxRates, PriceBook } from '../portfolio/lookup'
 import { assetKey } from '../portfolio/types'
-import type { Account, AssetType, Close, Currency, Trade } from '../portfolio/types'
+import type { Account, AssetType, Close, Currency, RecordedTrade, Trade } from '../portfolio/types'
 import type { Supabase } from '../supabase/server'
 import { fetchAll } from './fetch'
 import { loadSettings, type Settings } from './settings'
 import { loadNames } from './symbols'
 
 interface TradeRow {
+  id: number
   account: Account
   symbol: string
   asset_type: AssetType
@@ -18,7 +19,8 @@ interface TradeRow {
   fx_rate_cad: string | number | null
 }
 
-const toTrade = (side: Trade['side'], day: string, row: TradeRow): Trade => ({
+const toTrade = (side: Trade['side'], day: string, row: TradeRow): RecordedTrade => ({
+  id: row.id,
   side,
   account: row.account,
   symbol: row.symbol,
@@ -33,7 +35,7 @@ const toTrade = (side: Trade['side'], day: string, row: TradeRow): Trade => ({
 const TRADE_COLUMNS = 'id, account, symbol, asset_type, qty, price, currency, fx_rate_cad'
 
 /** Every buy (`lots`) and sell (`sells`). Postgres numerics arrive as strings. */
-export async function loadTrades(supabase: Supabase): Promise<Trade[]> {
+export async function loadTrades(supabase: Supabase): Promise<RecordedTrade[]> {
   const [lots, sells] = await Promise.all([
     fetchAll((from, to) => supabase.from('lots').select(`${TRADE_COLUMNS}, bought_at`).order('id').range(from, to)),
     fetchAll((from, to) => supabase.from('sells').select(`${TRADE_COLUMNS}, sold_at`).order('id').range(from, to)),
@@ -89,7 +91,7 @@ export const BENCHMARK_ASSETS: AssetRef[] = [
 ]
 
 export interface PortfolioData {
-  trades: Trade[]
+  trades: RecordedTrade[]
   prices: PriceBook
   fx: FxRates
   names: Map<string, string>

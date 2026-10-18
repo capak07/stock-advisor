@@ -30,6 +30,11 @@ export interface Trade {
   day: string
 }
 
+/** A trade as stored: its row id in `lots` or `sells`, for the trade list's Delete (Plan 5c). */
+export interface RecordedTrade extends Trade {
+  id: number
+}
+
 /** One stored daily close (`daily_closes`). */
 export interface Close {
   day: string

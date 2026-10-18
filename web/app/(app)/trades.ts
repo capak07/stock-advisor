@@ -53,6 +53,31 @@ export async function addBuy(_: FormState, form: FormData): Promise<FormState> {
   return { ok: true, message: `Buy saved: ${fmtQty(buy.qty)} ${buy.symbol} in ${ACCOUNT_LABELS[buy.account]}`, at: Date.now() }
 }
 
+/**
+ * Delete a buy or a sell (Plan 5c). Row-level security lets only the owner delete; a row that
+ * isn't there (deleted in another tab) is reported, not ignored.
+ */
+export async function deleteTrade(side: 'buy' | 'sell', id: number): Promise<FormState> {
+  if ((side !== 'buy' && side !== 'sell') || !Number.isSafeInteger(id) || id <= 0) {
+    return failed("That trade can't be deleted.")
+  }
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from(side === 'buy' ? 'lots' : 'sells')
+    .delete()
+    .eq('id', id)
+    .select('symbol, qty')
+  if (error) return failed(`The ${side} wasn't deleted: ${error.message}`)
+  const row = (data as { symbol: string; qty: string | number }[] | null)?.[0]
+  if (!row) return failed(`That ${side} was already gone.`)
+  revalidatePath('/')
+  return {
+    ok: true,
+    message: `${side === 'buy' ? 'Buy' : 'Sell'} deleted: ${fmtQty(Number(row.qty))} ${row.symbol}`,
+    at: Date.now(),
+  }
+}
+
 /** Add a sell (a `sells` row), checked against what the ledger says is held. */
 export async function addSell(_: FormState, form: FormData): Promise<FormState> {
   const supabase = await createClient()

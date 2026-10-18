@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { addDays } from '../dates'
 import { FxRates } from './lookup'
 import { tradeList } from './trade-list'
 import type { RecordedTrade } from './types'
@@ -61,5 +62,26 @@ describe('tradeList', () => {
 
   it('is empty without trades', () => {
     expect(tradeList([], FX)).toEqual([])
+  })
+
+  it('lists 5,000 trades in well under a second', () => {
+    // 40 symbols in one account, each three buys of 10 then a sell of 25: the first three buys of
+    // each symbol strand its first sell, later ones don't.
+    const trades = Array.from({ length: 5000 }, (_, i) => {
+      const n = Math.floor(i / 40)
+      return trade({
+        id: i + 1,
+        side: n % 4 === 3 ? 'sell' : 'buy',
+        symbol: `S${i % 40}`,
+        qty: n % 4 === 3 ? 25 : 10,
+        day: addDays('2020-01-01', n),
+      })
+    })
+    const started = performance.now()
+    const lines = tradeList(trades, FX)
+    const took = performance.now() - started
+    expect(lines).toHaveLength(5000)
+    expect(lines.filter((l) => l.strandsSells)).toHaveLength(120)
+    expect(took).toBeLessThan(1000)
   })
 })

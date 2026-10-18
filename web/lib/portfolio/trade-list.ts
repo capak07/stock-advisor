@@ -1,4 +1,4 @@
-import { buildLedger, tradeCad } from './ledger'
+import { buildLedger, positionKey, tradeCad } from './ledger'
 import type { FxRates } from './lookup'
 import type { Account, AssetType, Currency, RecordedTrade } from './types'
 
@@ -26,15 +26,26 @@ export interface TradeLine {
  * A buy that later sells depend on is marked, so Delete can say what it would break.
  */
 export function tradeList(trades: readonly RecordedTrade[], fx: FxRates): TradeLine[] {
-  const problems = buildLedger(trades, fx).problems.length
-  const lines = trades.map((t): TradeLine => {
-    const strandsSells =
-      t.side === 'buy' &&
-      buildLedger(
-        trades.filter((other) => other !== t),
-        fx,
-      ).problems.length > problems
-    return {
+  // Removing a buy only changes its own position's ledger, so each buy is checked against the
+  // other trades of its position alone.
+  const byPosition = new Map<string, RecordedTrade[]>()
+  for (const t of trades) {
+    const key = positionKey(t)
+    const group = byPosition.get(key) ?? []
+    group.push(t)
+    byPosition.set(key, group)
+  }
+  const stranding = new Set<RecordedTrade>()
+  for (const group of byPosition.values()) {
+    const problems = buildLedger(group, fx).problems.length
+    for (const t of group) {
+      if (t.side !== 'buy') continue
+      const without = group.filter((other) => other !== t)
+      if (buildLedger(without, fx).problems.length > problems) stranding.add(t)
+    }
+  }
+  const lines = trades.map(
+    (t): TradeLine => ({
       key: `${t.side}:${t.id}`,
       id: t.id,
       side: t.side,
@@ -46,9 +57,9 @@ export function tradeList(trades: readonly RecordedTrade[], fx: FxRates): TradeL
       price: t.price,
       currency: t.currency,
       amountCad: tradeCad(t, fx),
-      strandsSells,
-    }
-  })
+      strandsSells: stranding.has(t),
+    }),
+  )
   return lines.sort((a, b) => {
     if (a.day !== b.day) return a.day < b.day ? 1 : -1
     if (a.side !== b.side) return a.side === 'sell' ? -1 : 1

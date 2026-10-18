@@ -67,7 +67,9 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
     const currency = tradeCurrency(t.assetType, t.symbol)
     const rate = currency === 'USD' ? (t.fxRate ?? fx.on(t.day)) : null
     if (currency === 'USD' && rate === null) {
-      return failed(`Nothing was imported: there's no Bank of Canada rate yet for ${t.symbol} on ${t.day}.`)
+      return failed(
+        `Nothing was imported: there's no Bank of Canada rate stored for ${t.symbol} on ${t.day}. Add a USD/CAD rate column to the file, or add that trade under Buy or Sell with its rate.`,
+      )
     }
     incoming.push({ ...t, currency, fxRateCad: rate })
   }

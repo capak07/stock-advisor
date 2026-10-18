@@ -418,7 +418,15 @@ export function TradeButtons({
       <Drawer id="sell-drawer" title="Add a sell" open={open === 'sell'} onClose={close}>
         <SellForm key={`sell-${round}`} options={sellable} rates={rates} today={today} onDone={done} onCancel={close} />
       </Drawer>
-      <ImportDrawer open={open === 'import'} round={round} existing={existing} today={today} onClose={close} onDone={done} />
+      <ImportDrawer
+        open={open === 'import'}
+        round={round}
+        existing={existing}
+        rateFrom={rates[0]?.day ?? null}
+        today={today}
+        onClose={close}
+        onDone={done}
+      />
     </>
   )
 }

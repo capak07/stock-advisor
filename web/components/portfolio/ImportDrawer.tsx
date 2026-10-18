@@ -45,7 +45,17 @@ const STATUS: Record<ImportRow['status'] | 'unlisted', string> = {
  * Import a broker's activity file (spec §7.1, the mockup's three steps): pick the CSV, say what
  * each column means, review every row, then add the ready ones in one go.
  */
-function ImportForm({ existing, today, onDone }: { existing: Trade[]; today: string; onDone: (m: string) => void }) {
+function ImportForm({
+  existing,
+  rateFrom,
+  today,
+  onDone,
+}: {
+  existing: Trade[]
+  rateFrom: string | null
+  today: string
+  onDone: (m: string) => void
+}) {
   const [step, setStep] = useState<Step>('file')
   const [file, setFile] = useState<Loaded | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
@@ -76,9 +86,9 @@ function ImportForm({ existing, today, onDone }: { existing: Trade[]; today: str
   const read = useMemo(
     () =>
       file && step === 'review'
-        ? readRows(file.rows, { meanings, account: account === 'column' ? null : account, dateOrder, today, existing })
+        ? readRows(file.rows, { meanings, account: account === 'column' ? null : account, dateOrder, today, existing, rateFrom })
         : [],
-    [file, step, meanings, account, dateOrder, today, existing],
+    [file, step, meanings, account, dateOrder, today, existing, rateFrom],
   )
   const readySymbols = useMemo(
     () => [...new Set(read.filter((r) => r.status === 'ready' && r.trade?.assetType === 'stock').map((r) => r.trade!.symbol))],
@@ -314,6 +324,7 @@ export function ImportDrawer({
   open,
   round,
   existing,
+  rateFrom,
   today,
   onClose,
   onDone,
@@ -321,13 +332,15 @@ export function ImportDrawer({
   open: boolean
   round: number
   existing: Trade[]
+  /** The earliest day with a stored USD/CAD rate, or null when none is stored. */
+  rateFrom: string | null
   today: string
   onClose: () => void
   onDone: (message: string) => void
 }) {
   return (
     <Drawer id="import-drawer" title="Import a file" open={open} onClose={onClose}>
-      <ImportForm key={round} existing={existing} today={today} onDone={onDone} />
+      <ImportForm key={round} existing={existing} rateFrom={rateFrom} today={today} onDone={onDone} />
     </Drawer>
   )
 }

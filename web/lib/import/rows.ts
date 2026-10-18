@@ -134,6 +134,8 @@ export interface ReadOptions {
   today: string
   /** Trades already recorded, so a file imported twice adds nothing. */
   existing: readonly Trade[]
+  /** The earliest day with a stored USD/CAD rate (`fx_rates`), or null when none is stored. */
+  rateFrom: string | null
 }
 
 const sameTrade = (a: Omit<Trade, 'currency' | 'fxRateCad'>, b: Omit<Trade, 'currency' | 'fxRateCad'>) =>
@@ -199,6 +201,12 @@ export function readRows(rows: readonly (readonly string[])[], options: ReadOpti
     }
     if (seen.some((t) => sameTrade(t, trade))) {
       return { line, status: 'duplicate', reason: 'Twice in this file.', trade }
+    }
+    // The server fills a blank rate with the Bank of Canada's, and has none before `rateFrom`.
+    if (tradeCurrency(assetType, symbol) === 'USD' && fxRate === null && (options.rateFrom === null || day < options.rateFrom)) {
+      return error(
+        `No Bank of Canada rate is stored for ${day}. Add a USD/CAD rate column to the file, or add this trade under Buy or Sell with its rate.`,
+      )
     }
     seen.push(trade)
     return { line, status: 'ready', reason: null, trade }

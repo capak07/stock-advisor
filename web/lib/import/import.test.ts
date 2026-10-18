@@ -62,7 +62,7 @@ describe('reading values', () => {
 describe('readRows', () => {
   const header = ['date', 'type', 'symbol', 'quantity', 'price', 'currency', 'account']
   const meanings: Meaning[] = ['date', 'side', 'symbol', 'quantity', 'price', 'currency', 'account']
-  const options = { meanings, account: null, dateOrder: 'ymd' as const, today: '2026-10-16', existing: [] as Trade[] }
+  const options = { meanings, account: null, dateOrder: 'ymd' as const, today: '2026-10-16', existing: [] as Trade[], rateFrom: '2026-01-02' }
 
   it('reads buys and sells, a bare CAD symbol as TSX, and coins in the crypto account', () => {
     const rows = readRows(
@@ -158,5 +158,22 @@ describe('readRows', () => {
     )
     expect(rows[0].trade?.fxRate).toBe(1.3918)
     expect(rows[1]).toMatchObject({ status: 'error', reason: 'Can\'t read the USD/CAD rate "139".' })
+  })
+
+  it('refuses a US stock without a rate from before the stored Bank of Canada rates', () => {
+    const noRate = (day: string) =>
+      `No Bank of Canada rate is stored for ${day}. Add a USD/CAD rate column to the file, or add this trade under Buy or Sell with its rate.`
+    const old = ['2025-12-31', 'Buy', 'AAPL', '1', '230', 'USD', 'TFSA']
+    const recent = ['2026-01-05', 'Buy', 'AAPL', '1', '230', 'USD', 'TFSA']
+    const rows = readRows([header, old, recent], options)
+    expect(rows.map((r) => [r.status, r.reason])).toEqual([
+      ['error', noRate('2025-12-31')],
+      ['ready', null],
+    ])
+    const withRate = readRows([[...header, 'fx'], [...old, '1.3918']], { ...options, meanings: [...meanings, 'fxRate'] })
+    expect(withRate[0]).toMatchObject({ status: 'ready', trade: { fxRate: 1.3918 } })
+    // With no rates stored at all, every US stock needs its rate.
+    const noneStored = readRows([header, recent], { ...options, rateFrom: null })
+    expect(noneStored[0]).toMatchObject({ status: 'error', reason: noRate('2026-01-05') })
   })
 })

@@ -105,3 +105,7 @@
   #trades td.t-del { display: block; grid-area: del; }
   .trade-confirm { justify-content: flex-start; }
 }
+
+/* ---------- File import (Plan 5c; portfolio_1.html's import drawer) ---------- */
+.badge-current { border-color: var(--foreground); color: var(--foreground); }
+#import-rows td { white-space: normal; }

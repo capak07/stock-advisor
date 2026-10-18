@@ -42,7 +42,7 @@ export default async function PortfolioPage() {
             {accounts} · values in CAD at the latest Bank of Canada rate{rate}
           </p>
         </div>
-        <TradeButtons sellable={view.sellable} rates={[...data.fx.rates]} today={today} />
+        <TradeButtons sellable={view.sellable} rates={[...data.fx.rates]} today={today} existing={data.trades} />
       </div>
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>

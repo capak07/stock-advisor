@@ -1,16 +1,17 @@
 'use client'
 
-import { Minus, Plus, TriangleAlert } from 'lucide-react'
+import { FileUp, Minus, Plus, TriangleAlert } from 'lucide-react'
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
 import { addBuy, addSell } from '@/app/(app)/trades'
 import { Drawer } from '@/components/Drawer'
+import { ImportDrawer } from '@/components/portfolio/ImportDrawer'
 import { useFieldErrors } from '@/components/useFieldErrors'
 import { useToast } from '@/components/Toast'
 import { shortDay } from '@/lib/dates'
 import { fmtMoney, fmtQty } from '@/lib/format'
 import { FxRates, type FxRate } from '@/lib/portfolio/lookup'
 import { ACCOUNTS, ACCOUNT_LABELS, TAXABLE } from '@/lib/portfolio/types'
-import type { Account } from '@/lib/portfolio/types'
+import type { Account, Trade } from '@/lib/portfolio/types'
 import type { SellOption } from '@/lib/portfolio/view'
 import { normalizeSymbol, tradeCurrency } from '@/lib/symbols'
 import { parseAmount, type FormState } from '@/lib/trade-form'
@@ -364,13 +365,24 @@ function SellForm({ options, rates, today, onDone, onCancel }: FormProps & { opt
   )
 }
 
-/** The Buy and Sell buttons in the page head, and their drawers. */
-export function TradeButtons({ sellable, rates, today }: { sellable: SellOption[]; rates: FxRate[]; today: string }) {
+/** The Import, Sell and Buy buttons in the page head, and their drawers. */
+export function TradeButtons({
+  sellable,
+  rates,
+  today,
+  existing,
+}: {
+  sellable: SellOption[]
+  rates: FxRate[]
+  today: string
+  /** Trades already recorded, so an import can skip them. */
+  existing: Trade[]
+}) {
   const toast = useToast()
-  const [open, setOpen] = useState<'buy' | 'sell' | null>(null)
+  const [open, setOpen] = useState<'buy' | 'sell' | 'import' | null>(null)
   // Each opening starts a fresh form.
   const [round, setRound] = useState(0)
-  const show = (which: 'buy' | 'sell') => {
+  const show = (which: 'buy' | 'sell' | 'import') => {
     setRound((n) => n + 1)
     setOpen(which)
   }
@@ -385,6 +397,10 @@ export function TradeButtons({ sellable, rates, today }: { sellable: SellOption[
   return (
     <>
       <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn btn-secondary" onClick={() => show('import')}>
+          <FileUp />
+          Import file
+        </button>
         {sellable.length > 0 && (
           <button type="button" className="btn btn-secondary" onClick={() => show('sell')}>
             <Minus />
@@ -402,6 +418,7 @@ export function TradeButtons({ sellable, rates, today }: { sellable: SellOption[
       <Drawer id="sell-drawer" title="Add a sell" open={open === 'sell'} onClose={close}>
         <SellForm key={`sell-${round}`} options={sellable} rates={rates} today={today} onDone={done} onCancel={close} />
       </Drawer>
+      <ImportDrawer open={open === 'import'} round={round} existing={existing} today={today} onClose={close} onDone={done} />
     </>
   )
 }

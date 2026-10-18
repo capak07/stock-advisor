@@ -24,6 +24,16 @@ function details(t: Tally): string {
   return [...parts, t.failed ? `${t.failed} failed` : 'none failed'].join(' · ')
 }
 
+/** A summary card's figure before any source is listed, rather than "0/0 OK". */
+function Waiting() {
+  return (
+    <>
+      <b>—</b>
+      <span className="sub">waiting for the first run</span>
+    </>
+  )
+}
+
 /** The breaker follows the source's newest result, in a run or a check. */
 function breaker(row: SourceRow): string {
   const newest = [row.run, row.check].filter((h) => h !== null).sort((a, b) => (a.attemptedAt < b.attemptedAt ? 1 : -1))[0]
@@ -56,6 +66,8 @@ export default async function SourcesPage() {
   if (!supabase) return null // the layout is showing the not-the-owner notice
   const [health, size] = await Promise.all([loadSourceHealth(supabase), databaseSize(supabase)])
   const { rows, run, checkedAt } = health
+  // A fresh deploy lists no sources until the first run or daily check writes them.
+  const waiting = rows.length === 0
   const inRun = tally(rows, (r) => r.run)
   const checked = tally(rows, (r) => r.check)
   const core = rows.filter((r) => r.core)
@@ -74,33 +86,51 @@ export default async function SourcesPage() {
       <section className="summary stagger" aria-label="Summary">
         <div className="card">
           <span className="label">This run</span>
-          <b>
-            {inRun.ok}
-            <span className="muted" style={{ fontSize: 15 }}>
-              /{inRun.total} OK
-            </span>
-          </b>
-          <span className="sub">{run ? details(inRun) : 'no run has finished yet'}</span>
+          {waiting ? (
+            <Waiting />
+          ) : (
+            <>
+              <b>
+                {inRun.ok}
+                <span className="muted" style={{ fontSize: 15 }}>
+                  /{inRun.total} OK
+                </span>
+              </b>
+              <span className="sub">{run ? details(inRun) : 'no run has finished yet'}</span>
+            </>
+          )}
         </div>
         <div className="card">
           <span className="label">Daily check</span>
-          <b className={checkedAt && checked.ok === checked.total ? 'gain' : undefined}>
-            {checked.ok}
-            <span className="muted" style={{ fontSize: 15 }}>
-              /{checked.total} OK
-            </span>
-          </b>
-          <span className="sub">{checkedAt ? details(checked) : 'no daily check yet'}</span>
+          {waiting ? (
+            <Waiting />
+          ) : (
+            <>
+              <b className={checkedAt && checked.ok === checked.total ? 'gain' : undefined}>
+                {checked.ok}
+                <span className="muted" style={{ fontSize: 15 }}>
+                  /{checked.total} OK
+                </span>
+              </b>
+              <span className="sub">{checkedAt ? details(checked) : 'no daily check yet'}</span>
+            </>
+          )}
         </div>
         <div className="card">
           <span className="label">Core sources</span>
-          <b>
-            {coreOk}
-            <span className="muted" style={{ fontSize: 15 }}>
-              /{core.length} OK
-            </span>
-          </b>
-          <span className="sub">a core failure degrades the run</span>
+          {waiting ? (
+            <Waiting />
+          ) : (
+            <>
+              <b>
+                {coreOk}
+                <span className="muted" style={{ fontSize: 15 }}>
+                  /{core.length} OK
+                </span>
+              </b>
+              <span className="sub">a core failure degrades the run</span>
+            </>
+          )}
         </div>
         <div className="card">
           <span className="label">Database</span>

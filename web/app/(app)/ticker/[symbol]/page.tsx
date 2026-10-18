@@ -141,9 +141,11 @@ export default async function TickerPage({ params, searchParams }: Props) {
             <div className="section-head" style={{ marginBottom: 10 }}>
               <h2 id="sources-h">Sources</h2>
               <span className="sub">
-                {health.run
-                  ? `${answeredCount} of the ${covering.length} sources that cover ${coverageName(coverage)} answered in the ${runWhen(health.run)} run`
-                  : 'No run has finished yet'}
+                {covering.length === 0
+                  ? 'No sources are listed yet; the next run lists them.'
+                  : health.run
+                    ? `${answeredCount} of the ${covering.length} sources that cover ${coverageName(coverage)} answered in the ${runWhen(health.run)} run`
+                    : 'No run has finished yet'}
               </span>
             </div>
             <div className="source-grid" id="ticker-sources">

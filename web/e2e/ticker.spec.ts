@@ -84,6 +84,7 @@ test('any symbol has a page, with no data until a run collects it', async ({ pag
   await expect(page.getByText('Not in the stock lists · TSX')).toBeVisible()
   await expect(page.getByText(/^No prices yet/)).toBeVisible()
   await expect(page.getByText('No headlines in the last 48 hours.')).toBeVisible()
+  await expect(page.getByText('No sources are listed yet; the next run lists them.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Watch', exact: true })).toBeVisible()
 
   await page.goto('/ticker/AAPL')

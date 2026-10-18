@@ -62,4 +62,8 @@ test("the status bar's sources pill opens Source health, which waits for the fir
   await page.getByRole('link', { name: '30/33 sources' }).click()
   await expect(page).toHaveURL(/\/sources$/)
   await expect(page.getByText('No sources yet. The next run or daily check lists them here.')).toBeVisible()
+  const summary = page.getByRole('region', { name: 'Summary' })
+  await expect(summary).toContainText('waiting for the first run')
+  await expect(summary).not.toContainText('every source answered')
+  for (const card of [0, 1, 2]) await expect(summary.locator('.card').nth(card)).toContainText('—waiting for the first run')
 })

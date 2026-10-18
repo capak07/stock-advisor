@@ -85,3 +85,48 @@ test('a stock missing from the lists is left out unless the owner includes it', 
   await expect(page.getByRole('status')).toHaveText('Imported 2 trades')
   expect(await sql`select symbol from lots order by symbol`).toEqual([{ symbol: 'RY.TO' }, { symbol: 'XEQT.TO' }])
 })
+
+/** Make the database refuse inserts into sells and/or deletes from lots while `run` runs. */
+async function refusing(which: { sells?: boolean; lotDeletes?: boolean }, run: () => Promise<void>) {
+  try {
+    if (which.sells) {
+      await sql.unsafe(`create function refuse_sells_fn() returns trigger language plpgsql as $$ begin raise exception 'sells refused'; end $$`)
+      await sql.unsafe(`create trigger refuse_sells before insert on sells for each row execute function refuse_sells_fn()`)
+    }
+    if (which.lotDeletes) {
+      await sql.unsafe(`create function refuse_lot_deletes_fn() returns trigger language plpgsql as $$ begin raise exception 'deletes refused'; end $$`)
+      await sql.unsafe(`create trigger refuse_lot_deletes before delete on lots for each row execute function refuse_lot_deletes_fn()`)
+    }
+    await run()
+  } finally {
+    await sql.unsafe(`drop trigger if exists refuse_sells on sells`)
+    await sql.unsafe(`drop function if exists refuse_sells_fn()`)
+    await sql.unsafe(`drop trigger if exists refuse_lot_deletes on lots`)
+    await sql.unsafe(`drop function if exists refuse_lot_deletes_fn()`)
+  }
+}
+
+const buyAndSell = csv(`${daysAgo(30)},Buy,RY,10,184.50,CAD,TFSA`, `${daysAgo(20)},Sell,RY,4,190,CAD,TFSA`)
+
+test('when the database refuses the sells, none of the file\'s buys stay', async ({ page }) => {
+  await refusing({ sells: true }, async () => {
+    const drawer = await upload(page, buyAndSell)
+    await drawer.getByRole('button', { name: 'Review 2 rows' }).click()
+    await drawer.getByRole('button', { name: 'Import 2 trades' }).click()
+    await expect(drawer.getByRole('alert')).toContainText('Nothing was imported: sells refused')
+    const [{ n }] = await sql`select count(*)::int as n from lots`
+    expect(n).toBe(0)
+  })
+})
+
+test('when the buys can\'t be taken back, the drawer says so', async ({ page }) => {
+  await refusing({ sells: true, lotDeletes: true }, async () => {
+    const drawer = await upload(page, buyAndSell)
+    await drawer.getByRole('button', { name: 'Review 2 rows' }).click()
+    await drawer.getByRole('button', { name: 'Import 2 trades' }).click()
+    await expect(drawer.getByRole('alert')).toContainText('Only the buys went in: the sells failed')
+    await expect(drawer.getByRole('alert')).toContainText("couldn't be taken back")
+    const [{ n }] = await sql`select count(*)::int as n from lots`
+    expect(n).toBe(1)
+  })
+})

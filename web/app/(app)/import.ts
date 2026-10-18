@@ -100,7 +100,15 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
     const { error } = await supabase.from('sells').insert(sells)
     if (error) {
       // Undo the buys, so a failed file leaves nothing behind.
-      if (buyIds.length > 0) await supabase.from('lots').delete().in('id', buyIds)
+      if (buyIds.length > 0) {
+        const { error: undoError } = await supabase.from('lots').delete().in('id', buyIds)
+        if (undoError) {
+          revalidatePath('/')
+          return failed(
+            `Only the buys went in: the sells failed (${error.message}) and the ${buyIds.length} buys couldn't be taken back. Delete them under Trades, then import the file again.`,
+          )
+        }
+      }
       return failed(`Nothing was imported: ${error.message}`)
     }
   }

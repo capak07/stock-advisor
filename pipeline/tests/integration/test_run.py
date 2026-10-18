@@ -932,3 +932,10 @@ def test_a_run_that_cannot_publish_leaves_the_price_history_alone(db, tmp_path):
     assert outcome.status is RunStatus.FAILED
     assert outcome.summary["history"] == {}
     assert closes_by_symbol(db) == []
+
+
+def test_a_run_writes_the_registry_to_sources(db, tmp_path):
+    deps = make_deps(db, tmp_path)
+    execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    names = [r["name"] for r in db.execute("select name from sources order by name").fetchall()]
+    assert names == sorted(deps.collectors)

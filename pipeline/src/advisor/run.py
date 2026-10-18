@@ -270,6 +270,7 @@ def execute_run(
     floors = {m: freshness_floor(kind, now_utc, market=m) for m in Market}
     repo.sweep_abandoned_runs(conn, now_utc)
     run_id = repo.create_run(conn, kind, now_utc.astimezone(ET).date())
+    repo.write_sources(conn, deps.collectors)  # what the dashboard's Source health page lists
     deadline_at = time.monotonic() + run_budget
     tracker = SourceTracker(
         deps.collectors,

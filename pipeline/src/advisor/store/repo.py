@@ -1,13 +1,13 @@
 """Every SQL statement the pipeline runs. Functions take an open autocommit connection."""
 
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta
 
 import psycopg
 from psycopg.types.json import Jsonb
 
-from advisor.collectors.base import CollectorResult
+from advisor.collectors.base import Collector, CollectorResult
 from advisor.collectors.runner import SourceState
 from advisor.models import (
     ET,
@@ -64,6 +64,31 @@ def has_published_run(conn: psycopg.Connection, kind: RunKind, et_date: date) ->
         (kind.value, et_date),
     ).fetchone()
     return row["found"]
+
+
+def write_sources(conn: psycopg.Connection, collectors: Mapping[str, Collector]) -> None:
+    """The registry's collectors, for the dashboard's Source health page (Plan 5c).
+
+    A source that left the registry is removed, so the page lists what the pipeline runs.
+    """
+    rows = [
+        (
+            c.name, c.category.value, c.core, c.cadence.value,
+            sorted(t.value for t in c.asset_types), sorted(m.value for m in c.markets),
+        )
+        for c in collectors.values()
+    ]
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.executemany(
+                "insert into sources (name, category, core, cadence, asset_types, markets, updated_at)"
+                " values (%s, %s, %s, %s, %s, %s, now())"
+                " on conflict (name) do update set category = excluded.category,"
+                " core = excluded.core, cadence = excluded.cadence, asset_types = excluded.asset_types,"
+                " markets = excluded.markets, updated_at = now()",
+                rows,
+            )
+        conn.execute("delete from sources where not (name = any(%s))", ([r[0] for r in rows],))
 
 
 def record_source_health(

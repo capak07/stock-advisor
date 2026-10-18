@@ -3,11 +3,11 @@ from datetime import UTC, date, datetime, timedelta
 import psycopg
 import pytest
 
-from advisor.collectors.base import CollectorResult, CollectorStatus
+from advisor.collectors.base import Cadence, Category, CollectorResult, CollectorStatus
 from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus, SymbolInfo
 from advisor.news.stage import NewsRow, StoredNews
 from advisor.store import repo
-from fakes import info
+from fakes import FakeCollector, info
 
 DAY = date(2026, 10, 14)
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
@@ -351,3 +351,25 @@ def test_old_closes_are_pruned_except_holdings_and_benchmarks(db):
     assert repo.prune_daily_closes(db, date(2024, 10, 14), ["SPY", "XIU.TO"]) == 1
     rows = db.execute("select symbol, day from daily_closes order by symbol, day").fetchall()
     assert [(r["symbol"], r["day"]) for r in rows] == [("AAPL", old), ("PLTR", recent), ("SPY", old)]
+
+
+def test_sources_mirror_the_registry(db):
+    repo.write_sources(db, {
+        "fred": FakeCollector("fred", core=True, category=Category.MACRO, cadence=Cadence.DAILY),
+        "gone": FakeCollector("gone"),
+    })
+    repo.write_sources(db, {
+        "fred": FakeCollector("fred", core=False, category=Category.MACRO, cadence=Cadence.DAILY),
+        "coins": FakeCollector("coins", asset_types=frozenset({AssetType.CRYPTO}), markets=frozenset()),
+        "both": FakeCollector(
+            "both", asset_types=frozenset({AssetType.STOCK, AssetType.CRYPTO}), markets=frozenset({Market.US})
+        ),
+    })
+    rows = db.execute(
+        "select name, category, core, cadence, asset_types, markets from sources order by name"
+    ).fetchall()
+    assert [tuple(r.values()) for r in rows] == [
+        ("both", "prices", True, "per_run", ["crypto", "stock"], ["US"]),
+        ("coins", "prices", True, "per_run", ["crypto"], []),
+        ("fred", "macro", False, "daily", ["stock"], ["TSX", "US"]),
+    ]  # "gone" left the registry, so it left the table

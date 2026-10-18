@@ -24,3 +24,6 @@ def test_health_cli_records_rows_without_a_run_and_fails_on_a_core_source(db, mo
     assert [(r["source"], r["status"], r["run_id"], r["context"]) for r in rows] == [
         ("bad", "failed", None, "health"), ("good", "ok", None, "health"),
     ]
+    # The daily check also writes the registry, so the dashboard lists every source.
+    names = [r["name"] for r in db.execute("select name from sources order by name").fetchall()]
+    assert names == ["bad", "good"]

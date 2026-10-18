@@ -1,5 +1,6 @@
 import uuid
 from contextlib import contextmanager
+from datetime import UTC, datetime
 
 import psycopg
 import pytest
@@ -318,3 +319,63 @@ def test_malformed_closes_are_rejected(db, symbol, asset_type, currency):
         db.execute(
             "insert into daily_closes values (%s, %s, '2026-10-13', 10, %s)", (symbol, asset_type, currency)
         )
+
+
+def test_the_owner_reads_sources_and_only_the_pipeline_writes_them(owned_db):
+    owned_db.execute(
+        "insert into sources (name, category, core, cadence, asset_types, markets)"
+        " values ('fred', 'macro', true, 'daily', '{stock}', '{US,TSX}')"
+    )
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert [r["name"] for r in owned_db.execute("select name from sources").fetchall()] == ["fred"]
+        assert owned_db.execute("update sources set core = false").rowcount == 0
+        assert owned_db.execute("delete from sources").rowcount == 0
+    with acting_as(owned_db, "authenticated", STRANGER):
+        assert owned_db.execute("select * from sources").fetchall() == []
+    with acting_as(owned_db, "pipeline_rw"):
+        assert owned_db.execute("update sources set core = false").rowcount == 1
+
+
+@pytest.mark.parametrize(
+    ("category", "cadence", "asset_types", "markets"),
+    [("weather", "daily", "{stock}", "{US}"), ("macro", "hourly", "{stock}", "{US}"),
+     ("macro", "daily", "{}", "{US}"), ("macro", "daily", "{bond}", "{US}"),
+     ("macro", "daily", "{stock}", "{NYSE}")],
+)
+def test_malformed_sources_are_rejected(db, category, cadence, asset_types, markets):
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            "insert into sources (name, category, core, cadence, asset_types, markets)"
+            " values ('x', %s, true, %s, %s, %s)",
+            (category, cadence, asset_types, markets),
+        )
+
+
+def test_the_owner_learns_each_sources_last_good_answer(owned_db):
+    for source, status, at in [
+        ("fred", "partial", "2026-10-15T19:00Z"), ("fred", "failed", "2026-10-16T19:00Z"),
+        ("fred", "ok", "2026-10-14T19:00Z"), ("sec_8k", "stale", "2026-10-16T19:00Z"),
+    ]:
+        owned_db.execute(
+            "insert into source_health (source, status, latency_ms, records, consecutive_failures,"
+            " attempted_at, context) values (%s, %s, 1, 1, 0, %s, 'health')",
+            (source, status, at),
+        )
+    last_ok = "select source, attempted_at from source_last_ok"
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert [tuple(r.values()) for r in owned_db.execute(last_ok).fetchall()] == [
+            ("fred", datetime(2026, 10, 15, 19, tzinfo=UTC)),
+        ]  # a stale answer served old values, so it isn't a good one
+    with acting_as(owned_db, "authenticated", STRANGER):
+        assert owned_db.execute(last_ok).fetchall() == []
+
+
+def test_only_the_owner_learns_the_database_size(owned_db):
+    size = "select public.database_size() as size"
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert owned_db.execute(size).fetchone()["size"] > 0
+    with acting_as(owned_db, "authenticated", STRANGER):
+        assert owned_db.execute(size).fetchone()["size"] is None
+    with acting_as(owned_db, "anon"):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute(size)

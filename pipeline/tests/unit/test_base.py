@@ -9,6 +9,7 @@ from advisor.collectors.base import (
     collect_per_symbol,
     deadline,
     get_with_retries,
+    post_with_retries,
 )
 from fakes import FakeClock, info
 
@@ -66,6 +67,17 @@ def test_retries_retryable_status_then_succeeds():
     assert len(calls) == 2
     assert sleeps == [1.0]
     assert limiter.count == 2
+
+
+def test_a_post_sends_its_json_and_is_retried_like_a_get():
+    client, calls = scripted_client([httpx.Response(429), httpx.Response(200, json=[{"data": []}])])
+    sleeps = []
+    response = post_with_retries(
+        client, "https://example.test/map", json=[{"idValue": "AAPL"}], sleep=sleeps.append
+    )
+    assert response.json() == [{"data": []}]
+    assert [(c.method, c.read()) for c in calls] == [("POST", b'[{"idValue":"AAPL"}]')] * 2
+    assert sleeps == [1.0]
 
 
 def test_non_retryable_status_raises_immediately():

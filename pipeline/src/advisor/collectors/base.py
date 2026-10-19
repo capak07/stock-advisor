@@ -264,6 +264,45 @@ def get_with_retries(
     clock: Callable[[], float] = time.monotonic,
 ) -> httpx.Response:
     """GET with exponential backoff on transport errors and 429/5xx; other errors raise at once."""
+    return _send_with_retries(
+        client, "GET", url, params=params, headers=headers, limiter=limiter, attempts=attempts,
+        base_delay=base_delay, sleep=sleep, clock=clock,
+    )
+
+
+def post_with_retries(
+    client: httpx.Client,
+    url: str,
+    *,
+    json: Any,
+    headers: Mapping[str, str] | None = None,
+    limiter: RateLimiter | None = None,
+    attempts: int = 4,
+    base_delay: float = 1.0,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> httpx.Response:
+    """POST a JSON body, retried like `get_with_retries` (for APIs that only take POST)."""
+    return _send_with_retries(
+        client, "POST", url, json=json, headers=headers, limiter=limiter, attempts=attempts,
+        base_delay=base_delay, sleep=sleep, clock=clock,
+    )
+
+
+def _send_with_retries(
+    client: httpx.Client,
+    method: str,
+    url: str,
+    *,
+    params: Mapping[str, Any] | None = None,
+    json: Any = None,
+    headers: Mapping[str, str] | None,
+    limiter: RateLimiter | None,
+    attempts: int,
+    base_delay: float,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> httpx.Response:
     last_error: Exception | None = None
     for attempt in range(attempts):
         retry_after: float | None = None
@@ -272,7 +311,7 @@ def get_with_retries(
             limiter.acquire()
             check_deadline(clock)  # a busy shared limiter may have slept past the deadline
         try:
-            response = client.get(url, params=params, headers=headers)
+            response = client.request(method, url, params=params, json=json, headers=headers)
         except httpx.TransportError as exc:
             last_error = exc
         else:

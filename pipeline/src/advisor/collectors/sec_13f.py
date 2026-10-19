@@ -118,7 +118,7 @@ class Quarter:
 
 def _rows(archive: zipfile.ZipFile, name: str) -> Iterator[tuple[dict[str, int], list[str]]]:
     with archive.open(name) as raw:
-        reader = csv.reader(io.TextIOWrapper(raw, encoding="utf-8", newline=""), delimiter="\t")
+        reader = csv.reader(io.TextIOWrapper(raw, encoding="utf-8", errors="replace", newline=""), delimiter="\t")
         column = {heading: index for index, heading in enumerate(next(reader))}
         for row in reader:
             if len(row) == len(column):
@@ -196,7 +196,7 @@ def aggregate(archive: zipfile.ZipFile) -> Quarter:
         try:
             amount = int(float(row[c["SSHPRNAMT"]]))
             dollars = int(float(row[c["VALUE"]] or 0))
-        except ValueError:
+        except (ValueError, OverflowError):
             continue
         shares[cusip] += amount
         value[cusip] += dollars

@@ -34,7 +34,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
   Use yfinance `quoteType` from sector mapping. Closed-end funds are an owner decision. Run the same check on TSX symbols, for income trusts and closed-end funds whose names the TMX filter cannot recognise.
 - **Partial current-day bar** at the pre-close run, from Yahoo. Features must treat today's bar as incomplete.
 - **Benchmarks** (SPY, XIU.TO, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
-- **13F holder change (Plan 2g):** `sec_13f` gives each US stock the latest quarter's 13F shares, value and holder count, and the quarter before's.
+- **13F holder change (Plan 2g):** `sec_13f` gives each US stock the latest quarter's 13F shares, value and holder count, and the quarter before's shares and holder count.
   - Use changes, not levels: each quarter counts only the reports filed in its own window (late filers are left out of both), and combination reports can count a holding twice.
   - The institutional share of shares outstanding needs `sec_xbrl`'s share count.
   - The data lag: a quarter's data set appears about two and a half months after the quarter ends (Q2 ended June 30; its data set was published September 14). Treat the feature as slow-moving.

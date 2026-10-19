@@ -28,9 +28,9 @@ from fakes import fake_sec
 
 AS_OF = datetime(2026, 10, 19, 14, tzinfo=UTC)
 AAPL, MSFT, BRKB = "037833100", "594918104", "084670702"
-AAPL_FIGIS = ("BBG000B9XRY4", "BBG001S5N8V8")  # composite and share class
-MSFT_FIGIS = ("BBG000BPH459", "BBG001S5TD05")
-BRKB_FIGIS = ("BBG000DWG505", "BBG001S90346")
+AAPL_FIGIS = ("BBG0000AAPL1", "BBG0000AAPL2")  # composite and share class
+MSFT_FIGIS = ("BBG0000MSFT1", "BBG0000MSFT2")
+BRKB_FIGIS = ("BBG000BRKB01", "BBG000BRKB02")
 
 SUBMISSION = ["ACCESSION_NUMBER", "FILING_DATE", "SUBMISSIONTYPE", "CIK", "PERIODOFREPORT"]
 COVERPAGE = ["ACCESSION_NUMBER", "REPORTCALENDARORQUARTER", "ISAMENDMENT", "AMENDMENTNO", "AMENDMENTTYPE",
@@ -144,6 +144,42 @@ def test_a_data_set_totals_the_quarters_shares_per_cusip():
     assert quarter.figis == {AAPL_FIGIS[1]: (AAPL, 4), AAPL_FIGIS[0]: (AAPL, 1)}
     assert quarter.cusip_for([*AAPL_FIGIS, "BBG000NOTSEEN"]) == AAPL
     assert quarter.cusip_for(["BBG000NOTSEEN"]) is None
+
+
+def test_a_stray_non_utf8_byte_doesnt_stop_the_data_set():
+    archive = data_set(
+        [("acc-a", "10-AUG-2026", "13F-HR", "A", "30-JUN-2026")],
+        {},
+        [("acc-a", AAPL, AAPL_FIGIS[1], 100, 25_000, "SH", "")],
+    )
+    damaged = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive)) as source, zipfile.ZipFile(damaged, "w") as target:
+        for name in source.namelist():
+            content = source.read(name)
+            if name == "INFOTABLE.tsv":
+                content = content.replace(b"\tISSUER\t", b"\tISSUE\xffR\t")  # not valid UTF-8
+            target.writestr(name, content)
+    with zipfile.ZipFile(io.BytesIO(damaged.getvalue())) as z:
+        quarter = aggregate(z)
+    assert quarter.holdings == {AAPL: Holding(100, 25_000, 1)}
+
+
+@pytest.mark.parametrize("shares, value", [("inf", 25_000), (100, "inf")])
+def test_an_overflowing_number_skips_its_row_not_the_data_set(shares, value):
+    archive = data_set(
+        [
+            ("acc-a", "10-AUG-2026", "13F-HR", "A", "30-JUN-2026"),
+            ("acc-b", "11-AUG-2026", "13F-HR", "B", "30-JUN-2026"),
+        ],
+        {},
+        [
+            ("acc-a", AAPL, AAPL_FIGIS[1], shares, value, "SH", ""),
+            ("acc-b", AAPL, AAPL_FIGIS[1], 40, 10_000, "SH", ""),
+        ],
+    )
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
+        quarter = aggregate(z)
+    assert quarter.holdings == {AAPL: Holding(40, 10_000, 1)}
 
 
 def test_the_run_deadline_stops_a_long_aggregation():

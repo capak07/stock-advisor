@@ -40,6 +40,7 @@ EXPECTED = {
     "coingecko": (True, Scope.SYMBOLS, True, NONE),
     "coinbase_candles": (False, Scope.SYMBOLS, True, NONE),
     "kraken_ohlc": (False, Scope.SYMBOLS, True, NONE),
+    "openfda": (False, Scope.SYMBOLS, False, US),
     "nasdaq_news": (False, Scope.MARKET, True, US),
     "cnbc_news": (False, Scope.MARKET, True, US),
     "marketwatch_news": (False, Scope.MARKET, True, US),

@@ -19,6 +19,7 @@ from advisor.collectors.google_news import GOOGLE_NEWS_PER_MINUTE, GoogleNews
 from advisor.collectors.kraken_ohlc import KRAKEN_PER_MINUTE, KrakenOhlc
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.news_feeds import FEED_PER_MINUTE, FEEDS, FeedNews
+from advisor.collectors.openfda import OPENFDA_PER_MINUTE, OpenFda
 from advisor.collectors.openfigi import OPENFIGI_PER_MINUTE, FigiBook
 from advisor.collectors.sec import SEC_PER_MINUTE, SecEdgar
 from advisor.collectors.sec_13f import Sec13f
@@ -42,7 +43,10 @@ FINRA_PER_MINUTE = 60
 def build_registry(
     settings: Settings, client: httpx.Client, *, names: CompanyNames | None = None
 ) -> dict[str, Collector]:
-    """`names` is filled by the run once the universes are loaded; Google News queries by them."""
+    """`names` is filled by the run once the universes are loaded.
+
+    Google News queries by them, and the catalyst sources match sponsors' names to them.
+    """
     finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
     yahoo = RateLimiter(per_minute=YAHOO_PER_MINUTE, burst=2)  # shared by Yahoo's per-symbol collectors
     sec = SecEdgar(  # shared by every SEC collector
@@ -84,6 +88,7 @@ def build_registry(
         CoinGecko(client, RateLimiter(per_minute=COINGECKO_PER_MINUTE, burst=1)),
         CoinbaseCandles(client, RateLimiter(per_minute=COINBASE_PER_MINUTE, burst=3)),
         KrakenOhlc(client, RateLimiter(per_minute=KRAKEN_PER_MINUTE, burst=1)),
+        OpenFda(client, RateLimiter(per_minute=OPENFDA_PER_MINUTE, burst=2), names=names),
         YahooNews(client, RateLimiter(per_minute=YAHOO_NEWS_PER_MINUTE, burst=2)),
         GoogleNews(client, RateLimiter(per_minute=GOOGLE_NEWS_PER_MINUTE, burst=1), names=names),
         *(FeedNews(feed, client, RateLimiter(per_minute=FEED_PER_MINUTE, burst=2)) for feed in FEEDS),

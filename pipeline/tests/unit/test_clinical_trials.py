@@ -2,6 +2,7 @@ import json
 from datetime import UTC, date, datetime
 
 import httpx
+import pytest
 
 from advisor.collectors.clinical_trials import (
     ClinicalTrials,
@@ -81,7 +82,15 @@ def test_a_stop_counts_when_the_book_saw_the_trial_active(fixtures_dir, tmp_path
     assert book["NCT05070845"] == {"status": "TERMINATED", "seen": "2026-10-19", "stopped": "2026-10-19"}
 
 
-def test_stops_found_more_than_ten_days_ago_no_longer_count(tmp_path):
+@pytest.mark.parametrize(("found", "stops"), [("2026-10-10", 1), ("2026-10-09", 0)])
+def test_a_stop_counts_for_ten_days(fixtures_dir, tmp_path, found, stops):
+    (tmp_path / "statuses.json").write_text(json.dumps({
+        "NCT05070845": {"status": "TERMINATED", "seen": found, "stopped": found},
+    }))
+    assert fetch(fixtures_dir, tmp_path, ["PFE"])["PFE"].stopped_10d == stops
+
+
+def test_the_book_keeps_the_day_a_stop_was_found(tmp_path):
     book = StatusBook(tmp_path / "statuses.json")
     active = Trial("NCT1", "Pfizer", "RECRUITING", ("PHASE3",), date(2026, 11, 1), True)
     stopped = Trial("NCT1", "Pfizer", "TERMINATED", ("PHASE3",), date(2026, 11, 1), True)

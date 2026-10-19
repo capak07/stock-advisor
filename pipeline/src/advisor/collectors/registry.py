@@ -18,7 +18,9 @@ from advisor.collectors.google_news import GOOGLE_NEWS_PER_MINUTE, GoogleNews
 from advisor.collectors.kraken_ohlc import KRAKEN_PER_MINUTE, KrakenOhlc
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.news_feeds import FEED_PER_MINUTE, FEEDS, FeedNews
+from advisor.collectors.openfigi import OPENFIGI_PER_MINUTE, FigiBook
 from advisor.collectors.sec import SEC_PER_MINUTE, SecEdgar
+from advisor.collectors.sec_13f import Sec13f
 from advisor.collectors.sec_events import SecEvents
 from advisor.collectors.sec_holders import SecHolders
 from advisor.collectors.sec_insiders import SecInsiders
@@ -60,6 +62,15 @@ def build_registry(
         SecEvents(sec),
         SecInsiders(sec),
         SecHolders(sec),
+        Sec13f(
+            sec,
+            FigiBook(
+                client,
+                settings.cache_dir / "sec-13f" / "figis.json",
+                RateLimiter(per_minute=OPENFIGI_PER_MINUTE),
+            ),
+            settings.cache_dir / "sec-13f",
+        ),
         Fred(client, RateLimiter(per_minute=FRED_PER_MINUTE, burst=3)),
         Fomc(client),
         CnnFearGreed(client),

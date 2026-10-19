@@ -28,6 +28,7 @@ EXPECTED = {
     "sec_8k": (False, Scope.SYMBOLS, True, US),
     "sec_form4": (False, Scope.SYMBOLS, True, US),
     "sec_13dg": (False, Scope.SYMBOLS, True, US),
+    "sec_13f": (False, Scope.SYMBOLS, True, US),
     "fred": (True, Scope.MARKET, True, BOTH),
     "fomc": (False, Scope.MARKET, True, BOTH),
     "cnn_fear_greed": (False, Scope.MARKET, True, US),

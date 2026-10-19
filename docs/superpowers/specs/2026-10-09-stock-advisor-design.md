@@ -194,7 +194,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 | 8 | fundamentals | SEC XBRL company facts | US | daily | Point-in-time financials via filing date. Core |
 | 9 | fundamentals | SEC 8-K filings | US | per_run | Material-event catalysts |
 | 10 | fundamentals | SEC Form 4 | US | daily | Insider buys and sells |
-| 11 | fundamentals | SEC 13F data sets (+ OpenFIGI CUSIP mapping) | US | weekly | Institutional ownership change |
+| 11 | fundamentals | SEC 13F data sets (+ OpenFIGI ticker → FIGI lookup) | US | weekly | Institutional ownership change, quarterly. Filers' FIGIs link a ticker to its CUSIP |
 | 12 | fundamentals | SEC 13D/13G | US | daily | Activist and large stakes |
 | 13 | fundamentals | FINRA short interest | US | weekly | Twice-monthly settlement files |
 | 14 | fundamentals | FINRA Reg SHO daily short volume | US | daily | One file per day |

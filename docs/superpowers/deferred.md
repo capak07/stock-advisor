@@ -1,10 +1,6 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and Plan 2f reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
-
-## Plan 2g: 13F institutional ownership
-
-- **Source 11 (SEC 13F data sets plus OpenFIGI CUSIP mapping) moved out of Plan 2d.** It needs a persistent CUSIP → ticker map (about 6,500 CUSIPs, roughly 27 minutes at OpenFIGI's keyless 25 requests a minute, then only new CUSIPs each quarter) and about 100 MB of quarterly SEC data sets. Research: `.superpowers/research/plan-2b/sec.md` §5. Fixtures: `.superpowers/research/plan-2c-fixtures/sec/13f_*` and `openfigi_cusip_mapping_sample.json` (git-ignored).
+These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Plan 2f and Plan 2g reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2h: options, catalysts and Canadian short positions
 
@@ -38,6 +34,11 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e and
   Use yfinance `quoteType` from sector mapping. Closed-end funds are an owner decision. Run the same check on TSX symbols, for income trusts and closed-end funds whose names the TMX filter cannot recognise.
 - **Partial current-day bar** at the pre-close run, from Yahoo. Features must treat today's bar as incomplete.
 - **Benchmarks** (SPY, XIU.TO, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
+- **13F holder change (Plan 2g):** `sec_13f` gives each US stock the latest quarter's 13F shares, value and holder count, and the quarter before's.
+  - Use changes, not levels: each quarter counts only the reports filed in its own window (late filers are left out of both), and combination reports can count a holding twice.
+  - The institutional share of shares outstanding needs `sec_xbrl`'s share count.
+  - The data lag: a quarter's data set appears about two and a half months after the quarter ends (Q2 ended June 30; its data set was published September 14). Treat the feature as slow-moving.
+  - A stock without a record is missing, not zero: no filer reported its FIGIs (small caps, recent listings).
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.
 - **Analyst rotation:** `max_symbols` always takes the head of the missing list. Rotate the rest oldest-first, so the bottom of the analyst shortlist isn't left unfetched forever.
 - **Earnings failure rate:** measure the first live run's per-symbol failure rate for `yfinance_earnings`.

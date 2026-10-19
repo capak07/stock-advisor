@@ -198,11 +198,11 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 | 12 | fundamentals | SEC 13D/13G | US | daily | Activist and large stakes |
 | 13 | fundamentals | FINRA short interest | US | weekly | Twice-monthly settlement files |
 | 14 | fundamentals | FINRA Reg SHO daily short volume | US | daily | One file per day |
-| 15 | fundamentals | Canadian short-position report | TSX | weekly | Twice-monthly. Kept only if a keyless file is confirmed (Plan 2h) |
+| 15 | fundamentals | Canadian short-position report | TSX | weekly | Dropped in Plan 2h: CIRO's file sits behind a bot check and its terms ban scraping |
 | 16 | fundamentals | Yahoo analyst data ⚠ | US, TSX | daily | Targets, recommendation counts, rating changes |
 | 17 | fundamentals | Yahoo earnings dates and surprises ⚠ | US, TSX | daily | Upcoming dates, EPS estimate, actual and surprise. Core (catalysts) |
-| 18 | options | Yahoo option chains ⚠ | US | per_run | Implied volatility, per-ticker put/call. Shortlist only |
-| 19 | options | CBOE daily put/call ratios | US | daily | Market-wide |
+| 18 | options | Yahoo option chains ⚠ | US | per_run | At-the-money implied volatility a week and a month out, skew, put/call volume and open interest. Top 40 of the shortlist per run |
+| 19 | options | Cboe daily put/call ratios ⚠ | US | daily | Market-wide: total, equity, index and ETP. Cboe's terms limit storing copies, so only the ratios are kept |
 | 20 | macro | FRED public CSV | US, TSX | daily | About 10 series: yield curve, VIX, HY spread, CPI, unemployment, fed funds. Core |
 | 21 | macro | Federal Reserve FOMC RSS | US, TSX | per_run | Plus the meeting calendar page |
 | 22 | macro | CNN Fear & Greed ⚠ | US | per_run | Unofficial endpoint |
@@ -216,10 +216,10 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 | 45 | social | StockTwits symbol streams ⚠ | US | per_run | |
 | 46 | social | Google Trends (pytrends) ⚠ | US, TSX | daily | At most 50 symbols, holdings first |
 | 47 | social | Wikipedia pageviews API | US, TSX | daily | Attention proxy |
-| 48 | catalysts | openFDA | US | daily | Drug approvals and recalls |
-| 49 | catalysts | ClinicalTrials.gov API | US, TSX | weekly | Trial status for biotech |
-| 50 | catalysts | USAspending.gov | US | weekly | Federal contract awards |
-| 51 | catalysts | House Clerk periodic transaction reports | US | weekly | Congressional trades |
+| 48 | catalysts | openFDA | US | daily | Drug approvals (originals, new molecules, new indications) and recalls. Sponsor names are matched to stocks |
+| 49 | catalysts | ClinicalTrials.gov API | US, TSX | weekly | Results posted, trials stopped, phase 2/3 readouts due. Lead sponsors are matched to stocks |
+| 50 | catalysts | USAspending.gov | US | weekly | Federal contract awards (Plan 2j) |
+| 51 | catalysts | House Clerk periodic transaction reports | US | weekly | Congressional trades (Plan 2j). The law allows only non-commercial use; never publish them |
 | 52 | onchain | DefiLlama | C | daily | Chain and protocol TVL |
 | 53 | onchain | blockchain.com stats | C | daily | BTC network metrics |
 
@@ -231,6 +231,13 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
   - WSJ Markets comes from Dow Jones' current feed, and Protos replaces the dropped crypto feeds.
   - The social sources (43–47) moved to Plan 2i.
   - Google News stays, as the owner's accepted reading of its personal-feed-reader licence.
+- **Decided in Plan 2h** (owner, 2026-10-19).
+  - Dropped: the Canadian short-position report (15). CIRO's file sits behind a bot check, and its terms ban scraping. No other keyless Canadian source exists.
+  - Kept on the owner's reading:
+    - ClinicalTrials.gov's documented API, although robots.txt disallows `/api/`. Its crawl delay is honoured.
+    - Cboe's daily put/call file, keeping only the ratios.
+    - The House Clerk's reports, for personal use only.
+  - USAspending.gov (50) and the House Clerk's reports (51) moved to Plan 2j.
 - **Excluded** because they aren't free: X/Twitter, Bloomberg, Reuters, earnings-call transcripts, paid options flow.
 - **Hosting accounts** (not data sources): GitHub, Supabase, Vercel. SEC requests send a `User-Agent` containing an owner-chosen contact string, as SEC requires.
 - **Terms of use:** best-effort sources are fetched at low volume, cached, and used only for personal, non-commercial purposes. If a source's terms forbid automated use, it's removed rather than worked around.
@@ -275,7 +282,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 | Price/volume | Returns over 5d, 21d, 63d, 126d and 12-1m; RSI(14); ATR(14)%; realized vol 20d and 60d; distance to 52-week high and low; volume z-score; gap %; flagged-jump indicator | Yes | US, TSX |
 | Relative strength | Excess return vs the market's benchmark and sector ETF over 21d and 63d; sector momentum rank | Yes | US, TSX |
 | Fundamentals (point in time) | Revenue and EPS growth YoY, gross and operating margin and their trend, P/E, P/S, FCF yield, debt/equity, surprise from the last filing (from SEC XBRL plus prices) | Yes | US |
-| Ownership and flow | Insider net buys over 90d, short interest as a share of shares outstanding, days to cover, short volume ratio, 13F holder change | Yes | US (TSX short positions if source 15 is confirmed) |
+| Ownership and flow | Insider net buys over 90d, short interest as a share of shares outstanding, days to cover, short volume ratio, 13F holder change | Yes | US |
 | Earnings | Days to the next report, last EPS surprise | Partly | US, TSX |
 | Macro regime | Yield-curve slope, VIX level and change, HY spread, fed funds trend; Canadian policy rate and yields; USD/CAD trend | Yes | US, TSX |
 | Options | Implied-vol rank, put/call ratio | No (live only) | US |

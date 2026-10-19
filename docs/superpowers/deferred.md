@@ -1,12 +1,6 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Plan 2f and Plan 2g reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
-
-## Plan 2h: options, catalysts and Canadian short positions
-
-- **Split out of Plan 2e**, which kept macro, crypto and on-chain. Sources: Yahoo option chains (18) and CBOE put/call ratios (19); openFDA (48), ClinicalTrials.gov (49), USAspending.gov (50) and House Clerk periodic transaction reports (51); the Canadian short-position report (15), kept only if a keyless file is confirmed.
-- **Catalysts name companies, not tickers:** drug sponsors, trial sponsors and contract recipients need a company-name → symbol map for both markets. Plan 2f built one; reuse `advisor.company_names` and `advisor.news.mapping.TickerMap`.
-- **House Clerk reports are PDFs.** Check that electronically filed reports read as text before committing to source 51.
+These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Plan 2f, Plan 2g and Plan 2h reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2i: social and attention
 
@@ -19,6 +13,24 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Wikipedia needs a ticker → article map.** Build it once from Wikidata, commit it, and refresh it now and then; don't query SPARQL at run time. In Wikidata the ticker is qualifier P249 on stock exchange P414, with Nasdaq Q82059, NYSE Q13677 and TSX Q818723.
 - **Wikimedia's User-Agent policy** asks for contact information. A project URL meets it, so use the repo's URL, never an email.
 - **Collectors covering both stocks and crypto** (ApeWisdom; LINK, SOL and COMP exist as both): keep the asset types apart in symbol lists and cache keys before the first such collector. Plan 2e's crypto sources and Plan 2f's news sources keep them apart already.
+
+## Plan 2j: government catalysts
+
+- **Split out of Plan 2h**, which kept options, Cboe, openFDA and ClinicalTrials.gov. The sources are USAspending.gov (50) and the House Clerk's periodic transaction reports (51). Research: `.superpowers/research/plan-2h/government.md`.
+- **Match names with `advisor.sponsors.SponsorMatcher`** (Plan 2h), adding aliases for defense primes' units, such as Sikorsky → RTX and Electric Boat → GD. USAspending's own parent-company data is stale; don't use it.
+- **USAspending:**
+  - `POST /api/v2/search/spending_by_category/recipient/` sums a recipient's awards. `spending_by_transaction` gives single actions.
+  - `recipient_search_text` matches substrings: "FORD" also finds Stafford.
+  - Award amounts in `spending_by_award` are lifetime totals, so use transaction amounts for recent dollars. They can be negative.
+  - Defense awards appear about 90 days late, so a 90-day window misses nearly all of a defense prime's awards. Count awards by when they first appear, or say how complete the window is.
+- **House reports:**
+  - The yearly index `financial-pdfs/<YEAR>FD.zip` lists filings (`FilingType` P), with one PDF each under `ptr-pdfs/<YEAR>/<DocID>.pdf`.
+  - About 88% are filed electronically and read as text. Many are RC4-encrypted with an empty password. Scanned ones (DocIDs starting 8 or 9) are skipped.
+  - A stock row carries its ticker in parentheses next to an `[ST]` tag. Accept a ticker only on such a row, because "(RILA)" is an annuity.
+  - Decide between a small standard-library PDF reader, which the research proved on 13 reports, and `pypdf` (BSD). `pypdf` needs `cryptography` for AES.
+  - Trades are filed 2–6 weeks after they happen.
+  - The law bars commercial use. The owner accepted personal use (2026-10-19), so never publish the trades.
+  - The Senate's site needs an agreement click-through, so it's out.
 
 ## Plan 3: model and features
 
@@ -39,6 +51,18 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
   - The institutional share of shares outstanding needs `sec_xbrl`'s share count.
   - The data lag: a quarter's data set appears about two and a half months after the quarter ends (Q2 ended June 30; its data set was published September 14). Treat the feature as slow-moving.
   - A stock without a record is missing, not zero: no filer reported its FIGIs (small caps, recent listings).
+- **Options (Plan 2h) are live only.**
+  - `yfinance_options` describes the market at `quote_time`: IV moves during the day, and volume counts the day so far. So compare a run with the same run on other days.
+  - Put/call ratios cover the three chains fetched (today's 0DTE chain left out), not every expiry.
+  - After-hours answers weren't seen in testing. Check the first evening run for stale IV or zero volume.
+- **Cboe put/call** (`cboe_put_call`) covers products listed on Cboe's exchanges, not the whole US market. A day's file appears that evening, and each fetch returns the last 10 days, so store the series for longer windows.
+- **Catalyst matches are noisy.**
+  - `openfda` and `clinical_trials` match sponsor names to the run's stocks. A sponsor name that starts with a one-word stock name is read as that stock: "Sound Pharmaceuticals" (private) would count for a stock named "Sound", and "Meridian Bioscience" for one named "Meridian".
+  - Treat these as weak signals, and add aliases as wrong matches turn up.
+  - A stock with no record had no matched event. A stock without a directory name (some holdings) is never matched.
+  - openFDA refreshes about weekly.
+  - Trial stops count only for trials the status book saw active: phase 2 or 3, nearing completion.
+  - A month-only completion date stands for the month's last day.
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.
 - **Analyst rotation:** `max_symbols` always takes the head of the missing list. Rotate the rest oldest-first, so the bottom of the analyst shortlist isn't left unfetched forever.
 - **Earnings failure rate:** measure the first live run's per-symbol failure rate for `yfinance_earnings`.

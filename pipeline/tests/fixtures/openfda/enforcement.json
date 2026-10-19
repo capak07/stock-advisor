@@ -1,0 +1,213 @@
+{
+ "meta": {
+  "disclaimer": "Do not rely on openFDA to make decisions regarding medical care. While we make every effort to ensure that data is accurate, you should assume all results are unvalidated. We may limit or otherwise restrict your access to the API in line with our Terms of Service.",
+  "terms": "https://open.fda.gov/terms/",
+  "license": "https://open.fda.gov/license/",
+  "last_updated": "2026-10-07",
+  "results": {
+   "skip": 0,
+   "limit": 1000,
+   "total": 18
+  }
+ },
+ "results": [
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0793-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "Baxter Healthcare Corporation",
+   "classification": "Class I",
+   "status": "Ongoing",
+   "recall_number": "D-0849-2026",
+   "event_id": "99678",
+   "report_date": "20260909",
+   "recall_initiation_date": "20260817",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of particulate matter: Particulates identified as fiberglass"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0799-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0797-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class I",
+   "status": "Ongoing",
+   "recall_number": "D-0800-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0796-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0795-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0791-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0802-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0794-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0798-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "Baxter Healthcare Corporation",
+   "classification": "Class I",
+   "status": "Ongoing",
+   "recall_number": "D-0850-2026",
+   "event_id": "99679",
+   "report_date": "20260916",
+   "recall_initiation_date": "20260817",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: particulate matter identified as stainless steel particles in the solution."
+  },
+  {
+   "recalling_firm": "Pfizer",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0853-2026",
+   "event_id": "99824",
+   "report_date": "20260923",
+   "recall_initiation_date": "20260904",
+   "product_type": "Drugs",
+   "reason_for_recall": "Lack of Assurance of Sterility"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0792-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "American Regent, Inc.",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0801-2026",
+   "event_id": "99503",
+   "report_date": "20260826",
+   "recall_initiation_date": "20260724",
+   "product_type": "Drugs",
+   "reason_for_recall": "Presence of Particulate Matter: Product contaminated with particulate matter identified as hair, glass and/or paraformaldehyde"
+  },
+  {
+   "recalling_firm": "Baxter Healthcare Corporation",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0815-2026",
+   "event_id": "99500",
+   "report_date": "20260909",
+   "recall_initiation_date": "20260806",
+   "product_type": "Drugs",
+   "reason_for_recall": "CGMP Deviations"
+  },
+  {
+   "recalling_firm": "Baxter Healthcare Corporation",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0811-2026",
+   "event_id": "99500",
+   "report_date": "20260909",
+   "recall_initiation_date": "20260806",
+   "product_type": "Drugs",
+   "reason_for_recall": "CGMP Deviations"
+  },
+  {
+   "recalling_firm": "Baxter Healthcare Corporation",
+   "classification": "Class II",
+   "status": "Ongoing",
+   "recall_number": "D-0821-2026",
+   "event_id": "99500",
+   "report_date": "20260909",
+   "recall_initiation_date": "20260806",
+   "product_type": "Drugs",
+   "reason_for_recall": "CGMP Deviations"
+  }
+ ]
+}

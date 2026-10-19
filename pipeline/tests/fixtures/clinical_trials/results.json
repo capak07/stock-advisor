@@ -1,0 +1,208 @@
+{
+ "studies": [
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT05486208"
+    },
+    "statusModule": {
+     "overallStatus": "TERMINATED",
+     "primaryCompletionDateStruct": {
+      "date": "2024-01-20"
+     },
+     "resultsFirstPostDateStruct": {
+      "date": "2026-10-13"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-10-13"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Eli Lilly and Company"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE1"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT03456063"
+    },
+    "statusModule": {
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2025-10-01"
+     },
+     "resultsFirstPostDateStruct": {
+      "date": "2026-10-09"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-10-09"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Hoffmann-La Roche"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE3"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT03267732"
+    },
+    "statusModule": {
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2017-10-17"
+     },
+     "resultsFirstPostDateStruct": {
+      "date": "2026-10-02"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-10-02"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Eli Lilly and Company"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE1"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT06206837"
+    },
+    "statusModule": {
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2025-09-05"
+     },
+     "resultsFirstPostDateStruct": {
+      "date": "2026-09-30"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-09-30"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Pfizer"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE1",
+      "PHASE2"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT06508320"
+    },
+    "statusModule": {
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2025-09-25"
+     },
+     "resultsFirstPostDateStruct": {
+      "date": "2026-10-08"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-10-08"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "ModernaTX, Inc."
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE2"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT03709680"
+    },
+    "statusModule": {
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2024-08-26"
+     },
+     "resultsFirstPostDateStruct": {
+      "date": "2026-10-07"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-10-07"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Pfizer"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE2"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT05994807"
+    },
+    "statusModule": {
+     "overallStatus": "COMPLETED",
+     "primaryCompletionDateStruct": {
+      "date": "2023-09-20"
+     },
+     "resultsFirstPostDateStruct": {
+      "date": "2026-10-19"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-10-19"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "DICE Therapeutics, Inc., a wholly owned subsidiary of Eli Lilly and Company"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE1"
+     ]
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,186 @@
+{
+ "studies": [
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT05646862"
+    },
+    "statusModule": {
+     "overallStatus": "RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-11-13"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-09-28"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Hoffmann-La Roche"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE3"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT04553133"
+    },
+    "statusModule": {
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-12-31"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-05-06"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Pfizer"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE2"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT07500506"
+    },
+    "statusModule": {
+     "overallStatus": "RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-12-04"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-05-06"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Pfizer"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE3"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT04657991"
+    },
+    "statusModule": {
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-10-30"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-09-03"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Pfizer"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE3"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT06662383"
+    },
+    "statusModule": {
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-11"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-07-20"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Eli Lilly and Company"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE3"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT05059522"
+    },
+    "statusModule": {
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-12-31"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-06-22"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Pfizer"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE3"
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT06914895"
+    },
+    "statusModule": {
+     "overallStatus": "ACTIVE_NOT_RECRUITING",
+     "primaryCompletionDateStruct": {
+      "date": "2026-11"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-05-12"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "name": "Eli Lilly and Company"
+     }
+    },
+    "designModule": {
+     "phases": [
+      "PHASE3"
+     ]
+    }
+   }
+  }
+ ]
+}

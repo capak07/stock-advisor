@@ -39,6 +39,7 @@ NAMES = {
     ("Hoffmann-La Roche", "HOFFMANN LA ROCHE"),
     ("Novo Nordisk A/S", "NOVO NORDISK"),
     ("ASTRAZENECA AB", "ASTRAZENECA"),
+    ("Merck KGaA, Darmstadt, Germany", "MERCK KGAA"),
 ])
 def test_a_company_key_is_the_parent_without_legal_words(name, key):
     assert company_key(name) == key
@@ -73,6 +74,8 @@ def test_sponsors_match_the_runs_stocks(sponsor, symbols):
     "Genentech, Inc.",  # Roche's: not in either universe
     "BOEHRINGER INGELHEIM",  # private
     "ACADIA",  # ACADIA Pharmaceuticals or Acadia Healthcare: ambiguous
+    "Merck KGaA, Darmstadt, Germany",  # not Merck & Co.
+    "MERCK KGAA",
     "",
 ])
 def test_unknown_everyday_or_ambiguous_names_match_nothing(sponsor):

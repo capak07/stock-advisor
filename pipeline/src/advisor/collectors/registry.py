@@ -31,6 +31,7 @@ from advisor.collectors.yahoo_news import YAHOO_NEWS_PER_MINUTE, YahooNews
 from advisor.collectors.yfinance_analyst import YFinanceAnalyst
 from advisor.collectors.yfinance_bars import YFinanceBars
 from advisor.collectors.yfinance_earnings import YFinanceEarnings
+from advisor.collectors.yfinance_options import YFinanceOptions
 from advisor.company_names import CompanyNames
 from advisor.config import Settings
 
@@ -57,6 +58,7 @@ def build_registry(
         FinraShortInterest(client, finra),
         YFinanceAnalyst(limiter=yahoo),
         YFinanceEarnings(limiter=yahoo),
+        YFinanceOptions(limiter=yahoo),
         BankOfCanadaValet(client),
         SecXbrl(sec),
         SecEvents(sec),

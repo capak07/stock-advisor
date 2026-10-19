@@ -1,3 +1,4 @@
+import gzip
 import io
 import json
 import time
@@ -219,8 +220,20 @@ def test_a_data_set_is_downloaded_once_and_old_totals_are_dropped(fixtures_dir, 
     ]
 
 
-def test_damaged_totals_on_disk_are_rebuilt_from_the_data_set(fixtures_dir, tmp_path):
-    (tmp_path / "01jun2026-31aug2026.json.gz").write_bytes(b"cut short by a full disk")
+DAMAGED = [
+    b"cut short by a full disk",
+    gzip.compress(b'{"period": "2026-06-30"}')[:-6],  # a truncated gzip
+    gzip.compress(b"[]"),
+    gzip.compress(b"{}"),
+    gzip.compress(json.dumps({"period": "2026-06-30", "holdings": {AAPL: [1]}, "figis": {}}).encode()),
+]
+
+
+@pytest.mark.parametrize(
+    "damaged", DAMAGED, ids=["not-gzip", "truncated-gzip", "json-list", "json-empty-object", "short-holding"]
+)
+def test_damaged_totals_on_disk_are_rebuilt_from_the_data_set(fixtures_dir, tmp_path, damaged):
+    (tmp_path / "01jun2026-31aug2026.json.gz").write_bytes(damaged)
     seen = []
     records = collector(fixtures_dir, tmp_path, seen, []).fetch(["AAPL"], AS_OF)
     assert records[0].shares == 120

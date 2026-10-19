@@ -29,6 +29,7 @@ import json
 import os
 import re
 import zipfile
+import zlib
 from collections import Counter, defaultdict
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -225,12 +226,17 @@ def save_quarter(path: Path, quarter: Quarter) -> None:
 
 
 def load_quarter(path: Path) -> Quarter:
-    payload = json.loads(gzip.decompress(path.read_bytes()))
-    return Quarter(
-        date.fromisoformat(payload["period"]),
-        {c: Holding(*values) for c, values in payload["holdings"].items()},
-        {f: (cusip, rows) for f, (cusip, rows) in payload["figis"].items()},
-    )
+    """The totals saved at path. A missing file raises OSError; a damaged one, ValueError."""
+    raw = path.read_bytes()
+    try:
+        payload = json.loads(gzip.decompress(raw))
+        return Quarter(
+            date.fromisoformat(payload["period"]),
+            {c: Holding(*values) for c, values in payload["holdings"].items()},
+            {f: (cusip, rows) for f, (cusip, rows) in payload["figis"].items()},
+        )
+    except (EOFError, zlib.error, KeyError, TypeError, AttributeError, ValueError) as exc:
+        raise ValueError(f"damaged totals {path.name}") from exc
 
 
 class Sec13f:
@@ -289,7 +295,7 @@ class Sec13f:
         path = self._folder / f"{data_set.name}.json.gz"
         try:
             return load_quarter(path)
-        except (OSError, ValueError, KeyError):
+        except (OSError, ValueError):
             pass  # not reduced yet, or a damaged file: download again
         response = self._sec.get(data_set.url)
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:

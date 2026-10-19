@@ -5,6 +5,7 @@ import httpx
 from advisor.collectors.base import Collector, RateLimiter
 from advisor.collectors.blockchain_stats import BLOCKCHAIN_PER_MINUTE, BlockchainStats
 from advisor.collectors.boc_valet import BankOfCanadaValet
+from advisor.collectors.cboe_put_call import CBOE_PER_MINUTE, CboePutCall
 from advisor.collectors.cnn_fear_greed import CnnFearGreed
 from advisor.collectors.coinbase_candles import COINBASE_PER_MINUTE, CoinbaseCandles
 from advisor.collectors.coingecko import COINGECKO_PER_MINUTE, CoinGecko
@@ -59,6 +60,7 @@ def build_registry(
         YFinanceAnalyst(limiter=yahoo),
         YFinanceEarnings(limiter=yahoo),
         YFinanceOptions(limiter=yahoo),
+        CboePutCall(client, RateLimiter(per_minute=CBOE_PER_MINUTE, burst=2)),
         BankOfCanadaValet(client),
         SecXbrl(sec),
         SecEvents(sec),

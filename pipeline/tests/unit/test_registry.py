@@ -24,6 +24,7 @@ EXPECTED = {
     "yfinance_analyst": (False, Scope.SYMBOLS, True, BOTH),
     "yfinance_earnings": (True, Scope.SYMBOLS, True, BOTH),
     "yfinance_options": (False, Scope.SYMBOLS, True, US),
+    "cboe_put_call": (False, Scope.MARKET, True, US),
     "boc_valet": (False, Scope.MARKET, True, BOTH),
     "sec_xbrl": (True, Scope.SYMBOLS, True, US),
     "sec_8k": (False, Scope.SYMBOLS, True, US),

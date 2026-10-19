@@ -41,6 +41,7 @@ EXPECTED = {
     "coinbase_candles": (False, Scope.SYMBOLS, True, NONE),
     "kraken_ohlc": (False, Scope.SYMBOLS, True, NONE),
     "openfda": (False, Scope.SYMBOLS, False, US),
+    "clinical_trials": (False, Scope.SYMBOLS, False, BOTH),
     "nasdaq_news": (False, Scope.MARKET, True, US),
     "cnbc_news": (False, Scope.MARKET, True, US),
     "marketwatch_news": (False, Scope.MARKET, True, US),

@@ -6,6 +6,11 @@ from advisor.collectors.base import Collector, RateLimiter
 from advisor.collectors.blockchain_stats import BLOCKCHAIN_PER_MINUTE, BlockchainStats
 from advisor.collectors.boc_valet import BankOfCanadaValet
 from advisor.collectors.cboe_put_call import CBOE_PER_MINUTE, CboePutCall
+from advisor.collectors.clinical_trials import (
+    CLINICAL_TRIALS_PER_MINUTE,
+    ClinicalTrials,
+    StatusBook,
+)
 from advisor.collectors.cnn_fear_greed import CnnFearGreed
 from advisor.collectors.coinbase_candles import COINBASE_PER_MINUTE, CoinbaseCandles
 from advisor.collectors.coingecko import COINGECKO_PER_MINUTE, CoinGecko
@@ -89,6 +94,12 @@ def build_registry(
         CoinbaseCandles(client, RateLimiter(per_minute=COINBASE_PER_MINUTE, burst=3)),
         KrakenOhlc(client, RateLimiter(per_minute=KRAKEN_PER_MINUTE, burst=1)),
         OpenFda(client, RateLimiter(per_minute=OPENFDA_PER_MINUTE, burst=2), names=names),
+        ClinicalTrials(
+            client,
+            StatusBook(settings.cache_dir / "clinical-trials" / "statuses.json"),
+            RateLimiter(per_minute=CLINICAL_TRIALS_PER_MINUTE),
+            names=names,
+        ),
         YahooNews(client, RateLimiter(per_minute=YAHOO_NEWS_PER_MINUTE, burst=2)),
         GoogleNews(client, RateLimiter(per_minute=GOOGLE_NEWS_PER_MINUTE, burst=1), names=names),
         *(FeedNews(feed, client, RateLimiter(per_minute=FEED_PER_MINUTE, burst=2)) for feed in FEEDS),

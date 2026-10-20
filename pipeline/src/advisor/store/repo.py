@@ -175,6 +175,19 @@ def upsert_symbols(conn: psycopg.Connection, market: Market, symbols: Sequence[S
         )
 
 
+def write_sectors(conn: psycopg.Connection, rows: Sequence[tuple[str, str, str | None]]) -> int:
+    """Set (symbol, sector, industry) on known stocks; a row without a sector keeps what it had."""
+    labelled = [(sector, industry, symbol) for symbol, sector, industry in rows if sector is not None]
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.executemany(
+                "update symbols set sector = %s, industry = %s, updated_at = now()"
+                " where symbol = %s and asset_type = 'stock'",
+                labelled,
+            )
+            return cur.rowcount
+
+
 def load_held_symbols(conn: psycopg.Connection) -> set[AssetRef]:
     rows = conn.execute(
         "with bought as (select symbol, asset_type, sum(qty) as qty from lots"

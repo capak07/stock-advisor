@@ -110,6 +110,18 @@ def test_upsert_symbols_refuses_empty_or_foreign_universes(db):
     assert [(r["symbol"], r["active"]) for r in rows] == [("AAPL", True)]
 
 
+def test_sectors_are_set_on_known_stocks_and_kept_when_unclassified(db):
+    repo.upsert_symbols(db, Market.US, [info("AAPL"), info("JPM"), info("ODD")])
+    repo.write_sectors(db, [("AAPL", "Technology", "Consumer Electronics"), ("JPM", "Financial Services", "Banks—Diversified")])
+    repo.write_sectors(db, [("AAPL", "Technology", "Consumer Electronics"), ("JPM", None, None), ("NEW", "Energy", "Oil & Gas E&P")])
+    rows = db.execute("select symbol, sector, industry from symbols order by symbol").fetchall()
+    assert [(r["symbol"], r["sector"], r["industry"]) for r in rows] == [
+        ("AAPL", "Technology", "Consumer Electronics"),
+        ("JPM", "Financial Services", "Banks—Diversified"),  # unclassified this week: kept
+        ("ODD", None, None),
+    ]  # NEW isn't in the universe table, so nothing is inserted
+
+
 def test_load_held_symbols_nets_sells(db):
     db.execute(
         "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"

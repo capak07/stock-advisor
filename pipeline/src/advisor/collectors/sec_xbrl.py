@@ -5,7 +5,7 @@ duplicate (a value re-reported in later filings, restatements) is kept with its 
 Plan 3 can pick a concept per period by priority and the latest value knowable on any day.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -92,31 +92,36 @@ class FinancialFact(BaseModel):
     accession: str
 
 
-def extract_facts(symbol: str, payload: Mapping[str, Any], as_of: date) -> list[FinancialFact]:
-    """Facts for METRICS from 10-K/10-Q filings, periods ending within LOOKBACK, filed by `as_of`."""
-    cutoff = as_of - LOOKBACK
+def metric_facts(payload: Mapping[str, Any]) -> Iterator[tuple[str, str, str, Mapping[str, Any]]]:
+    """Every METRICS concept's raw fact from 10-K/10-Q filings, as (metric, "taxonomy:Concept", unit, fact)."""
     facts = payload.get("facts", {})
-    rows: list[FinancialFact] = []
     for metric, concepts in METRICS.items():
         for taxonomy, concept, unit in concepts:
             for fact in facts.get(taxonomy, {}).get(concept, {}).get("units", {}).get(unit, []):
-                if fact.get("form") not in FORMS:
-                    continue
-                end, filed = date.fromisoformat(fact["end"]), date.fromisoformat(fact["filed"])
-                if end < cutoff or filed > as_of:
-                    continue
-                rows.append(FinancialFact(
-                    symbol=symbol,
-                    metric=metric,
-                    concept=f"{taxonomy}:{concept}",
-                    unit=unit,
-                    start=date.fromisoformat(fact["start"]) if "start" in fact else None,
-                    end=end,
-                    value=float(fact["val"]),
-                    filed=filed,
-                    form=fact["form"],
-                    accession=fact["accn"],
-                ))
+                if fact.get("form") in FORMS:
+                    yield metric, f"{taxonomy}:{concept}", unit, fact
+
+
+def extract_facts(symbol: str, payload: Mapping[str, Any], as_of: date) -> list[FinancialFact]:
+    """Facts for METRICS from 10-K/10-Q filings, periods ending within LOOKBACK, filed by `as_of`."""
+    cutoff = as_of - LOOKBACK
+    rows: list[FinancialFact] = []
+    for metric, concept, unit, fact in metric_facts(payload):
+        end, filed = date.fromisoformat(fact["end"]), date.fromisoformat(fact["filed"])
+        if end < cutoff or filed > as_of:
+            continue
+        rows.append(FinancialFact(
+            symbol=symbol,
+            metric=metric,
+            concept=concept,
+            unit=unit,
+            start=date.fromisoformat(fact["start"]) if "start" in fact else None,
+            end=end,
+            value=float(fact["val"]),
+            filed=filed,
+            form=fact["form"],
+            accession=fact["accn"],
+        ))
     return rows
 
 

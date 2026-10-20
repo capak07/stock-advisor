@@ -32,6 +32,9 @@ SEC_PER_MINUTE = 300  # half of SEC's 10-per-second cap, shared by every SEC col
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
+COMPANYFACTS_ZIP_URL = "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip"
+DOWNLOAD_TIMEOUT = httpx.Timeout(60.0, read=120.0)
+DOWNLOAD_CHUNK = 1 << 20
 CONTACT_EXAMPLE = "stock-advisor you@example.com"
 SEC_FAILURES_TO_STOP = 5  # requests in a row that failed even after retries: SEC is down for this run
 
@@ -191,6 +194,30 @@ class SecEdgar:
         else:
             self._reset_failures()
             return response
+
+    def download(self, url: str, path: Path, attempts: int = 3) -> int:
+        """Stream a large file to `path` (starting it again after a dropped connection); the bytes written."""
+        user_agent = self.require_contact()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        for attempt in range(1, attempts + 1):
+            if self._limiter is not None:
+                self._limiter.acquire()
+            try:
+                written = 0
+                with self._client.stream(
+                    "GET", url, headers={"User-Agent": user_agent}, timeout=DOWNLOAD_TIMEOUT
+                ) as response:
+                    response.raise_for_status()
+                    with path.open("wb") as out:
+                        for chunk in response.iter_bytes(DOWNLOAD_CHUNK):
+                            out.write(chunk)
+                            written += len(chunk)
+                return written
+            except httpx.TransportError:
+                if attempt == attempts:
+                    raise
+                self._sleep(5.0 * attempt)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _count_failure(self) -> None:
         with self._lock:

@@ -8,7 +8,8 @@ about one request each:
 - phase 2 or 3, still active, with the primary completion due in the next COMPLETION_DAYS. A
   readout is near.
 
-Lead sponsors are matched to the run's stocks (`advisor.sponsors`).
+Lead sponsors are matched to the run's stocks (`advisor.sponsors`). About 900 trials are always
+completing in the window, so none means a broken query and fails the fetch.
 
 The API holds only a trial's current status. "Stopped and recently updated" includes trials
 stopped long ago that only had results posted. So a status book on disk remembers each active
@@ -250,6 +251,10 @@ class ClinicalTrials:
         completing = self._trials(
             f"{INDUSTRY} AND AREA[PrimaryCompletionDate]{due} AND AREA[Phase](PHASE2 OR PHASE3)", ACTIVE
         )
+        if not completing:
+            raise RuntimeError(
+                "ClinicalTrials.gov reported no trials completing in the next 90 days: the query is probably broken"
+            )
         stops_found = self._book.update([*completing, *stopped], today)
         known = {symbol: name for symbol in symbols if (name := self._names.get(symbol))}
         return trial_activity(SponsorMatcher(known), results, stopped, completing, stops_found, today)

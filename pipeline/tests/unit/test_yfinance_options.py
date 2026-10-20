@@ -88,6 +88,24 @@ def test_quotes_without_a_bid_or_with_yahoos_placeholder_iv_are_not_used():
     assert atm_iv(Chain(date(2026, 10, 26), side(), side()), 100.0) is None
 
 
+def test_put_call_ratios_use_only_the_near_and_mid_chains():
+    def chain(expiry, calls, puts):
+        def side(volume, open_interest):
+            return frame([{"strike": 100, "bid": 1.0, "ask": 1.1, "impliedVolatility": 0.3,
+                           "volume": volume, "openInterest": open_interest}])
+        return Chain(expiry, side(*calls), side(*puts))
+
+    front = chain(date(2026, 10, 22), (100000, 50000), (200000, 60000))  # 3 days out: not near
+    near = chain(date(2026, 10, 26), (10, 100), (20, 200))
+    mid = chain(date(2026, 11, 18), (30, 300), (40, 400))
+    expiries = [front.expiry, near.expiry, mid.expiry]
+    view = options_view("XYZ", ChainSet({"regularMarketPrice": 100.0}, expiries, [front, near, mid]), AS_OF)
+    assert (view.near_expiry, view.mid_expiry) == (near.expiry, mid.expiry)
+    assert (view.call_volume, view.put_volume) == (40, 60)
+    assert (view.call_open_interest, view.put_open_interest) == (400, 600)
+    assert view.put_call_volume == pytest.approx(1.5)
+
+
 def test_a_stock_without_options_or_a_price_yields_no_record():
     assert options_view("AACG", ChainSet({"regularMarketPrice": 0.81}, [], []), AS_OF) is None
     assert options_view("X", ChainSet({}, [TODAY], []), AS_OF) is None

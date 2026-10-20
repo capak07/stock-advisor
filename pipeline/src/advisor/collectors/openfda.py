@@ -18,7 +18,9 @@ openFDA matches array fields independently. An application approved years ago wi
 supplement matches the query, so every submission is checked here again.
 
 A recall is one event (`event_id`) however many products it lists. An empty window answers HTTP
-404 with error code NOT_FOUND.
+404 with error code NOT_FOUND. An empty
+approvals window is allowed, but 90 days always hold recalls (about 200), so no recalls means a
+broken search (a renamed field also answers 404) and fails the fetch.
 
 The data is public domain (CC0). Without a key, openFDA allows 1,000 requests a day per IP.
 """
@@ -204,6 +206,8 @@ class OpenFda:
             self._limiter,
         )
         recalls, _ = _results(self._client, RECALLS_URL, f"report_date:{span}", self._limiter)
+        if not recalls:
+            raise RuntimeError("openFDA reported no drug recalls in 90 days: the search is probably broken")
         known = {symbol: name for symbol in symbols if (name := self._names.get(symbol))}
         updated = meta.get("last_updated")
         return drug_events(

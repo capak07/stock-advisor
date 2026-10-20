@@ -14,8 +14,8 @@ different companies matches none.
 
 Only the run's stocks are matched (a few hundred names, not 13,000), which keeps collisions
 rare. ALIASES covers subsidiaries and old names the rules can't reach. A one-word key that is
-also an everyday word ("UNITED", "AMERICAN") matches only exactly. NOT_THE_STOCK lists the few
-companies that share a stock's name (Merck KGaA).
+also an everyday word ("UNITED", "AMERICAN") matches only exactly. NOT_THE_STOCK lists marker words
+that tell another company from a stock whose name it starts with (Merck KGaA, Merck Serono).
 """
 
 import re
@@ -65,8 +65,9 @@ ALIASES = {
     "MYLAN": "VTRS",
 }
 
-# Companies whose names start with a stock's name but are another company: they match nothing.
-NOT_THE_STOCK = ("MERCK KGAA",)  # Merck KGaA of Darmstadt (EMD Serono) isn't Merck & Co.
+# Other companies whose names start with a stock's name, told apart by a word in their name:
+# they match nothing. Merck KGaA of Darmstadt (EMD Serono, Merck Biopharma) isn't Merck & Co.
+NOT_THE_STOCK = {"MERCK": ("KGAA", "SERONO", "BIOPHARMA")}
 
 
 def company_key(name: str) -> str:
@@ -107,7 +108,10 @@ class SponsorMatcher:
     def symbols_for(self, name: str) -> set[str]:
         """The run's stocks this company name belongs to; none when unknown or ambiguous."""
         key = company_key(name)
-        if not key or any(key == other or key.startswith(other + " ") for other in NOT_THE_STOCK):
+        if not key:
+            return set()
+        words = key.split()
+        if any(marker in words for marker in NOT_THE_STOCK.get(words[0], ())):
             return set()
         if key in self._symbols:
             return set(self._symbols[key])

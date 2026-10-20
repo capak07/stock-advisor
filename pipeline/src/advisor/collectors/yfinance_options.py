@@ -8,8 +8,8 @@ nearest chain, often expiring today (0DTE). Then two more requests fetch:
 From those chains the record keeps:
 - at-the-money implied volatility (IV) per expiry;
 - a put/call skew;
-- put/call volume and open-interest ratios. Chains expiring today are left out: they dominate the
-  day's volume.
+- put/call volume and open-interest ratios over the near and mid chains, so they cover the same
+  tenors every day. The first chain (often 0DTE) is used only for the expiry list and the quote.
 
 IV is live during the session, and volume counts the day so far, so a record describes the
 market at `quote_time`. A quote without a bid and an ask, or with Yahoo's 1e-05 IV placeholder,
@@ -76,7 +76,7 @@ class OptionsView(BaseModel):
     mid_expiry: date | None = None
     atm_iv_mid: float | None = None
     skew_near: float | None = None  # IV of the 95% put minus IV of the 105% call, near expiry
-    call_volume: int = 0  # over the fetched chains, leaving out any expiring today
+    call_volume: int = 0  # over the near and mid chains only
     put_volume: int = 0
     call_open_interest: int = 0
     put_open_interest: int = 0
@@ -163,7 +163,7 @@ def options_view(symbol: str, data: ChainSet, as_of: datetime) -> OptionsView | 
     wanted = choose_expiries(data.expiries, today)
     near = chains.get(wanted[0]) if wanted else None
     mid = chains.get(wanted[-1]) if len(wanted) > 1 else None
-    counted = [chain for chain in data.chains if chain.expiry > today]  # not expiring today
+    counted = [chain for chain in (near, mid) if chain is not None]
     calls = _total_of(counted, "calls", "volume")
     puts = _total_of(counted, "puts", "volume")
     call_oi = _total_of(counted, "calls", "openInterest")

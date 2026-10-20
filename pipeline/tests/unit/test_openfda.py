@@ -75,8 +75,16 @@ def test_both_searches_cover_the_last_ninety_days_in_one_page_each(fixtures_dir)
     assert {request.url.params["limit"] for request in asked} == {"1000"}
 
 
-def test_a_window_with_nothing_answers_404_and_means_no_events(fixtures_dir):
-    assert fetch(fixtures_dir, ["PFE", "BAX"], approvals=NOT_FOUND, recalls=NOT_FOUND) == []
+def test_an_empty_approvals_window_answers_404_and_means_no_approvals(fixtures_dir):
+    events = {e.symbol: e for e in fetch(fixtures_dir, ["PFE", "BAX"], approvals=NOT_FOUND)}
+    assert set(events) == {"PFE", "BAX"}  # their recalls still count
+    assert (events["PFE"].original_approvals_90d, events["BAX"].original_approvals_90d) == (0, 0)
+    assert events["BAX"].recalls_90d == 3
+
+
+def test_no_recalls_in_ninety_days_means_the_search_is_broken(fixtures_dir):
+    with pytest.raises(RuntimeError, match="no drug recalls"):
+        fetch(fixtures_dir, ["PFE", "BAX"], recalls=NOT_FOUND)
 
 
 def test_a_bad_request_fails_the_fetch(fixtures_dir):

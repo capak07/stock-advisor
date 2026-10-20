@@ -105,6 +105,13 @@ def test_a_damaged_book_starts_over(fixtures_dir, tmp_path):
     assert "NCT05070845" in json.loads((tmp_path / "statuses.json").read_text())
 
 
+def test_no_trials_completing_means_the_query_is_broken(fixtures_dir, tmp_path):
+    pages = {**answers(fixtures_dir), "completing": {"studies": []}}
+    with pytest.raises(RuntimeError, match="no trials completing"):
+        fetch(fixtures_dir, tmp_path, ["PFE"], pages=pages)
+    assert not (tmp_path / "statuses.json").exists()
+
+
 def test_three_market_wide_queries_of_industry_trials(fixtures_dir, tmp_path):
     asked: list[httpx.Request] = []
     fetch(fixtures_dir, tmp_path, ["PFE"], asked)

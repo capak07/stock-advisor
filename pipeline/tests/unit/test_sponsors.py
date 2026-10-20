@@ -76,6 +76,9 @@ def test_sponsors_match_the_runs_stocks(sponsor, symbols):
     "ACADIA",  # ACADIA Pharmaceuticals or Acadia Healthcare: ambiguous
     "Merck KGaA, Darmstadt, Germany",  # not Merck & Co.
     "MERCK KGAA",
+    "Merck Healthcare KGaA, Darmstadt, Germany, an affiliate of Merck KGaA, Darmstadt, Germany",
+    "Merck Serono S.A. - Geneva",
+    "Merck Biopharma Co., Ltd.",
     "",
 ])
 def test_unknown_everyday_or_ambiguous_names_match_nothing(sponsor):

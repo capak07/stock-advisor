@@ -53,12 +53,13 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
   - A stock without a record is missing, not zero: no filer reported its FIGIs (small caps, recent listings).
 - **Options (Plan 2h) are live only.**
   - `yfinance_options` describes the market at `quote_time`: IV moves during the day, and volume counts the day so far. So compare a run with the same run on other days.
-  - Put/call ratios cover the three chains fetched (today's 0DTE chain left out), not every expiry.
-  - After-hours answers weren't seen in testing. Check the first evening run for stale IV or zero volume.
+  - Put/call ratios cover the near and mid chains only, so they span the same tenors every day; they aren't market totals.
+  - Pre-open answers weren't seen in testing (a post-close check looked normal). Check the first 08:15 ET pre-open run: IV may be missing where bids and asks are zero, and volume may be the previous session's.
 - **Cboe put/call** (`cboe_put_call`) covers products listed on Cboe's exchanges, not the whole US market. A day's file appears that evening, and each fetch returns the last 10 days, so store the series for longer windows.
 - **Catalyst matches are noisy.**
   - `openfda` and `clinical_trials` match sponsor names to the run's stocks. A sponsor name that starts with a one-word stock name is read as that stock: "Sound Pharmaceuticals" (private) would count for a stock named "Sound", and "Meridian Bioscience" for one named "Meridian".
-  - Treat these as weak signals, and add aliases as wrong matches turn up.
+  - Treat these as weak signals. Add an `ALIASES` entry for a missed match, and a `NOT_THE_STOCK` marker for a wrong one (as for Merck KGaA).
+  - `openfda` and `clinical_trials` fail when their always-busy window comes back empty, so a broken query shows up in source health.
   - A stock with no record had no matched event. A stock without a directory name (some holdings) is never matched.
   - openFDA refreshes about weekly.
   - Trial stops count only for trials the status book saw active: phase 2 or 3, nearing completion.

@@ -64,6 +64,18 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
   - openFDA refreshes about weekly.
   - Trial stops count only for trials the status book saw active: phase 2 or 3, nearing completion.
   - A month-only completion date stands for the month's last day.
+- **Training data (Plan 3a).** `python -m advisor.training.build --out DIR` writes Parquet files that Plan 3b's training reads in the same weekly job:
+  - `prices_US.parquet` and `prices_TSX.parquet`: `symbol, day, open, high, low, close, volume`, adjusted for splits and dividends, about 8 years. They include each market's benchmark and sector ETFs.
+  - `sectors.parquet`: `symbol, sector, industry` (Yahoo's names). Use `training.sectors.sector_etf(market, sector)` for the relative-strength ETF. Four TSX sectors and unclassified stocks fall back to XIU.TO or SPY.
+  - `fundamentals.parquet`: `cik, metric, concept, unit, start, end, value, filed, form, accession`, every re-report kept. `tickers.parquet` maps `symbol` to `cik`. Pick a concept per period by `METRICS` priority and the latest `filed` on or before the day, as the live `sec_xbrl` records need too.
+  - `macro.parquet`: `series, day, value` for the live collectors' FRED and Bank of Canada series.
+  - `manifest.json`: sizes, timings and missing symbols.
+- **What the training data lacks:**
+  - It covers only stocks listed today (survivorship bias, spec §5.2). Yahoo has nothing for delisted tickers, and SEC's ticker map is current-only.
+  - FRED's HY spread starts in 2023.
+  - XLC (communication services) starts in June 2018, so its first months are missing.
+  - Banks have no gross profit or operating income, and some issuers have no EPS: leave such features missing, never fabricated.
+  - "Surprise from the last filing" can't be analyst surprise (XBRL has no estimates). Derive it from the company's own history, e.g. EPS against the same quarter a year earlier, scaled by the spread of past changes.
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.
 - **Analyst rotation:** `max_symbols` always takes the head of the missing list. Rotate the rest oldest-first, so the bottom of the analyst shortlist isn't left unfetched forever.
 - **Earnings failure rate:** measure the first live run's per-symbol failure rate for `yfinance_earnings`.
@@ -102,7 +114,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 
 - **Dashboard before the model (Plan 5b):** the portfolio shows values, P/L, returns, warnings and a breakdown by market and account.
   - Waiting for `holding_actions` and picks (Plan 4): action cards, likely ranges, trailing stops, exit dates, risk levels, the breakdown by risk and the max-size warning. The holdings table places its cells by class, so these columns can be added.
-  - Waiting for data no plan collects yet: the sector warning (`symbols.sector` is never filled; a fundamentals plan should fill it) and the note on US dividend payers in a TFSA.
+  - Waiting for data no plan collects yet: the note on US dividend payers in a TFSA. The sector warning can now be built: `train.yml` fills `symbols.sector` and `industry` weekly (Plan 3a).
   - The status bar's Paper badges are static until picks are graded live (Plan 4). The missed-slot notice and the next run's time need the schedule in TypeScript; Plan 5c left them for the dashboard plan after the model.
   - Waiting for the model (Plans 3 and 4): Today's Picks, Track record, the watchlist's verdict columns, and the Ticker page's forecast cone, top factors, catalysts and past picks (Plan 5c shows an empty card in their place).
   - Trades are corrected by deleting them in the trade list and adding them again (Plan 5c); there is no edit. Deleting also sidesteps the NOT VALID `*_usd_needs_fx_rate` check that blocks updating old USD rows.

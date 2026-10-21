@@ -88,7 +88,6 @@ Python pipeline (pipeline/)
         ▼
 Supabase (free tier)
   Postgres: app data (runs, picks, holdings, outcomes, …)
-  Storage:  Parquet history for training (prices, fundamentals)
         ▲ authenticated reads; owner writes only watchlist, lots, sells
         │
 Next.js dashboard on Vercel (web/), Supabase Auth login (single user)
@@ -249,7 +248,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 2. **Universes.**
    - Load the US universe (source 1) and the TSX universe (source 2), applying the market rules in §3.
    - SPY, XIU.TO and sector ETFs are loaded as benchmarks only and are never picked.
-   - Map sectors from Yahoo metadata, cached weekly.
+   - Sectors and industries come from Yahoo's screener; `train.yml` refreshes them weekly.
 3. **Screener.**
    - Fetch daily bars for both universes (about 6,000 US symbols and 1,500 TSX symbols) from Yahoo in bulk.
    - Apply the jump rule (§10).
@@ -298,7 +297,7 @@ Features a market lacks are missing values. LightGBM handles them natively.
 - **Outputs per horizon:**
   - quantiles q10, q50, q90, from quantile regression;
   - a classifier for P(excess > 0), calibrated with **isotonic regression** on held-out walk-forward folds.
-- **Training data:** about 8 years of daily history per market for symbols that passed the liquidity filter. It's stored as Parquet in Supabase Storage.
+- **Training data:** about 8 years of daily history per market for symbols that passed the liquidity filter. `train.yml` rebuilds it from scratch each week, as Parquet in the job's workspace; nothing is stored between weeks (owner's decision, 2026-10-20).
 - **Validation:** walk-forward with an embargo gap equal to the horizon.
 - **Screener model:** a price/volume and relative-strength variant per market. It scores every symbol from bulk price data alone.
 - **Retraining:** weekly. A new model is **promoted** only if its walk-forward metrics are at least as good as the active model's and its calibration error is ≤ 5 points.
@@ -486,7 +485,7 @@ Informational only, labeled "not tax advice". These rules add warnings and never
   - Every table is readable only by the owner (`public.is_owner()`).
   - The owner can write only `watchlist`, `lots` and `sells`, and can update (never add or delete) the `settings` row.
   - `pipeline_rw` has explicit policies on every table: read-only on owner-written tables, `settings` and `app_config`, and no access to `schema_migrations`. Tests enforce both.
-- **Storage:** training Parquet (prices, fundamentals) goes in a private Supabase Storage bucket, kept under about 600 MB.
+- **Training data** isn't stored: `train.yml` rebuilds it each week (§5.2).
 
 ## 9. Dashboard (web/)
 
@@ -529,7 +528,7 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 - **Free-tier limits:**
   - Twice-daily writes keep Supabase from pausing.
   - News is pruned after 90 days.
-  - Training data lives in Storage.
+  - Training data is rebuilt each week, not stored.
 - **Alerts:** GitHub's built-in failure email, for failed runs, missed slots and a failing core source in the daily check. Nothing else.
 
 ## 11. Testing

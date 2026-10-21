@@ -73,7 +73,6 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **What the training data lacks:**
   - It covers only stocks listed today (survivorship bias, spec §5.2). Yahoo has nothing for delisted tickers, and SEC's ticker map is current-only.
   - FRED's HY spread starts in 2023.
-  - XLC (communication services) starts in June 2018, so its first months are missing.
   - Banks have no gross profit or operating income, and some issuers have no EPS: leave such features missing, never fabricated.
   - "Surprise from the last filing" can't be analyst surprise (XBRL has no estimates). Derive it from the company's own history, e.g. EPS against the same quarter a year earlier, scaled by the spread of past changes.
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.

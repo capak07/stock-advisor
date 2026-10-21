@@ -80,7 +80,7 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
             },
         },
         "priority": 0, "priority_unpriced": [], "unconfirmed_jumps": 0, "shortlist": 5,
-        "crypto": 0, "crypto_unquoted": [],
+        "crypto": 0, "crypto_unquoted": [], "coins": "skipped",
         "news": {"items": 0, "stories": 0, "rows": 0, "assets": 0, "sentiment": "not run"},
         # 70 closes for each shortlisted stock and for SPY and XIU.TO
         "history": {"closes": 490, "backfilled": [], "fx": 0, "rescaled": [], "pruned": 0},
@@ -1011,3 +1011,39 @@ def test_a_coinbase_failure_during_the_coin_backfill_is_recorded_and_the_run_pub
     history = outcome.summary["history"]
     assert history["coin_backfill_error"].startswith("HTTPStatusError: HTTP 400")
     assert history["backfilled"] == []  # nothing came back, so the next run asks again
+
+
+def coingecko_list(asked):
+    """CoinGecko's /coins/markets pages for the coin list; every other host answers 404."""
+
+    def handler(request):
+        if request.url.host != "api.coingecko.com" or "page" not in request.url.params:
+            return httpx.Response(404)
+        asked.append(request.url.params["page"])
+        rows = [{"symbol": "btc", "name": "Bitcoin", "market_cap_rank": 1}, {"symbol": "eth", "name": "Ethereum", "market_cap_rank": 2}]
+        return httpx.Response(200, json=rows if request.url.params["page"] == "1" else [])
+
+    return httpx.MockTransport(handler)
+
+
+def test_the_coin_list_is_stored_once_a_day(db, tmp_path):
+    asked = []
+    with httpx.Client(transport=coingecko_list(asked)) as client:
+        deps = dataclasses.replace(make_deps(db, tmp_path), http=client)
+        first = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+        second = execute_run(deps, RunKind.PRE_CLOSE, NOW, min_universe=SMALL)
+
+    assert (first.summary["coins"], second.summary["coins"]) == (2, "fresh")
+    assert asked == ["1", "2"]  # the second run of the day asks nothing
+    rows = db.execute("select symbol, name from symbols where asset_type = 'crypto' order by symbol").fetchall()
+    assert [(r["symbol"], r["name"]) for r in rows] == [("BTC", "Bitcoin"), ("ETH", "Ethereum")]
+
+
+def test_a_coingecko_failure_leaves_the_coin_list_and_the_run_alone(db, tmp_path):
+    refused = httpx.MockTransport(lambda request: httpx.Response(400, text="bad request"))
+    with httpx.Client(transport=refused) as client:
+        deps = dataclasses.replace(make_deps(db, tmp_path), http=client)
+        outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["coins"].startswith("failed: HTTPStatusError: HTTP 400")

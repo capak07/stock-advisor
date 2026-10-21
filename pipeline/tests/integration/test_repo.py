@@ -122,6 +122,26 @@ def test_sectors_are_set_on_known_stocks_and_kept_when_unclassified(db):
     ]  # NEW isn't in the universe table, so nothing is inserted
 
 
+def test_the_coin_list_is_stored_and_coins_that_left_it_are_deactivated(db):
+    assert repo.coins_refreshed_on(db) is None
+    repo.upsert_symbols(db, Market.US, [info("AAPL")])
+    day_one, day_two = datetime(2026, 10, 19, 13, tzinfo=UTC), datetime(2026, 10, 20, 13, tzinfo=UTC)
+    repo.upsert_coins(db, [("BTC", "Bitcoin"), ("ETH", "Ethereum"), ("LUNA", "Terra")], day_one)
+    repo.upsert_coins(db, [("BTC", "Bitcoin"), ("ETH", "Ethereum")], day_two)
+    rows = db.execute(
+        "select symbol, asset_type, market, name, exchange, active from symbols order by symbol"
+    ).fetchall()
+    assert [tuple(r.values()) for r in rows] == [
+        ("AAPL", "stock", "US", "AAPL Inc. Common Stock", "NYSE", True),  # stocks are untouched
+        ("BTC", "crypto", None, "Bitcoin", "CoinGecko", True),
+        ("ETH", "crypto", None, "Ethereum", "CoinGecko", True),
+        ("LUNA", "crypto", None, "Terra", "CoinGecko", False),
+    ]
+    assert repo.coins_refreshed_on(db) == date(2026, 10, 20)
+    with pytest.raises(ValueError, match="empty coin list"):
+        repo.upsert_coins(db, [], day_two)
+
+
 def test_load_held_symbols_nets_sells(db):
     db.execute(
         "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"

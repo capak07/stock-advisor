@@ -16,6 +16,7 @@ import httpx
 import psycopg
 
 from advisor import screener
+from advisor.coin_list import refresh_coin_list
 from advisor.collectors.base import (
     Category,
     Collector,
@@ -326,6 +327,8 @@ def execute_run(
             if len(universes[market]) >= limits[market]:
                 repo.upsert_symbols(conn, market, universes[market])
             deps.names.update({info.symbol: info.name for info in universes[market]})
+        # The dashboard's search offers coins from this list (best-effort; never fails the run).
+        coins = refresh_coin_list(conn, deps.http, now_utc) if deps.http is not None else "skipped"
         # A run that cannot publish skips the bulk fetch (about 7,400 Yahoo requests during a
         # TMX outage) but still retries the owner's unpriced holdings.
         universe_ok = all(len(universes[m]) >= limits[m] for m in Market)
@@ -398,6 +401,7 @@ def execute_run(
             "shortlist": len(targets.stocks) if enriched else 0,
             "crypto": len(crypto),
             "crypto_unquoted": sorted(set(crypto) - quotes.keys()),
+            "coins": coins,
             "news": news,
             "history": price_history,
         }

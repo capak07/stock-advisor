@@ -175,6 +175,35 @@ def upsert_symbols(conn: psycopg.Connection, market: Market, symbols: Sequence[S
         )
 
 
+def upsert_coins(conn: psycopg.Connection, coins: Sequence[tuple[str, str]], now: datetime) -> None:
+    """Store the coin list the dashboard's search offers, stamped `now`; coins that left it are
+    deactivated."""
+    if not coins:  # would deactivate every coin
+        raise ValueError("refusing to upsert an empty coin list")
+    with conn.transaction():
+        with conn.cursor() as cur:
+            cur.executemany(
+                "insert into symbols (symbol, asset_type, market, name, exchange, active, updated_at)"
+                " values (%s, 'crypto', null, %s, 'CoinGecko', true, %s)"
+                " on conflict (symbol, asset_type) do update set name = excluded.name,"
+                " exchange = excluded.exchange, active = true, updated_at = excluded.updated_at",
+                [(symbol, name, now) for symbol, name in coins],
+            )
+        conn.execute(
+            "update symbols set active = false, updated_at = %s"
+            " where asset_type = 'crypto' and active and not (symbol = any(%s))",
+            (now, [symbol for symbol, _ in coins]),
+        )
+
+
+def coins_refreshed_on(conn: psycopg.Connection) -> date | None:
+    """The ET day the coin list was last stored, or None before the first time."""
+    row = conn.execute(
+        "select max(updated_at) as at from symbols where asset_type = 'crypto' and active"
+    ).fetchone()
+    return row["at"].astimezone(ET).date() if row and row["at"] else None
+
+
 def write_sectors(conn: psycopg.Connection, rows: Sequence[tuple[str, str, str | None]]) -> int:
     """Set (symbol, sector, industry) on known stocks; a row without a sector keeps what it had."""
     labelled = [(sector, industry, symbol) for symbol, sector, industry in rows if sector is not None]

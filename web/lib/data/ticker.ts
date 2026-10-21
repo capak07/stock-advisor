@@ -45,6 +45,8 @@ export interface TickerData {
   headlines: Headline[]
   news: { stats: NewsStats; run: Run } | null
   watched: boolean
+  /** In the active stock lists or the stored coin list, so it can be watched. */
+  watchable: boolean
   positions: Position[]
 }
 
@@ -70,9 +72,7 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
   const since = addDays(todayInToronto(), -HISTORY_DAYS)
   const newsSince = new Date(Date.now() - NEWS_HOURS * 3_600_000).toISOString()
   const [info, closes, fx, headlines, run, watch, trades] = await Promise.all([
-    ref.assetType === 'stock'
-      ? supabase.from('symbols').select('name, market, exchange').eq('asset_type', 'stock').eq('symbol', ref.symbol).limit(1)
-      : null,
+    supabase.from('symbols').select('name, market, exchange, active').eq('asset_type', ref.assetType).eq('symbol', ref.symbol).limit(1),
     fetchAll((from, to) =>
       supabase
         .from('daily_closes')
@@ -111,12 +111,14 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
     : []
   const f = features[0]?.features
   const stories = toNumber(f?.news_stories_48h)
-  const listed = info ? (must(info) as { name: string; market: Market; exchange: string }[])[0] : undefined
+  const listed = (must(info) as { name: string; market: Market | null; exchange: string; active: boolean }[])[0]
+  // A coin's row only says it's in the coin list; its name and exchange aren't shown.
+  const stock = ref.assetType === 'stock' ? listed : undefined
 
   return {
-    name: listed?.name ?? null,
-    market: ref.assetType === 'crypto' ? null : (listed?.market ?? marketOf(ref.symbol)),
-    exchange: listed?.exchange ?? null,
+    name: stock?.name ?? null,
+    market: ref.assetType === 'crypto' ? null : (stock?.market ?? marketOf(ref.symbol)),
+    exchange: stock?.exchange ?? null,
     closes: (closes as { day: string; close: string | number; currency: Currency }[]).map((c) => ({
       day: c.day,
       close: Number(c.close),
@@ -146,6 +148,7 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
           }
         : null,
     watched: (must(watch) as unknown[]).length > 0,
+    watchable: listed?.active === true,
     positions: buildLedger(trades, fx).positions,
   }
 }

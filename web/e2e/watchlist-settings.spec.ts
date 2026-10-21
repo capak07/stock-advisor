@@ -1,66 +1,71 @@
 import { expect, test } from '@playwright/test'
-import { daysAgo, resetData, seedCloses, seedFx, seedSymbols, sql } from './db'
+import { daysAgo, resetData, seedCloses, seedCoins, seedFx, seedSymbols, sql } from './db'
 
 test.beforeEach(resetData)
 
 test.describe('watchlist', () => {
-  test('adds a TSX stock without its suffix, refuses a duplicate, and removes it', async ({ page }) => {
-    await seedSymbols([{ symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' }])
+  test('adds a stock picked by name, marks it as watched in the list, and removes it', async ({ page }) => {
+    await seedSymbols([
+      { symbol: 'SHOP', market: 'US', name: 'Shopify Inc. Class A Subordinate Voting Shares' },
+      { symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' },
+    ])
     await seedCloses('SHOP.TO', 'stock', 'CAD', [daysAgo(1)], 141.25, 0)
     await page.goto('/watchlist')
     await expect(page.getByRole('heading', { name: 'Watching 0' })).toBeVisible()
 
-    await page.getByLabel('Symbol', { exact: true }).fill('shop')
-    await page.getByLabel('Type').selectOption('TSX stock')
-    await page.getByRole('button', { name: 'Add' }).click()
+    const box = page.getByRole('combobox', { name: 'Symbol', exact: true })
+    const options = page.getByRole('listbox', { name: 'Symbol', exact: true }).getByRole('option')
+    await box.fill('shopi')
+    await expect(options).toHaveText(['SHOP.TOShopify Inc.TSX', 'SHOPShopify Inc.US']) // TSX first, share class dropped
+    await expect(options.first().locator('b')).toHaveText('Shopi')
+    await options.first().click()
     await expect(page.getByRole('status')).toHaveText('SHOP.TO added to the watchlist')
     await expect(page.getByRole('heading', { name: 'Watching 1' })).toBeVisible()
     await expect(page.locator('.watch-row')).toContainText('Shopify Inc.')
     await expect(page.locator('.watch-row')).toContainText('C$141.25')
-    await expect(page.getByLabel('Symbol', { exact: true })).toHaveValue('')
+    await expect(box).toHaveValue('')
 
-    await page.getByLabel('Symbol', { exact: true }).fill('SHOP.TO')
-    await page.getByRole('button', { name: 'Add' }).click()
-    await expect(page.getByText('SHOP.TO is already on the watchlist.')).toBeVisible()
+    await box.fill('shop')
+    await expect(options.first()).toHaveText('SHOP.TOShopify Inc.On your watchlist')
+    await expect(options.first()).toHaveAttribute('aria-disabled', 'true')
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('status')).toHaveText('SHOP added to the watchlist')
+    await expect(page.getByRole('heading', { name: 'Watching 2' })).toBeVisible()
 
     await page.getByRole('button', { name: 'Remove SHOP.TO' }).click()
     await expect(page.getByRole('status')).toHaveText('SHOP.TO removed from the watchlist')
-    await expect(page.getByRole('heading', { name: 'Watching 0' })).toBeVisible()
-    expect(await sql`select 1 from watchlist`).toHaveLength(0)
+    await expect(page.getByRole('heading', { name: 'Watching 1' })).toBeVisible()
+    expect(await sql`select symbol from watchlist`).toEqual([{ symbol: 'SHOP' }])
   })
 
-  test('shows a coin in CAD and an unlisted stock with a note', async ({ page }) => {
+  test('adds a coin by name, shown in CAD, and takes nothing that is not in the lists', async ({ page }) => {
+    await seedCoins([
+      { symbol: 'SOL', name: 'Solana', marketCap: 8e10 },
+      { symbol: 'JUP', name: 'Jupiter', marketCap: 1e9 },
+    ])
     await seedFx([daysAgo(1)], 1.4)
     await seedCloses('SOL', 'crypto', 'USD', [daysAgo(1)], 200, 0)
     await page.goto('/watchlist')
-    await page.getByLabel('Symbol', { exact: true }).fill('sol')
-    await page.getByLabel('Type').selectOption('Crypto')
-    await page.getByRole('button', { name: 'Add' }).click()
+    const box = page.getByRole('combobox', { name: 'Symbol', exact: true })
+    await box.fill('sol')
+    await expect(page.getByRole('option')).toHaveText(['SOLSolanaCrypto'])
+    await page.keyboard.press('Enter')
     await expect(page.locator('.watch-row').filter({ hasText: 'SOL' })).toContainText('C$280.00')
 
-    await page.getByLabel('Symbol', { exact: true }).fill('VFV')
-    await page.getByLabel('Type').selectOption('TSX stock')
-    await page.getByRole('button', { name: 'Add' }).click()
-    await expect(page.getByRole('status')).toHaveText("VFV.TO added. It isn't in the stock lists; the next run will try Yahoo.")
-    await expect(page.locator('.watch-row').filter({ hasText: 'VFV.TO' })).toContainText('next run')
+    await box.fill('Vanguard S&P 500')
+    await expect(page.getByText('No listed stock or coin matches.')).toBeVisible()
+    await page.keyboard.press('Enter')
+    await expect(page.getByText('Pick a stock or coin from the list.')).toBeVisible()
+    await box.fill('Vanguard S&P 50')
+    await expect(page.getByText('Pick a stock or coin from the list.')).toBeHidden() // editing clears it
+    expect(await sql`select symbol, asset_type from watchlist`).toEqual([{ symbol: 'SOL', asset_type: 'crypto' }])
   })
 })
 
 test.describe('with the device clock an hour ahead of the server', () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.setFixedTime(new Date(Date.now() + 3_600_000))
-  })
-
-  test('a duplicate watchlist symbol shows its error', async ({ page }) => {
-    await seedSymbols([{ symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' }])
-    await page.goto('/watchlist')
-    await page.getByLabel('Symbol', { exact: true }).fill('SHOP.TO')
-    await page.getByLabel('Type').selectOption('TSX stock')
-    await page.getByRole('button', { name: 'Add' }).click()
-    await expect(page.getByRole('status')).toHaveText('SHOP.TO added to the watchlist')
-    await page.getByLabel('Symbol', { exact: true }).fill('SHOP.TO')
-    await page.getByRole('button', { name: 'Add' }).click()
-    await expect(page.getByText('SHOP.TO is already on the watchlist.')).toBeVisible()
   })
 
   test('a fee out of range shows its error', async ({ page }) => {

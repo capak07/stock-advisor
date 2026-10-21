@@ -36,7 +36,7 @@ A personal decision-support app for **real investing**. Twice each trading day i
 - R2. **Universe:**
   - all US-listed common stocks;
   - all **TSX-listed** common stocks and REIT units;
-  - a **watchlist** that can hold any US stock, TSX stock or crypto.
+  - a **watchlist** that can hold any listed US or TSX stock, or one of the 300 biggest coins by market cap (CoinGecko's list, stored once a day).
 - R3. Runs before market open and before market close on each trading day of either market.
 - R4. Uses at least 50 data sources.
 - R5. Suggests buys with a **holding period** and a **risk level**.
@@ -497,12 +497,13 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 
 | Page | Contents |
 |---|---|
+| Find box (all pages) | The same list as the Watchlist's box; picking a match opens its Ticker Detail page. Enter on a ticker the lists don't have still opens its page |
 | Top bar (all pages) | Last runs with status, Paper/Validated badge per market, sources OK (e.g. 49/53), stale banner if the latest run failed, missed-slot notice |
 | **My Portfolio** (home) | **Value and returns:** total value in CAD, with return vs XIU.TO and SPY. **Actions:** cards sorted Sell → Trim → Review → Add → Hold. **Holdings table:** account, symbol, market, P/L in CAD, action, range, trailing stop, exit-by, risk, warnings. **Warnings:** portfolio-level checks, plus TFSA trading-frequency and superficial-loss warnings. **Data entry:** add a buy, add a sell, import a file |
 | **Today's Picks** | **US and TSX tabs**, each with Swing and Position lists. A card per pick shows the range bar, P(beat), hold time and exit-by, stop, risk and max size, estimated cost (US shows the conversion fee), top factors, catalysts and an "I bought this" button. Also: watchlist verdicts and exit-early flags |
 | **Ticker Detail** | Price chart with forecast cone, top factors, news, catalysts, which sources contributed (TSX shows its thinner coverage), and past picks and outcomes |
 | **Track Record** | Per market, live vs backtest shown separately: hit rate, average excess return (gross and net of costs), calibration by horizon and risk level, every past pick, and the survivorship-bias note |
-| **Watchlist** | Add or remove US stocks, TSX stocks and crypto, with the latest verdict for each |
+| **Watchlist** | Add a stock or coin by typing part of its name or ticker and picking it from the list under the box (best match first, the typed part in bold, a US/TSX/Crypto tag); only listed stocks and the stored coins can be added. Remove any. The latest verdict for each |
 | **Source Health** | All sources: last success, latency, records, errors, circuit-breaker state, latest daily check |
 | **Settings** | USD conversion fee, crypto spread, TFSA guideline thresholds |
 

@@ -54,8 +54,6 @@
 .before-note svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
 
 /* ---------- watchlist_1.html ---------- */
-.add-row { display: grid; grid-template-columns: minmax(0, 1fr) 170px auto; gap: 10px; align-items: start; }
-@media (max-width: 639px) { .add-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .add-row .btn { grid-column: 1 / 3; } }
 .watch-row { display: grid; grid-template-columns: 110px 70px 86px minmax(0, 1fr) 96px 36px; gap: 12px; align-items: center; padding: 12px 4px; border-bottom: 1px solid var(--border); transition: background 150ms; }
 .watch-row:hover { background: var(--accent); }
 .watch-row:last-child { border-bottom: 0; }
@@ -157,3 +155,23 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .find { position: relative; }
 .find svg { position: absolute; left: 10px; top: 50%; width: 15px; height: 15px; transform: translateY(-50%); color: var(--muted-foreground); pointer-events: none; }
 .find .input { padding-left: 32px; }
+
+/* Symbol search: the list of matches under the Watchlist and Find boxes */
+.combo { position: relative; }
+.combo-list {
+  position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; min-width: 100%; width: max-content;
+  max-width: min(460px, calc(100vw - 32px)); margin: 0; padding: 6px; list-style: none; border-radius: var(--radius-lg);
+  background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+  animation: fade 120ms ease-out;
+}
+.combo-list[hidden] { display: none; }
+.combo-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: var(--radius-md); font-size: 13px; cursor: pointer; }
+.combo-row.active { background: var(--accent); }
+.combo-row[aria-disabled='true'] { cursor: default; color: var(--muted-foreground); }
+.combo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-name b { font-weight: 600; color: var(--foreground); }
+.combo-tag { white-space: nowrap; }
+.combo-empty { padding: 10px 12px; font-size: 13px; }
+/* An open list sits above what follows its box: the next card, or the page beside the sidebar. */
+.sidebar:has(.combo-list:not([hidden])) { z-index: 50; }
+.card:has(.combo-list:not([hidden])) { position: relative; z-index: 50; }

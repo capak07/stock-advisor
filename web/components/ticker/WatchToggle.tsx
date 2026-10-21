@@ -5,7 +5,6 @@ import { useTransition } from 'react'
 import { addWatch, removeWatch } from '@/app/(app)/watchlist/actions'
 import { useToast } from '@/components/Toast'
 import type { AssetType } from '@/lib/portfolio/types'
-import { marketOf } from '@/lib/symbols'
 
 /** Watch or stop watching the asset on its own page, through the watchlist's actions. */
 export function WatchToggle({ symbol, assetType, watched }: { symbol: string; assetType: AssetType; watched: boolean }) {
@@ -18,10 +17,7 @@ export function WatchToggle({ symbol, assetType, watched }: { symbol: string; as
       if (watched) {
         message = (await removeWatch(symbol, assetType)).message
       } else {
-        const form = new FormData()
-        form.set('symbol', symbol)
-        form.set('type', assetType === 'crypto' ? 'crypto' : marketOf(symbol) === 'TSX' ? 'tsx' : 'us')
-        const result = await addWatch({}, form)
+        const result = await addWatch(symbol, assetType)
         message = result.message ?? result.errors?.symbol
       }
       if (message) toast(message)

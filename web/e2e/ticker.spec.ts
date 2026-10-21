@@ -54,9 +54,11 @@ test("a held stock's page shows its price, the position, the last two days of ne
 
 test("a coin's page is in CAD, and the coin can be watched and unwatched from it", async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('complementary', { name: 'Main' }).getByRole('searchbox').fill('eth')
+  const sidebar = page.getByRole('complementary', { name: 'Main' })
+  await sidebar.getByRole('combobox', { name: 'Find a symbol' }).fill('ether')
+  await expect(sidebar.getByRole('option')).toHaveText(['ETHEthereumCrypto'])
   await page.keyboard.press('Enter')
-  await expect(page).toHaveURL(/\/ticker\/ETH$/) // the page works out that ETH is a coin
+  await expect(page).toHaveURL(/\/ticker\/ETH\?asset=crypto$/)
   await expect(page.getByText('Crypto · priced in CAD')).toBeVisible()
   const [{ close }] = await sql`select close::float from daily_closes where symbol = 'ETH' order by day desc limit 1`
   await expect(page.locator('#last-price')).toHaveText(`C$${(close * 1.4).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
@@ -73,11 +75,12 @@ test("a coin's page is in CAD, and the coin can be watched and unwatched from it
 
 test('any symbol has a page, with no data until a run collects it', async ({ page }) => {
   await page.goto('/')
-  const search = page.getByRole('complementary', { name: 'Main' }).getByRole('searchbox')
+  const search = page.getByRole('complementary', { name: 'Main' }).getByRole('combobox', { name: 'Find a symbol' })
   await search.fill('not a symbol!')
   await page.keyboard.press('Enter')
-  await expect(page.getByText('Try a symbol like NVDA, SHOP.TO or BTC.')).toBeVisible()
+  await expect(page.getByText('Try a name or a symbol like NVDA, SHOP.TO or BTC.')).toBeVisible()
   await search.fill('shop.to')
+  await expect(page.getByText('No match in the lists. Press Enter to open it as a symbol.')).toBeVisible()
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/ticker\/SHOP\.TO$/)
   await expect(page.getByRole('heading', { name: 'SHOP.TO', level: 1 })).toBeVisible()
@@ -85,11 +88,23 @@ test('any symbol has a page, with no data until a run collects it', async ({ pag
   await expect(page.getByText(/^No prices yet/)).toBeVisible()
   await expect(page.getByText('No headlines in the last 48 hours.')).toBeVisible()
   await expect(page.getByText('No sources are listed yet; the next run lists them.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Watch', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Watch', exact: true })).toHaveCount(0) // only listed stocks and coins
 
   await page.goto('/ticker/AAPL')
   await expect(page.getByText('Apple Inc. · US · NYSE', { exact: true })).toBeVisible()
 
   await page.goto('/ticker/not-valid')
   await expect(page.getByText('This page could not be found.')).toBeVisible()
+})
+
+test('the Find box lists stocks by name, best match first, and picking one opens its page', async ({ page }) => {
+  await page.goto('/')
+  const sidebar = page.getByRole('complementary', { name: 'Main' })
+  await sidebar.getByRole('combobox', { name: 'Find a symbol' }).fill('royal')
+  const options = sidebar.getByRole('option')
+  await expect(options).toHaveText(['RY.TORoyal Bank of CanadaTSX'])
+  await options.first().click()
+  await expect(page).toHaveURL(/\/ticker\/RY\.TO$/)
+  await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Watch', exact: true })).toBeVisible()
 })

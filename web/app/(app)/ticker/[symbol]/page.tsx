@@ -117,7 +117,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 You hold {fmtQty(p.qty)} · {ACCOUNT_LABELS[p.account]}
               </span>
             ))}
-            <WatchToggle symbol={symbol} assetType={assetType} watched={data.watched} />
+            {/* Only listed stocks and coins can be watched; one watched before stays removable. */}
+            {(data.watchable || data.watched) && <WatchToggle symbol={symbol} assetType={assetType} watched={data.watched} />}
           </div>
         </div>
       </div>

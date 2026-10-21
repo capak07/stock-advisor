@@ -1,15 +1,15 @@
 'use client'
 
-import { Plus, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import Link from 'next/link'
-import { useActionState, useEffect, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { addWatch, removeWatch } from '@/app/(app)/watchlist/actions'
+import { SymbolSearch } from '@/components/SymbolSearch'
 import { useToast } from '@/components/Toast'
-import { useFieldErrors } from '@/components/useFieldErrors'
-import type { AssetType } from '@/lib/portfolio/types'
+import { assetKey, type AssetType } from '@/lib/portfolio/types'
+import type { SearchItem } from '@/lib/symbol-search'
 import { tickerHref } from '@/lib/ticker'
-import type { FormState } from '@/lib/trade-form'
-import { WATCH_TYPES, type WatchType } from '@/lib/watch-form'
+import { PICK_FROM_LIST } from '@/lib/watch-form'
 
 export interface WatchRow {
   symbol: string
@@ -19,57 +19,38 @@ export interface WatchRow {
   price: string | null
 }
 
-export function AddWatch() {
+/** Search the stock and coin lists; picking a match watches it. `watched` holds asset keys. */
+export function AddWatch({ watched }: { watched: string[] }) {
   const toast = useToast()
-  const [state, action, pending] = useActionState<FormState, FormData>(addWatch, {})
-  const [symbol, setSymbol] = useState('')
-  const [type, setType] = useState<WatchType>('us')
-  const { error: fieldError, touch } = useFieldErrors(state)
-  const error = fieldError('symbol')
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  const watching = new Set(watched)
 
-  useEffect(() => {
-    if (state.ok && state.message) toast(state.message)
-  }, [state, toast])
-  // A saved symbol clears the box for the next one.
-  const [savedAt, setSavedAt] = useState(0)
-  if (state.ok && state.at && state.at !== savedAt) {
-    setSavedAt(state.at)
-    setSymbol('')
+  const add = (item: SearchItem) => {
+    if (pending) return
+    setError(null)
+    startTransition(async () => {
+      const result = await addWatch(item.symbol, item.assetType)
+      if (result.ok && result.message) toast(result.message)
+      else setError(result.errors?.symbol ?? result.message ?? null)
+    })
   }
 
   return (
-    <form action={action} className="add-row" noValidate>
-      <label className={`field ${error ? 'invalid' : ''}`}>
-        <span className="sr-only">Symbol</span>
-        <input
-          className="input num-input"
-          name="symbol"
-          placeholder="Symbol, e.g. NVDA, SHOP.TO or ETH"
-          autoCapitalize="characters"
-          value={symbol}
-          onChange={(e) => {
-            setSymbol(e.target.value)
-            touch('symbol')
-          }}
-        />
-        <span className="error">{error}</span>
-      </label>
-      <label className="field">
-        <span className="sr-only">Type</span>
-        <select className="select" name="type" value={type} onChange={(e) => setType(e.target.value as WatchType)}>
-          {WATCH_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="submit" className="btn btn-primary" disabled={pending}>
-        <Plus />
-        {pending ? 'Adding…' : 'Add'}
-      </button>
-      {state.message && !state.ok && <span className="sub loss">{state.message}</span>}
-    </form>
+    <div className={`field ${error ? 'invalid' : ''}`}>
+      <SymbolSearch
+        label="Symbol"
+        placeholder="Company, coin or ticker, e.g. Shopify, Ethereum or RY.TO"
+        invalid={error !== null}
+        emptyText="No listed stock or coin matches."
+        unavailable={(item) => (watching.has(assetKey(item.assetType, item.symbol)) ? 'On your watchlist' : null)}
+        onPick={add}
+        onNoMatch={(_, ready) => ready && setError(PICK_FROM_LIST)}
+        onEdit={() => setError(null)}
+      />
+      <span className="error">{error}</span>
+      {pending && <span className="hint">Adding…</span>}
+    </div>
   )
 }
 

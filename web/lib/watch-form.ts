@@ -1,30 +1,15 @@
 import type { AssetType } from './portfolio/types'
-import { isValidSymbol, normalizeSymbol } from './symbols'
+import { isValidSymbol } from './symbols'
 
-export type WatchType = 'us' | 'tsx' | 'crypto'
-export const WATCH_TYPES: { value: WatchType; label: string }[] = [
-  { value: 'us', label: 'US stock' },
-  { value: 'tsx', label: 'TSX stock' },
-  { value: 'crypto', label: 'Crypto' },
-]
+/** What the watchlist says when something not picked from the search's list reaches it. */
+export const PICK_FROM_LIST = 'Pick a stock or coin from the list.'
 
 /**
- * A symbol for the watchlist (spec §9: US stocks, TSX stocks and crypto). A TSX stock typed
- * without its suffix gets ".TO"; a US stock can't have one.
+ * A watchlist pick: a symbol exactly as the lists store it, with its asset type. The search only
+ * sends those, but a server action takes any input, so anything else is refused here before the
+ * lists are asked whether they have it.
  */
-export function parseWatch(rawSymbol: string, type: string): { symbol: string; assetType: AssetType } | { error: string } {
-  let symbol = normalizeSymbol(rawSymbol)
-  if (!symbol) return { error: 'Enter a symbol.' }
-  if (type === 'crypto') {
-    return isValidSymbol(symbol, 'crypto') ? { symbol, assetType: 'crypto' } : { error: 'Enter a coin symbol, like ETH.' }
-  }
-  if (type === 'tsx') {
-    if (!symbol.endsWith('.TO')) symbol = normalizeSymbol(`${symbol.replace('.', '-')}.TO`)
-    return isValidSymbol(symbol, 'stock') ? { symbol, assetType: 'stock' } : { error: 'Enter a TSX symbol, like SHOP or RCI-B.' }
-  }
-  if (type === 'us') {
-    if (symbol.endsWith('.TO')) return { error: 'Symbols ending in .TO are TSX stocks; pick TSX stock.' }
-    return isValidSymbol(symbol, 'stock') ? { symbol, assetType: 'stock' } : { error: 'Enter a US symbol, like NVDA or BRK.B.' }
-  }
-  return { error: 'Pick a type.' }
+export function parseWatch(symbol: unknown, assetType: unknown): { symbol: string; assetType: AssetType } | null {
+  if (typeof symbol !== 'string' || (assetType !== 'stock' && assetType !== 'crypto')) return null
+  return isValidSymbol(symbol, assetType) ? { symbol, assetType } : null
 }

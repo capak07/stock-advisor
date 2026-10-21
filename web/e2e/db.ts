@@ -38,6 +38,14 @@ export async function seedSymbols(rows: { symbol: string; market: 'US' | 'TSX'; 
   }
 }
 
+/** Coins in the stored coin list, as the pipeline's daily CoinGecko refresh writes them. */
+export async function seedCoins(rows: { symbol: string; name: string; marketCap: number }[]) {
+  for (const r of rows) {
+    await sql`insert into symbols (symbol, asset_type, name, exchange, market_cap)
+              values (${r.symbol}, 'crypto', ${r.name}, 'CoinGecko', ${r.marketCap})`
+  }
+}
+
 /** A close for every day, rising by `step` a day from `start`. */
 export async function seedCloses(
   symbol: string,
@@ -154,6 +162,7 @@ export async function seedPortfolio() {
     { symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' },
     { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
   ])
+  await seedCoins([{ symbol: 'ETH', name: 'Ethereum', marketCap: 4.1e11 }])
   await seedFx(days, 1.4)
   await seedCloses('XIU.TO', 'stock', 'CAD', days, 40, 0.05)
   await seedCloses('SPY', 'stock', 'USD', days, 500, 0.5)

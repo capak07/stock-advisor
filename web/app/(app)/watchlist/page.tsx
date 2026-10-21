@@ -12,7 +12,7 @@ import { marketOf } from '@/lib/symbols'
 
 export const metadata: Metadata = { title: 'Watchlist' }
 
-/** Watchlist (spec §9): add or remove US stocks, TSX stocks and coins. Verdicts come with the model. */
+/** Watchlist (spec §9): add listed US and TSX stocks and coins from the search, or remove them. Verdicts come with the model. */
 export default async function WatchlistPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
@@ -44,13 +44,13 @@ export default async function WatchlistPage() {
     <main className="page">
       <div className="enter">
         <h1>Watchlist</h1>
-        <p className="sub">Any US stock, TSX stock or coin. Watched symbols are priced first and get a verdict every run.</p>
+        <p className="sub">Any listed US or TSX stock, or one of the 300 biggest coins. Watched symbols are priced first and get a verdict every run.</p>
       </div>
       <section className="card card-pad enter" aria-labelledby="add-h">
         <h2 id="add-h" style={{ marginBottom: 12 }}>
           Add a symbol
         </h2>
-        <AddWatch />
+        <AddWatch watched={items.map((i) => assetKey(i.assetType, i.symbol))} />
       </section>
       <section className="card card-pad enter" aria-labelledby="list-h">
         <div className="section-head">

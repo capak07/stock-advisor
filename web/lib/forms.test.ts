@@ -3,20 +3,18 @@ import { parseSettings } from './settings-form'
 import { parseWatch } from './watch-form'
 
 describe('parseWatch', () => {
-  it('reads US stocks, TSX stocks (adding .TO) and coins', () => {
-    expect(parseWatch(' nvda ', 'us')).toEqual({ symbol: 'NVDA', assetType: 'stock' })
-    expect(parseWatch('shop', 'tsx')).toEqual({ symbol: 'SHOP.TO', assetType: 'stock' })
-    expect(parseWatch('rci.b', 'tsx')).toEqual({ symbol: 'RCI-B.TO', assetType: 'stock' })
-    expect(parseWatch('dol.to', 'tsx')).toEqual({ symbol: 'DOL.TO', assetType: 'stock' })
-    expect(parseWatch('eth', 'crypto')).toEqual({ symbol: 'ETH', assetType: 'crypto' })
+  it('takes a stock or coin symbol in the form the lists store it', () => {
+    expect(parseWatch('NVDA', 'stock')).toEqual({ symbol: 'NVDA', assetType: 'stock' })
+    expect(parseWatch('RCI-B.TO', 'stock')).toEqual({ symbol: 'RCI-B.TO', assetType: 'stock' })
+    expect(parseWatch('ETH', 'crypto')).toEqual({ symbol: 'ETH', assetType: 'crypto' })
   })
 
-  it('explains what is wrong', () => {
-    expect(parseWatch('', 'us')).toEqual({ error: 'Enter a symbol.' })
-    expect(parseWatch('ry.to', 'us')).toEqual({ error: 'Symbols ending in .TO are TSX stocks; pick TSX stock.' })
-    expect(parseWatch('TOOLONG', 'us')).toEqual({ error: 'Enter a US symbol, like NVDA or BRK.B.' })
-    expect(parseWatch('E', 'crypto')).toEqual({ error: 'Enter a coin symbol, like ETH.' })
-    expect(parseWatch('NVDA', 'bond')).toEqual({ error: 'Pick a type.' })
+  it('refuses anything a pick from the list could not send', () => {
+    expect(parseWatch('Royal Bank', 'stock')).toBeNull()
+    expect(parseWatch('nvda', 'stock')).toBeNull()
+    expect(parseWatch('E', 'crypto')).toBeNull()
+    expect(parseWatch('NVDA', 'bond')).toBeNull()
+    expect(parseWatch(42, 'stock')).toBeNull()
   })
 })
 

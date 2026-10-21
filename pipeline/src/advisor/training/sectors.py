@@ -94,6 +94,7 @@ def screen_industries(
     """Yahoo symbol -> (sector, industry), paging each industry's stocks in each market."""
     found: dict[str, tuple[str, str]] = {}
     asked = failed = 0
+    first = ""
     for industry, sector in industry_sectors.items():
         for market in Market:
             q = query(industry, market)
@@ -104,8 +105,9 @@ def screen_industries(
                 asked += 1
                 try:
                     symbols = screen(q, offset)
-                except Exception:
+                except Exception as exc:
                     failed += 1
+                    first = first or f"{type(exc).__name__}: {exc}"[:200]
                     break
                 for symbol in symbols:
                     found.setdefault(symbol, (sector, industry))
@@ -113,7 +115,7 @@ def screen_industries(
                     break
                 offset += PAGE
     if asked and failed / asked > MAX_FAILED_SHARE:
-        raise ScreenerRefused(f"{failed} of {asked} Yahoo screener queries failed")
+        raise ScreenerRefused(f"{failed} of {asked} Yahoo screener queries failed; first: {first}")
     return found
 
 

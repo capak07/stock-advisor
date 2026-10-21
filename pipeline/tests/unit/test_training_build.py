@@ -1,7 +1,7 @@
 import io
 import json
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 import pandas as pd
@@ -10,21 +10,35 @@ import pytest
 from advisor.collectors.sec import SecEdgar
 from advisor.models import Market
 from advisor.training.build import BuildDeps, BuildFailed, build
+from advisor.training.prices import PAUSE_SECONDS
 
 NOW = datetime(2026, 10, 24, 14, tzinfo=UTC)  # a Saturday
 UNIVERSE = {Market.US: ["JPM", "AAPL", "BRK.B"], Market.TSX: ["RY.TO"]}
-FIELDS = ["Open", "High", "Low", "Close", "Volume"]
+FIELDS = ["Open", "High", "Low", "Close", "Volume", "Dividends", "Stock Splits"]
+SPLIT = {"AAPL": 4.0}  # AAPL splits 4:1 on the second day
 
 
-def yahoo(asked: list[list[str]], silent: frozenset[str] = frozenset()):
-    """yf.download: two days of bars for every ticker but the `silent` ones."""
+def yahoo(
+    asked: list[list[str]], silent: frozenset[str] = frozenset(), silent_once: frozenset[str] = frozenset()
+):
+    """yf.download: two days of bars (and actions) for every ticker but the silent ones.
+
+    `silent` tickers never answer; `silent_once` ones stay quiet on the first ask only.
+    """
+    skipped: set[str] = set()
 
     def download(tickers, start, end):
         asked.append(list(tickers))
-        live = [t for t in tickers if t not in silent]
+        quiet = {t for t in tickers if t in silent_once and t not in skipped}
+        skipped.update(quiet)
+        live = [t for t in tickers if t not in silent and t not in quiet]
         columns = pd.MultiIndex.from_product([live, FIELDS])
         index = pd.to_datetime(["2026-10-22", "2026-10-23"])
-        return pd.DataFrame([[10.0, 11.0, 9.0, 10.5, 1000.0] * len(live)] * 2, index=index, columns=columns)
+        rows = [
+            sum(([10.0, 11.0, 9.0, 10.5, 1000.0, 0.0, SPLIT.get(t, 0.0) if day else 0.0] for t in live), [])
+            for day in (0, 1)
+        ]
+        return pd.DataFrame(rows, index=index, columns=columns)
 
     return download
 
@@ -50,12 +64,12 @@ def web(fixtures_dir) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def deps(client, asked, silent=frozenset()) -> BuildDeps:
+def deps(client, asked, silent=frozenset(), silent_once=frozenset()) -> BuildDeps:
     return BuildDeps(
         http=client,
         sec=SecEdgar(client, "stock-advisor test@example.com"),
         universe=UNIVERSE.__getitem__,
-        download=yahoo(asked, silent),
+        download=yahoo(asked, silent, silent_once),
         screen_sectors=lambda: {"AAPL": ("Technology", "Consumer Electronics"), "RY.TO": ("Financial Services", "Banks—Diversified")},
         sleep=lambda s: None,
     )
@@ -68,6 +82,7 @@ def test_a_build_writes_every_file_and_a_manifest(fixtures_dir, tmp_path):
     assert set(manifest["files"]) == {
         "sectors.parquet", "prices_US.parquet", "prices_TSX.parquet",
         "tickers.parquet", "fundamentals.parquet", "macro.parquet",
+        "events_US.parquet", "events_TSX.parquet",
     }
     assert (manifest["start"], manifest["end"]) == ("2018-10-24", "2026-10-24")
     assert json.loads((tmp_path / "manifest.json").read_text()) == manifest
@@ -80,6 +95,24 @@ def test_a_build_writes_every_file_and_a_manifest(fixtures_dir, tmp_path):
     assert set(facts["cik"]) == {320193, 19617, 1067983}
     tickers = pd.read_parquet(tmp_path / "tickers.parquet")
     assert list(tickers["symbol"]) == ["AAPL", "BRK.B", "JPM"]
+    events = pd.read_parquet(tmp_path / "events_US.parquet")
+    assert list(events.columns) == ["symbol", "day", "dividend", "split"]
+    assert list(events.itertuples(index=False, name=None)) == [("AAPL", date(2026, 10, 23), 0.0, 4.0)]
+    assert len(pd.read_parquet(tmp_path / "events_TSX.parquet")) == 0
+    assert isinstance(manifest["peak_rss_mb"], int) and manifest["peak_rss_mb"] > 0
+
+
+def test_a_symbol_yahoo_drops_once_is_asked_for_again(fixtures_dir, tmp_path):
+    asked: list[list[str]] = []
+    pauses: list[float] = []
+    with web(fixtures_dir) as client:
+        d = deps(client, asked, silent_once=frozenset({"XLC"}))
+        d.sleep = pauses.append
+        manifest = build(tmp_path, NOW, d, limit=10)
+    assert asked[1] == ["XLC"]  # only the missing one, right after the market's first download
+    assert PAUSE_SECONDS in pauses
+    assert "XLC" in set(pd.read_parquet(tmp_path / "prices_US.parquet")["symbol"])
+    assert manifest["missing"]["US"] == []
 
 
 def test_a_missing_etf_fails_the_build(fixtures_dir, tmp_path):

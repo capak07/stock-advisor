@@ -84,3 +84,31 @@ def test_a_dropped_download_is_tried_again(tmp_path):
         sec = SecEdgar(client, AGENT, sleep=lambda s: None)
         assert sec.download("https://www.sec.gov/x.zip", tmp_path / "x.zip") == 3
     assert len(calls) == 2
+
+
+def test_a_503_download_is_tried_again(tmp_path):
+    calls, pauses = [], []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(503) if len(calls) == 1 else httpx.Response(200, content=b"zip")
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        sec = SecEdgar(client, AGENT, sleep=pauses.append)
+        assert sec.download("https://www.sec.gov/x.zip", tmp_path / "x.zip") == 3
+    assert len(calls) == 2 and pauses == [5.0]
+    assert (tmp_path / "x.zip").read_bytes() == b"zip"
+
+
+def test_a_404_download_fails_at_once(tmp_path):
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(404)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        sec = SecEdgar(client, AGENT, sleep=lambda s: None)
+        with pytest.raises(httpx.HTTPStatusError):
+            sec.download("https://www.sec.gov/x.zip", tmp_path / "x.zip")
+    assert len(calls) == 1

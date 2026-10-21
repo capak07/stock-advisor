@@ -213,8 +213,9 @@ class SecEdgar:
                             out.write(chunk)
                             written += len(chunk)
                 return written
-            except httpx.TransportError:
-                if attempt == attempts:
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                retryable = isinstance(exc, httpx.TransportError) or exc.response.status_code in RETRY_STATUS
+                if not retryable or attempt == attempts:
                     raise
                 self._sleep(5.0 * attempt)
         raise AssertionError("unreachable")  # pragma: no cover

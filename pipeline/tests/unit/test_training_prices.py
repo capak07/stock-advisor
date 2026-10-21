@@ -6,9 +6,11 @@ import pytest
 
 from advisor.training.prices import (
     COLUMNS,
+    EVENT_COLUMNS,
     YahooThrottled,
     bars_frame,
     download_history,
+    events_frame,
     history_start,
 )
 
@@ -89,3 +91,43 @@ def test_the_long_frame_round_trips_through_parquet(tmp_path):
     back = pd.read_parquet(tmp_path / "prices.parquet")
     assert back["close"].tolist() == [343.0, 345.0]
     assert list(back.columns) == COLUMNS
+
+
+def actions_frame() -> pd.DataFrame:
+    """A wide frame with Yahoo's action columns: AAPL's dividend, then its 4:1 split."""
+    fields = [*FIELDS, "Dividends", "Stock Splits"]
+    columns = pd.MultiIndex.from_product([["AAPL", "BRK-B"], fields], names=["Ticker", "Price"])
+    aapl = [[340, 345, 338, 343, 5e7, 0.25, 0.0], [85, 86, 84, 85.5, 2e8, 0.0, 4.0]]
+    brk = [[500, 505, 498, 503.5, 3e6, 0.0, 0.0], [503, 510, 501, 509, 2.5e6, 0.0, 0.0]]
+    rows = [a + b for a, b in zip(aapl, brk, strict=True)]
+    return pd.DataFrame(rows, index=pd.Index(DAYS, name="Date"), columns=columns)
+
+
+def test_dividends_and_splits_become_event_rows():
+    events = events_frame(actions_frame(), {"AAPL": "AAPL", "BRK-B": "BRK.B"})
+    assert list(events.columns) == EVENT_COLUMNS
+    assert list(events.itertuples(index=False, name=None)) == [
+        ("AAPL", date(2026, 10, 15), 0.25, 0.0),
+        ("AAPL", date(2026, 10, 16), 0.0, 4.0),
+    ]
+    assert str(events["dividend"].dtype) == "float64" and str(events["split"].dtype) == "float64"
+
+
+def test_bars_ignore_the_action_columns():
+    bars = bars_frame(actions_frame(), {"AAPL": "AAPL", "BRK-B": "BRK.B"})
+    assert list(bars.columns) == COLUMNS and len(bars) == 4
+
+
+def test_a_frame_without_action_columns_has_no_events():
+    frame = yahoo_frame({"AAPL": [[340, 345, 338, 343, 5e7], [343, 346, 341, 345, 4e7]]})
+    events = events_frame(frame, {"AAPL": "AAPL"})
+    assert events.empty and list(events.columns) == EVENT_COLUMNS
+
+
+def test_download_history_collects_events_across_chunks():
+    def download(tickers, start, end):
+        return actions_frame()
+
+    history = download_history(["AAPL", "BRK.B"], date(2018, 1, 1), date(2026, 1, 1),
+                               download=download, sleep=lambda s: None)
+    assert list(history.events["symbol"]) == ["AAPL", "AAPL"]

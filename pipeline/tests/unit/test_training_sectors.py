@@ -57,7 +57,7 @@ def test_a_refusing_screener_fails_rather_than_leaving_the_universe_unclassified
     def screen(q, offset):
         raise RuntimeError("401 Unauthorized")
 
-    with pytest.raises(ScreenerRefused, match="4 of 4"):
+    with pytest.raises(ScreenerRefused, match=r"4 of 4.*; first: RuntimeError: 401 Unauthorized"):
         screen_industries({"Banks": "Financial Services", "Gold": "Basic Materials"},
                           screen=screen, query=lambda i, m: i, sleep=lambda s: None)
 

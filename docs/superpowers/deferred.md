@@ -67,12 +67,15 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Training data (Plan 3a).** `python -m advisor.training.build --out DIR` writes Parquet files that Plan 3b's training reads in the same weekly job:
   - `prices_US.parquet` and `prices_TSX.parquet`: `symbol, day, open, high, low, close, volume`, adjusted for splits and dividends, about 8 years. They include each market's benchmark and sector ETFs.
   - `sectors.parquet`: `symbol, sector, industry` (Yahoo's names). Use `training.sectors.sector_etf(market, sector)` for the relative-strength ETF. Four TSX sectors and unclassified stocks fall back to XIU.TO or SPY.
-  - `fundamentals.parquet`: `cik, metric, concept, unit, start, end, value, filed, form, accession`, every re-report kept. `tickers.parquet` maps `symbol` to `cik`. Pick a concept per period by `METRICS` priority and the latest `filed` on or before the day, as the live `sec_xbrl` records need too.
+  - `fundamentals.parquet`: `cik, metric, concept, unit, start, end, value, filed, form, accession`, every re-report kept. `tickers.parquet` maps `symbol` to `cik`. Pick a concept per period by `METRICS` priority and the latest `filed` strictly before the day (`filed < day`): companyfacts has no acceptance time, and most filings land after the close or before the open. Tickers and fundamentals cover the US universe only.
+  - `events_US.parquet` and `events_TSX.parquet`: `symbol, day, dividend, split`, Yahoo's split and dividend events (`split` is the ratio, 0 where none). Prices are adjusted to today's scale, while as-filed EPS and share counts before a split are on the old scale. Convert facts with the product of later split ratios. Recover the price actually paid from the adjusted price with the split and dividend factors before computing P/E, P/S or FCF yield, or the "price >= $1" filter.
   - `macro.parquet`: `series, day, value` for the live collectors' FRED and Bank of Canada series.
   - `manifest.json`: sizes, timings and missing symbols.
 - **What the training data lacks:**
   - It covers only stocks listed today (survivorship bias, spec §5.2). Yahoo has nothing for delisted tickers, and SEC's ticker map is current-only.
   - FRED's HY spread starts in 2023.
+  - Sector labels are today's, applied to all 8 years: a mild look-ahead in sector-relative features.
+  - A build run during market hours ends with today's partial bar. Train only on completed sessions, and dispatch `train.yml` by hand outside market hours.
   - Banks have no gross profit or operating income, and some issuers have no EPS: leave such features missing, never fabricated.
   - "Surprise from the last filing" can't be analyst surprise (XBRL has no estimates). Derive it from the company's own history, e.g. EPS against the same quarter a year earlier, scaled by the spread of past changes.
 - **Data quality:** `adv20` on histories shorter than 20 bars, and clamping `DailyBar` high/low inconsistencies.

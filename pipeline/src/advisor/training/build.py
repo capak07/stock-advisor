@@ -25,12 +25,13 @@ from advisor.collectors.base import RateLimiter, make_client
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.sec import COMPANYFACTS_ZIP_URL, SEC_PER_MINUTE, TICKERS_URL, SecEdgar
 from advisor.collectors.tmx_symbols import TmxSymbols
-from advisor.collectors.yfinance_bars import Downloader, yahoo_download
+from advisor.collectors.yfinance_bars import Downloader
 from advisor.config import Settings
 from advisor.markets import MARKETS
 from advisor.models import ET, Market
 from advisor.store import repo
 from advisor.store.db import connect
+from advisor.training import prices
 from advisor.training.fundamentals import reduce_companyfacts, universe_ciks
 from advisor.training.macro import macro_history
 from advisor.training.prices import download_history, history_start
@@ -54,7 +55,7 @@ class BuildDeps:
     sec: SecEdgar
     universe: Callable[[Market], list[str]]
     conn: psycopg.Connection | None = None
-    download: Downloader = yahoo_download
+    download: Downloader = prices.training_download
     screen_sectors: Callable[[], dict[str, tuple[str, str]]] = _screen_sectors
     sleep: Callable[[float], None] = field(default=time.sleep)
 
@@ -104,6 +105,21 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None) -
         history = download_history(
             [*stocks[market], *extras], start, today, download=deps.download, sleep=deps.sleep
         )
+        if history.missing:
+            # yfinance's cache sometimes drops a ticker ("database is locked"): ask once more
+            deps.sleep(prices.PAUSE_SECONDS)
+            again = download_history(
+                history.missing, start, today, download=deps.download, sleep=deps.sleep
+            )
+            history = prices.PriceHistory(
+                bars=pd.concat([history.bars, again.bars], ignore_index=True).sort_values(
+                    ["symbol", "day"], ignore_index=True
+                ),
+                events=pd.concat([history.events, again.events], ignore_index=True).sort_values(
+                    ["symbol", "day"], ignore_index=True
+                ),
+                missing=again.missing,
+            )
         gone = set(history.missing)
         lost = [s for s in stocks[market] if s in gone]
         if len(lost) > MAX_MISSING_SHARE * len(stocks[market]):
@@ -114,6 +130,7 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None) -
         if absent:
             raise BuildFailed(f"Yahoo sent no bars for {market} benchmark/ETFs: {', '.join(absent)}")
         _write(history.bars, out, f"prices_{market}.parquet", manifest)
+        _write(history.events, out, f"events_{market}.parquet", manifest)
         manifest["missing"][str(market)] = lost
         timed(f"prices_{market}", began)
 
@@ -137,6 +154,13 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None) -
     began = time.monotonic()
     _write(macro_history(deps.http, start, today), out, "macro.parquet", manifest)
     timed("macro", began)
+
+    try:
+        import resource  # Unix only; ru_maxrss is KiB on Linux
+
+        manifest["peak_rss_mb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
+    except ImportError:
+        pass
 
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
     return manifest

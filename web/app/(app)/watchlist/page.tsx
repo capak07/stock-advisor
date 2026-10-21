@@ -44,7 +44,7 @@ export default async function WatchlistPage() {
     <main className="page">
       <div className="enter">
         <h1>Watchlist</h1>
-        <p className="sub">Any listed US or TSX stock, or one of the 300 biggest coins. Watched symbols are priced first and get a verdict every run.</p>
+        <p className="sub">Any listed US or TSX stock, or one of the 300 biggest coins Coinbase trades. Watched symbols are priced first and get a verdict every run.</p>
       </div>
       <section className="card card-pad enter" aria-labelledby="add-h">
         <h2 id="add-h" style={{ marginBottom: 12 }}>

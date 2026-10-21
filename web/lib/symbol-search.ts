@@ -9,17 +9,37 @@ export interface SearchItem {
   kind: 'US' | 'TSX' | 'Crypto'
 }
 
+/** The list as it travels to the browser: [symbol, name, kind]; the asset type follows from the kind. */
+export type SearchRow = [symbol: string, name: string, kind: SearchItem['kind']]
+
+export const toRows = (items: readonly SearchItem[]): SearchRow[] => items.map((i) => [i.symbol, i.name, i.kind])
+export const fromRows = (rows: readonly SearchRow[]): SearchItem[] =>
+  rows.map(([symbol, name, kind]) => ({ symbol, name, assetType: kind === 'Crypto' ? 'crypto' : 'stock', kind }))
+
 export const MAX_RESULTS = 8
 const KIND_ORDER = { TSX: 0, US: 1, Crypto: 2 } as const
 
-/** What a match counts for: the ticker itself, a ticker that starts with the query, a name word
- * that does, then anywhere in the name. Lower is better; null is no match. */
-function score(item: SearchItem, words: string, ticker: string): number | null {
-  if (item.symbol === ticker || item.symbol.replace(/\.TO$/, '') === ticker) return 0
-  if (item.symbol.startsWith(ticker)) return 1
+/** The tickers a query can mean: as typed, and a TSX class typed with a dot (RCI.B) in its stored form. */
+function tickers(query: string): string[] {
+  const ticker = normalizeSymbol(query)
+  const tsxClass = /^([A-Z]{1,5})\.([A-Z]{1,2})$/.exec(ticker)
+  return tsxClass ? [ticker, `${tsxClass[1]}-${tsxClass[2]}.TO`] : [ticker]
+}
+
+/** Whether the query is this item's ticker, with or without .TO. */
+export function isExactTicker(item: SearchItem, query: string): boolean {
+  return tickers(query).some((t) => item.symbol === t || item.symbol.replace(/\.TO$/, '') === t)
+}
+
+/** What a match counts for: the ticker itself, the whole name, a ticker that starts with the
+ * query, a name word that does, then anywhere in the name. Lower is better; null is no match. */
+function score(item: SearchItem, query: string, words: string): number | null {
+  if (isExactTicker(item, query)) return 0
   const name = item.name.toLowerCase()
-  if (name.split(/[\s,.()&-]+/).some((word) => word.startsWith(words))) return 2
-  return name.includes(words) ? 3 : null
+  if (name === words) return 1
+  if (item.symbol.startsWith(normalizeSymbol(query))) return 2
+  if (name.split(/[\s,.()&-]+/).some((word) => word.startsWith(words))) return 3
+  return name.includes(words) ? 4 : null
 }
 
 /**
@@ -29,10 +49,9 @@ function score(item: SearchItem, words: string, ticker: string): number | null {
 export function searchSymbols(items: readonly SearchItem[], query: string, max = MAX_RESULTS): SearchItem[] {
   const words = query.trim().toLowerCase()
   if (!words) return []
-  const ticker = normalizeSymbol(query)
   const scored: { item: SearchItem; score: number; index: number }[] = []
   items.forEach((item, index) => {
-    const s = score(item, words, ticker)
+    const s = score(item, query, words)
     if (s !== null) scored.push({ item, score: s, index })
   })
   scored.sort((a, b) => a.score - b.score || KIND_ORDER[a.item.kind] - KIND_ORDER[b.item.kind] || a.index - b.index)

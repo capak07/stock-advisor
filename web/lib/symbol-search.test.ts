@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { displayName, highlight, searchSymbols, type SearchItem } from './symbol-search'
+import { displayName, fromRows, highlight, isExactTicker, searchSymbols, toRows, type SearchItem } from './symbol-search'
 
 const stock = (symbol: string, name: string): SearchItem => ({
   symbol,
@@ -18,9 +18,12 @@ const ITEMS: SearchItem[] = [
   stock('SHOP.TO', 'Shopify Inc.'),
   stock('LOYL', 'Loyalty Ventures Inc. Common Stock'),
   stock('BRK.B', 'Berkshire Hathaway Inc. New Common Stock'),
+  stock('BTM', 'Bitcoin Depot Inc.'),
+  stock('RCI-B.TO', 'Rogers Communications Inc.'),
   coin('ETH', 'Ethereum'),
   coin('ETC', 'Ethereum Classic'),
   coin('SHIB', 'Shiba Inu'),
+  coin('BTC', 'Bitcoin'),
 ]
 
 const symbols = (query: string, max?: number) => searchSymbols(ITEMS, query, max).map((i) => i.symbol)
@@ -40,6 +43,27 @@ describe('symbol search', () => {
   it('matches share classes and TSX tickers in any form people type', () => {
     expect(symbols('brk.b')).toEqual(['BRK.B'])
     expect(symbols('ry.to')).toEqual(['RY.TO'])
+    expect(symbols('rci.b')).toEqual(['RCI-B.TO'])
+    expect(symbols('rci.b.to')).toEqual(['RCI-B.TO'])
+  })
+
+  it('puts an item named exactly what was typed before names that only start with it', () => {
+    expect(symbols('bitcoin')).toEqual(['BTC', 'BTM'])
+  })
+
+  it('tells an exact ticker match from a name match', () => {
+    const [rciB] = searchSymbols(ITEMS, 'rci.b')
+    expect(isExactTicker(rciB, 'rci.b')).toBe(true)
+    expect(isExactTicker(rciB, 'rogers')).toBe(false)
+  })
+
+  it('sends the list as compact rows and reads it back', () => {
+    const items = [ITEMS[1], ITEMS.find((i) => i.symbol === 'ETH')!]
+    expect(toRows(items)).toEqual([
+      ['RY.TO', 'Royal Bank of Canada', 'TSX'],
+      ['ETH', 'Ethereum', 'Crypto'],
+    ])
+    expect(fromRows(toRows(items))).toEqual(items)
   })
 
   it('finds coins by name or ticker', () => {

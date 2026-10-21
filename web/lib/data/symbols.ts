@@ -52,3 +52,15 @@ export async function loadSearchItems(supabase: Supabase): Promise<SearchItem[]>
     ...coins.map((r): SearchItem => ({ symbol: r.symbol, name: r.name, assetType: 'crypto', kind: 'Crypto' })),
   ]
 }
+
+/** Changes whenever the lists do: adding, renaming, re-listing or dropping a symbol stamps its row. */
+export async function listsStamp(supabase: Supabase): Promise<string> {
+  const { data, error, count } = await supabase
+    .from('symbols')
+    .select('updated_at', { count: 'exact' })
+    .eq('active', true)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+  if (error) throw new Error(error.message)
+  return `${count ?? 0}:${(data as { updated_at: string }[])[0]?.updated_at ?? ''}`
+}

@@ -28,7 +28,7 @@ test.describe('watchlist', () => {
     await box.fill('shop')
     await expect(options.first()).toHaveText('SHOP.TOShopify Inc.On your watchlist')
     await expect(options.first()).toHaveAttribute('aria-disabled', 'true')
-    await page.keyboard.press('ArrowDown')
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true') // the first row that can be picked
     await page.keyboard.press('Enter')
     await expect(page.getByRole('status')).toHaveText('SHOP added to the watchlist')
     await expect(page.getByRole('heading', { name: 'Watching 2' })).toBeVisible()
@@ -43,7 +43,9 @@ test.describe('watchlist', () => {
     await seedCoins([
       { symbol: 'SOL', name: 'Solana', marketCap: 8e10 },
       { symbol: 'JUP', name: 'Jupiter', marketCap: 1e9 },
+      { symbol: 'LINK', name: 'Chainlink', marketCap: 9e9 },
     ])
+    await seedSymbols([{ symbol: 'LINK', market: 'US', name: 'Interlink Electronics, Inc. - Common Stock' }])
     await seedFx([daysAgo(1)], 1.4)
     await seedCloses('SOL', 'crypto', 'USD', [daysAgo(1)], 200, 0)
     await page.goto('/watchlist')
@@ -53,13 +55,24 @@ test.describe('watchlist', () => {
     await page.keyboard.press('Enter')
     await expect(page.locator('.watch-row').filter({ hasText: 'SOL' })).toContainText('C$280.00')
 
+    await box.fill('link') // both a stock and a coin: Enter asks rather than guesses
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.combo-note')).toHaveText('LINK is both a stock and a coin. Pick one with the arrows or a click.')
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('status')).toHaveText('LINK added to the watchlist')
+
     await box.fill('Vanguard S&P 500')
-    await expect(page.getByText('No listed stock or coin matches.')).toBeVisible()
+    await expect(page.locator('.combo-note')).toHaveText('No listed stock or coin matches.')
     await page.keyboard.press('Enter')
     await expect(page.getByText('Pick a stock or coin from the list.')).toBeVisible()
     await box.fill('Vanguard S&P 50')
     await expect(page.getByText('Pick a stock or coin from the list.')).toBeHidden() // editing clears it
-    expect(await sql`select symbol, asset_type from watchlist`).toEqual([{ symbol: 'SOL', asset_type: 'crypto' }])
+    expect(await sql`select symbol, asset_type from watchlist order by symbol`).toEqual([
+      { symbol: 'LINK', asset_type: 'crypto' },
+      { symbol: 'SOL', asset_type: 'crypto' },
+    ])
   })
 })
 

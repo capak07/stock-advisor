@@ -164,14 +164,16 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
   background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
   animation: fade 120ms ease-out;
 }
-.combo-list[hidden] { display: none; }
+.combo-list[hidden], .combo-list ul[hidden] { display: none; }
+.combo-list ul { margin: 0; padding: 0; list-style: none; }
 .combo-row { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: var(--radius-md); font-size: 13px; cursor: pointer; }
 .combo-row.active { background: var(--accent); }
 .combo-row[aria-disabled='true'] { cursor: default; color: var(--muted-foreground); }
 .combo-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo-name b { font-weight: 600; color: var(--foreground); }
 .combo-tag { white-space: nowrap; }
-.combo-empty { padding: 10px 12px; font-size: 13px; }
+.combo-row.typed .combo-name { color: var(--muted-foreground); }
+.combo-note { margin: 0; padding: 8px 10px; font-size: 13px; }
 /* An open list sits above what follows its box: the next card, or the page beside the sidebar. */
 .sidebar:has(.combo-list:not([hidden])) { z-index: 50; }
 .card:has(.combo-list:not([hidden])) { position: relative; z-index: 50; }

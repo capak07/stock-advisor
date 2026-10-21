@@ -126,16 +126,17 @@ def test_the_coin_list_is_stored_and_coins_that_left_it_are_deactivated(db):
     assert repo.coins_refreshed_on(db) is None
     repo.upsert_symbols(db, Market.US, [info("AAPL")])
     day_one, day_two = datetime(2026, 10, 19, 13, tzinfo=UTC), datetime(2026, 10, 20, 13, tzinfo=UTC)
-    repo.upsert_coins(db, [("BTC", "Bitcoin"), ("ETH", "Ethereum"), ("LUNA", "Terra")], day_one)
-    repo.upsert_coins(db, [("BTC", "Bitcoin"), ("ETH", "Ethereum")], day_two)
+    repo.upsert_coins(db, [("BTC", "Bitcoin", 2e12), ("ETH", "Ethereum", 4e11), ("LUNA", "Terra", 1e9)], day_one)
+    repo.upsert_coins(db, [("BTC", "Bitcoin", 2.1e12), ("ETH", "Ethereum", None)], day_two)
     rows = db.execute(
-        "select symbol, asset_type, market, name, exchange, active from symbols order by symbol"
+        "select symbol, asset_type, market, name, exchange, market_cap::float as cap, active"
+        " from symbols order by symbol"
     ).fetchall()
     assert [tuple(r.values()) for r in rows] == [
-        ("AAPL", "stock", "US", "AAPL Inc. Common Stock", "NYSE", True),  # stocks are untouched
-        ("BTC", "crypto", None, "Bitcoin", "CoinGecko", True),
-        ("ETH", "crypto", None, "Ethereum", "CoinGecko", True),
-        ("LUNA", "crypto", None, "Terra", "CoinGecko", False),
+        ("AAPL", "stock", "US", "AAPL Inc. Common Stock", "NYSE", None, True),  # stocks are untouched
+        ("BTC", "crypto", None, "Bitcoin", "CoinGecko", 2.1e12, True),
+        ("ETH", "crypto", None, "Ethereum", "CoinGecko", None, True),
+        ("LUNA", "crypto", None, "Terra", "CoinGecko", 1e9, False),
     ]
     assert repo.coins_refreshed_on(db) == date(2026, 10, 20)
     with pytest.raises(ValueError, match="empty coin list"):

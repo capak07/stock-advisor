@@ -30,10 +30,13 @@ def _rank(row: dict[str, Any]) -> tuple[bool, int]:
     return rank is None, rank or 0
 
 
-def top_coins(rows: Sequence[dict[str, Any]], size: int = COIN_LIST_SIZE) -> list[tuple[str, str]]:
-    """(symbol, name) of the best-ranked coin per ticker, best first, at most `size`; tickers the
-    app can't store and coins without a name are left out."""
-    coins: list[tuple[str, str]] = []
+Coin = tuple[str, str, float | None]  # symbol, name, market cap in USD
+
+
+def top_coins(rows: Sequence[dict[str, Any]], size: int = COIN_LIST_SIZE) -> list[Coin]:
+    """(symbol, name, market cap) of the best-ranked coin per ticker, best first, at most `size`;
+    tickers the app can't store and coins without a name are left out."""
+    coins: list[Coin] = []
     seen: set[str] = set()
     for row in sorted(rows, key=_rank):
         symbol = str(row.get("symbol") or "").upper()
@@ -41,7 +44,8 @@ def top_coins(rows: Sequence[dict[str, Any]], size: int = COIN_LIST_SIZE) -> lis
         if not name or symbol in seen or not COIN_SYMBOL.fullmatch(symbol):
             continue
         seen.add(symbol)
-        coins.append((symbol, name))
+        cap = row.get("market_cap")
+        coins.append((symbol, name, float(cap) if isinstance(cap, (int, float)) else None))
         if len(coins) == size:
             break
     return coins
@@ -49,7 +53,7 @@ def top_coins(rows: Sequence[dict[str, Any]], size: int = COIN_LIST_SIZE) -> lis
 
 def fetch_top_coins(
     client: httpx.Client, limiter: RateLimiter | None = None, size: int = COIN_LIST_SIZE
-) -> list[tuple[str, str]]:
+) -> list[Coin]:
     rows: list[dict[str, Any]] = []
     for page in (1, 2):
         response = get_with_retries(

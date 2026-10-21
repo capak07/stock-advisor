@@ -175,7 +175,9 @@ def upsert_symbols(conn: psycopg.Connection, market: Market, symbols: Sequence[S
         )
 
 
-def upsert_coins(conn: psycopg.Connection, coins: Sequence[tuple[str, str]], now: datetime) -> None:
+def upsert_coins(
+    conn: psycopg.Connection, coins: Sequence[tuple[str, str, float | None]], now: datetime
+) -> None:
     """Store the coin list the dashboard's search offers, stamped `now`; coins that left it are
     deactivated."""
     if not coins:  # would deactivate every coin
@@ -183,16 +185,18 @@ def upsert_coins(conn: psycopg.Connection, coins: Sequence[tuple[str, str]], now
     with conn.transaction():
         with conn.cursor() as cur:
             cur.executemany(
-                "insert into symbols (symbol, asset_type, market, name, exchange, active, updated_at)"
-                " values (%s, 'crypto', null, %s, 'CoinGecko', true, %s)"
+                "insert into symbols"
+                " (symbol, asset_type, market, name, exchange, market_cap, active, updated_at)"
+                " values (%s, 'crypto', null, %s, 'CoinGecko', %s, true, %s)"
                 " on conflict (symbol, asset_type) do update set name = excluded.name,"
-                " exchange = excluded.exchange, active = true, updated_at = excluded.updated_at",
-                [(symbol, name, now) for symbol, name in coins],
+                " exchange = excluded.exchange, market_cap = excluded.market_cap, active = true,"
+                " updated_at = excluded.updated_at",
+                [(symbol, name, cap, now) for symbol, name, cap in coins],
             )
         conn.execute(
             "update symbols set active = false, updated_at = %s"
             " where asset_type = 'crypto' and active and not (symbol = any(%s))",
-            (now, [symbol for symbol, _ in coins]),
+            (now, [coin[0] for coin in coins]),
         )
 
 

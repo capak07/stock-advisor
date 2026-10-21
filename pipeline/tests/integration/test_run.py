@@ -1014,14 +1014,24 @@ def test_a_coinbase_failure_during_the_coin_backfill_is_recorded_and_the_run_pub
 
 
 def coingecko_list(asked):
-    """CoinGecko's /coins/markets pages for the coin list; every other host answers 404."""
+    """CoinGecko's /coins/markets pages for the coin list, and Coinbase's products, of which BTC
+    and ETH are the only top coins; every other request answers 404."""
+    products = [
+        {"id": f"{base}-USD", "base_currency": base, "quote_currency": "USD", "status": "online", "trading_disabled": False}
+        for base in ["BTC", "ETH", *(f"X{i}" for i in range(60))]
+    ]
 
     def handler(request):
+        if request.url.host == "api.exchange.coinbase.com" and request.url.path == "/products":
+            return httpx.Response(200, json=products)
         if request.url.host != "api.coingecko.com" or "page" not in request.url.params:
             return httpx.Response(404)
-        asked.append(request.url.params["page"])
-        rows = [{"symbol": "btc", "name": "Bitcoin", "market_cap_rank": 1}, {"symbol": "eth", "name": "Ethereum", "market_cap_rank": 2}]
-        return httpx.Response(200, json=rows if request.url.params["page"] == "1" else [])
+        page = request.url.params["page"]
+        asked.append(page)
+        rows = [{"symbol": f"o{page}{i:03d}", "name": f"Other {page} {i}", "market_cap_rank": i + 10} for i in range(250)]
+        if page == "1":
+            rows[:2] = [{"symbol": "btc", "name": "Bitcoin", "market_cap_rank": 1}, {"symbol": "eth", "name": "Ethereum", "market_cap_rank": 2}]
+        return httpx.Response(200, json=rows)
 
     return httpx.MockTransport(handler)
 

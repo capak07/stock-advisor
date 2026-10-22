@@ -379,3 +379,17 @@ def test_only_the_owner_learns_the_database_size(owned_db):
     with acting_as(owned_db, "anon"):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             owned_db.execute(size)
+
+
+def test_the_owner_reads_model_files_and_only_the_pipeline_writes_them(owned_db):
+    owned_db.execute("insert into models (version, kind, trained_at) values ('v1', 'stock_tsx', now())")
+    owned_db.execute("insert into model_files (version, name, body) values ('v1', 'meta', '\\x7b7d')")
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert [r["name"] for r in owned_db.execute("select name from model_files").fetchall()] == ["meta"]
+        assert owned_db.execute("delete from model_files").rowcount == 0
+    with acting_as(owned_db, "authenticated", STRANGER):
+        assert owned_db.execute("select * from model_files").fetchall() == []
+    with acting_as(owned_db, "pipeline_rw"):
+        assert owned_db.execute("update model_files set body = '\\x00'").rowcount == 1
+    with pytest.raises(psycopg.errors.CheckViolation):
+        owned_db.execute("insert into model_files (version, name, body) values ('v1', 'Bad Name', '\\x00')")

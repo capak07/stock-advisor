@@ -419,3 +419,42 @@ def test_the_real_registry_fits_the_sources_table(db):
     repo.write_sources(db, collectors)
     names = [r["name"] for r in db.execute("select name from sources order by name").fetchall()]
     assert names == sorted(collectors)
+
+
+def test_a_saved_model_is_inactive_until_activated_and_keeps_its_files(db):
+    trained = datetime(2026, 10, 24, 11, 0, tzinfo=UTC)
+    files = {"h5_q50": b"\x1f\x8bmodel", "meta": b"{}"}
+    repo.save_model(db, "stock_tsx-202610241100", "stock_tsx", trained, {"mean_rank_ic": 0.02}, 2.5, files)
+    assert repo.active_model(db, "stock_tsx") is None
+    repo.activate_model(db, "stock_tsx", "stock_tsx-202610241100")
+    active = repo.active_model(db, "stock_tsx")
+    assert (active.version, active.metrics, active.calibration_error, active.trained_at, active.active) == (
+        "stock_tsx-202610241100", {"mean_rank_ic": 0.02}, 2.5, trained, True,
+    )
+    assert repo.load_model_files(db, "stock_tsx-202610241100") == files
+
+
+def test_activating_a_model_retires_only_its_kinds_old_one(db):
+    at = datetime(2026, 10, 24, tzinfo=UTC)
+    for version, kind in (("us-1", "stock_us"), ("us-2", "stock_us"), ("tsx-1", "stock_tsx")):
+        repo.save_model(db, version, kind, at, {}, 1.0, {})
+    repo.activate_model(db, "stock_us", "us-1")
+    repo.activate_model(db, "stock_tsx", "tsx-1")
+    repo.activate_model(db, "stock_us", "us-2")
+    assert repo.active_model(db, "stock_us").version == "us-2"
+    assert repo.active_model(db, "stock_tsx").version == "tsx-1"
+    with pytest.raises(ValueError, match="no stock_tsx model us-1"):
+        repo.activate_model(db, "stock_tsx", "us-1")
+
+
+def test_pruning_keeps_the_active_model_and_the_newest_others(db):
+    for i in range(4):
+        repo.save_model(db, f"us-{i}", "stock_us", datetime(2026, 10, 1 + i, tzinfo=UTC), {}, 1.0, {"meta": b"x"})
+    repo.activate_model(db, "stock_us", "us-0")
+    assert repo.prune_models(db, "stock_us", keep=2) == 2
+    assert [r["version"] for r in db.execute("select version from models order by version")] == ["us-0", "us-3"]
+    assert db.execute("select count(*) as n from model_files").fetchone()["n"] == 2  # files go with their model
+
+
+def test_fee_settings_are_read_in_percent(db):
+    assert repo.fee_settings(db) == (1.5, 2.0)

@@ -1,8 +1,9 @@
 """Shared domain types used across the pipeline."""
 
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 from enum import StrEnum
-from typing import NamedTuple, Self
+from typing import Any, NamedTuple, Self
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -47,6 +48,18 @@ class DailyClose(NamedTuple):
     day: date
     close: float
     currency: str  # "USD" or "CAD"
+
+
+@dataclass(frozen=True)
+class StoredModel:
+    """A trained model's row in `models`; its files load separately."""
+
+    version: str
+    kind: str
+    trained_at: datetime
+    metrics: dict[str, Any]
+    calibration_error: float | None
+    active: bool
 
 
 class SymbolInfo(BaseModel):

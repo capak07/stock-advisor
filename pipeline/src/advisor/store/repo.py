@@ -3,6 +3,7 @@
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -17,6 +18,7 @@ from advisor.models import (
     Market,
     RunKind,
     RunStatus,
+    StoredModel,
     SymbolInfo,
 )
 from advisor.news.stage import NewsRow, StoredNews
@@ -206,6 +208,73 @@ def coins_refreshed_on(conn: psycopg.Connection) -> date | None:
         "select max(updated_at) as at from symbols where asset_type = 'crypto' and active"
     ).fetchone()
     return row["at"].astimezone(ET).date() if row and row["at"] else None
+
+
+def save_model(
+    conn: psycopg.Connection,
+    version: str,
+    kind: str,
+    trained_at: datetime,
+    metrics: Mapping[str, Any],
+    calibration_error: float | None,
+    files: Mapping[str, bytes],
+) -> None:
+    """Store a trained model inactive, with its files, in one transaction."""
+    with conn.transaction():
+        conn.execute(
+            "insert into models (version, kind, trained_at, metrics, calibration_error, active)"
+            " values (%s, %s, %s, %s, %s, false)",
+            (version, kind, trained_at, Jsonb(dict(metrics)), calibration_error),
+        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                "insert into model_files (version, name, body) values (%s, %s, %s)",
+                [(version, name, body) for name, body in files.items()],
+            )
+
+
+def active_model(conn: psycopg.Connection, kind: str) -> StoredModel | None:
+    row = conn.execute(
+        "select version, kind, trained_at, metrics, calibration_error, active"
+        " from models where kind = %s and active",
+        (kind,),
+    ).fetchone()
+    return StoredModel(**row) if row else None
+
+
+def activate_model(conn: psycopg.Connection, kind: str, version: str) -> None:
+    """Retire the kind's active model and activate `version`, atomically."""
+    with conn.transaction():
+        if not conn.execute(
+            "select 1 from models where kind = %s and version = %s", (kind, version)
+        ).fetchone():
+            raise ValueError(f"no {kind} model {version}")
+        conn.execute("update models set active = false where kind = %s and active", (kind,))
+        conn.execute("update models set active = true where version = %s", (version,))
+
+
+def load_model_files(conn: psycopg.Connection, version: str) -> dict[str, bytes]:
+    rows = conn.execute("select name, body from model_files where version = %s", (version,)).fetchall()
+    return {r["name"]: bytes(r["body"]) for r in rows}
+
+
+def prune_models(conn: psycopg.Connection, kind: str, keep: int = 2) -> int:
+    """Keep the active model plus the newest others up to `keep`; delete the rest (files cascade)."""
+    with conn.transaction():
+        active = conn.execute("select 1 from models where kind = %s and active", (kind,)).fetchone()
+        others = max(keep - (1 if active else 0), 0)
+        return conn.execute(
+            "delete from models where kind = %s and not active and version not in ("
+            " select version from models where kind = %s and not active"
+            " order by trained_at desc, version desc limit %s)",
+            (kind, kind, others),
+        ).rowcount
+
+
+def fee_settings(conn: psycopg.Connection) -> tuple[float, float]:
+    """(USD FX fee, crypto fee) in percent."""
+    row = conn.execute("select usd_fx_fee_pct, crypto_fee_pct from settings where id = 1").fetchone()
+    return float(row["usd_fx_fee_pct"]), float(row["crypto_fee_pct"])
 
 
 def write_sectors(conn: psycopg.Connection, rows: Sequence[tuple[str, str, str | None]]) -> int:

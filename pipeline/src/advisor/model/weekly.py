@@ -58,8 +58,12 @@ def should_promote(
     return new_ic >= old_ic - IC_TOLERANCE, f"rank IC {new_ic:.3f} vs the active {old_ic:.3f}"
 
 
-def _max_or_nan(values: Sequence[float]) -> float:
-    """The largest value, NaN if any is NaN or there are none (Python's max depends on order)."""
+def calibration_of(metrics: Mapping[int, Mapping[str, float]]) -> float:
+    """The worst horizon's calibration gap; NaN if any is NaN or there are none.
+
+    Python's `max` over floats depends on the order of a NaN, so it can't be used here.
+    """
+    values = [m["calibration_pts"] for m in metrics.values()]
     if not values or any(v != v for v in values):
         return float("nan")
     return max(values)
@@ -96,7 +100,7 @@ def _train_market(
     walked = time.monotonic()
     calibrated = wf.predictions[wf.predictions["p"].notna()]
     backtest = pick_metrics(simulate_picks(calibrated, market, repo.fee_settings(conn)[0]))
-    calibration_pts = _max_or_nan([m["calibration_pts"] for m in wf.metrics.values()])
+    calibration_pts = calibration_of(wf.metrics)
     picks_enabled, picks_reason = gate(backtest, calibration_pts)
     model = fit_final(data, wf, config)
     files = to_files(model)

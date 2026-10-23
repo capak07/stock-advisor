@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from advisor.model.fundamentals import first_reported, fundamental_features, ttm
+from advisor.model.fundamentals import (
+    FUNDAMENTAL_FEATURES,
+    first_reported,
+    fundamental_features,
+    ttm,
+)
 
 REV = "us-gaap:Revenues"
 REV2 = "us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"
@@ -123,3 +128,13 @@ def test_a_stale_figure_stops_carrying_forward():
     )
     assert one_stock(facts, "2023-06-01")["rev_growth"]["X"].iloc[0] == pytest.approx(0.2)
     assert np.isnan(one_stock(facts, "2024-08-01")["rev_growth"]["X"].iloc[0])  # ended 2022-12, over 18 months
+
+
+def test_no_matching_symbols_gives_missing_values():
+    days = pd.DatetimeIndex(["2024-12-02", "2024-12-03"], name="day")
+    close = pd.DataFrame({"X": [10.0, 10.0], "Y": [5.0, 5.0]}, index=days)
+    tickers = pd.DataFrame({"symbol": ["Z"], "cik": [9]})
+    f = fundamental_features(REVENUE, tickers, days, close, close * 0 + 1.0)
+    assert set(f) == set(FUNDAMENTAL_FEATURES)
+    for frame in f.values():
+        assert frame.shape == (2, 2) and list(frame.columns) == ["X", "Y"] and frame.isna().all().all()

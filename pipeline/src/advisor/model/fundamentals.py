@@ -122,10 +122,16 @@ def _ratio(num: pd.Series, den: pd.Series) -> pd.Series:
 
 def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.DatetimeIndex,
                          split_adjusted_close: pd.DataFrame, splits: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    """Wide frames (days x symbols) of FUNDAMENTAL_FEATURES for symbols in both `tickers` and the close."""
+    """Wide frames (days x symbols) of FUNDAMENTAL_FEATURES, one column per symbol of the close.
+
+    Symbols missing from `tickers` (or from the filings) read NaN; so does everything when no symbol matches.
+    """
+    wanted = set(tickers["symbol"])
+    if not wanted.intersection(split_adjusted_close.columns):
+        empty = pd.DataFrame(np.nan, index=days, columns=list(split_adjusted_close.columns))
+        return {name: empty.copy() for name in FUNDAMENTAL_FEATURES}
     first = first_reported(facts)
     t = ttm(first)
-    wanted = set(tickers["symbol"])
     symbols = [s for s in split_adjusted_close.columns if s in wanted]
     syms = tickers[tickers["symbol"].isin(symbols)][["symbol", "cik"]].drop_duplicates("symbol")
     syms["cik"] = syms["cik"].astype("int64")

@@ -1,6 +1,6 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Plan 2f, Plan 2g and Plan 2h reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
+These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Plan 2f, Plan 2g, Plan 2h, Plan 3a and Plan 3b reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2i: social and attention
 
@@ -34,10 +34,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 
 ## Plan 3: model and features
 
-- **Unconfirmed jumps in the wild:** the first live run flagged an unconfirmed jump somewhere in the 100-day window for about 4.7% of priced symbols. Check what they are (microcaps, biotech, bad data) before building the jump feature.
-- **TSX universe size:** the live TMX filter keeps about 675 TSX symbols, while spec §4.3 says about 1,500. Update the spec's number.
-- **Jump indicator feature** (spec §10). Plan 2b keeps flagged bars and records `unconfirmed_jump` for the latest bar of each priority symbol. Plan 3 turns flagged days into the jump feature and blocks a Buy on them (§6.1). A bad first bar in a window is never flagged, because there is no earlier close to compare.
-- **Exclude non-common instruments before any pick exists:**
+- **Unconfirmed jumps in the wild:** the first live run flagged an unconfirmed jump somewhere in the 100-day window for about 4.7% of priced symbols. Check what they are (microcaps, biotech, bad data) before Plan 4 blocks a Buy on them.
+- **Exclude non-common instruments before any pick exists, and from training (Plan 4):**
   - ETNs with `ETF=N` (AMUB, BDCZ, DGP and others);
   - structured trusts (GJH, JBK, KTN);
   - CHSCN (a preferred);
@@ -67,7 +65,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Training data (Plan 3a).** `python -m advisor.training.build --out DIR` writes Parquet files that Plan 3b's training reads in the same weekly job:
   - `prices_US.parquet` and `prices_TSX.parquet`: `symbol, day, open, high, low, close, volume`, adjusted for splits and dividends, about 8 years. They include each market's benchmark and sector ETFs.
   - `sectors.parquet`: `symbol, sector, industry` (Yahoo's names). Use `training.sectors.sector_etf(market, sector)` for the relative-strength ETF. Four TSX sectors and unclassified stocks fall back to XIU.TO or SPY.
-  - `fundamentals.parquet`: `cik, metric, concept, unit, start, end, value, filed, form, accession`, every re-report kept. `tickers.parquet` maps `symbol` to `cik`. Pick a concept per period by `METRICS` priority and the latest `filed` strictly before the day (`filed < day`): companyfacts has no acceptance time, and most filings land after the close or before the open. Tickers and fundamentals cover the US universe only.
+  - `fundamentals.parquet`: `cik, metric, concept, unit, start, end, value, filed, form, accession`, every re-report kept. `tickers.parquet` maps `symbol` to `cik`. Pick a concept per period by `METRICS` priority and the earliest `filed` strictly before the day (`filed < day`), which Plan 3b's `advisor.model.fundamentals` does: companyfacts has no acceptance time, and most filings land after the close or before the open. Tickers and fundamentals cover the US universe only.
   - `events_US.parquet` and `events_TSX.parquet`: `symbol, day, dividend, split`, Yahoo's split and dividend events (`split` is the ratio, 0 where none). Prices are adjusted to today's scale, while as-filed EPS and share counts before a split are on the old scale. Convert facts with the product of later split ratios. Recover the price actually paid from the adjusted price with the split and dividend factors before computing P/E, P/S or FCF yield, or the "price >= $1" filter.
   - `macro.parquet`: `series, day, value` for the live collectors' FRED and Bank of Canada series.
   - `manifest.json`: sizes, timings and missing symbols.
@@ -82,7 +80,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Analyst rotation:** `max_symbols` always takes the head of the missing list. Rotate the rest oldest-first, so the bottom of the analyst shortlist isn't left unfetched forever.
 - **Earnings failure rate:** measure the first live run's per-symbol failure rate for `yfinance_earnings`.
 - **Yahoo analyst throttling.** Three local full runs on 2026-10-14 got analyst data for 39 of 200, then 199 of 200, then none (`SilentFailure`, served stale). Each came right after the bulk price download from one busy IP. Fetched alone, 40 of 40 large caps had data, and earnings data was unaffected. If GitHub Actions runs show the same, fetch analyst data apart from the price download: in the 06:30 ET health job, or for priority symbols before prices.
-- **XBRL facts are raw.** `sec_xbrl` keeps every listed concept and every re-reported or restated duplicate with its `filed` date. Features pick a concept per period by `METRICS` priority, take the latest fact filed on or before `as_of`, derive Q4 as FY minus 9M, and compute single quarters of cash-flow items from year-to-date facts (research `sec.md` §2.4–2.5).
+- **XBRL facts are raw.** `sec_xbrl` keeps every listed concept and every re-reported or restated duplicate with its `filed` date. Features pick a concept per period by `METRICS` priority, take the first-reported fact whose filing is before the day (`filed < day`, see Plan 3b's `advisor.model.fundamentals`), derive Q4 as FY minus 9M, and compute single quarters of cash-flow items from year-to-date facts (research `sec.md` §2.4–2.5).
 - **Insider and holder signals.** Count only codes P and S from non-derivative rows for insider buying and selling, and treat `planned` (10b5-1) sales as weaker. For 13D/G, a 0-share 13G/A can be an index giant's entity realignment rather than an exit.
 - **Amendments:** a Form 4/A restates trades already in the original Form 4, and both are stored (`form` tells them apart; the XML doesn't name the original's accession). Count a trade once: for the same owners, trade date, code and shares, keep the latest `accepted_at`. Do the same for 13D/G amendments of one reporting person.
 - **FRED dates are observation dates.** A month's CPI and unemployment rate are published about two weeks into the next month and are later revised. Backtests must apply release lags; point-in-time vintages (ALFRED) need a key.
@@ -105,6 +103,30 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **News volume z-score:** unbounded on sparse history. Daily counts of [0, 0, 0, 0, 1] and 10 stories today give about 24.5. Clip it or floor the spread before a model uses it.
 - **Missing versus zero:** when no news item came in at all (every news source failed), the run leaves the `news_*` features missing. When items came in but none for an asset, its counts are 0 and its sentiment is empty. Treat missing as unknown.
 - **`features_live` rows:** `merge_features_live` creates a row with only `news_*` keys for a shortlisted stock that had no row. A later plain `write_features_live` for the same run and asset would hit the unique key, so merge there too, or write before the news stage.
+
+## Plan 3c: live predictions
+
+- **Live features need at least 260 sessions of bars per symbol** (`mom_12_1`, the 52-week range). Check the live Yahoo window.
+- **Load the active model per market** with `repo.active_model` and `load_model_files` → `from_files`, and write `predictions` (q10, q50, q90, `p_beat` per horizon, `model_version`).
+- **Rank the screener's survivors** with `FinalModel.screen`.
+- **The pre-close run's partial bar:** features must treat today's bar as incomplete.
+- **US fundamentals live** must use `advisor.model.fundamentals` on `sec_xbrl` facts, so training and live agree.
+
+## Plan 4: recommendations
+
+- Exclude non-common instruments before any pick, and from training (the list under Plan 3).
+- Block Buy on `jump_5d`.
+- Read `picks_enabled` and `picks_reason` from the active model's metrics (spec §6.6).
+
+## Plan 3b known limits
+
+- **Survivorship:** training and backtests cover only stocks listed today (spec §5.2).
+- **The US cost finding:** on the prototype's data the US edge (+0.2–0.6% before costs) is smaller than the 3.1% currency round trip. A USD account would change that.
+- **The US model may not be promoted.** On the prototype's real data (2,000 US stocks) the 126-day horizon's calibration was 6.1 points off, so under the worst-horizon rule (limit 5) the US model isn't promoted and US holdings get no forecasts. TSX passed (worst 4.4 points). Serving only the horizons that pass is the owner's decision, a one-line change in `weekly.should_promote`; the full universe may calibrate better.
+- **Cores:** pass LightGBM the real core count. It once saw 16 host cores inside a 2-CPU container. `PARAMS` in `train.py` doesn't set `num_threads` yet.
+- **Not in the model until a later history plan, so live only** (the owner's fast-path decision, 2026-10-20): "surprise" (needs single-quarter EPS), the earnings group, and ownership and flow (insiders, short interest, 13F).
+- **Macro** could return as interactions or a separate regime model, never as raw levels: the same value for every stock on a date lets the model time the market.
+- **Calibration and gates fail closed:** a calibration or score that can't be measured never promotes a model and never enables picks.
 
 ## Plans 4 and 5: recommendations and dashboard
 

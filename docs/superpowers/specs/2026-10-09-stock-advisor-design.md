@@ -14,6 +14,8 @@
 
   Rev 2 also records the design refinements Plans 1 and 2a settled: the collector protocol, the least-privilege database role, tracked migrations and the health check.
 
+- **Plan 3b (2026-10-21):** the stock model drops macro features (owner's decision, §5.1), trained models are stored in Postgres (§5.2, §8), and the promotion and pick-disabling gates get exact definitions (§5.2, §6.6).
+
 ## 1. Purpose
 
 A personal decision-support app for **real investing**. Twice each trading day it collects data from 50+ free, keyless sources. It forecasts likely ranges for **US and Canadian (TSX) stocks** and the owner's crypto, then suggests what to buy, how long to hold it, and what the risk is. It also tells the owner what to do with their existing holdings. Every suggestion is graded against reality so the owner can judge, with evidence, whether to trust it.
@@ -250,7 +252,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
    - SPY, XIU.TO and sector ETFs are loaded as benchmarks only and are never picked.
    - Sectors and industries come from Yahoo's screener; `train.yml` refreshes them weekly.
 3. **Screener.**
-   - Fetch daily bars for both universes (about 6,000 US symbols and 1,500 TSX symbols) from Yahoo in bulk.
+   - Fetch daily bars for both universes (about 6,000 US symbols and 700 TSX symbols) from Yahoo in bulk.
    - Apply the jump rule (§10).
    - Apply each market's hard filters, then score the survivors with the **screener model** (§5.2).
    - Keep the top 300 US and the top 100 TSX.
@@ -280,15 +282,24 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 |---|---|---|---|
 | Price/volume | Returns over 5d, 21d, 63d, 126d and 12-1m; RSI(14); ATR(14)%; realized vol 20d and 60d; distance to 52-week high and low; volume z-score; gap %; flagged-jump indicator | Yes | US, TSX |
 | Relative strength | Excess return vs the market's benchmark and sector ETF over 21d and 63d; sector momentum rank | Yes | US, TSX |
-| Fundamentals (point in time) | Revenue and EPS growth YoY, gross and operating margin and their trend, P/E, P/S, FCF yield, debt/equity, surprise from the last filing (from SEC XBRL plus prices) | Yes | US |
+| Fundamentals (point in time) | Revenue and EPS growth YoY, gross and operating margin and their trend, P/E, P/S, FCF yield, debt/equity, surprise from the last filing (from SEC XBRL plus prices; the surprise waits for single-quarter EPS) | Yes | US |
 | Ownership and flow | Insider net buys over 90d, short interest as a share of shares outstanding, days to cover, short volume ratio, 13F holder change | Yes | US |
 | Earnings | Days to the next report, last EPS surprise | Partly | US, TSX |
-| Macro regime | Yield-curve slope, VIX level and change, HY spread, fed funds trend; Canadian policy rate and yields; USD/CAD trend | Yes | US, TSX |
+| Macro regime | Yield-curve slope, VIX level and change, HY spread, fed funds trend; Canadian policy rate and yields; USD/CAD trend. Not used by the stock model (owner's decision, 2026-10-21): in the Plan 3b prototype, levels that are the same for every stock let the model time the market by date. Collected for the crypto model and a later form | Yes | US, TSX |
 | Options | Implied-vol rank, put/call ratio | No (live only) | US |
 | News and social | Sentiment mean and trend, coverage breadth, mention z-score, Reddit, StockTwits, Trends, Wikipedia | No (live only) | US, TSX |
 | Catalysts | 8-K in the last 3 days, FDA or trial events, contract awards, congressional trades | Partly | US |
 
 Features a market lacks are missing values. LightGBM handles them natively.
+
+Fundamentals are read point in time (`advisor.model.fundamentals`):
+
+- A period's value is the first one reported: the best-priority concept, from the earliest filing. A filing counts from the day after it was filed.
+- A figure whose period ended more than 18 months (548 days) before the day is missing.
+- Margins, their trends and the FCF yield are missing unless their numerator and denominator cover the same period.
+- A missing capex or debt figure stays missing, never 0.
+
+The sector label isn't a feature: today's labels would span 8 years of history. `sector_rank_63` is.
 
 ### 5.2 Base model (stocks)
 
@@ -296,11 +307,15 @@ Features a market lacks are missing values. LightGBM handles them natively.
 - **Target:** forward excess return vs the market's benchmark (SPY, XIU.TO) at horizons h ∈ {5, 10, 20} (swing) and {21, 63, 126} (position) trading days of that market's calendar.
 - **Outputs per horizon:**
   - quantiles q10, q50, q90, from quantile regression;
-  - a classifier for P(excess > 0), calibrated with **isotonic regression** on held-out walk-forward folds.
+  - a classifier for P(excess > 0), calibrated with **isotonic regression** fitted on earlier walk-forward periods only, and clipped to the hit rates of 500-row bins so it never claims more than the data showed.
 - **Training data:** about 8 years of daily history per market for symbols that passed the liquidity filter. `train.yml` rebuilds it from scratch each week, as Parquet in the job's workspace; nothing is stored between weeks (owner's decision, 2026-10-20).
-- **Validation:** walk-forward with an embargo gap equal to the horizon.
-- **Screener model:** a price/volume and relative-strength variant per market. It scores every symbol from bulk price data alone.
-- **Retraining:** weekly. A new model is **promoted** only if its walk-forward metrics are at least as good as the active model's and its calibration error is ≤ 5 points.
+- **Training rows:** every 10th session after a 252-session warm-up.
+- **Validation:** walk-forward with 4 equal test periods after 2 training years, and an embargo gap equal to the horizon.
+  - Each period is calibrated only on earlier predictions whose outcomes were known before it began (the same horizon-long gap as training).
+- **Screener model:** a 21-day beat classifier per market, on price/volume and relative-strength features. It scores every symbol from bulk price data alone.
+- **Retraining:** weekly. A new model is **promoted** only if its calibration error is ≤ 5 points at its worst horizon and its mean rank IC is no more than 0.005 below the active model's. It fails closed: a calibration or score that can't be measured never promotes a model.
+- **Storage:** models are stored in `model_files` (§8), one version per training run. The active model and one other are kept.
+- **Cost (measured on 2 cores, Plan 3b prototype):** TSX trains in about 1 minute and US (2,000 stocks) in about 4.5 minutes, with about 2 GB peak memory and model files of about 6.5 MB per market. The full US universe is estimated at about 13 minutes. LightGBM must be given the real core count: inside a 2-CPU container it once saw the host's 16 cores.
 - **Known bias:** free data under-represents delisted companies (survivorship bias), so backtests overstate performance. This is shown on the Track Record page.
 
 ### 5.3 Live overlay (news, social, options)
@@ -361,7 +376,7 @@ The score is a weighted sum of percentile ranks within the symbol's market:
 
 ### 6.5 Output limits and grading
 
-- **Pick lists:** each run gives **per market** at most **10 Swing + 10 Position** picks, with no more than **3 per sector** in each list, ranked by q50 / (q90 − q10).
+- **Pick lists:** each run gives **per market** at most **10 Swing + 10 Position** picks, with no more than **3 per sector** in each list, ranked by q50 / (q90 − q10). A stock with no sector label counts alone for the cap.
 - **Watchlist verdicts:** every watchlist symbol gets one. A **Buy** verdict carries the same fields as a pick.
   - **Buy** if it qualifies.
   - **Avoid** if P ≤ 0.42 at every horizon.
@@ -383,6 +398,8 @@ The score is a weighted sum of percentile ranks within the symbol's market:
 - **Position:** picks show "validated on backtest only" until at least 50 of them have been graded live.
 - **Separate records:** backtest and live statistics are always shown in separate sections.
 - **Disabling picks:** if a market's backtest fails success criterion 1 or 2, that market's picks are **disabled** and its failing metrics are shown. Watchlist verdicts and holdings actions remain.
+  - A market's picks are shown only when its latest backtest has at least 30 picks, a positive mean return after costs, calibration within 5 points (at the worst horizon), and a mean stated P within 5 points of the picks' beat rate.
+  - A number that can't be measured fails the gate. The reason is stored in the model's metrics (`picks_enabled`, `picks_reason`).
 
 ## 7. My Portfolio
 
@@ -474,6 +491,7 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 | `holding_actions` | run_id, **account**, symbol, asset_type, action (sell / trim / add / hold), review, reasons (jsonb), trailing_stop, q10, q50, q90, exit_by, warnings (jsonb) |
 | `news_items` | id, symbol, published_at, outlet, url, title, sentiment, cluster_id. Pruned after 90 days |
 | `models` | version, kind (stock_us / stock_tsx / crypto), trained_at, metrics (jsonb), calibration_error, active |
+| `model_files` | version (→ models, cascade), name, body (gzip). The active model and one other per kind |
 | `daily_closes` | symbol, asset_type, day, close, currency. Yahoo's adjusted closes for holdings, the watchlist, the shortlist and SPY and XIU.TO, reaching a year back or to the first buy; Coinbase closes in USD for held and watched coins. Pruned after 2 years, except symbols ever bought and the benchmarks |
 | `fx_rates` | day, usd_cad. The Bank of Canada's daily rate, reaching a year back or to the first buy |
 
@@ -559,7 +577,8 @@ stock-advisor/
     src/advisor/
       collectors/{base, cache, runner, tracker, registry, <one module per source>}.py
       schedule.py  screener.py  prices.py  enrich.py  symbols.py  health.py  run.py
-      features/  model/  recommend/  portfolio/  grade.py  train.py
+      features/  model/{features, fundamentals, dataset, train, backtest, weekly}.py
+      recommend/  portfolio/  grade.py  train.py
       store/{db, migrate, repo}.py
     scripts/in-docker.sh    run tests in Linux (dev machine blocks psycopg's DLLs)
     tests/{fixtures/, unit/, integration/}
@@ -576,7 +595,7 @@ This is a standalone private GitHub repo. GitHub Actions and Vercel are both con
 
 | Risk | Mitigation |
 |---|---|
-| The model doesn't beat a market's benchmark | Per-market acceptance gates disable that market's picks and show the metrics. Holdings tools still work |
+| The model doesn't beat a market's benchmark | Per-market acceptance gates disable that market's picks and show the metrics. Holdings tools still work. Plan 3b's prototype: the US edge (+0.2–0.6% before costs) is smaller than the 3.1% currency round trip; a USD account (spec R12 setting) would change that |
 | **Yahoo is the only stock price source**, and it's unofficial | Low-volume use and the circuit breaker. A Yahoo outage fails the run, and GitHub emails the owner. The owner chose this over a second unofficial source |
 | TMX directory, CNN, StockTwits or Trends break | Best-effort flags and circuit breaker. A TMX outage serves the cached TSX universe (3-day freshness) and degrades the run |
 | TSX stocks have thinner data | Missing-feature-aware model, a per-market model and gates, a Medium risk floor for sparse stocks, and coverage shown on Ticker Detail |

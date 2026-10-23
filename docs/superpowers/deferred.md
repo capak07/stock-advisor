@@ -123,7 +123,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Survivorship:** training and backtests cover only stocks listed today (spec §5.2).
 - **The US cost finding:** on the prototype's data the US edge (+0.2–0.6% before costs) is smaller than the 3.1% currency round trip. A USD account would change that.
 - **The US model may not be promoted.** On the prototype's real data (2,000 US stocks) the 126-day horizon's calibration was 6.1 points off, so under the worst-horizon rule (limit 5) the US model isn't promoted and US holdings get no forecasts. TSX passed (worst 4.4 points). Serving only the horizons that pass is the owner's decision, a one-line change in `weekly.should_promote`; the full universe may calibrate better.
-- **Cores:** pass LightGBM the real core count. It once saw 16 host cores inside a 2-CPU container. `PARAMS` in `train.py` doesn't set `num_threads` yet.
+- **Local timing:** `PARAMS` sets no `num_threads`, which is right on the 2-core Actions runner. Under a CPU-capped container on a larger host (`docker run --cpus=2` on 16 cores, as in the prototype's timing run), LightGBM sees the host's cores and oversubscribes, so set `num_threads` to the cap before trusting the timings.
 - **Not in the model until a later history plan, so live only** (the owner's fast-path decision, 2026-10-20): "surprise" (needs single-quarter EPS), the earnings group, and ownership and flow (insiders, short interest, 13F).
 - **Macro** could return as interactions or a separate regime model, never as raw levels: the same value for every stock on a date lets the model time the market.
 - **Calibration and gates fail closed:** a calibration or score that can't be measured never promotes a model and never enables picks.

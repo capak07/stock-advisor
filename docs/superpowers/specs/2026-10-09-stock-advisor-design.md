@@ -315,7 +315,7 @@ The sector label isn't a feature: today's labels would span 8 years of history. 
 - **Screener model:** a 21-day beat classifier per market, on price/volume and relative-strength features. It scores every symbol from bulk price data alone.
 - **Retraining:** weekly. A new model is **promoted** only if its calibration error is ≤ 5 points at its worst horizon and its mean rank IC is no more than 0.005 below the active model's. It fails closed: a calibration or score that can't be measured never promotes a model.
 - **Storage:** models are stored in `model_files` (§8), one version per training run. The active model and one other are kept.
-- **Cost (measured on 2 cores, Plan 3b prototype):** TSX trains in about 1 minute and US (2,000 stocks) in about 4.5 minutes, with about 2 GB peak memory and model files of about 6.5 MB per market. The full US universe is estimated at about 13 minutes. LightGBM must be given the real core count: inside a 2-CPU container it once saw the host's 16 cores.
+- **Cost (measured on 2 cores, Plan 3b prototype):** TSX trains in about 1 minute and US (2,000 stocks) in about 4.5 minutes, with about 2 GB peak memory and model files of about 6.5 MB per market. The full US universe is estimated at about 13 minutes. On the 2-core Actions runner LightGBM's default thread count is right. When timing under a CPU cap on a larger host (such as a local `docker run --cpus=2`), set `num_threads` to the cap, or the timings mean little.
 - **Known bias:** free data under-represents delisted companies (survivorship bias), so backtests overstate performance. This is shown on the Track Record page.
 
 ### 5.3 Live overlay (news, social, options)

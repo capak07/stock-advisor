@@ -1,7 +1,9 @@
 """Synthetic training data in Plan 3a's file layout, for the model tests.
 
-Each stock drifts at its own constant daily rate (drawn with sd 0.0012 × `signal`) plus noise, so
-past returns predict future excess returns when `signal` > 0 and nothing does when it is 0.
+Each stock moves with the benchmark plus its own constant daily drift (drawn with sd 0.0012 ×
+`signal`) and its own noise. Sharing the benchmark's moves keeps excess returns independent across
+stocks, as in a real market, so past returns predict future excess returns when `signal` > 0 and
+nothing does when it is 0.
 """
 
 import json
@@ -13,6 +15,8 @@ import pandas as pd
 from advisor.markets import MARKETS
 from advisor.models import Market
 from advisor.training.sectors import SECTOR_ETFS
+
+STOCK_NOISE = 0.015  # sd of each stock's own daily log return, on top of the benchmark's
 
 
 def _bars(symbol: str, closes: np.ndarray, days: pd.DatetimeIndex) -> pd.DataFrame:
@@ -31,12 +35,13 @@ def write_market(out: Path, market: Market, stocks: int = 40, days: int = 2340, 
     sectors = list(SECTOR_ETFS[market])[:2]
     symbols = [f"Q{chr(65 + i // 26)}{chr(65 + i % 26)}{suffix}" for i in range(stocks)]
 
-    def walk(drift: float) -> np.ndarray:
-        return 50 * np.exp(np.cumsum(drift + rng.normal(0, 0.02, days)))
+    def walk(drift: float | np.ndarray, noise: float = 0.02) -> np.ndarray:
+        return 50 * np.exp(np.cumsum(drift + rng.normal(0, noise, days)))
 
-    frames = [_bars(MARKETS[market].benchmark, walk(0.0003), calendar)]
+    moves = 0.0003 + rng.normal(0, 0.02, days)  # the benchmark's daily log returns
+    frames = [_bars(MARKETS[market].benchmark, 50 * np.exp(np.cumsum(moves)), calendar)]
     frames += [_bars(etf, walk(0.0003), calendar) for etf in SECTOR_ETFS[market].values()]
-    frames += [_bars(s, walk(rng.normal(0, 0.0012 * signal)), calendar) for s in symbols]
+    frames += [_bars(s, walk(moves + rng.normal(0, 0.0012 * signal), STOCK_NOISE), calendar) for s in symbols]
     labels = [(s, sectors[i % 2], "Industry") for i, s in enumerate(symbols)]
     if penny:
         frames.append(_bars(f"QZZ{suffix}", np.full(days, 0.5), calendar))

@@ -6,6 +6,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo="$(cd .. && (pwd -W 2>/dev/null || pwd))"
+# bump the tag when scripts/test-image.Dockerfile changes
+image=advisor-pipeline-test:1
+docker image inspect "$image" >/dev/null 2>&1 || docker build -q -t "$image" - < scripts/test-image.Dockerfile
 MSYS_NO_PATHCONV=1 docker run --rm \
   -v "$repo:/repo" -w /repo/pipeline \
   -v advisor-venv:/opt/venv -v advisor-uv-cache:/root/.cache/uv \
@@ -13,5 +16,5 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   -e UV_PROJECT_ENVIRONMENT=/opt/venv -e UV_LINK_MODE=copy \
   -e TEST_DATABASE_URL=postgresql://postgres:postgres@host.docker.internal:54329/advisor_test \
   -e DATABASE_URL -e ADMIN_DATABASE_URL -e ADVISOR_CACHE_DIR -e SEC_USER_AGENT \
-  ghcr.io/astral-sh/uv:python3.12-bookworm-slim \
+  "$image" \
   sh -c 'uv sync --locked -q && exec "$@"' sh "$@"

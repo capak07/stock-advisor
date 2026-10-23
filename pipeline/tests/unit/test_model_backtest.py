@@ -75,3 +75,14 @@ def test_the_gate_needs_enough_profitable_honestly_calibrated_picks():
     assert gate(pick_metrics(pd.DataFrame(columns=["style", "net", "y", "p"])), 2.0) == (
         False, "only 0 backtest picks (needs 30)",
     )
+
+
+def test_the_gate_fails_closed_on_missing_numbers():
+    def m(net, p, beat):
+        return {"all": {"picks": 40, "mean_net_pct": net, "hit_rate_net": beat, "beat_rate": beat, "mean_p": p}}
+
+    nan = float("nan")
+    assert gate(m(0.8, 0.62, 0.60), nan) == (False, "probabilities couldn't be checked (no calibrated predictions)")
+    assert gate(m(nan, 0.62, 0.60), 3.0) == (False, "backtest picks couldn't be scored")
+    assert gate(m(0.8, nan, 0.60), 3.0) == (False, "backtest picks couldn't be scored")
+    assert gate(m(0.8, 0.62, nan), 3.0) == (False, "backtest picks couldn't be scored")

@@ -86,11 +86,18 @@ def gate(metrics: Mapping[str, Any], calibration_pts: float) -> tuple[bool, str]
     if n < MIN_PICKS:
         return False, f"only {n} backtest picks (needs {MIN_PICKS})"
     net = overall["mean_net_pct"]
-    if net <= 0:
-        return False, f"backtest picks lost {abs(net):.2f}% after costs"
-    if calibration_pts > MAX_CALIBRATION_PTS:
-        return False, f"probabilities off by {calibration_pts:.1f} points (limit 5)"
+    if not net > 0:  # written so a NaN fails
+        if net is not None and net == net:
+            return False, f"backtest picks lost {abs(net):.2f}% after costs"
+        return False, "backtest picks couldn't be scored"
+    if calibration_pts != calibration_pts:
+        return False, "probabilities couldn't be checked (no calibrated predictions)"
+    if not calibration_pts <= MAX_CALIBRATION_PTS:
+        return False, f"probabilities off by {calibration_pts:.1f} points (limit {MAX_CALIBRATION_PTS:g})"
     claimed, beat = overall["mean_p"], overall["beat_rate"]
-    if abs(claimed - beat) * 100 > 5:
+    gap_pts = abs(claimed - beat) * 100
+    if gap_pts != gap_pts:
+        return False, "backtest picks couldn't be scored"
+    if not gap_pts <= MAX_CALIBRATION_PTS:
         return False, f"picks claimed {claimed:.0%} but beat their benchmark {beat:.0%} of the time"
     return True, f"{n} backtest picks gained {net:.2f}% after costs"

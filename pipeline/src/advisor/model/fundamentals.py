@@ -22,6 +22,7 @@ FLOWS = ("revenue", "gross_profit", "operating_income", "net_income", "operating
 BALANCES = ("equity", "long_term_debt", "long_term_debt_noncurrent", "debt_current", "short_term_borrowings",
             "commercial_paper", "shares_outstanding")
 EPS_CLIP = 5.0
+STALE_DAYS = 548  # a figure whose period ended over 18 months ago is no longer read
 
 _RANK = {(metric, f"{taxonomy}:{concept}"): i
          for metric, concepts in METRICS.items() for i, (taxonomy, concept, _unit) in enumerate(concepts)}
@@ -84,10 +85,16 @@ def _asof(table: pd.DataFrame, grid: pd.DataFrame, cols: Sequence[str]) -> pd.Da
     right = table[["cik", "known", *cols]].copy()
     right["cik"] = right["cik"].astype("int64")
     right["known"] = right["known"].astype(grid["day"].dtype)
-    right = right.sort_values("known", kind="stable")
+    right = right.sort_values(["known", "end"], kind="stable")  # same-day filings: newest period last
     out = pd.merge_asof(grid[["cik", "day"]], right, left_on="day", right_on="known", by="cik",
                         allow_exact_matches=False)
     return out[list(cols)].reset_index(drop=True)
+
+
+def _fresh(grid: pd.DataFrame, vals: pd.DataFrame) -> pd.DataFrame:
+    """`vals` with every column blanked where the period `end` is over STALE_DAYS before the day."""
+    stale = (grid["day"] - vals["end"]).dt.days > STALE_DAYS
+    return vals.apply(lambda column: column.mask(stale))
 
 
 def _split_at(splits: pd.DataFrame, symbols: pd.Series, dates: pd.Series) -> pd.Series:
@@ -127,15 +134,16 @@ def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.Da
     g = grid.copy()
 
     for metric in FLOWS:
-        vals = _asof(t[t["metric"] == metric], grid, ["ttm", "ttm_1y", "end"])
+        vals = _fresh(grid, _asof(t[t["metric"] == metric], grid, ["ttm", "ttm_1y", "end"]))
         g[metric], g[f"{metric}_1y"] = vals["ttm"], vals["ttm_1y"]
+        g[f"{metric}_period"] = vals["end"].dt.to_period("M")
         if metric == "eps_diluted":
             g["eps_end"] = vals["end"]
 
     bal = first[first["start"].isna() & first["metric"].isin(BALANCES)].rename(columns={"filed": "known"})
     bal = bal.sort_values("end", kind="stable").drop_duplicates(["cik", "metric", "known"], keep="last")
     for metric in BALANCES:
-        vals = _asof(bal[bal["metric"] == metric], grid, ["value", "end"])
+        vals = _fresh(grid, _asof(bal[bal["metric"] == metric], grid, ["value", "end"]))
         g[metric] = vals["value"]
         if metric == "shares_outstanding":
             g["shares_end"] = vals["end"]
@@ -154,14 +162,17 @@ def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.Da
 
     out = pd.DataFrame({"day": g["day"], "symbol": g["symbol"]})
     out["rev_growth"] = _ratio(g["revenue"], g["revenue_1y"]) - 1
-    out["gross_margin"] = _ratio(g["gross_profit"], g["revenue"])
-    out["op_margin"] = _ratio(g["operating_income"], g["revenue"])
-    out["gross_margin_trend"] = out["gross_margin"] - _ratio(g["gross_profit_1y"], g["revenue_1y"])
-    out["op_margin_trend"] = out["op_margin"] - _ratio(g["operating_income_1y"], g["revenue_1y"])
+    gross_ok = g["gross_profit_period"] == g["revenue_period"]  # NaT never equals
+    op_ok = g["operating_income_period"] == g["revenue_period"]
+    out["gross_margin"] = _ratio(g["gross_profit"], g["revenue"]).where(gross_ok)
+    out["op_margin"] = _ratio(g["operating_income"], g["revenue"]).where(op_ok)
+    out["gross_margin_trend"] = out["gross_margin"] - _ratio(g["gross_profit_1y"], g["revenue_1y"]).where(gross_ok)
+    out["op_margin_trend"] = out["op_margin"] - _ratio(g["operating_income_1y"], g["revenue_1y"]).where(op_ok)
     out["eps_growth"] = _ratio(eps - eps_1y, eps_1y.abs()).clip(-EPS_CLIP, EPS_CLIP)
     out["earnings_yield"] = _ratio(g["net_income"], mcap)
     out["sales_yield"] = _ratio(g["revenue"], mcap)
-    out["fcf_yield"] = _ratio(g["operating_cash_flow"] - g["capex"], mcap)
+    out["fcf_yield"] = _ratio(g["operating_cash_flow"] - g["capex"], mcap).where(
+        g["operating_cash_flow_period"] == g["capex_period"])
     out["debt_to_equity"] = _ratio(debt, g["equity"].where(g["equity"] > 0))
     out["log_mcap"] = np.log(mcap.where(mcap > 0))
 

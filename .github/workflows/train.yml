@@ -1,9 +1,9 @@
 name: train
 
-# Weekly, on Saturday when neither market trades: rebuild the training data from scratch
-# (Plan 3a). Nothing is kept between weeks; Plan 3b trains, backtests and promotes the model in
-# this same job. A failed build fails the job (GitHub emails the owner) and the active model
-# stays in use.
+# Weekly, on Saturday when neither market trades: rebuild the training data from scratch, then
+# train, backtest and promote each market's model in this same job. Nothing is kept between
+# weeks except the stored models. A failed build or market fails the job (GitHub emails the
+# owner) while that market's active model stays in use.
 on:
   schedule:
     - cron: "0 10 * * 6"  # Saturday 10:00 UTC
@@ -32,10 +32,16 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: uv run python -m advisor.training.build --out "$RUNNER_TEMP/training"
-      - uses: actions/upload-artifact@v4  # what was built and what was missing, for 30 days
+      - name: Train, backtest and promote the stock models
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: uv run python -m advisor.model.weekly --data "$RUNNER_TEMP/training"
+      - uses: actions/upload-artifact@v4  # what was built, what was missing and how each model fared, for 30 days
         if: always()
         with:
-          name: training-manifest
-          path: ${{ runner.temp }}/training/manifest.json
+          name: training-report
+          path: |
+            ${{ runner.temp }}/training/manifest.json
+            ${{ runner.temp }}/training/model-report.json
           retention-days: 30
           if-no-files-found: ignore

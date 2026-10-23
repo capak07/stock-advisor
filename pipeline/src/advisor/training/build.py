@@ -34,7 +34,7 @@ from advisor.store.db import connect
 from advisor.training import prices
 from advisor.training.fundamentals import reduce_companyfacts, universe_ciks
 from advisor.training.macro import macro_history
-from advisor.training.prices import download_history, history_start
+from advisor.training.prices import YahooThrottled, download_history, history_start
 from advisor.training.sectors import all_sector_etfs, classify, industries, screen_industries
 
 MAX_MISSING_SHARE = 0.2  # of a market's stocks Yahoo may send no bars for
@@ -108,18 +108,22 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None) -
         if history.missing:
             # yfinance's cache sometimes drops a ticker ("database is locked"): ask once more
             deps.sleep(prices.PAUSE_SECONDS)
-            again = download_history(
-                history.missing, start, today, download=deps.download, sleep=deps.sleep
-            )
-            history = prices.PriceHistory(
-                bars=pd.concat([history.bars, again.bars], ignore_index=True).sort_values(
-                    ["symbol", "day"], ignore_index=True
-                ),
-                events=pd.concat([history.events, again.events], ignore_index=True).sort_values(
-                    ["symbol", "day"], ignore_index=True
-                ),
-                missing=again.missing,
-            )
+            try:
+                again = download_history(
+                    history.missing, start, today, download=deps.download, sleep=deps.sleep
+                )
+            except YahooThrottled:  # keep the first answer: the market's missing-share rule decides
+                again = None
+            if again is not None:
+                history = prices.PriceHistory(
+                    bars=pd.concat([history.bars, again.bars], ignore_index=True).sort_values(
+                        ["symbol", "day"], ignore_index=True
+                    ),
+                    events=pd.concat([history.events, again.events], ignore_index=True).sort_values(
+                        ["symbol", "day"], ignore_index=True
+                    ),
+                    missing=again.missing,
+                )
         gone = set(history.missing)
         lost = [s for s in stocks[market] if s in gone]
         if len(lost) > MAX_MISSING_SHARE * len(stocks[market]):

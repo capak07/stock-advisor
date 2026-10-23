@@ -9,8 +9,9 @@ import pytest
 
 from advisor.collectors.sec import SecEdgar
 from advisor.models import Market
+from advisor.training import build as build_module
 from advisor.training.build import BuildDeps, BuildFailed, build
-from advisor.training.prices import PAUSE_SECONDS
+from advisor.training.prices import PAUSE_SECONDS, YahooThrottled
 
 NOW = datetime(2026, 10, 24, 14, tzinfo=UTC)  # a Saturday
 UNIVERSE = {Market.US: ["JPM", "AAPL", "BRK.B"], Market.TSX: ["RY.TO"]}
@@ -128,3 +129,18 @@ def test_yahoo_missing_many_stocks_fails_the_build(fixtures_dir, tmp_path):
 def test_a_short_universe_fails_the_full_build(fixtures_dir, tmp_path):
     with web(fixtures_dir) as client, pytest.raises(BuildFailed, match="universe too small"):
         build(tmp_path, NOW, deps(client, []))
+
+
+def test_yahoo_throttling_the_second_ask_counts_its_symbols_as_missing(fixtures_dir, tmp_path, monkeypatch):
+    real = build_module.download_history
+    calls = []
+
+    def throttled_retry(symbols, *args, **kwargs):
+        calls.append(list(symbols))
+        if len(calls) == 2:  # the market's retry of what it missed
+            raise YahooThrottled("3 Yahoo downloads in a row came back empty")
+        return real(symbols, *args, **kwargs)
+
+    monkeypatch.setattr(build_module, "download_history", throttled_retry)
+    with web(fixtures_dir) as client, pytest.raises(BuildFailed, match="no bars for 1 of 3 US stocks"):
+        build(tmp_path, NOW, deps(client, [], silent_once=frozenset({"JPM"})), limit=10)

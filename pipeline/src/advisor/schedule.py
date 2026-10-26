@@ -81,6 +81,8 @@ def previous_sessions(end: date, count: int, market: Market = Market.US) -> list
 
 def sessions_after(market: Market, day: date, n: int) -> date:
     """The `n`-th `market` trading session after `day`, on that market's own calendar."""
+    if n < 1:
+        raise ValueError(f"n must be at least 1, got {n}")
     days = _calendar(market).valid_days(
         start_date=(day + timedelta(days=1)).isoformat(),
         end_date=(day + timedelta(days=n * 2 + 10)).isoformat(),

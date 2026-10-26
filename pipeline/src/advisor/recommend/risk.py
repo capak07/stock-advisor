@@ -44,16 +44,17 @@ def risk_levels(frame: pd.DataFrame) -> pd.DataFrame:
     weights = pd.Series(WEIGHTS)[parts.columns]
     available = parts.notna() * weights
     score = (parts.fillna(0) * weights).sum(axis=1) / available.sum(axis=1)
-    percentile = score.rank(pct=True, method="average") * 100
+    percentile = score.rank(pct=True, method="average") * 100  # NaN scores are left out of the ranking
 
-    indices = percentile.map(_level_for)
+    indices = percentile.map(lambda p: _level_for(p) if not math.isnan(p) else len(LEVELS) - 1)
     small = frame["log_mcap"] < math.log(SMALL_CAP)
     sparse = frame["groups_missing_share"] > 0.5
     indices = indices.where(~small, indices.map(lambda i: _at_least(i, "high")))
     indices = indices.where(~sparse, indices.map(lambda i: _at_least(i, "medium")))
 
     out = frame.copy()
-    out["risk_score"] = score
+    # A stock with no usable component gets the most cautious result rather than a gap.
+    out["risk_score"] = score.fillna(100.0)
     out["risk_level"] = indices.map(lambda i: LEVELS[i][0])
     out["max_position_pct"] = indices.map(lambda i: LEVELS[i][2])
     return out

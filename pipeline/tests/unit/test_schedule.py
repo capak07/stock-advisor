@@ -125,3 +125,8 @@ def test_exit_by_counts_the_markets_own_trading_days():
     # TSX trades on US Thanksgiving but not on Boxing Day
     assert sessions_after(Market.TSX, date(2026, 11, 25), 1) == date(2026, 11, 26)
     assert sessions_after(Market.TSX, date(2026, 12, 24), 1) == date(2026, 12, 29)
+
+
+def test_sessions_after_needs_a_positive_count():
+    with pytest.raises(ValueError):
+        sessions_after(Market.US, date(2026, 11, 25), 0)

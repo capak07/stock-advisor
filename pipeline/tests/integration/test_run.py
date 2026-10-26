@@ -10,17 +10,23 @@ from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.feeds import NewsItem, TickerNewsItem
 from advisor.collectors.series import SeriesObservation
+from advisor.model.dataset import load_market
+from advisor.model.train import PARAMS, TrainConfig, fit_final, to_files, walk_forward
 from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus
 from advisor.news.stage import NewsRow
 from advisor.run import RunDeps, empty_news_summary, execute_run
 from advisor.store import repo
+from advisor.training.sectors import all_sector_etfs
 from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history
+from model_data import write_market
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
 US = ["AAA", "BBB", "CCC"]
 TSX = ["RY.TO", "TD.TO"]
 SMALL = {Market.US: 3, Market.TSX: 2}
 EVERYONE = ["AAA", "BBB", "CCC", "RY.TO", "TD.TO"]
+# what phase 1 prices besides the holdings (the call is sorted): the benchmarks and sector ETFs
+FUNDS = sorted(["SPY", "XIU.TO", *(etf for etfs in all_sector_etfs().values() for etf in etfs)])
 
 
 def make_deps(db, tmp_path, *, prices=None, us_records=None, extra=None):
@@ -84,9 +90,10 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         "news": {"items": 0, "stories": 0, "rows": 0, "assets": 0, "sentiment": "not run"},
         # 70 closes for each shortlisted stock and for SPY and XIU.TO
         "history": {"closes": 490, "backfilled": [], "fx": 0, "rescaled": [], "pruned": 0},
+        "model": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
     }
-    # The benchmarks are priced with the holdings, then one call covers both markets.
-    assert deps.collectors["yfinance_bars"].calls == [["SPY", "XIU.TO"], EVERYONE]
+    # The benchmarks and sector ETFs are priced with the holdings, then one call covers both markets.
+    assert deps.collectors["yfinance_bars"].calls == [FUNDS, EVERYONE]
     assert health(db, outcome.run_id) == [
         ("nasdaq_symbols", "ok"), ("tmx_symbols", "ok"), ("yfinance_bars", "ok"),
     ]
@@ -103,7 +110,7 @@ def test_holdings_of_both_markets_are_priced_first_and_get_features(db, tmp_path
     deps = make_deps(db, tmp_path)
     outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
 
-    assert deps.collectors["yfinance_bars"].calls == [["OTCX", "SHOP.TO", "SPY", "XIU.TO"], EVERYONE]
+    assert deps.collectors["yfinance_bars"].calls == [["OTCX", "SHOP.TO", *FUNDS], EVERYONE]
     features = market_features(db, outcome.run_id)
     assert sorted(features) == ["OTCX", "SHOP.TO"]
     assert features["OTCX"] == {
@@ -284,8 +291,8 @@ def test_a_truncated_universe_fails_the_run_and_keeps_that_markets_symbols(db, t
     assert outcome.summary["markets"]["TSX"]["shortlist"] == 0
     assert outcome.summary["shortlist"] == 0
     assert extra["news"].calls == []  # a run that cannot publish spends no enrichment calls
-    # Only the benchmarks (no holdings here): no bulk Yahoo fetch for a run that cannot publish.
-    assert deps.collectors["yfinance_bars"].calls == [["SPY", "XIU.TO"]]
+    # Only the benchmarks and ETFs (no holdings here): no bulk Yahoo fetch for a run that cannot publish.
+    assert deps.collectors["yfinance_bars"].calls == [FUNDS]
 
 
 def test_a_run_that_cannot_publish_still_retries_unpriced_holdings(db, tmp_path):
@@ -301,7 +308,7 @@ def test_a_run_that_cannot_publish_still_retries_unpriced_holdings(db, tmp_path)
         deps, RunKind.PRE_OPEN, NOW, min_universe={Market.US: 3, Market.TSX: 300}
     )
 
-    assert prices.calls == [["OTCX", "SPY", "XIU.TO"], ["OTCX"]]  # the retry, but no bulk fetch
+    assert prices.calls == [["OTCX", *FUNDS], ["OTCX"]]  # the retry, but no bulk fetch
     assert outcome.status is RunStatus.FAILED
     assert outcome.summary["failed_reason"] == ["TSX: universe too small (2 < 300)"]
     assert outcome.summary["priority_unpriced"] == []
@@ -367,7 +374,7 @@ def test_a_holding_missed_in_phase_one_is_retried_and_saved_in_phase_two(db, tmp
         make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL
     )
 
-    assert prices.calls == [["OTCX", "SPY", "XIU.TO"], ["AAA", "BBB", "CCC", "OTCX", "RY.TO", "TD.TO"]]
+    assert prices.calls == [["OTCX", *FUNDS], ["AAA", "BBB", "CCC", "OTCX", "RY.TO", "TD.TO"]]
     assert outcome.status is RunStatus.SUCCESS
     assert outcome.summary["priority_unpriced"] == []
     assert market_features(db, outcome.run_id)["OTCX"] == {
@@ -1057,3 +1064,95 @@ def test_a_coingecko_failure_leaves_the_coin_list_and_the_run_alone(db, tmp_path
 
     assert outcome.status is RunStatus.SUCCESS
     assert outcome.summary["coins"].startswith("failed: HTTPStatusError: HTTP 400")
+
+
+FAST = TrainConfig(horizons=(5, 63), rounds=40, params={**PARAMS, "min_data_in_leaf": 50, "num_threads": 2})
+
+
+@pytest.fixture(scope="module")
+def tsx_model_files(tmp_path_factory):
+    out = tmp_path_factory.mktemp("tsx-model")
+    write_market(out, Market.TSX, stocks=20, days=1100)
+    data = load_market(out, Market.TSX)
+    return to_files(fit_final(data, walk_forward(data, FAST), FAST))
+
+
+def activate_tsx(db, files, usable=(63,)):
+    repo.save_model(db, "stock_tsx-1", "stock_tsx", NOW, {"usable_horizons": list(usable)}, 3.0, files)
+    repo.activate_model(db, "stock_tsx", "stock_tsx-1")
+
+
+def test_the_active_model_forecasts_the_tsx_shortlist_and_holdings(db, tmp_path, tsx_model_files):
+    activate_tsx(db, tsx_model_files)
+    hold(db, "RY.TO")
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    rows = db.execute("select symbol, horizon_days, benchmark, model_version from predictions"
+                      " where run_id = %s order by symbol", (outcome.run_id,)).fetchall()
+    assert {r["symbol"] for r in rows} == {"RY.TO", "TD.TO"}
+    assert {(r["horizon_days"], r["benchmark"], r["model_version"]) for r in rows} == {(63, "XIU.TO", "stock_tsx-1")}
+    assert outcome.summary["model"]["TSX"]["predicted"] == 2
+    assert outcome.summary["model"]["US"] == {"skipped": "no active model"}
+    assert run_row(db, outcome.run_id)["model_version"] == "stock_tsx-1"
+    assert "ret_5" in market_features(db, outcome.run_id)["RY.TO"]
+
+
+def test_a_market_without_a_model_ranks_by_dollar_volume(db, tmp_path):
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["model"] == {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}}
+    assert db.execute("select count(*) as n from predictions").fetchone()["n"] == 0
+    assert run_row(db, outcome.run_id)["model_version"] is None
+
+
+def test_a_model_that_fails_degrades_the_run_and_prices_still_publish(db, tmp_path, tsx_model_files):
+    activate_tsx(db, {**tsx_model_files, "h63_q50": b"not a model"})
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["model"]["TSX"]["failed"].startswith(("OSError", "LightGBMError", "BadGzipFile", "ValueError"))
+    assert run_row(db, outcome.run_id)["published"] is True
+
+
+def test_an_active_model_without_usable_horizons_is_skipped_not_failed(db, tmp_path, tsx_model_files):
+    activate_tsx(db, tsx_model_files, usable=())
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["model"]["TSX"] == {"skipped": "no usable horizons"}
+    assert db.execute("select count(*) as n from predictions").fetchone()["n"] == 0
+    assert run_row(db, outcome.run_id)["model_version"] is None
+
+
+def test_failed_split_events_leave_a_note_and_the_us_forecasts_still_run(db, tmp_path, tsx_model_files):
+    # The TSX model's features (price and relative strength) are a subset of the US ones, so it
+    # stands in for a US model here.
+    repo.save_model(db, "stock_us-1", "stock_us", NOW, {"usable_horizons": [63]}, 3.0, tsx_model_files)
+    repo.activate_model(db, "stock_us", "stock_us-1")
+    asked = []
+
+    def refused(tickers, start, end):
+        asked.append(sorted(tickers))
+        raise RuntimeError("Yahoo said no")
+
+    deps = dataclasses.replace(make_deps(db, tmp_path), split_download=refused)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert asked == [US]  # the US stocks being forecast
+    us = outcome.summary["model"]["US"]
+    assert us["split_events"] == "failed: RuntimeError: Yahoo said no"
+    assert (us["version"], us["screened"], us["predicted"], us["horizons"]) == ("stock_us-1", 3, 3, [63])
+    rows = db.execute("select symbol, benchmark from predictions where run_id = %s", (outcome.run_id,)).fetchall()
+    assert {(r["symbol"], r["benchmark"]) for r in rows} == {(s, "SPY") for s in US}
+    assert run_row(db, outcome.run_id)["model_version"] == "stock_us-1"
+
+
+def test_the_chart_history_keeps_only_the_last_100_days_of_the_longer_window(db, tmp_path):
+    prices = FakeCollector(  # 200 daily bars ending 2026-10-13, like the 400-day window's
+        "yfinance_bars",
+        records_for=lambda syms: [b for s in syms for b in history(s, 200, start=date(2026, 3, 28))],
+    )
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    row = db.execute(
+        "select min(day) as first, count(*) as n from daily_closes where symbol = 'AAA'"
+    ).fetchone()
+    assert (row["first"], row["n"]) == (date(2026, 7, 6), 100)  # 100 days before 2026-10-14

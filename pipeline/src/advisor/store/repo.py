@@ -43,6 +43,7 @@ def finish_run(
     sources_ok: int,
     sources_total: int,
     summary: dict,
+    model_version: str | None = None,
 ) -> None:
     publish = status in PUBLISHABLE
     with conn.transaction():
@@ -55,8 +56,8 @@ def finish_run(
             )
         conn.execute(
             "update runs set status = %s, finished_at = now(), sources_ok = %s,"
-            " sources_total = %s, summary = %s, published = %s where id = %s",
-            (status.value, sources_ok, sources_total, Jsonb(summary), publish, run_id),
+            " sources_total = %s, summary = %s, published = %s, model_version = %s where id = %s",
+            (status.value, sources_ok, sources_total, Jsonb(summary), publish, model_version, run_id),
         )
 
 
@@ -289,6 +290,16 @@ def fee_settings(conn: psycopg.Connection) -> tuple[float, float]:
     """(USD FX fee, crypto fee) in percent."""
     row = conn.execute("select usd_fx_fee_pct, crypto_fee_pct from settings where id = 1").fetchone()
     return float(row["usd_fx_fee_pct"]), float(row["crypto_fee_pct"])
+
+
+def stock_sectors(conn: psycopg.Connection, market: Market) -> list[tuple[str, str, str | None]]:
+    """(symbol, sector, industry) of the market's labelled stocks: which sector ETF each is compared with."""
+    rows = conn.execute(
+        "select symbol, sector, industry from symbols"
+        " where asset_type = 'stock' and market = %s and sector is not null order by symbol",
+        (market.value,),
+    ).fetchall()
+    return [(r["symbol"], r["sector"], r["industry"]) for r in rows]
 
 
 def write_sectors(conn: psycopg.Connection, rows: Sequence[tuple[str, str, str | None]]) -> int:

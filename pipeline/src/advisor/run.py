@@ -6,6 +6,7 @@ Usage: python -m advisor.run [--force-kind pre_open|pre_close|early_close] [--no
 import argparse
 import contextlib
 import json
+import math
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -13,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
+import pandas as pd
 import psycopg
 
 from advisor import screener
@@ -27,6 +29,7 @@ from advisor.collectors.base import (
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.registry import build_registry
+from advisor.collectors.sec_xbrl import FinancialFact
 from advisor.collectors.tracker import SourceTracker
 from advisor.collectors.yfinance_bars import Downloader, yahoo_download
 from advisor.company_names import CompanyNames
@@ -35,6 +38,9 @@ from advisor.crypto_prices import BARS, CHECK, CRYPTO_STAGE, QUOTES, crypto_feat
 from advisor.enrich import EnrichTargets, interleave, ranked_shortlist, run_enrichment
 from advisor.history import record as record_price_history
 from advisor.markets import BENCHMARKS, MARKETS, market_of
+from advisor.model.live import bars_frame, facts_frame, live_features, split_events
+from advisor.model.predict import ActiveModel, load_active, predict_rows, screen_scores
+from advisor.model.weekly import KIND
 from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, RunStatus, SymbolInfo
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
@@ -44,6 +50,8 @@ from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
 from advisor.screener import ScreenRow
 from advisor.store import repo
 from advisor.store.db import connect
+from advisor.training.prices import training_download
+from advisor.training.sectors import SECTOR_ETFS, all_sector_etfs
 
 MIN_PRICED_FRACTION = 0.5
 RUN_BUDGET_SECONDS = 30 * 60  # spec §3; GitHub kills the job at 40 minutes
@@ -51,6 +59,9 @@ PRICES = "yfinance_bars"
 PRICE_STAGE = frozenset({PRICES, *(spec.universe_source for spec in MARKETS.values())})
 NEWS_HISTORY = timedelta(days=20)  # daily story counts behind the news volume z-score
 SCORING_RESERVE_SECONDS = 120  # FinBERT runs only with this much of the run budget left
+HISTORY_RECENT = timedelta(days=100)  # the chart's closes per run; the longer bar window is the model's
+SECTOR_FUNDS = [etf for etfs in all_sector_etfs().values() for etf in etfs]
+PARTIAL_KINDS = frozenset({RunKind.PRE_CLOSE, RunKind.EARLY_CLOSE})  # runs during a session
 
 
 def no_scorer() -> Scorer | None:
@@ -67,6 +78,8 @@ class RunDeps:
     # The price-history backfill's Yahoo download and Bank of Canada client; tests leave them off.
     download: Downloader | None = None
     http: httpx.Client | None = None
+    # Yahoo's split events, for the US forecasts' fundamentals; tests leave it off (no events).
+    split_download: Downloader | None = None
 
 
 @dataclass(frozen=True)
@@ -140,10 +153,13 @@ def decide_status(
     universe_ok: bool,
     prices_ok: bool,
     holdings_ok: bool = True,
+    models_ok: bool = True,
 ) -> RunStatus:
     if not (universe_ok and prices_ok):
         return RunStatus.FAILED
     if not holdings_ok:  # a held stock without a price is missing from the owner's advice
+        return RunStatus.DEGRADED
+    if not models_ok:  # a market's model stage failed: its prices still publish, its forecasts don't
         return RunStatus.DEGRADED
     if any(collectors[r.name].core and r.status is not CollectorStatus.OK for r in results):
         return RunStatus.DEGRADED
@@ -239,14 +255,20 @@ def record_history(
     coins: Sequence[str],
     results: Mapping[str, CollectorResult],
 ) -> dict:
-    """Store the dashboard's daily closes and USD/CAD (Plan 5a). Errors land in the summary."""
+    """Store the dashboard's daily closes and USD/CAD (Plan 5a). Errors land in the summary.
+
+    Each stock's closes come from its last 100 days of bars only: every close given is rewritten,
+    and the rest of the 400-day window is there for the model's features, not the chart.
+    """
     valet = results.get("boc_valet")
+    today = now_utc.astimezone(ET).date()
+    recent = {s: [b for b in bars[s] if b.day >= today - HISTORY_RECENT] for s in stocks if s in bars}
     try:
         return record_price_history(
             deps.conn,
-            today=now_utc.astimezone(ET).date(),
+            today=today,
             stocks=stocks,
-            stock_bars=bars,
+            stock_bars=recent,
             coins=coins,
             coin_bars=candles,
             valet=valet.records if valet is not None else [],
@@ -255,6 +277,150 @@ def record_history(
         )
     except Exception as exc:  # the price history is for the dashboard; it never fails a run
         return {"error": f"{type(exc).__name__}: {exc}"[:200]}
+
+
+@dataclass(frozen=True)
+class MarketModel:
+    """A market's active model, with the sector labels its relative-strength features compare by."""
+
+    active: ActiveModel
+    sectors: pd.DataFrame
+
+
+def model_failure(exc: Exception) -> dict:
+    return {"failed": f"{type(exc).__name__}: {exc}"[:200]}
+
+
+def load_models(conn: psycopg.Connection) -> tuple[dict[Market, MarketModel], dict[str, dict]]:
+    """Each market's active model, loaded once per run, and its `summary["model"]` entry.
+
+    A market without one, or whose model fails to load, gets neither the screener nor forecasts.
+    """
+    models: dict[Market, MarketModel] = {}
+    summary: dict[str, dict] = {}
+    for market in Market:
+        try:
+            active = load_active(conn, market)
+            if active is None:  # no model, or one whose horizons are all uncalibrated
+                none = repo.active_model(conn, KIND[market]) is None
+                summary[market.value] = {"skipped": "no active model" if none else "no usable horizons"}
+                continue
+            labels = repo.stock_sectors(conn, market)
+        except Exception as exc:  # a broken model never stops the run's prices from publishing
+            summary[market.value] = model_failure(exc)
+            continue
+        sectors = pd.DataFrame(labels, columns=["symbol", "sector", "industry"])
+        models[market] = MarketModel(active, sectors)
+        summary[market.value] = {
+            "version": active.version, "screened": 0, "predicted": 0, "horizons": list(active.usable),
+        }
+    return models, summary
+
+
+def feature_day(
+    market: Market, bars: Mapping[str, Sequence[DailyBar]], kind: RunKind, now_utc: datetime
+) -> tuple[pd.Timestamp, bool]:
+    """The market's last session (its benchmark's last bar), and whether that bar is still partial."""
+    benchmark = MARKETS[market].benchmark
+    if not bars.get(benchmark):
+        raise ValueError(f"no {benchmark} bars")
+    day = bars[benchmark][-1].day
+    return pd.Timestamp(day), kind in PARTIAL_KINDS and day == now_utc.astimezone(ET).date()
+
+
+def model_features(
+    market: Market,
+    model: MarketModel,
+    symbols: Sequence[str],
+    bars: Mapping[str, Sequence[DailyBar]],
+    kind: RunKind,
+    now_utc: datetime,
+    *,
+    events: pd.DataFrame | None = None,
+    facts: tuple[pd.DataFrame, pd.DataFrame] | None = None,
+) -> pd.DataFrame:
+    """Stage 6: the training code's features for `symbols` on the market's last session.
+
+    Without `facts`, a US stock's fundamentals are missing; the screener uses none of them.
+    """
+    wanted = [*symbols, MARKETS[market].benchmark, *SECTOR_ETFS[market].values()]
+    prices = bars_frame({s: bars[s] for s in dict.fromkeys(wanted) if s in bars})
+    day, partial = feature_day(market, bars, kind, now_utc)
+    if market is Market.US and facts is None:
+        facts = facts_frame([])
+    table, tickers = facts if facts is not None else (None, None)
+    return live_features(
+        prices, market, day, sectors=model.sectors, partial_day=partial,
+        events=events, facts=table, tickers=tickers,
+    )
+
+
+def screen_market(
+    market: Market,
+    model: MarketModel,
+    passed: Sequence[ScreenRow],
+    bars: Mapping[str, Sequence[DailyBar]],
+    kind: RunKind,
+    now_utc: datetime,
+) -> dict[str, float]:
+    """Stage 3: the model's screener score per passing symbol. A NaN or inf score counts as none."""
+    if not passed:
+        return {}
+    features = model_features(market, model, [r.symbol for r in passed], bars, kind, now_utc)
+    if features.empty:
+        return {}
+    scores = screen_scores(model.active, features)
+    return {str(s): float(v) for s, v in scores.items() if math.isfinite(v)}
+
+
+def model_feature_rows(features: pd.DataFrame, names: Sequence[str]) -> list[tuple[AssetRef, dict]]:
+    """Each stock's model features for features_live, as JSON numbers; a missing one is left out."""
+    rows = []
+    for symbol, values in features[list(names)].astype(float).iterrows():
+        kept = {name: float(v) for name, v in values.items() if math.isfinite(v)}
+        if kept:
+            rows.append((AssetRef(str(symbol), AssetType.STOCK), kept))
+    return rows
+
+
+def forecast_market(
+    deps: RunDeps,
+    run_id: int,
+    market: Market,
+    model: MarketModel,
+    symbols: Sequence[str],
+    bars: Mapping[str, Sequence[DailyBar]],
+    kind: RunKind,
+    now_utc: datetime,
+    results: Mapping[str, CollectorResult],
+) -> dict:
+    """Stage 7: store forecasts for `symbols` and their model features; returns summary fields.
+
+    US fundamentals come from the run's SEC facts. Split events are best-effort: without them a
+    stock that split since its last filing gets off fundamentals, which beats no forecast at all.
+    """
+    added: dict = {}
+    events, facts = None, None
+    if market is Market.US:
+        sec = results.get("sec_xbrl")
+        filed = [f for f in (sec.records if sec is not None else []) if isinstance(f, FinancialFact)]
+        facts = facts_frame(filed)
+        if deps.split_download is not None and symbols:
+            try:
+                events = split_events(
+                    symbols, now_utc.astimezone(ET).date(), download=deps.split_download
+                )
+            except Exception as exc:  # Yahoo throttling or the run budget: forecast without them
+                added["split_events"] = f"failed: {type(exc).__name__}: {exc}"[:200]
+    features = model_features(market, model, symbols, bars, kind, now_utc, events=events, facts=facts)
+    benchmark = MARKETS[market].benchmark
+    rows = predict_rows(model.active, features, benchmark) if not features.empty else []
+    with deps.conn.transaction():  # a market's forecasts and their features land together or not at all
+        repo.write_predictions(deps.conn, run_id, rows)
+        repo.merge_features_live(
+            deps.conn, run_id, model_feature_rows(features, model.active.model.features), now_utc
+        )
+    return {"predicted": len({r.symbol for r in rows}), **added}
 
 
 def execute_run(
@@ -298,8 +464,9 @@ def execute_run(
         crypto = priority_order(held, watch, AssetType.CRYPTO)
 
         # Phase 1: holdings and watchlist of both markets are priced and saved before anything
-        # else can fail. The benchmarks come along for the dashboard's price history.
-        first = fetch_prices([*priority, *BENCHMARKS])
+        # else can fail. The benchmarks come along for the dashboard's price history and, with the
+        # sector ETFs, for the model's relative-strength features.
+        first = fetch_prices([*priority, *BENCHMARKS, *SECTOR_FUNDS])
         bars, flagged = dict(first.bars), dict(first.flagged)
         priority_rows = [screener.price_stats(s, bars[s]) for s in priority if s in bars]
         repo.write_features_live(
@@ -352,16 +519,35 @@ def execute_run(
             m: check_market(m, universes[m], limits[m], priority, bars, floors[m]) for m in Market
         }
         prices_ok = all(p.prices_ok for p in passes.values())
+        enriched = universe_ok and prices_ok
+
+        # The models of stages 3 and 7, loaded once: a market whose load fails skips both. Every
+        # model failure below is that market's alone, recorded in summary["model"]; it degrades the
+        # run and never fails it.
+        models, model_summary = load_models(conn)
+
+        # Phase 2.5: the screener. A market with an active model ranks the survivors by its
+        # screener score; one without (or whose screener fails) ranks them by dollar volume.
+        scores: dict[Market, dict[str, float]] = {}
+        for market, model in list(models.items()) if enriched else []:
+            try:
+                scores[market] = screen_market(
+                    market, model, passes[market].passed, bars, kind, now_utc
+                )
+            except Exception as exc:
+                model_summary[market.value] = model_failure(exc)
+                del models[market]
+            else:
+                model_summary[market.value]["screened"] = len(scores[market])
 
         # Phase 3: enrichment, only for a run that can still publish.
         ranked = {
-            m: ranked_shortlist(p.passed, priority, MARKETS[m].shortlist_size)
+            m: ranked_shortlist(p.passed, priority, MARKETS[m].shortlist_size, scores=scores.get(m))
             for m, p in passes.items()
         }
         targets = EnrichTargets(
             priority_stocks=priority, crypto=crypto, ranked_stocks=interleave(*ranked.values())
         )
-        enriched = universe_ok and prices_ok
         news = empty_news_summary()
         price_history: dict = {}
         if enriched:
@@ -378,6 +564,18 @@ def execute_run(
             # run's prices may be why it failed. Its errors land in the summary, never fail the run.
             stocks = [*priority, *targets.ranked_stocks, *BENCHMARKS]
             price_history = record_history(deps, now_utc, bars, candles, stocks, crypto, results)
+
+            # Phase 3.5: forecasts for each market's holdings, watchlist and ranked shortlist, once
+            # enrichment has brought the US filings. Each symbol is forecast once.
+            for market, model in models.items():
+                own = [s for s in priority if market_of(s) is market]
+                symbols = list(dict.fromkeys([*own, *ranked[market]]))
+                try:
+                    model_summary[market.value] |= forecast_market(
+                        deps, run_id, market, model, symbols, bars, kind, now_utc, results
+                    )
+                except Exception as exc:
+                    model_summary[market.value] = model_failure(exc)
 
         summary = {
             "markets": {
@@ -404,7 +602,9 @@ def execute_run(
             "coins": coins,
             "news": news,
             "history": price_history,
+            "model": model_summary,
         }
+        model_version = ",".join(m["version"] for m in model_summary.values() if "version" in m)
         held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
         held_crypto = {ref.symbol for ref in held if ref.asset_type is AssetType.CRYPTO}
         status = decide_status(
@@ -413,6 +613,7 @@ def execute_run(
             universe_ok=universe_ok,
             prices_ok=prices_ok,
             holdings_ok=held_stocks <= bars.keys() and held_crypto <= quotes.keys(),
+            models_ok=not any("failed" in m for m in model_summary.values()),
         )
         if status is RunStatus.FAILED:
             summary["failed_reason"] = [
@@ -439,6 +640,7 @@ def execute_run(
         sources_ok=tracker.count_healthy(),
         sources_total=len(deps.collectors),
         summary=summary,
+        model_version=model_version or None,
     )
     return RunOutcome(run_id, status, summary)
 
@@ -483,6 +685,7 @@ def main(argv: list[str] | None = None) -> int:
                 news_scorer=load_finbert,
                 download=yahoo_download,
                 http=client,
+                split_download=training_download,
             )
             outcome = execute_run(deps, kind, now)
 

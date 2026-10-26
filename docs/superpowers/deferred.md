@@ -127,7 +127,11 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 
 - **Cost of the 400-day price window:** it adds about a minute per run (267 s against 210 s for 6,644 symbols). Peak memory is 2.75 GB.
 - **A TTM built from year-to-date facts can mis-scale EPS across a split.** Its three pieces take one filing date, so a split between those filings is applied wrongly. Annual EPS is exact.
-- **For the next pipeline plan:** the pre-close `partial_day` rule and the screener's reordering of the shortlist have no run-level test.
+- **For the next pipeline plan:** the pre-close `partial_day` rule is unit-tested (`feature_day`, `live_features`) but has no run-level test.
+- **Dividend-event parity:** the TSX, and the US when the split download fails, get no dividend events. So live `log_adv20`, `dollar_volume_20` and the eligibility ADV can be up to about 1–2% lower than training's for a stock with an ex-date in the last 20 sessions.
+- **Storage growth:** `features_live` rows now carry about 31 model features, and each run adds about 1,200 `predictions` rows. Neither has a retention rule: roughly 100+ MB a year against the 500 MB free tier. Prune them in Plan 4 or 5.
+- **The split download's cost:** 3 years of bars for about 350 US symbols per run. Measure it on the first production run.
+- **The eligibility gate:** a stock the model may not score (no close on the day, under $1, under $1M a day, or under 60 sessions) gets no screener score and no forecast, holdings included. Its `features_live` row has `model_eligible: false`, and Plan 4 applies spec §10's fallback to such a holding.
 
 ## Plans 4 and 5: recommendations and dashboard
 

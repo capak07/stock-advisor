@@ -248,7 +248,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
 
 ### 4.3 Run stages
 
-1. **Holdings first.** Price the held and watched stocks of both markets, and save their features before anything else can fail. SPY and XIU.TO are priced with them.
+1. **Holdings first.** Price the held and watched stocks of both markets, and save their features before anything else can fail. SPY, XIU.TO and the sector ETFs are priced with them.
 2. **Universes.**
    - Load the US universe (source 1) and the TSX universe (source 2), applying the market rules in §3.
    - SPY, XIU.TO and sector ETFs are loaded as benchmarks only and are never picked.
@@ -272,6 +272,7 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
    - Per ticker, compute sentiment mean and trend, a volume z-score, and **coverage breadth**.
 6. **Features.** One row per (symbol, as_of) (§5.1).
 7. **Model.** Forecasts for the shortlist, holdings and watchlist, for the active model's usable horizons only (§5.2). A market with no active model, or none with a usable horizon, gets no forecasts and its screener falls back to dollar volume. A market whose model fails to load or run gets none either, and degrades the run. Either way that market's prices still publish and the other market is unaffected. Each market's outcome is in `summary.model`.
+   - Only stock-days the model may score get a screener score or a forecast, as in training: a traded close of at least $1 on the day, a 20-session dollar volume of at least $1M, and 60 sessions of history. This holds for holdings and the watchlist too. Each forecast stock's features row says so in `model_eligible`, and a holding without a forecast falls back to trailing-stop and size rules (§10).
    - Live sector labels come from `symbols.sector`, which `train.yml` fills weekly: the labels training reads.
    - For the US stocks being forecast, the run downloads 3 years of split events (best-effort) so EPS is put onto today's shares with the split factor at its filing date, as in training.
 8. **Recommender and portfolio advisor** (§6, §7).

@@ -23,7 +23,7 @@ from advisor.models import ET, AssetType, DailyBar, Market
 
 Downloader = Callable[[list[str], date, date], pd.DataFrame]
 SYMBOLS_PER_DOWNLOAD = 100
-LOOKBACK = timedelta(days=100)
+LOOKBACK = timedelta(days=400)  # the model's 12-month momentum and 52-week range need ~260 sessions
 # yf.download never raises: blocked or rate-limited requests come back as empty frames, so a
 # download of at least this many symbols with no bars at all counts as failed.
 MIN_SYMBOLS_FOR_EMPTY_CHECK = 5

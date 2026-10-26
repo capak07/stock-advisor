@@ -1,3 +1,4 @@
+import contextlib
 from datetime import UTC, date, datetime
 
 import pandas as pd
@@ -35,7 +36,7 @@ def test_fetch_round_trips_share_class_symbols_and_skips_empty_rows():
 
     bars = YFinanceBars(download=fake_download).fetch(["BRK.B", "AAPL"], AS_OF)
 
-    assert calls == [(["AAPL", "BRK-B"], date(2026, 7, 6), date(2026, 10, 15))]
+    assert calls == [(["AAPL", "BRK-B"], date(2025, 9, 9), date(2026, 10, 15))]
     assert [(b.symbol, b.day, b.close, b.source) for b in bars] == [
         ("AAPL", date(2026, 10, 12), 10.5, "yfinance"),
         ("AAPL", date(2026, 10, 13), 11.5, "yfinance"),
@@ -147,3 +148,15 @@ def test_fetch_past_the_deadline_before_any_download_raises(monkeypatch):
 
     with pytest.raises(DeadlineExceeded, match="run time budget exhausted; 1 of 1 not tried"):
         YFinanceBars(download=must_not_download).fetch(["AAPL"], AS_OF)
+
+
+def test_bars_reach_back_far_enough_for_the_models_features():
+    asked = []
+
+    def download(tickers, start, end):
+        asked.append(start)
+        return pd.DataFrame()
+
+    with contextlib.suppress(Exception):  # an empty answer may raise; only the window matters here
+        YFinanceBars(download=download).fetch(["AAPL", "MSFT"], datetime(2026, 10, 26, 13, tzinfo=UTC))
+    assert asked == [date(2025, 9, 21)]  # 400 days before 2026-10-26 ET

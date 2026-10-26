@@ -20,19 +20,23 @@ ENRICH_WORKERS = 8
 
 
 def ranked_shortlist(
-    passed: Sequence[ScreenRow], exclude: Sequence[str], size: int = SHORTLIST_SIZE
+    passed: Sequence[ScreenRow],
+    exclude: Sequence[str],
+    size: int = SHORTLIST_SIZE,
+    scores: Mapping[str, float] | None = None,
 ) -> list[str]:
-    """Up to `size` passing symbols not in `exclude`, by dollar volume then symbol.
+    """Up to `size` passing symbols not in `exclude`.
 
-    Interim ranking: Plan 3's screener model replaces 20-day dollar volume as the sort key.
+    With `scores` (the model's screener score) the best score comes first, then dollar volume, then
+    symbol; a symbol without a score follows every scored one. Without, dollar volume then symbol.
     """
     skip = set(exclude)
-    ranked = [
-        r.symbol
-        for r in sorted(passed, key=lambda r: (-r.adv20, r.symbol))
-        if r.symbol not in skip
-    ]
-    return ranked[:size]
+
+    def key(r: ScreenRow) -> tuple[bool, float, float, str]:
+        score = None if scores is None else scores.get(r.symbol)
+        return (score is None, -(score or 0.0), -r.adv20, r.symbol)
+
+    return [r.symbol for r in sorted(passed, key=key) if r.symbol not in skip][:size]
 
 
 def shortlist(

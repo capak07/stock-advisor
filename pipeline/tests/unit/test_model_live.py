@@ -6,7 +6,14 @@ import pytest
 
 from advisor.collectors.sec_xbrl import FinancialFact
 from advisor.model.dataset import WARMUP, load_market
-from advisor.model.live import VOLUME_FEATURES, bars_frame, facts_frame, live_features, split_events
+from advisor.model.live import (
+    LIVE_WINDOW,
+    VOLUME_FEATURES,
+    bars_frame,
+    facts_frame,
+    live_features,
+    split_events,
+)
 from advisor.models import DailyBar, Market
 from model_data import write_market
 
@@ -22,7 +29,7 @@ def test_live_features_match_the_training_rows_on_the_same_day(tmp_path):
     data = load_market(tmp_path, Market.TSX)
     day = data.calendar[WARMUP + 300]  # a sample day well inside the history
     prices, sectors = live_inputs(tmp_path, Market.TSX)
-    window = prices[pd.to_datetime(prices["day"]) >= day - pd.Timedelta(days=400)]
+    window = prices[pd.to_datetime(prices["day"]) >= day - LIVE_WINDOW]
     live = live_features(window, Market.TSX, day, sectors=sectors, partial_day=False)
     training = data.rows[data.rows["day"] == day].set_index("symbol")
     assert set(training.index) == set(live.index[live["eligible"]])

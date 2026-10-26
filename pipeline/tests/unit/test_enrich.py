@@ -105,3 +105,10 @@ def test_a_crypto_market_source_runs_only_when_crypto_is_held_or_watched(tmp_pat
         targets = EnrichTargets(priority_stocks=["OTCX"], crypto=crypto, ranked_stocks=["AAA"])
         run_enrichment(tracker, {"fear": fear}, ["fear"], targets)
         assert fear.calls == expected
+
+
+def test_the_screener_score_ranks_the_shortlist_when_there_is_one():
+    rows = [ScreenRow("A", 10, 9e6, 300, date(2026, 10, 23)), ScreenRow("B", 10, 5e6, 300, date(2026, 10, 23)),
+            ScreenRow("C", 10, 7e6, 300, date(2026, 10, 23))]
+    assert ranked_shortlist(rows, [], 3) == ["A", "C", "B"]  # dollar volume, as before
+    assert ranked_shortlist(rows, [], 3, scores={"B": 0.9, "C": 0.4}) == ["B", "C", "A"]  # A has no score: last

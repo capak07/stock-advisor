@@ -223,6 +223,16 @@ class FinalModel:
             frames.append(out)
         return pd.concat(frames)
 
+    def contributions(self, x: pd.DataFrame, horizon: int, top: int = 3) -> dict[str, list[dict]]:
+        """The `top` features that moved each row's median forecast most (by absolute size),
+        from LightGBM's per-feature contributions; keyed by the index of `x`."""
+        contrib = self.boosters[horizon]["q50"].predict(x[self.features], pred_contrib=True)[:, :-1]  # last = bias
+        out = {}
+        for key, vals in zip(x.index, contrib, strict=True):
+            order = np.argsort(-np.abs(vals), kind="stable")[:top]
+            out[key] = [{"feature": self.features[i], "contribution": float(vals[i])} for i in order]
+        return out
+
     def screen(self, x: pd.DataFrame) -> np.ndarray:
         """Uncalibrated price-only score: it only ranks, to shortlist stocks for a full prediction."""
         return self.screener.predict(x[self.screener_features])

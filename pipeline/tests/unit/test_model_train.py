@@ -116,3 +116,15 @@ def test_each_period_is_calibrated_only_on_outcomes_known_when_it_began(tmp_path
         known = position + 63 < data.calendar.searchsorted(wf.folds[k].start)
         assert known.sum() < (pred["fold"] < k).sum()  # the embargo drops the latest outcomes
         np.testing.assert_array_equal(p_raw, np.sort(pred.loc[known, "p_raw"].to_numpy()))
+
+
+def test_contributions_name_the_features_that_moved_the_forecast(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
+    data = load_market(tmp_path, Market.TSX)
+    model = fit_final(data, walk_forward(data, FAST), FAST)
+    x = data.rows.drop_duplicates("symbol").set_index("symbol")[data.features].head(3)
+    out = model.contributions(x, 63)
+    assert set(out) == set(x.index)
+    for parts in out.values():
+        assert len(parts) == 3 and {p["feature"] for p in parts} <= set(data.features)
+        assert abs(parts[0]["contribution"]) >= abs(parts[-1]["contribution"])

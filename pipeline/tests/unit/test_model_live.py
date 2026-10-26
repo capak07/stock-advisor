@@ -55,6 +55,20 @@ def test_a_partial_day_takes_volume_features_from_the_last_complete_session(tmp_
     assert partial["ret_5"].tolist() == pytest.approx(full_today["ret_5"].tolist())  # prices use today's bar
 
 
+@pytest.mark.parametrize("partial_day", [False, True])
+def test_a_stock_without_a_bar_on_the_day_is_not_eligible(tmp_path, partial_day):
+    symbols = write_market(tmp_path, Market.TSX, stocks=2, days=500)
+    prices, sectors = live_inputs(tmp_path, Market.TSX)
+    today = pd.Timestamp(prices["day"].max())
+    stale, traded = symbols
+    gap = prices[~((prices["symbol"] == stale) & (pd.to_datetime(prices["day"]) == today))]
+    live = live_features(gap, Market.TSX, today, sectors=sectors, partial_day=partial_day)
+    full = live_features(prices, Market.TSX, today, sectors=sectors, partial_day=partial_day)
+    assert full.loc[stale, "eligible"]  # it was eligible until its bar went missing
+    assert not live.loc[stale, "eligible"]  # in partial mode yesterday's flag alone would pass it
+    assert live.loc[traded, "eligible"] == full.loc[traded, "eligible"]
+
+
 def test_bars_become_the_training_layout():
     bars = {"X": [DailyBar(symbol="X", day=pd.Timestamp("2026-10-23").date(), open=1, high=2, low=0.5, close=1.5,
                            volume=10, source="yfinance")]}

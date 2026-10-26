@@ -10,6 +10,7 @@ from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.feeds import NewsItem, TickerNewsItem
 from advisor.collectors.series import SeriesObservation
+from advisor.markets import MARKETS
 from advisor.model.dataset import load_market
 from advisor.model.train import PARAMS, TrainConfig, fit_final, to_files, walk_forward
 from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus
@@ -1097,12 +1098,73 @@ def test_the_active_model_forecasts_the_tsx_shortlist_and_holdings(db, tmp_path,
     assert "ret_5" in market_features(db, outcome.run_id)["RY.TO"]
 
 
+def priced_by_volume(volumes):
+    """A Yahoo fake whose fresh 70-day histories differ only in each symbol's daily volume."""
+    return FakeCollector(
+        "yfinance_bars",
+        best_effort=True,
+        records_for=lambda syms: [
+            b for s in syms for b in history(s, 70, volume=volumes.get(s, 200_000.0), start=FRESH_START)
+        ],
+    )
+
+
 def test_a_market_without_a_model_ranks_by_dollar_volume(db, tmp_path):
-    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    prices = priced_by_volume({"CCC": 400_000.0, "AAA": 300_000.0, "TD.TO": 300_000.0})
+    extra = {"news": FakeCollector("news", core=False)}
+    outcome = execute_run(
+        make_deps(db, tmp_path, prices=prices, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL
+    )
     assert outcome.status is RunStatus.SUCCESS
     assert outcome.summary["model"] == {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}}
+    # each market's shortlist by dollar volume (US: CCC, AAA, BBB; TSX: TD.TO, RY.TO), interleaved
+    assert extra["news"].calls == [["CCC", "TD.TO", "AAA", "RY.TO", "BBB"]]
     assert db.execute("select count(*) as n from predictions").fetchone()["n"] == 0
     assert run_row(db, outcome.run_id)["model_version"] is None
+
+
+def test_an_active_model_shortlists_by_its_screener_score_not_dollar_volume(
+    db, tmp_path, tsx_model_files, monkeypatch
+):
+    activate_tsx(db, tsx_model_files)
+    monkeypatch.setitem(MARKETS, Market.TSX, dataclasses.replace(MARKETS[Market.TSX], shortlist_size=1))
+    screened = []
+
+    def scores(active, features):  # the screener prefers RY.TO, which trades less than TD.TO
+        screened.append(sorted(features.index))
+        return pd.Series({"RY.TO": 2.0, "TD.TO": 1.0}).reindex(features.index)
+
+    monkeypatch.setattr("advisor.run.screen_scores", scores)
+    prices = priced_by_volume({"TD.TO": 300_000.0})
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert screened == [["RY.TO", "TD.TO"]]
+    assert outcome.summary["markets"]["TSX"]["shortlist"] == 1
+    rows = db.execute("select distinct symbol from predictions where run_id = %s", (outcome.run_id,)).fetchall()
+    assert [r["symbol"] for r in rows] == ["RY.TO"]  # by dollar volume it would have been TD.TO
+
+
+def test_a_stock_the_model_may_not_score_gets_no_score_and_no_forecast(db, tmp_path, tsx_model_files):
+    activate_tsx(db, tsx_model_files)
+    hold(db, "TD.TO")  # a holding too: the gate applies to every stock
+
+    def records_for(symbols):  # TD.TO has no bar on 10-13, the TSX's last session (still fresh)
+        return [
+            b for s in symbols
+            for b in history(s, 69 if s == "TD.TO" else 70, start=FRESH_START)
+        ]
+
+    prices = FakeCollector("yfinance_bars", best_effort=True, records_for=records_for)
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    tsx = outcome.summary["model"]["TSX"]
+    assert (tsx["screened"], tsx["predicted"], tsx["not_eligible"]) == (1, 1, 1)
+    rows = db.execute("select distinct symbol from predictions where run_id = %s", (outcome.run_id,)).fetchall()
+    assert [r["symbol"] for r in rows] == ["RY.TO"]
+    features = market_features(db, outcome.run_id)
+    assert features["TD.TO"]["model_eligible"] is False
+    assert features["TD.TO"]["last_close"] == 10.0  # its price row is still there for Plan 4
+    assert features["RY.TO"]["model_eligible"] is True
 
 
 def test_a_model_that_fails_degrades_the_run_and_prices_still_publish(db, tmp_path, tsx_model_files):
@@ -1111,6 +1173,24 @@ def test_a_model_that_fails_degrades_the_run_and_prices_still_publish(db, tmp_pa
     assert outcome.status is RunStatus.DEGRADED
     assert outcome.summary["model"]["TSX"]["failed"].startswith(("OSError", "LightGBMError", "BadGzipFile", "ValueError"))
     assert run_row(db, outcome.run_id)["published"] is True
+
+
+def test_a_failed_forecast_keeps_the_version_that_ranked_the_shortlist(
+    db, tmp_path, tsx_model_files, monkeypatch
+):
+    activate_tsx(db, tsx_model_files)
+
+    def broken(active, features, benchmark):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("advisor.run.predict_rows", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["model"]["TSX"] == {
+        "version": "stock_tsx-1", "screened": 2, "failed": "RuntimeError: boom",
+    }
+    assert run_row(db, outcome.run_id)["model_version"] == "stock_tsx-1"  # its screener ranked the run
+    assert db.execute("select count(*) as n from predictions").fetchone()["n"] == 0
 
 
 def test_an_active_model_without_usable_horizons_is_skipped_not_failed(db, tmp_path, tsx_model_files):

@@ -91,6 +91,7 @@ def live_features(
 
     With `partial_day` today's bar is incomplete (its volume is partway through the session), so the
     volume features and eligibility come from the previous session; prices still use today's bar.
+    Either way a stock without a close on `day` is not eligible.
     """
     benchmark = MARKETS[market].benchmark
     etfs = [benchmark, *SECTOR_ETFS[market].values()]
@@ -107,6 +108,9 @@ def live_features(
         for name in (*VOLUME_FEATURES, "eligible", "dollar_volume_20"):
             out[name] = last[name]
         out["eligible"] = out["eligible"].fillna(False).astype(bool)
+    # a stock with no close on `day` has nothing to score, whatever the previous session said
+    on_day = prices.loc[(pd.to_datetime(prices["day"]) == day) & prices["close"].notna(), "symbol"]
+    out["eligible"] = out["eligible"] & out.index.isin(set(on_day))
     out = out.drop(index=etfs, errors="ignore")
     label = sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
     out["sector"] = out.index.map(label)

@@ -312,7 +312,8 @@ def load_models(conn: psycopg.Connection) -> tuple[dict[Market, MarketModel], di
         sectors = pd.DataFrame(labels, columns=["symbol", "sector", "industry"])
         models[market] = MarketModel(active, sectors)
         summary[market.value] = {
-            "version": active.version, "screened": 0, "predicted": 0, "horizons": list(active.usable),
+            "version": active.version, "screened": 0, "predicted": 0, "not_eligible": 0,
+            "horizons": list(active.usable),
         }
     return models, summary
 
@@ -321,6 +322,7 @@ def feature_day(
     market: Market, bars: Mapping[str, Sequence[DailyBar]], kind: RunKind, now_utc: datetime
 ) -> tuple[pd.Timestamp, bool]:
     """The market's last session (its benchmark's last bar), and whether that bar is still partial."""
+    # On a 13:00 US early close the 15:15 TSX pre-close run calls a complete US bar partial: conservative.
     benchmark = MARKETS[market].benchmark
     if not bars.get(benchmark):
         raise ValueError(f"no {benchmark} bars")
@@ -363,10 +365,14 @@ def screen_market(
     kind: RunKind,
     now_utc: datetime,
 ) -> dict[str, float]:
-    """Stage 3: the model's screener score per passing symbol. A NaN or inf score counts as none."""
+    """Stage 3: the model's screener score per passing symbol it may score (as in training).
+
+    An ineligible symbol, or a NaN or inf score, counts as none: those sort after every scored one.
+    """
     if not passed:
         return {}
     features = model_features(market, model, [r.symbol for r in passed], bars, kind, now_utc)
+    features = features[features["eligible"].astype(bool)]
     if features.empty:
         return {}
     scores = screen_scores(model.active, features)
@@ -374,12 +380,17 @@ def screen_market(
 
 
 def model_feature_rows(features: pd.DataFrame, names: Sequence[str]) -> list[tuple[AssetRef, dict]]:
-    """Each stock's model features for features_live, as JSON numbers; a missing one is left out."""
+    """Each stock's model features for features_live, as JSON numbers (a missing one is left out).
+
+    `model_eligible` says whether the model may score the stock: Plan 4 applies spec §10's fallback
+    to a holding that got no forecast because it is not.
+    """
+    eligible = features["eligible"].astype(bool)
     rows = []
     for symbol, values in features[list(names)].astype(float).iterrows():
         kept = {name: float(v) for name, v in values.items() if math.isfinite(v)}
-        if kept:
-            rows.append((AssetRef(str(symbol), AssetType.STOCK), kept))
+        kept["model_eligible"] = bool(eligible[symbol])
+        rows.append((AssetRef(str(symbol), AssetType.STOCK), kept))
     return rows
 
 
@@ -394,7 +405,10 @@ def forecast_market(
     now_utc: datetime,
     results: Mapping[str, CollectorResult],
 ) -> dict:
-    """Stage 7: store forecasts for `symbols` and their model features; returns summary fields.
+    """Stage 7: forecasts for the `symbols` the model may score, and every one's model features.
+
+    Training kept only eligible stock-days, so an ineligible stock gets `model_eligible: false` and
+    no forecast. Returns the market's summary fields.
 
     US fundamentals come from the run's SEC facts. Split events are best-effort: without them a
     stock that split since its last filing gets off fundamentals, which beats no forecast at all.
@@ -414,13 +428,14 @@ def forecast_market(
                 added["split_events"] = f"failed: {type(exc).__name__}: {exc}"[:200]
     features = model_features(market, model, symbols, bars, kind, now_utc, events=events, facts=facts)
     benchmark = MARKETS[market].benchmark
-    rows = predict_rows(model.active, features, benchmark) if not features.empty else []
+    eligible = features[features["eligible"].astype(bool)]
+    rows = predict_rows(model.active, eligible, benchmark) if not eligible.empty else []
     with deps.conn.transaction():  # a market's forecasts and their features land together or not at all
         repo.write_predictions(deps.conn, run_id, rows)
         repo.merge_features_live(
             deps.conn, run_id, model_feature_rows(features, model.active.model.features), now_utc
         )
-    return {"predicted": len({r.symbol for r in rows}), **added}
+    return {"predicted": len({r.symbol for r in rows}), "not_eligible": len(features) - len(eligible), **added}
 
 
 def execute_run(
@@ -574,8 +589,9 @@ def execute_run(
                     model_summary[market.value] |= forecast_market(
                         deps, run_id, market, model, symbols, bars, kind, now_utc, results
                     )
-                except Exception as exc:
-                    model_summary[market.value] = model_failure(exc)
+                except Exception as exc:  # its screener still ranked the shortlist: keep the version
+                    kept = {k: model_summary[market.value][k] for k in ("version", "screened")}
+                    model_summary[market.value] = kept | model_failure(exc)
 
         summary = {
             "markets": {

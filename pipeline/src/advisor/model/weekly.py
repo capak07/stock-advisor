@@ -27,6 +27,9 @@ from advisor.store.db import connect
 
 IC_TOLERANCE = 0.005  # week-to-week noise: one more week of data must not block a good replacement
 KIND = {Market.US: "stock_us", Market.TSX: "stock_tsx"}
+# TSX first: it is the smaller load, so an out-of-memory kill during US (which no `try` can catch)
+# still leaves TSX trained and reported
+TRAIN_ORDER = [Market.TSX, Market.US]
 REPORT = "model-report.json"
 TOP_FEATURES = 10
 
@@ -58,13 +61,15 @@ def should_promote(
     return new_ic >= old_ic - IC_TOLERANCE, f"rank IC {new_ic:.3f} vs the active {old_ic:.3f}"
 
 
-def calibration_of(metrics: Mapping[int, Mapping[str, float]]) -> float:
-    """The worst horizon's calibration gap; NaN if any is NaN or there are none.
+def calibration_of(metrics: Mapping[int, Mapping[str, float]], horizons: Sequence[int]) -> float:
+    """The worst horizon's calibration gap; NaN if any is NaN or any expected horizon is unmeasured.
 
     Python's `max` over floats depends on the order of a NaN, so it can't be used here.
     """
-    values = [m["calibration_pts"] for m in metrics.values()]
-    if not values or any(v != v for v in values):
+    if not horizons or any(h not in metrics for h in horizons):
+        return float("nan")
+    values = [metrics[h]["calibration_pts"] for h in horizons]
+    if any(v != v for v in values):
         return float("nan")
     return max(values)
 
@@ -100,7 +105,7 @@ def _train_market(
     walked = time.monotonic()
     calibrated = wf.predictions[wf.predictions["p"].notna()]
     backtest = pick_metrics(simulate_picks(calibrated, market, repo.fee_settings(conn)[0]))
-    calibration_pts = calibration_of(wf.metrics)
+    calibration_pts = calibration_of(wf.metrics, config.horizons)
     picks_enabled, picks_reason = gate(backtest, calibration_pts)
     model = fit_final(data, wf, config)
     files = to_files(model)
@@ -166,7 +171,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    markets = [Market(m) for m in args.market] if args.market else list(Market)
+    markets = [Market(m) for m in args.market] if args.market else TRAIN_ORDER
     with connect(Settings.from_env().database_url) as conn:
         report = run(args.data, markets, conn, datetime.now(UTC))
     text = json.dumps(report, indent=2)

@@ -34,10 +34,11 @@ def test_a_model_whose_checks_could_not_be_measured_is_never_promoted():
 
 def test_calibration_is_the_worst_horizon_and_nan_if_any_horizon_is_unmeasured():
     def of(a, b):
-        return calibration_of({5: {"calibration_pts": a}, 63: {"calibration_pts": b}})
+        return calibration_of({5: {"calibration_pts": a}, 63: {"calibration_pts": b}}, (5, 63))
 
     assert of(3.0, 4.2) == 4.2
     assert of(4.2, 3.0) == 4.2
     assert of(NAN, 3.0) != of(NAN, 3.0)  # NaN, whichever order the horizons come in
     assert of(3.0, NAN) != of(3.0, NAN)
-    assert calibration_of({}) != calibration_of({})
+    assert calibration_of({}, (5, 63)) != calibration_of({}, (5, 63))
+    assert calibration_of({5: {"calibration_pts": 3.0}}, (5, 63)) != calibration_of({5: {"calibration_pts": 3.0}}, (5, 63))

@@ -78,6 +78,7 @@ def test_walk_forward_finds_a_real_signal_and_calibrates_out_of_sample(tmp_path)
     assert later["p"].between(0, 1).all()
     assert (later["q10"] <= later["q50"]).all() and (later["q50"] <= later["q90"]).all()
     assert wf.metrics[63]["calibration_pts"] < 10
+    assert wf.predictions["jump_5d"].isin([0.0, 1.0]).all()  # carried for the backtest's jump rule
 
 
 def test_a_final_model_round_trips_through_its_files(tmp_path):

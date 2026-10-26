@@ -169,6 +169,7 @@ def walk_forward(data: MarketData, config: TrainConfig = TrainConfig()) -> WalkF
     rows = data.rows
     folds = make_folds(pd.DatetimeIndex(rows["day"].unique()), config)
     frames, metrics = [], {}
+    jump = ["jump_5d"] if "jump_5d" in rows else []  # carried so the backtest can skip unconfirmed jumps
     for h in config.horizons:
         target = f"y_{h}"
         parts = []
@@ -178,7 +179,7 @@ def walk_forward(data: MarketData, config: TrainConfig = TrainConfig()) -> WalkF
             if train.empty or test.empty:  # the last periods of long horizons have no targets yet
                 continue
             boosters = _fit_horizon(train[data.features], train[target], config)
-            out = test[["day", "symbol", "sector", "dollar_volume_20"]].assign(horizon=h, fold=k, y=test[target])
+            out = test[["day", "symbol", "sector", "dollar_volume_20", *jump]].assign(horizon=h, fold=k, y=test[target])
             parts.append(out.join(_predict(boosters, test[data.features])))
         if not parts:
             continue
@@ -196,7 +197,7 @@ def walk_forward(data: MarketData, config: TrainConfig = TrainConfig()) -> WalkF
         scored = pred[pred["p"].notna()]
         if not scored.empty:
             metrics[h] = _metrics(scored)
-    columns = ["day", "symbol", "sector", "dollar_volume_20", "horizon", "fold", "y", *QUANTILE_NAMES, "p_raw", "p"]
+    columns = ["day", "symbol", "sector", "dollar_volume_20", *jump, "horizon", "fold", "y", *QUANTILE_NAMES, "p_raw", "p"]
     predictions = pd.concat(frames, ignore_index=True)[columns] if frames else pd.DataFrame(columns=columns)
     return WalkForward(predictions, metrics, folds)
 

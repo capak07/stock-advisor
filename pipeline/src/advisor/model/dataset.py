@@ -68,7 +68,9 @@ def load_market(data_dir: Path, market: Market) -> MarketData:
         facts = pd.read_parquet(data_dir / "fundamentals.parquet")
         tickers = pd.read_parquet(data_dir / "tickers.parquet")
         splits = split_factor(calendar, list(wide.close.columns), events)
-        features |= fundamental_features(facts, tickers, days, split_adjusted.loc[days], splits.loc[days])
+        # the daily factor, for symbols that split: a shares or EPS date falls between sample days
+        splits = splits.loc[:, splits.ne(1).any()]
+        features |= fundamental_features(facts, tickers, days, split_adjusted.loc[days], splits)
         names = names + FUNDAMENTAL_FEATURES
 
     frames = {name: features[name].loc[days] for name in names}
@@ -83,4 +85,5 @@ def load_market(data_dir: Path, market: Market) -> MarketData:
     label = sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
     rows["sector"] = rows["symbol"].map(label)
     columns = ["day", "symbol", "sector", "dollar_volume_20", *(f"y_{h}" for h in HORIZONS), *names]
+    del wide, split_adjusted, traded, dollar_volume, features, frames, stacked  # the full-calendar frames are large
     return MarketData(market, rows[columns].reset_index(drop=True), names, calendar)

@@ -37,6 +37,8 @@ def round_trip_cost(market: Market, dollar_volume_20: np.ndarray, usd_fx_fee_pct
 def simulate_picks(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> pd.DataFrame:
     """One row per pick: each day and style, the best-ratio stocks within the sector cap."""
     df = predictions.copy()
+    if "jump_5d" in df:  # spec 6.1: the latest bar must not be a flagged, unconfirmed jump
+        df = df[df["jump_5d"].fillna(0) != 1]
     df["cost"] = round_trip_cost(market, df["dollar_volume_20"].to_numpy(), usd_fx_fee_pct)
     width = df["q90"] - df["q10"]
     df["ratio"] = (df["q50"] / width).where(width > 0)

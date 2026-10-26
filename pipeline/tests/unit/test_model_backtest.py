@@ -86,3 +86,13 @@ def test_the_gate_fails_closed_on_missing_numbers():
     assert gate(m(nan, 0.62, 0.60), 3.0) == (False, "backtest picks couldn't be scored")
     assert gate(m(0.8, nan, 0.60), 3.0) == (False, "backtest picks couldn't be scored")
     assert gate(m(0.8, 0.62, nan), 3.0) == (False, "backtest picks couldn't be scored")
+
+
+def test_a_flagged_jump_on_the_latest_bar_is_never_picked():
+    rows = frame([
+        ("AAA.TO", "Energy", 20, 0.65, -0.02, 0.03, 0.05, 0.01),
+        ("BBB.TO", "Energy", 20, 0.65, -0.02, 0.03, 0.05, 0.01),
+    ])
+    rows["jump_5d"] = [1.0, 0.0]
+    assert simulate_picks(rows, Market.TSX, 1.5)["symbol"].tolist() == ["BBB.TO"]
+    assert simulate_picks(rows.drop(columns="jump_5d"), Market.TSX, 1.5)["symbol"].tolist() == ["AAA.TO", "BBB.TO"]

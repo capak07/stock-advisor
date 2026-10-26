@@ -10,6 +10,7 @@ from advisor.schedule import (
     missed_run_kind,
     previous_sessions,
     resolve_run_kind,
+    sessions_after,
 )
 
 
@@ -116,3 +117,11 @@ def test_market_defaults_to_us():
     assert freshness_floor(RunKind.PRE_OPEN, now) == freshness_floor(
         RunKind.PRE_OPEN, now, market=Market.US
     )
+
+
+def test_exit_by_counts_the_markets_own_trading_days():
+    # US: Wed 2026-11-25, then Thanksgiving (26th), Fri 27th, Mon 30th
+    assert sessions_after(Market.US, date(2026, 11, 25), 2) == date(2026, 11, 30)
+    # TSX trades on US Thanksgiving but not on Boxing Day
+    assert sessions_after(Market.TSX, date(2026, 11, 25), 1) == date(2026, 11, 26)
+    assert sessions_after(Market.TSX, date(2026, 12, 24), 1) == date(2026, 12, 29)

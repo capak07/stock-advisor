@@ -79,6 +79,15 @@ def previous_sessions(end: date, count: int, market: Market = Market.US) -> list
     return [stamp.date() for stamp in schedule.index][-count:]
 
 
+def sessions_after(market: Market, day: date, n: int) -> date:
+    """The `n`-th `market` trading session after `day`, on that market's own calendar."""
+    days = _calendar(market).valid_days(
+        start_date=(day + timedelta(days=1)).isoformat(),
+        end_date=(day + timedelta(days=n * 2 + 10)).isoformat(),
+    )
+    return days[n - 1].date()
+
+
 def expected_last_session(kind: RunKind, now_utc: datetime, market: Market = Market.US) -> date:
     """Latest `market` session whose daily bar should exist: the latest one on or before today
     for pre-close and early-close runs, before today for pre-open runs."""

@@ -23,6 +23,11 @@ MIN_KEPT = 300
 INSTRUMENT = re.compile(r"^[A-Z]{1,5}(\.[A-Z]{1,2})?$")
 EXCLUDED_SUFFIXES = frozenset({"U", "F", "T", "WT", "DB", "NT", "RT", "W", "R"})
 NON_EQUITY = re.compile(r"\b(ETFs?|CDRs?|Funds?|Split|Portfolio|Pool|Notes?)\b")
+# Bullion trusts, ActivETFs, split-share income classes and closed-end investment vehicles.
+NON_OPERATING = re.compile(
+    r"\bPhysical\b.*\bTrust\b|\bActivETF\b|\bIncome (Plus )?Class\b"
+    r"|\bPremium Income Corporation\b|\bInvestment Trust Limited\b"
+)
 REIT = re.compile(r"\b(REIT|Real Estate Investment Trust)\b")
 
 
@@ -38,6 +43,8 @@ def keep_instrument(symbol: str, instrument_name: str, company_name: str) -> boo
     if suffix in EXCLUDED_SUFFIXES:
         return False
     if NON_EQUITY.search(company_name) or NON_EQUITY.search(instrument_name):
+        return False
+    if NON_OPERATING.search(company_name):
         return False
     return suffix != "UN" or REIT.search(company_name) is not None
 

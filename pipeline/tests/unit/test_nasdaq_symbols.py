@@ -32,7 +32,7 @@ def test_parse_other_listed_maps_exchanges_and_excludes_etfs_and_preferreds(fixt
         ("JPM", "NYSE"),
         ("TSM", "NYSE"),  # ADRs are kept
         ("AAPL", "NYSE"),
-        ("ET", "NYSE"),  # LP units with "units representing" are kept
+        # ET (Energy Transfer LP units) is left out: owner's decision 2026-10-26
         ("ITUB", "NYSE"),  # ADRs are kept even with preferred in the name
         ("PBR.A", "NYSE"),  # ADRs are kept even with preferred in the name
     ]
@@ -58,7 +58,6 @@ def test_fetch_merges_both_files_sorted_and_deduplicated(fixtures_dir):
     assert [(r.symbol, r.exchange) for r in records] == [
         ("AAPL", "NASDAQ"),  # the NASDAQ listing wins over the duplicate
         ("BRK.B", "NYSE"),
-        ("ET", "NYSE"),
         ("ITUB", "NYSE"),
         ("JPM", "NYSE"),
         ("PBR.A", "NYSE"),
@@ -114,9 +113,11 @@ def test_fetch_requires_a_thousand_symbols_per_file_by_default(fixtures_dir):
         # Kept: common stocks despite "preferred" or "united" in name
         ("United Airlines Holdings, Inc. - Common Stock", False),
         ("Preferred Bank - Common Stock", False),
-        # Kept: LP units, trust units, and ADRs
-        ("Energy Transfer LP Common Units representing limited partner interests", False),
-        ("Brookfield Renewable Partners L.P. Limited Partnership Units", False),
+        # Excluded: partnership units
+        # owner's decision 2026-10-26: US partnership units leave the universe
+        ("Energy Transfer LP Common Units representing limited partner interests", True),
+        ("Brookfield Renewable Partners L.P. Limited Partnership Units", True),
+        # Kept: ADRs
         (
             "Itau Unibanco Banco Holding SA American Depositary Shares (Each repstg 500 Preferred shares)",
             False,
@@ -140,3 +141,34 @@ def test_fetch_requires_a_thousand_symbols_per_file_by_default(fixtures_dir):
 )
 def test_is_excluded_name(name, excluded):
     assert is_excluded_name(name) is excluded
+
+
+@pytest.mark.parametrize("name", [
+    "ETRACS Alerian MLP Index ETN Series B due July 18, 2042",
+    "iPath Bloomberg Commodity Index Total Return ETN",
+    "Synthetic Fixed-Income Securities Inc 6.375% (STRATS) Cl A-1",
+    "Lehman ABS 3.50 3.50% Adjustable Corp Backed Tr Certs GS Cap I",
+    "Structured Products Corp 8.205% CorTS 8.205% Corporate Backed Trust Securities (CorTS)",
+    "PPlus Tr GSC-2 Tr Ctf Fltg Rate",
+    "CHS Inc - Preferred Class B Series 2 Reset Rate",
+    "Ares Capital Corporation - Closed End Fund",
+    "Nuveen Preferred & Income Opportunities Fund",
+    "United States Natural Gas Fund LP",
+    "Energy Transfer LP Common Units",
+    "Enterprise Products Partners L.P. Common Stock",
+    "Alliance Resource Partners, L.P. - Common Units Representing Limited Partnership Interests",
+])
+def test_non_common_listings_are_left_out(name):
+    assert is_excluded_name(name)
+
+
+@pytest.mark.parametrize("name", [
+    "Preferred Bank - Common Stock",
+    "Dillard's, Inc. Common Stock",
+    "Diversified Healthcare Trust  - Common Shares of Beneficial Interest",
+    "Empire State Realty Trust, Inc. Class A Common Stock",
+    "Fundamental Global Inc. Common Stock",
+    "Help Line Corp. Common Stock",
+])
+def test_common_stocks_stay(name):
+    assert not is_excluded_name(name)

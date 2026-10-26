@@ -95,3 +95,20 @@ def test_fetch_rejects_a_block_page():
     collector = serving(lambda request: httpx.Response(200, text="<html>Access denied</html>"))
     with pytest.raises(ValueError):  # json.JSONDecodeError is a ValueError
         collector.fetch([], NOW)
+
+
+@pytest.mark.parametrize(("symbol", "name"), [
+    ("PHYS", "Sprott Physical Gold Trust"), ("CEF", "Sprott Physical Gold and Silver Trust"),
+    ("PBY", "Lysander-Canso Credit Income ActivETF"), ("MIPC", "Middlefield Income Plus Class"),
+    ("PIC.A", "Premium Income Corporation"), ("EVT", "Economic Investment Trust Limited"),
+])
+def test_tsx_non_operating_vehicles_are_left_out(symbol, name):
+    assert not keep_instrument(symbol, "", name)
+
+
+@pytest.mark.parametrize(("symbol", "name"), [
+    ("REI.UN", "RioCan Real Estate Investment Trust"), ("EIF", "Exchange Income Corporation"),
+    ("RY", "Royal Bank of Canada"),
+])
+def test_tsx_operating_companies_and_reits_stay(symbol, name):
+    assert keep_instrument(symbol, "", name)

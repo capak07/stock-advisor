@@ -38,11 +38,26 @@ DEBT = re.compile(r"\b(notes?|debentures?)\b|\bmortgage bonds?\b|\bbonds?\b.*\bd
 BARE_DEPOSITARY = re.compile(r"\bdepositary shares?\s*$", re.IGNORECASE)
 DEPOSITARY_PREFERRED = re.compile(r"\bdepositary shares?\b.*\bpreferred\b", re.IGNORECASE)
 ADR = re.compile(r"\bamerican depositary\b", re.IGNORECASE)
+# Non-operating listings. The short forms ETN and LP match upper case only, so words and
+# names such as "Help Line Corp." stay.
+ETN = re.compile(r"\bETNs?\b|(?i:exchange[- ]traded notes?)")
+STRUCTURED = re.compile(
+    r"trust certificates|\btr certs?\b|\btr ctf\b|corp(orate)? backed|\bSTRATS\b|\bCorTS\b"
+    r"|\bPPlus\b|\bSATURNS\b|trust securities",
+    re.IGNORECASE,
+)
+PREFERRED_CLASS = re.compile(r"\bpreferred (class|series)\b|\bperpetual preferred\b", re.IGNORECASE)
+FUND = re.compile(r"\bfunds?\b", re.IGNORECASE)
+LP_UNITS = re.compile(
+    r"\bL\.P\.|\bLP\b|(?i:limited partner(ship)? interests?|\bcommon units\b)"
+)
 
 
 def is_excluded_name(name: str) -> bool:
-    """True for warrants, rights, SPAC units, preferreds, and debt; ADRs and LP/trust units stay."""
+    """True for warrants, rights, SPAC units, preferreds, debt, ETNs, funds and LP units; ADRs stay."""
     if FRACTIONAL_PREFERRED.search(name) or WARRANT.search(name):
+        return True
+    if any(p.search(name) for p in (ETN, STRUCTURED, PREFERRED_CLASS, FUND, LP_UNITS)):
         return True
     if ADR.search(name):
         return False

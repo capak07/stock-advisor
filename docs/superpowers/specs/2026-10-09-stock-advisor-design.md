@@ -13,6 +13,7 @@
   3. **Accounts:** the owner holds stocks in a Wealthsimple **TFSA** and crypto in a Wealthsimple **Crypto account**, and US trades are converted from CAD each time. Canadian tax rules replace the US ones, and the portfolio is shown in CAD.
 
   Rev 2 also records the design refinements Plans 1 and 2a settled: the collector protocol, the least-privilege database role, tracked migrations and the health check.
+- **2026-10-26:** owner decisions on the weekly model: (1) a horizon whose calibration is unmeasured or over 5 points is unusable and the model is promoted on its usable horizons; (2) once the active model is 28 days old, any model passing calibration replaces it; (3) the backtest's 30 picks are separate holdings.
 
 - **Plan 3b (2026-10-21):** the stock model drops macro features (owner's decision, §5.1), trained models are stored in Postgres (§5.2, §8), and the promotion and pick-disabling gates get exact definitions (§5.2, §6.6).
 
@@ -313,7 +314,7 @@ The sector label isn't a feature: today's labels would span 8 years of history. 
 - **Validation:** walk-forward with 4 equal test periods after 2 training years, and an embargo gap equal to the horizon.
   - Each period is calibrated only on earlier predictions whose outcomes were known before it began (the same horizon-long gap as training).
 - **Screener model:** a 21-day beat classifier per market, on price/volume and relative-strength features. It scores every symbol from bulk price data alone.
-- **Retraining:** weekly. A new model is **promoted** only if its calibration error is ≤ 5 points at its worst horizon and its mean rank IC is no more than 0.005 below the active model's. It fails closed: a calibration or score that can't be measured never promotes a model.
+- **Retraining:** weekly. A horizon whose calibration is unmeasured or more than 5 points off is **unusable**: it gives no P(beat) and no picks or verdicts. A new model is **promoted** on its usable horizons: they must be within 5 points, and its mean rank IC must be no more than 0.005 below the active model's. Once the active model is 28 days old, any model passing calibration replaces it. It fails closed: a calibration or score that can't be measured never promotes a model.
 - **Storage:** models are stored in `model_files` (§8), one version per training run. The active model and one other are kept.
 - **Cost (measured on 2 cores, Plan 3b prototype):** TSX trains in about 1 minute and US (2,000 stocks) in about 4.5 minutes, with about 2 GB peak memory and model files of about 6.5 MB per market. The full US universe is estimated at about 13 minutes. On the 2-core Actions runner LightGBM's default thread count is right. When timing under a CPU cap on a larger host (such as a local `docker run --cpus=2`), set `num_threads` to the cap, or the timings mean little.
 - **Known bias:** free data under-represents delisted companies (survivorship bias), so backtests overstate performance. This is shown on the Track Record page.
@@ -399,6 +400,7 @@ The score is a weighted sum of percentile ranks within the symbol's market:
 - **Separate records:** backtest and live statistics are always shown in separate sections.
 - **Disabling picks:** if a market's backtest fails success criterion 1 or 2, that market's picks are **disabled** and its failing metrics are shown. Watchlist verdicts and holdings actions remain.
   - A market's picks are shown only when its latest backtest has at least 30 picks, a positive mean return after costs, calibration within 5 points (at the worst horizon), and a mean stated P within 5 points of the picks' beat rate.
+  - The 30 picks are separate holdings: a stock still held from an earlier pick (its horizon in business days) isn't picked again.
   - A number that can't be measured fails the gate. The reason is stored in the model's metrics (`picks_enabled`, `picks_reason`).
 
 ## 7. My Portfolio

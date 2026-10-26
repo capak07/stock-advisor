@@ -47,7 +47,7 @@ def ttm(facts: pd.DataFrame) -> pd.DataFrame:
     """Trailing twelve months per flow metric and period end, from `first_reported` rows.
 
     Columns: cik, metric, period (monthly Period of the end), end, ttm, known, ttm_1y (NaN when the
-    year-ago TTM is missing or was only known after this row's).
+    year-ago TTM is missing or was only known after this row's), known_1y (when the year-ago TTM was known).
     """
     d = facts[facts["start"].notna() & facts["metric"].isin(FLOWS)].copy()
     d["days"] = (d["end"] - d["start"]).dt.days
@@ -76,8 +76,10 @@ def ttm(facts: pd.DataFrame) -> pd.DataFrame:
     ago = t[[*key, "ttm", "known"]].rename(columns={"ttm": "ttm_1y", "known": "known_1y"})
     ago["period"] = ago["period"] + 12
     t = t.merge(ago, on=key, how="left")
-    t.loc[t["known_1y"] > t["known"], "ttm_1y"] = np.nan  # a year-ago figure filed later can't be used
-    return t.drop(columns="known_1y")
+    later = t["known_1y"] > t["known"]
+    t.loc[later, "ttm_1y"] = np.nan  # a year-ago figure filed later can't be used
+    t.loc[later, "known_1y"] = pd.NaT
+    return t
 
 
 def _asof(table: pd.DataFrame, grid: pd.DataFrame, cols: Sequence[str]) -> pd.DataFrame:
@@ -144,7 +146,10 @@ def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.Da
         g[metric], g[f"{metric}_1y"] = vals["ttm"], vals["ttm_1y"]
         g[f"{metric}_period"] = vals["end"].dt.to_period("M")
         if metric == "eps_diluted":
-            g["eps_end"] = vals["end"]
+            # the filing restates EPS for splits up to its date, so the factor is read then, not at the period end
+            eps_t = t[t["metric"] == metric].assign(filed=lambda x: x["known"], filed_1y=lambda x: x["known_1y"])
+            filed = _asof(eps_t, grid, ["filed", "filed_1y", "end"])
+            g["eps_filed"], g["eps_filed_1y"] = _fresh(grid, filed)["filed"], filed["filed_1y"]
 
     bal = first[first["start"].isna() & first["metric"].isin(BALANCES)].rename(columns={"filed": "known"})
     bal = bal.sort_values("end", kind="stable").drop_duplicates(["cik", "metric", "known"], keep="last")
@@ -159,8 +164,8 @@ def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.Da
     g = g.merge(price, on=["day", "symbol"], how="left")
 
     mcap = g["price"] * g["shares_outstanding"] * _split_at(splits, g["symbol"], g["shares_end"])
-    eps = g["eps_diluted"] / _split_at(splits, g["symbol"], g["eps_end"])
-    eps_1y = g["eps_diluted_1y"] / _split_at(splits, g["symbol"], g["eps_end"] - pd.DateOffset(months=12))
+    eps = g["eps_diluted"] / _split_at(splits, g["symbol"], g["eps_filed"])
+    eps_1y = g["eps_diluted_1y"] / _split_at(splits, g["symbol"], g["eps_filed_1y"])
 
     long_term = g["long_term_debt"].fillna(
         g[["long_term_debt_noncurrent", "debt_current"]].sum(axis=1, min_count=1))

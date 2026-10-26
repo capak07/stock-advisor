@@ -138,3 +138,17 @@ def test_no_matching_symbols_gives_missing_values():
     assert set(f) == set(FUNDAMENTAL_FEATURES)
     for frame in f.values():
         assert frame.shape == (2, 2) and list(frame.columns) == ["X", "Y"] and frame.isna().all().all()
+
+
+def test_eps_is_put_on_todays_shares_with_the_split_factor_at_filing():
+    days = pd.DatetimeIndex(["2024-12-02"], name="day")
+    facts = frame(
+        fact("eps_diluted", "2023-01-01", "2023-12-31", 4.0, "2024-02-10", concept="us-gaap:EarningsPerShareDiluted"),
+        fact("eps_diluted", "2022-01-01", "2022-12-31", 2.0, "2023-02-10", concept="us-gaap:EarningsPerShareDiluted"),
+    )
+    close = pd.DataFrame({"X": [10.0]}, index=days)
+    # a 2:1 split on 2024-01-15: after FY2023's period end, before its filing, so FY2023's 4.0 is already
+    # on post-split shares, while FY2022's 2.0 (filed 2023) is not
+    splits = pd.DataFrame({"X": [2.0, 1.0, 1.0]}, index=pd.DatetimeIndex(["2023-12-29", "2024-02-09", "2024-12-02"]))
+    f = fundamental_features(facts, pd.DataFrame({"symbol": ["X"], "cik": [1]}), days, close, splits)
+    assert f["eps_growth"]["X"].iloc[0] == pytest.approx(4.0 / (2.0 / 2.0) - 1)  # 3.0

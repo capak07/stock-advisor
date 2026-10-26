@@ -4,22 +4,29 @@
 features equal its training features for the same day (given enough history in the window).
 """
 
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
+from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 
-from advisor.collectors.yfinance_bars import LOOKBACK
+from advisor.collectors.sec_xbrl import FinancialFact
+from advisor.collectors.yfinance_bars import LOOKBACK, Downloader
 from advisor.markets import MARKETS
 from advisor.model.dataset import feature_frames
 from advisor.models import DailyBar, Market
+from advisor.screener import ADV_WINDOW
+from advisor.training.prices import download_history, training_download
 from advisor.training.sectors import SECTOR_ETFS
 
 VOLUME_FEATURES = ("volume_z", "log_adv20")
 # the window of bars a live run fetches; it must cover the 252-session look-back (see the collector)
 LIVE_WINDOW = LOOKBACK
-SPLIT_REACH = pd.Timedelta(days=3 * 365)  # the split factor reaches back past any filing in use
+SPLIT_REACH = timedelta(days=3 * 365)  # the split factor reaches back past any filing in use
 _BARS = ["symbol", "day", "open", "high", "low", "close", "volume"]
 _EVENTS = ["symbol", "day", "dividend", "split"]
+_FACTS = ["cik", "metric", "concept", "unit", "start", "end", "value", "filed", "form", "accession"]
 
 
 def bars_frame(bars: Mapping[str, Sequence[DailyBar]]) -> pd.DataFrame:
@@ -31,6 +38,31 @@ def bars_frame(bars: Mapping[str, Sequence[DailyBar]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=_BARS)
 
 
+def facts_frame(facts: Sequence[FinancialFact]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The run's SEC facts as Plan 3a's `(facts, tickers)`; each symbol gets a stable synthetic `cik`.
+
+    The cik is the symbol's position among the sorted symbols: the model only needs a join key.
+    """
+    ciks = {symbol: np.int32(i) for i, symbol in enumerate(sorted({f.symbol for f in facts}))}
+    rows = [(ciks[f.symbol], f.metric, f.concept, f.unit, f.start, f.end, f.value, f.filed, f.form, f.accession)
+            for f in facts]
+    table = pd.DataFrame(rows, columns=_FACTS)
+    table["cik"] = table["cik"].astype("int32")
+    tickers = pd.DataFrame({"symbol": list(ciks), "cik": pd.Series(list(ciks.values()), dtype="int32")})
+    return table, tickers
+
+
+def split_events(
+    symbols: Sequence[str],
+    today: date,
+    *,
+    download: Downloader = training_download,
+    sleep: Callable[[float], None] = time.sleep,
+) -> pd.DataFrame:
+    """Three years of split and dividend events for `symbols`: what puts SEC figures on today's shares."""
+    return download_history(list(symbols), today - SPLIT_REACH, today, download=download, sleep=sleep).events
+
+
 def _day_row(prices, events, sectors, market, day, facts, tickers, session: pd.Timestamp) -> pd.DataFrame:
     """Every symbol's features and eligibility on `session`, from the bars up to and including it."""
     days = pd.DatetimeIndex([session])
@@ -40,7 +72,7 @@ def _day_row(prices, events, sectors, market, day, facts, tickers, session: pd.T
     )
     out = pd.DataFrame({name: frames.features[name].loc[session] for name in frames.names})
     out["eligible"] = frames.eligible.loc[session].astype(bool)
-    out["dollar_volume_20"] = frames.dollar_volume.rolling(20).mean().loc[session]
+    out["dollar_volume_20"] = frames.dollar_volume.rolling(ADV_WINDOW).mean().loc[session]
     return out
 
 
@@ -64,10 +96,13 @@ def live_features(
     etfs = [benchmark, *SECTOR_ETFS[market].values()]
     events = events if events is not None else pd.DataFrame(columns=_EVENTS)
     day = pd.Timestamp(day)
+    # the market's calendar is the benchmark's bars, not any one symbol's latest day
+    sessions = pd.to_datetime(prices.loc[prices["symbol"] == benchmark, "day"])
+    if not (sessions == day).any():
+        raise ValueError(f"no {benchmark} bar for {day:%Y-%m-%d}")
     out = _day_row(prices, events, sectors, market, day, facts, tickers, day)
     if partial_day:
-        before = pd.to_datetime(prices["day"]) < day
-        previous = pd.Timestamp(pd.to_datetime(prices.loc[before, "day"]).max())
+        previous = pd.Timestamp(sessions[sessions < day].max())
         last = _day_row(prices, events, sectors, market, day, facts, tickers, previous).reindex(out.index)
         for name in (*VOLUME_FEATURES, "eligible", "dollar_volume_20"):
             out[name] = last[name]

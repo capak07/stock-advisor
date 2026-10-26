@@ -16,3 +16,7 @@ scripts/in-docker.sh uv run python -m advisor.model.weekly --data DIR [--market 
 `DIR/model-report.json` is what it decided, per market: the stored version, whether it was promoted and why, `picks_enabled` and `picks_reason`, the worst horizon's calibration, the mean rank IC and the seconds spent. The job uploads it with `manifest.json` as the `training-report` artifact.
 
 The model's integration test is `tests/integration/test_model_weekly_job.py`. The test image (`scripts/test-image.Dockerfile`) is built the first time `scripts/in-docker.sh` runs.
+
+## Forecasts
+
+Every run's forecasts need an active model, which `train.yml` trains each Saturday; the first Saturday run must come after Plan 3c merges, because its EPS rule changed training too. No model was trained in production before it. Each market's `summary.model` in the run says what it did: `{version, screened, predicted, horizons}` (`predicted` counts stocks) (plus `split_events` if the split download failed), `{skipped: "no active model"}`, `{skipped: "no usable horizons"}` or `{failed: ...}`. Without a model, a market's shortlist ranks by dollar volume and gets no forecasts.

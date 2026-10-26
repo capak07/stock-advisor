@@ -1,6 +1,6 @@
 # Deferred work
 
-These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Plan 2f, Plan 2g, Plan 2h, Plan 3a and Plan 3b reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
+These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Plan 2f, Plan 2g, Plan 2h, Plan 3a, Plan 3b and Plan 3c reviews deliberately pushed to later plans. Each later plan must pick up its section before it is called done. The spec stays the authority; this list only records what earlier plans did not do.
 
 ## Plan 2i: social and attention
 
@@ -104,22 +104,12 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Missing versus zero:** when no news item came in at all (every news source failed), the run leaves the `news_*` features missing. When items came in but none for an asset, its counts are 0 and its sentiment is empty. Treat missing as unknown.
 - **`features_live` rows:** `merge_features_live` creates a row with only `news_*` keys for a shortlisted stock that had no row. A later plain `write_features_live` for the same run and asset would hit the unique key, so merge there too, or write before the news stage.
 
-## Plan 3c: live predictions
-
-- **Live features need at least 260 sessions of bars per symbol** (`mom_12_1`, the 52-week range). Check the live Yahoo window.
-- **Load the active model per market** with `repo.active_model` and `load_model_files` → `from_files`, and write `predictions` (q10, q50, q90, `p_beat` per horizon, `model_version`).
-- **Use only usable horizons:** write `predictions`, and show P(beat) only for the horizons in the active model's `metrics["usable_horizons"]`. A market whose model has none gives no forecasts.
-- **Rank the screener's survivors** with `FinalModel.screen`.
-- **The pre-close run's partial bar:** features must treat today's bar as incomplete.
-- **US fundamentals live** must use `advisor.model.fundamentals` on `sec_xbrl` facts, so training and live agree.
-- **Gaps in the bars:** a missing bar blanks a stock's rolling features for up to 60 sessions in training, while the live screener skips gaps. Align them.
-- **EPS and splits:** training scales EPS by the split factor at its period end, but ASC 260 restates EPS for splits between the period end and the filing. Use the factor at the filing date.
-
 ## Plan 4: recommendations
 
 - Exclude non-common instruments before any pick, and from training (the list under Plan 3).
 - Block Buy on `jump_5d`.
 - Read `picks_enabled` and `picks_reason` from the active model's metrics (spec §6.6).
+- **Read forecasts from `predictions`** for picks, verdicts and actions, together with the model features in `features_live` (ATR is there for stops). Show P(beat) only for the horizons a stock's `predictions` rows carry: a market with no usable horizons has none.
 
 ## Plan 3b known limits
 
@@ -132,6 +122,12 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Calibration and gates fail closed:** a calibration or score that can't be measured never promotes a model and never enables picks.
 - **Promotion ratchet (decided 2026-10-26):** the IC comparison uses the IC the active model recorded on its own window, so a lucky week raises the bar. Once the active model is 28 days old, any model that passes calibration replaces it (`weekly.MAX_MODEL_AGE`). Anchoring sample days to a fixed epoch is not done.
 - **"30 backtest picks" counts separate holdings (decided 2026-10-26):** a stock still held from an earlier pick (its horizon in business days, holidays ignored) is not picked again until the hold ends.
+
+## Plan 3c known limits
+
+- **Cost of the 400-day price window:** it adds about a minute per run (267 s against 210 s for 6,644 symbols). Peak memory is 2.75 GB.
+- **A TTM built from year-to-date facts can mis-scale EPS across a split.** Its three pieces take one filing date, so a split between those filings is applied wrongly. Annual EPS is exact.
+- **For the next pipeline plan:** the pre-close `partial_day` rule and the screener's reordering of the shortlist have no run-level test.
 
 ## Plans 4 and 5: recommendations and dashboard
 

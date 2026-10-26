@@ -16,6 +16,7 @@
 - **2026-10-26:** owner decisions on the weekly model: (1) a horizon whose calibration is unmeasured or over 5 points is unusable and the model is promoted on its usable horizons; (2) once the active model is 28 days old, any model passing calibration replaces it; (3) the backtest's 30 picks are separate holdings.
 
 - **Plan 3b (2026-10-21):** the stock model drops macro features (owner's decision, §5.1), trained models are stored in Postgres (§5.2, §8), and the promotion and pick-disabling gates get exact definitions (§5.2, §6.6).
+- **Plan 3c (2026-10-26):** every run forecasts with the active model. The screener ranks by model score, the bulk price window is 400 days (§4.3), the pre-close run treats today's bar as partial (§3), and `runs.model_version` holds the active versions (§8).
 
 ## 1. Purpose
 
@@ -134,7 +135,7 @@ Crypto's round-trip cost is 2 × the crypto spread (default 2.0% each way). Fees
   - Each market's freshness floor comes from **its own** calendar.
 - A trigger arriving 30–60 minutes late exits with an error, so GitHub emails the owner about the missed slot.
 - Target duration is 15 minutes or less per run, and runs are bounded by a 30-minute deadline. The job is killed at 40 minutes.
-- The pre-open run uses the previous close. The pre-close run uses Yahoo's current-day bar, which is incomplete and is treated that way.
+- The pre-open run uses the previous close. The pre-close run uses Yahoo's current-day bar, which is incomplete and is treated that way: its price features use today's partial bar, while its volume features and eligibility use the last complete session.
 
 ## 4. Data Pipeline
 
@@ -253,9 +254,9 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
    - SPY, XIU.TO and sector ETFs are loaded as benchmarks only and are never picked.
    - Sectors and industries come from Yahoo's screener; `train.yml` refreshes them weekly.
 3. **Screener.**
-   - Fetch daily bars for both universes (about 6,000 US symbols and 700 TSX symbols) from Yahoo in bulk.
+   - Fetch daily bars for both universes (about 6,000 US symbols and 700 TSX symbols) from Yahoo in bulk, over a window of 400 calendar days (the model's 12-month momentum and 52-week range need about 260 sessions).
    - Apply the jump rule (§10).
-   - Apply each market's hard filters, then score the survivors with the **screener model** (§5.2).
+   - Apply each market's hard filters, then score the survivors with the **screener model** (§5.2). A market without an active model ranks them by dollar volume instead.
    - Keep the top 300 US and the top 100 TSX.
    - Holdings and the watchlist always pass.
 4. **Enrichment collectors.** Every applicable collector runs once, concurrently (8 workers), on:
@@ -270,10 +271,12 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
    - Score each unique item with **FinBERT** (`ProsusAI/finbert`, CPU, model files cached).
    - Per ticker, compute sentiment mean and trend, a volume z-score, and **coverage breadth**.
 6. **Features.** One row per (symbol, as_of) (§5.1).
-7. **Model.** Predictions for every horizon (§5).
+7. **Model.** Forecasts for the shortlist, holdings and watchlist, for the active model's usable horizons only (§5.2). A market with no active model, or none with a usable horizon, gets no forecasts and its screener falls back to dollar volume. A market whose model fails to load or run gets none either, and degrades the run. Either way that market's prices still publish and the other market is unaffected. Each market's outcome is in `summary.model`.
+   - Live sector labels come from `symbols.sector`, which `train.yml` fills weekly: the labels training reads.
+   - For the US stocks being forecast, the run downloads 3 years of split events (best-effort) so EPS is put onto today's shares with the split factor at its filing date, as in training.
 8. **Recommender and portfolio advisor** (§6, §7).
 9. **Grader.** Grade every pick and holding action whose horizon ended (§6.5).
-10. **Publish.** Store the day's closes and USD/CAD for the dashboard (`daily_closes`, `fx_rates`, §8). Write a run summary (per-market counts included), then set `published = true`.
+10. **Publish.** Store the day's closes and USD/CAD for the dashboard (`daily_closes`, `fx_rates`, §8). Stock closes cover only the last 100 days per run, though the price window is 400, so each run doesn't rewrite about 168,000 closes. Write a run summary (per-market counts included), then set `published = true`.
 
 ## 5. Prediction
 
@@ -479,7 +482,7 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 | `app_config` | owner_id |
 | `settings` | One row: usd_fx_fee_pct (1.5), crypto_fee_pct (2.0), tfsa_round_trips_warn (24), tfsa_short_hold_share_warn (0.5), updated_at. Kept apart from `app_config` so the owner can edit fees without write access to owner_id |
 | `schema_migrations` | name, applied_at (RLS on, no policies) |
-| `runs` | id, kind (pre_open / pre_close / early_close), et_date, started_at, finished_at, status (running / success / degraded / failed), published, sources_ok, sources_total, model_version, summary (jsonb) |
+| `runs` | id, kind (pre_open / pre_close / early_close), et_date, started_at, finished_at, status (running / success / degraded / failed), published, sources_ok, sources_total, model_version (the active versions, comma-joined), summary (jsonb) |
 | `source_health` | run_id (null for health checks), context (run / health), source, status (ok / partial / stale / failed / skipped), latency_ms, records, error, consecutive_failures, attempted_at |
 | `symbols` | symbol, asset_type, **market** (US / TSX / null for crypto), name, exchange, sector, industry, market_cap, active |
 | `features_live` | run_id, symbol, asset_type, features (jsonb), as_of. Holds the shortlists, holdings and watchlist |
@@ -536,8 +539,8 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 
   A failure only affects that source's features, which become missing values.
 - **Run status:**
-  - `failed` if a universe or prices can't be loaded (too few fresh priced symbols), or the model can't be loaded. A failed run is never published, and the dashboard shows the last published run with a stale banner.
-  - `degraded` if any core source isn't OK.
+  - `failed` if a universe or prices can't be loaded (too few fresh priced symbols). A model that can't be loaded or run only degrades it. A failed run is never published, and the dashboard shows the last published run with a stale banner.
+  - `degraded` if any core source isn't OK, or a market's model failed.
   - `success` otherwise.
   - An unexpected error marks the run failed and fails the job, which sends GitHub's failure email.
   - Runs left `running` for more than 2 hours are swept as abandoned.

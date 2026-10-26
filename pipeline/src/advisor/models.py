@@ -62,6 +62,20 @@ class StoredModel:
     active: bool
 
 
+@dataclass(frozen=True)
+class PredictionRow:
+    """One stock's forecast at one horizon: the return range and P(beat the benchmark)."""
+
+    symbol: str
+    horizon_days: int
+    q10: float
+    q50: float
+    q90: float
+    p_beat: float
+    benchmark: str
+    model_version: str
+
+
 class SymbolInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 

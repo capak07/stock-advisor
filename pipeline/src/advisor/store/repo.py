@@ -16,6 +16,7 @@ from advisor.models import (
     AssetType,
     DailyClose,
     Market,
+    PredictionRow,
     RunKind,
     RunStatus,
     StoredModel,
@@ -269,6 +270,19 @@ def prune_models(conn: psycopg.Connection, kind: str, keep: int = 2) -> int:
             " order by trained_at desc, version desc limit %s)",
             (kind, kind, others),
         ).rowcount
+
+
+def write_predictions(conn: psycopg.Connection, run_id: int, rows: Sequence[PredictionRow]) -> None:
+    """Store a run's stock forecasts."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into predictions (run_id, symbol, asset_type, horizon_days, q10, q50, q90, p_beat,"
+            " benchmark, model_version) values (%s, %s, 'stock', %s, %s, %s, %s, %s, %s, %s)",
+            [
+                (run_id, r.symbol, r.horizon_days, r.q10, r.q50, r.q90, r.p_beat, r.benchmark, r.model_version)
+                for r in rows
+            ],
+        )
 
 
 def fee_settings(conn: psycopg.Connection) -> tuple[float, float]:

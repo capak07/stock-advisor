@@ -35,7 +35,10 @@ def round_trip_cost(market: Market, dollar_volume_20: np.ndarray, usd_fx_fee_pct
 
 
 def simulate_picks(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> pd.DataFrame:
-    """One row per pick: each day and style, the best-ratio stocks within the sector cap."""
+    """One row per pick: each day and style, the best-ratio stocks within the sector cap.
+
+    A stock is a separate bet only once its earlier pick's hold has ended.
+    """
     df = predictions.copy()
     if "jump_5d" in df:  # spec 6.1: the latest bar must not be a flagged, unconfirmed jump
         df = df[df["jump_5d"].fillna(0) != 1]
@@ -53,9 +56,20 @@ def simulate_picks(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: fl
     df["_group"] = df["sector"].where(df["sector"].notna(), "unlabelled:" + df["symbol"].astype(str))
 
     df = df.sort_values(["day", "style", "ratio", "symbol"], ascending=[True, True, False, True])
-    within_sector = df.groupby(["day", "style", "_group"]).cumcount()
-    df = df[within_sector < PER_SECTOR]
-    df = df[df.groupby(["day", "style"]).cumcount() < PICKS_PER_STYLE]
+    chosen = []
+    held_until: dict[str, np.datetime64] = {}  # symbol -> the day its pick's hold ends
+    for day, today in df.groupby("day", sort=True):
+        day64 = np.datetime64(day, "D")
+        for symbol in [s for s, end in held_until.items() if end <= day64]:
+            del held_until[symbol]
+        today = today[~today["symbol"].isin(held_until)]
+        today = today[today.groupby(["style", "_group"]).cumcount() < PER_SECTOR]
+        today = today[today.groupby("style").cumcount() < PICKS_PER_STYLE]
+        for symbol, horizon in zip(today["symbol"], today["horizon"], strict=True):
+            # business days only: holidays are ignored, so the end is approximate
+            held_until[symbol] = np.busday_offset(day64, int(horizon), roll="forward")
+        chosen.append(today)
+    df = pd.concat(chosen)
     df["net"] = df["y"] - df["cost"]
     return df[PICK_COLUMNS].reset_index(drop=True)
 

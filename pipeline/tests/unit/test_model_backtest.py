@@ -96,3 +96,22 @@ def test_a_flagged_jump_on_the_latest_bar_is_never_picked():
     rows["jump_5d"] = [1.0, 0.0]
     assert simulate_picks(rows, Market.TSX, 1.5)["symbol"].tolist() == ["BBB.TO"]
     assert simulate_picks(rows.drop(columns="jump_5d"), Market.TSX, 1.5)["symbol"].tolist() == ["AAA.TO", "BBB.TO"]
+
+
+def test_a_stock_still_held_is_not_picked_again():
+    def row(day, h):
+        return {"day": pd.Timestamp(day), "symbol": "AAA.TO", "sector": "Energy", "horizon": h, "p": 0.65,
+                "q10": -0.05, "q50": 0.04, "q90": 0.10, "y": 0.03, "dollar_volume_20": 2e7}
+    preds = pd.DataFrame([row("2025-03-03", 63), row("2025-03-17", 63), row("2025-06-02", 63)])
+    picks = simulate_picks(preds, Market.TSX, 1.5)
+    # 03-17 is inside the first 63-session hold; 06-02 is 65 business days on, so it's a new bet
+    assert [str(d.date()) for d in picks["day"]] == ["2025-03-03", "2025-06-02"]
+
+
+def test_a_short_hold_ends_before_the_next_sample_day():
+    preds = pd.DataFrame([
+        {"day": pd.Timestamp(d), "symbol": "BBB.TO", "sector": "Energy", "horizon": 5, "p": 0.65,
+         "q10": -0.02, "q50": 0.02, "q90": 0.04, "y": 0.01, "dollar_volume_20": 2e7}
+        for d in ("2025-03-03", "2025-03-17")
+    ])
+    assert len(simulate_picks(preds, Market.TSX, 1.5)) == 2

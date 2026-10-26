@@ -19,6 +19,8 @@ def test_the_weekly_job_trains_promotes_and_stores_a_market(db, tmp_path):
     assert active.metrics["mean_rank_ic"] > 0.05
     assert {"horizons", "backtest", "picks_enabled", "picks_reason", "rows", "features"} <= set(active.metrics)
     assert active.calibration_error <= 5
+    assert report["TSX"]["usable_horizons"] == [5, 63]
+    assert active.metrics["usable_horizons"] == [5, 63]
     model = from_files(repo.load_model_files(db, active.version))
     assert model.horizons == (5, 63)
 

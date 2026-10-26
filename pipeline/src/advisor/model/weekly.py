@@ -11,7 +11,7 @@ import math
 import sys
 import time
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,7 @@ KIND = {Market.US: "stock_us", Market.TSX: "stock_tsx"}
 TRAIN_ORDER = [Market.TSX, Market.US]
 REPORT = "model-report.json"
 TOP_FEATURES = 10
+MAX_MODEL_AGE = timedelta(days=28)  # after this, any honest model replaces the active one
 
 
 def version_for(market: Market, trained_at: datetime) -> str:
@@ -43,9 +44,13 @@ def _nan(x: float | None) -> bool:
 
 
 def should_promote(
-    metrics: Mapping[str, Any], calibration_pts: float, active: StoredModel | None
+    metrics: Mapping[str, Any], calibration_pts: float, active: StoredModel | None, now: datetime
 ) -> tuple[bool, str]:
-    """Fails closed: a check that couldn't be measured never promotes."""
+    """Fails closed: a check that couldn't be measured never promotes.
+
+    The IC comparison is against the IC the active model recorded on its own window, so a lucky
+    week raises the bar; past MAX_MODEL_AGE any model that passes calibration replaces it.
+    """
     if _nan(calibration_pts):
         return False, "probabilities couldn't be checked (no calibrated predictions)"
     if calibration_pts > MAX_CALIBRATION_PTS:
@@ -55,10 +60,24 @@ def should_promote(
         return False, "rank IC couldn't be measured"
     if active is None:
         return True, "first model"
+    age = now - active.trained_at
+    if age >= MAX_MODEL_AGE:
+        return True, f"the active model is {age.days} days old (limit {MAX_MODEL_AGE.days})"
     old_ic = active.metrics.get("mean_rank_ic")
     if _nan(old_ic):
         return False, "rank IC couldn't be measured"
     return new_ic >= old_ic - IC_TOLERANCE, f"rank IC {new_ic:.3f} vs the active {old_ic:.3f}"
+
+
+def usable_horizons(
+    metrics: Mapping[int, Mapping[str, float]], horizons: Sequence[int]
+) -> tuple[int, ...]:
+    """The horizons whose calibration was measured and is within the limit; the rest give no forecasts."""
+    return tuple(
+        h for h in horizons
+        if h in metrics and not _nan(metrics[h]["calibration_pts"])
+        and metrics[h]["calibration_pts"] <= MAX_CALIBRATION_PTS
+    )
 
 
 def calibration_of(metrics: Mapping[int, Mapping[str, float]], horizons: Sequence[int]) -> float:
@@ -103,9 +122,11 @@ def _train_market(
     loaded = time.monotonic()
     wf = walk_forward(data, config)
     walked = time.monotonic()
-    calibrated = wf.predictions[wf.predictions["p"].notna()]
+    usable = usable_horizons(wf.metrics, config.horizons)
+    calibrated = wf.predictions[wf.predictions["p"].notna() & wf.predictions["horizon"].isin(usable)]
     backtest = pick_metrics(simulate_picks(calibrated, market, repo.fee_settings(conn)[0]))
-    calibration_pts = calibration_of(wf.metrics, config.horizons)
+    # with no usable horizon, the worst of all gives the plain-words reason
+    calibration_pts = calibration_of(wf.metrics, usable or config.horizons)
     picks_enabled, picks_reason = gate(backtest, calibration_pts)
     model = fit_final(data, wf, config)
     files = to_files(model)
@@ -125,10 +146,11 @@ def _train_market(
         "picks_enabled": picks_enabled, "picks_reason": picks_reason, "rows": len(data.rows),
         "folds": [[f.start, f.end] for f in wf.folds], "features": model.features,
         "importance": importance, "seconds": seconds,
+        "usable_horizons": list(usable),
     })
     version = version_for(market, now)
     repo.save_model(conn, version, kind, now, metrics, _clean(calibration_pts), files)
-    promoted, reason = should_promote(metrics, calibration_pts, repo.active_model(conn, kind))
+    promoted, reason = should_promote(metrics, calibration_pts, repo.active_model(conn, kind), now)
     if promoted:
         repo.activate_model(conn, kind, version)
     repo.prune_models(conn, kind)
@@ -136,6 +158,7 @@ def _train_market(
         "version": version, "promoted": promoted, "reason": reason, "picks_enabled": picks_enabled,
         "picks_reason": picks_reason, "calibration_pts": _clean(calibration_pts),
         "mean_rank_ic": _clean(mean_rank_ic), "seconds": seconds,
+        "usable_horizons": list(usable),
     }
 
 

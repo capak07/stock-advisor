@@ -42,6 +42,55 @@ class MarketData:
     calendar: pd.DatetimeIndex
 
 
+@dataclass(frozen=True)
+class FeatureFrames:
+    wide: Wide
+    calendar: pd.DatetimeIndex
+    names: list[str]
+    features: dict[str, pd.DataFrame]  # full calendar for price and RS features, `days` for fundamentals
+    dollar_volume: pd.DataFrame
+    eligible: pd.DataFrame
+
+
+def feature_frames(
+    prices: pd.DataFrame,
+    events: pd.DataFrame,
+    sectors: pd.DataFrame,
+    market: Market,
+    days: pd.DatetimeIndex,
+    *,
+    facts: pd.DataFrame | None = None,
+    tickers: pd.DataFrame | None = None,
+    split_calendar: pd.DatetimeIndex | None = None,
+) -> FeatureFrames:
+    """The one feature step shared by training and live runs, so their features cannot drift apart.
+
+    `prices` is Plan 3a's long layout. `split_calendar` is the calendar the daily split factor is
+    built on for the fundamentals; it must reach back past any filing in use (default: the days
+    with a benchmark close).
+    """
+    benchmark = MARKETS[market].benchmark
+    etfs = sorted(SECTOR_ETFS[market].values())
+    wide = to_wide(prices)
+    # a day only some symbols have would blank their rolling windows
+    calendar = wide.close.index[wide.close[benchmark].notna()]
+    wide = Wide(*(frame.reindex(calendar) for frame in (wide.open, wide.high, wide.low, wide.close, wide.volume)))
+    split_adjusted, traded = as_traded(wide, events)
+    dollar_volume = split_adjusted * wide.volume
+
+    features = price_features(wide, dollar_volume, jump_days(wide.close))
+    etf_of = {row.symbol: sector_etf(market, row.sector) for row in sectors.itertuples()}
+    features |= relative_strength(features, benchmark, etf_of, etfs)
+    names = PRICE_FEATURES + RS_FEATURES
+    if market == Market.US:
+        splits = split_factor(calendar if split_calendar is None else split_calendar, list(wide.close.columns), events)
+        # the daily factor, for symbols that split: a shares or EPS date falls between sample days
+        splits = splits.loc[:, splits.ne(1).any()]
+        features |= fundamental_features(facts, tickers, days, split_adjusted.loc[days], splits)
+        names = names + FUNDAMENTAL_FEATURES
+    return FeatureFrames(wide, calendar, names, features, dollar_volume, eligible(traded, dollar_volume))
+
+
 def load_market(data_dir: Path, market: Market) -> MarketData:
     benchmark = MARKETS[market].benchmark
     etfs = sorted(SECTOR_ETFS[market].values())
@@ -51,39 +100,26 @@ def load_market(data_dir: Path, market: Market) -> MarketData:
     prices = prices[pd.to_datetime(prices["day"]) < end]
     events = pd.read_parquet(data_dir / f"events_{market}.parquet")
     sectors = pd.read_parquet(data_dir / "sectors.parquet")
+    facts = pd.read_parquet(data_dir / "fundamentals.parquet") if market == Market.US else None
+    tickers = pd.read_parquet(data_dir / "tickers.parquet") if market == Market.US else None
 
-    wide = to_wide(prices)
-    # a day only some symbols have would blank their rolling windows
-    calendar = wide.close.index[wide.close[benchmark].notna()]
-    wide = Wide(*(frame.reindex(calendar) for frame in (wide.open, wide.high, wide.low, wide.close, wide.volume)))
-    split_adjusted, traded = as_traded(wide, events)
-    dollar_volume = split_adjusted * wide.volume
-    days = calendar[WARMUP::SAMPLE_EVERY]
+    # the calendar is the days with a benchmark close; the sample days come from it
+    bench = prices[(prices["symbol"] == benchmark) & prices["close"].notna()]
+    days = pd.DatetimeIndex(sorted(pd.to_datetime(bench["day"]).unique()))[WARMUP::SAMPLE_EVERY]
+    built = feature_frames(prices, events, sectors, market, days, facts=facts, tickers=tickers)
+    wide, calendar, names, dollar_volume = built.wide, built.calendar, built.names, built.dollar_volume
 
-    features = price_features(wide, dollar_volume, jump_days(wide.close))
-    etf_of = {row.symbol: sector_etf(market, row.sector) for row in sectors.itertuples()}
-    features |= relative_strength(features, benchmark, etf_of, etfs)
-    names = PRICE_FEATURES + RS_FEATURES
-    if market == Market.US:
-        facts = pd.read_parquet(data_dir / "fundamentals.parquet")
-        tickers = pd.read_parquet(data_dir / "tickers.parquet")
-        splits = split_factor(calendar, list(wide.close.columns), events)
-        # the daily factor, for symbols that split: a shares or EPS date falls between sample days
-        splits = splits.loc[:, splits.ne(1).any()]
-        features |= fundamental_features(facts, tickers, days, split_adjusted.loc[days], splits)
-        names = names + FUNDAMENTAL_FEATURES
-
-    frames = {name: features[name].loc[days] for name in names}
+    frames = {name: built.features[name].loc[days] for name in names}
     frames |= {f"y_{h}": target.loc[days] for h, target in forward_excess(wide.close, benchmark).items()}
     frames["dollar_volume_20"] = dollar_volume.rolling(ADV_WINDOW).mean().loc[days]
     stacked = pd.concat({name: frame.stack(future_stack=True) for name, frame in frames.items()}, axis=1)
     stacked.index.names = ["day", "symbol"]
-    keep = eligible(traded, dollar_volume).loc[days].stack(future_stack=True)
+    keep = built.eligible.loc[days].stack(future_stack=True)
     keep = keep.reindex(stacked.index, fill_value=False).astype(bool)
     rows = stacked[keep].reset_index()
     rows = rows[~rows["symbol"].isin([benchmark, *etfs])]
     label = sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
     rows["sector"] = rows["symbol"].map(label)
     columns = ["day", "symbol", "sector", "dollar_volume_20", *(f"y_{h}" for h in HORIZONS), *names]
-    del wide, split_adjusted, traded, dollar_volume, features, frames, stacked  # the full-calendar frames are large
+    del built, wide, dollar_volume, frames, stacked  # the full-calendar frames are large
     return MarketData(market, rows[columns].reset_index(drop=True), names, calendar)

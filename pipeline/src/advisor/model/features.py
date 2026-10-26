@@ -153,7 +153,7 @@ def relative_strength(
         ret = features[f"ret_{k}"]
         out[f"ex_bench_{k}"] = ret.sub(ret[benchmark], axis=0)
         out[f"ex_sector_{k}"] = ret - per_stock(ret)
-    rank = per_stock(features["ret_63"][list(etfs)].rank(axis=1, pct=True))
+    rank = per_stock(features["ret_63"].reindex(columns=list(etfs)).rank(axis=1, pct=True))
     out["sector_rank_63"] = rank.loc[:, [e != benchmark for e in sector]].reindex(columns=columns)
     return out
 

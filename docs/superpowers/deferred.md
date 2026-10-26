@@ -111,6 +111,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Rank the screener's survivors** with `FinalModel.screen`.
 - **The pre-close run's partial bar:** features must treat today's bar as incomplete.
 - **US fundamentals live** must use `advisor.model.fundamentals` on `sec_xbrl` facts, so training and live agree.
+- **Gaps in the bars:** a missing bar blanks a stock's rolling features for up to 60 sessions in training, while the live screener skips gaps. Align them.
+- **EPS and splits:** training scales EPS by the split factor at its period end, but ASC 260 restates EPS for splits between the period end and the filing. Use the factor at the filing date.
 
 ## Plan 4: recommendations
 
@@ -122,11 +124,13 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 
 - **Survivorship:** training and backtests cover only stocks listed today (spec §5.2).
 - **The US cost finding:** on the prototype's data the US edge (+0.2–0.6% before costs) is smaller than the 3.1% currency round trip. A USD account would change that.
-- **The US model may not be promoted.** On the prototype's real data (2,000 US stocks) the 126-day horizon's calibration was 6.1 points off, so under the worst-horizon rule (limit 5) the US model isn't promoted and US holdings get no forecasts. TSX passed (worst 4.4 points). Serving only the horizons that pass is the owner's decision, a one-line change in `weekly.should_promote`; the full universe may calibrate better.
+- **The US model may not be promoted.** On the prototype's real data (2,000 US stocks) the 126-day horizon's calibration was 6.1 points off, so under the worst-horizon rule (limit 5) the US model isn't promoted and US holdings get no forecasts. TSX passed (worst 4.4 points). Serving only the horizons that pass is the owner's decision, a one-line change in `weekly.should_promote`; the full universe may calibrate better. At 126 days the error is likely dominated by period-to-period swings in the share of stocks beating a cap-weighted benchmark, which a stock-level model without macro features can't predict, so it may recur and per-horizon serving is the likely answer.
 - **Local timing:** `PARAMS` sets no `num_threads`, which is right on the 2-core Actions runner. Under a CPU-capped container on a larger host (`docker run --cpus=2` on 16 cores, as in the prototype's timing run), LightGBM sees the host's cores and oversubscribes, so set `num_threads` to the cap before trusting the timings.
 - **Not in the model until a later history plan, so live only** (the owner's fast-path decision, 2026-10-20): "surprise" (needs single-quarter EPS), the earnings group, and ownership and flow (insiders, short interest, 13F).
 - **Macro** could return as interactions or a separate regime model, never as raw levels: the same value for every stock on a date lets the model time the market.
 - **Calibration and gates fail closed:** a calibration or score that can't be measured never promotes a model and never enables picks.
+- **Promotion can ratchet (owner's decision before Plan 3c relies on weekly freshness):** the new model's walk-forward rank IC is compared with the IC the active model recorded on its own window, so a lucky week raises the bar, and with no maximum model age a stale model can stay active. Options: a maximum age (promote any model that passes calibration after N weeks), and anchoring sample days to a fixed epoch so consecutive weeks share them.
+- **"30 backtest picks" counts overlapping repeats (settle before Plan 4 reads `picks_enabled`):** a stock held 63�126 days is re-picked on every sample day it qualifies, so 30 picks can be 3 stocks. Options: count distinct non-overlapping holding windows, or require picks spread over a minimum number of days.
 
 ## Plans 4 and 5: recommendations and dashboard
 

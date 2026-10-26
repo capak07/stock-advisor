@@ -128,3 +128,10 @@ def test_contributions_name_the_features_that_moved_the_forecast(tmp_path):
     for parts in out.values():
         assert len(parts) == 3 and {p["feature"] for p in parts} <= set(data.features)
         assert abs(parts[0]["contribution"]) >= abs(parts[-1]["contribution"])
+    booster = model.boosters[63]["q50"]
+    raw = booster.predict(x[data.features], pred_contrib=True)
+    assert raw.sum(axis=1) == pytest.approx(booster.predict(x[data.features]))  # features + bias = the forecast
+    for key, vals in zip(x.index, raw, strict=True):
+        by_name = dict(zip(data.features, vals[:-1], strict=True))
+        for part in out[key]:
+            assert part["contribution"] == pytest.approx(by_name[part["feature"]])

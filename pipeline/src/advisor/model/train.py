@@ -225,7 +225,8 @@ class FinalModel:
 
     def contributions(self, x: pd.DataFrame, horizon: int, top: int = 3) -> dict[str, list[dict]]:
         """The `top` features that moved each row's median forecast most (by absolute size),
-        from LightGBM's per-feature contributions; keyed by the index of `x`."""
+        from LightGBM's per-feature contributions; keyed by the index of `x`. When quantile boosters
+        cross, `_predict` sorts them, so the explained booster may not be the displayed q50."""
         contrib = self.boosters[horizon]["q50"].predict(x[self.features], pred_contrib=True)[:, :-1]  # last = bias
         out = {}
         for key, vals in zip(x.index, contrib, strict=True):

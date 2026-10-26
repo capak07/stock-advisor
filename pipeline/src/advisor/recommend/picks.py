@@ -44,7 +44,7 @@ def choose(rows: Sequence[PredictionRow], cost: float, sane: bool) -> Choice | N
     best: tuple[float, PredictionRow] | None = None
     for r in rows:
         ratio = _ratio(r)
-        if ratio is None or r.p_beat < P_MIN or r.q50 <= cost:
+        if ratio is None or not (r.p_beat >= P_MIN and r.q50 > cost):  # written so NaN fails
             continue
         # a tie goes to the shorter horizon, as in the backtest
         if best is None or ratio > best[0] or (ratio == best[0] and r.horizon_days < best[1].horizon_days):
@@ -87,7 +87,9 @@ def rank_picks(choices: Sequence[Choice], sectors: Mapping[str, str | None]) -> 
         for c in in_style:
             if kept >= PICKS_PER_STYLE:
                 break
-            group = sectors.get(c.symbol) or f"unlabelled:{c.symbol}"
+            sector = sectors.get(c.symbol)
+            # only a missing value (None or NaN) is unlabelled; "" is a sector like any other
+            group = f"unlabelled:{c.symbol}" if sector is None or sector != sector else sector
             if per_sector.get(group, 0) >= PER_SECTOR:
                 continue
             per_sector[group] = per_sector.get(group, 0) + 1

@@ -660,3 +660,27 @@ def test_a_picks_status_changes_only_while_it_is_open(db):
     repo.set_pick_status(db, [r["id"] for r in db.execute("select id from picks")], "graded")
     rows = db.execute("select symbol, status from picks order by id").fetchall()
     assert [(r["symbol"], r["status"]) for r in rows] == [("TD.TO", "exited_early"), ("RY.TO", "graded")]
+
+
+def test_the_symbols_to_grade_are_open_picks_and_ungraded_actions_with_an_exit_by(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    pick = PickRow(
+        "TD.TO", Market.TSX, "swing", 21, date(2026, 11, 13), 20.0, 18.0, "medium", 41.5, 3.0, 1, [], [],
+        date(2026, 10, 13), 25.0,
+    )
+    repo.write_picks(db, run_id, [pick, replace(pick, symbol="BB.TO", rank=2)])
+    db.execute("update picks set status = 'graded' where symbol = 'BB.TO'")  # graded: nothing to wait for
+    repo.write_holding_actions(db, run_id, [
+        _action("AAPL"),
+        _action("TD.TO"),  # also an open pick's: listed once
+        replace(_action("MSFT"), exit_by=None),  # a hold with no horizon is never graded
+        _action("NVDA"),  # graded below
+        replace(_action("BTC", "crypto"), asset_type=AssetType.CRYPTO),  # coins aren't graded
+    ])
+    db.execute(
+        "insert into holding_action_outcomes (run_id, account, symbol, asset_type, exit_price, ret,"
+        " ret_net_of_fx, bench_ret, excess, beat, hit_stop) values (%s, 'tfsa', 'NVDA', 'stock', 21, 0.05,"
+        " 0.05, 0, 0.05, true, false)",
+        (run_id,),
+    )
+    assert repo.symbols_to_grade(db) == ["AAPL", "TD.TO"]

@@ -1696,6 +1696,32 @@ def test_a_holding_action_past_its_exit_by_is_graded(db, tmp_path):
     assert again.summary["graded"] == {"picks": 0, "exited_early": 0, "actions": 0}
 
 
+def test_a_sold_stocks_action_is_still_priced_and_graded(db, tmp_path):
+    # OTCX was sold: it's neither held, watched nor in a universe, so only its ungraded action asks
+    # for its prices
+    hold(db, "OTCX")
+    db.execute(
+        "insert into sells (account, symbol, asset_type, qty, price, currency, fx_rate_cad, sold_at)"
+        " values ('tfsa', 'OTCX', 'stock', 10, 6, 'USD', 1.37, '2026-09-10')"
+    )
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_holding_actions(db, earlier, [earlier_action("OTCX", date(2026, 10, 1))])
+    prices = moved_prices({"OTCX": from_day(date(2026, 9, 15), 10.5)})
+    deps = make_deps(db, tmp_path, prices=prices)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert deps.collectors["yfinance_bars"].calls == [["OTCX", *FUNDS], EVERYONE]
+    assert outcome.summary["graded"] == {"picks": 0, "exited_early": 0, "actions": 1}
+    row = db.execute("select symbol, exit_price from holding_action_outcomes").fetchone()
+    assert (row["symbol"], float(row["exit_price"])) == ("OTCX", 10.5)
+    # it isn't a holding: no features, no action, and it isn't counted as one
+    assert outcome.summary["priority"] == 0 and outcome.summary["actions"]["written"] == 0
+    assert "OTCX" not in market_features(db, outcome.run_id)
+    # its closes are stored, for a later run that doesn't price it
+    stored = db.execute("select count(*) as n from daily_closes where symbol = 'OTCX'").fetchone()["n"]
+    assert stored > 0
+
+
 def test_an_open_pick_whose_stop_is_hit_is_graded_and_closed(db, tmp_path):
     earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
     repo.write_picks(db, earlier, [
@@ -1770,8 +1796,14 @@ def test_a_flagged_pick_waits_for_its_close_and_one_past_exit_by_is_graded(db, t
         earlier_pick("TD.TO", date(2026, 12, 1), stop=7.0, entry=8.0),
     ])
     monkeypatch.setattr("advisor.grade.exit_early", lambda picks, rows: [p.id for p in picks])  # all flagged
-    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_CLOSE, PRE_CLOSE_NOW, min_universe=SMALL)
+    # an open pick's stock is priced even off the shortlist; Yahoo has nothing for ZZZ.TO
+    prices = FakeCollector("yfinance_bars", records_for=lambda symbols: [
+        b for s in symbols if s != "ZZZ.TO" for b in history(s, 70, start=FRESH_START)
+    ])
+    deps = make_deps(db, tmp_path, prices=prices)
+    outcome = execute_run(deps, RunKind.PRE_CLOSE, PRE_CLOSE_NOW, min_universe=SMALL)
     assert outcome.status is RunStatus.SUCCESS
+    assert "ZZZ.TO" in deps.collectors["yfinance_bars"].calls[0]
     assert outcome.summary["graded"] == {"picks": 1, "exited_early": 1, "actions": 0}
     rows = db.execute(
         "select p.symbol, p.status, o.exit_reason from picks p left join pick_outcomes o on o.pick_id = p.id"

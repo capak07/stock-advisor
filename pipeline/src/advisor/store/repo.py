@@ -413,6 +413,20 @@ def actions_to_grade(conn: psycopg.Connection) -> list[ActionToGrade]:
     ]
 
 
+def symbols_to_grade(conn: psycopg.Connection) -> list[str]:
+    """The stocks grading still waits on, sorted: those with an open pick, or with an ungraded
+    holding action that has an exit-by date. A stock the owner has sold stays here until graded."""
+    rows = conn.execute(
+        "select symbol from picks where asset_type = 'stock' and status = 'open'"
+        " union select a.symbol from holding_actions a"
+        " where a.asset_type = 'stock' and a.exit_by is not null"
+        " and not exists (select 1 from holding_action_outcomes o where (o.run_id, o.account, o.symbol,"
+        "   o.asset_type) = (a.run_id, a.account, a.symbol, a.asset_type))"
+        " order by symbol"
+    ).fetchall()
+    return [r["symbol"] for r in rows]
+
+
 def write_action_outcomes(conn: psycopg.Connection, rows: Sequence[tuple[ActionToGrade, Outcome]]) -> None:
     """Store graded holding actions' outcomes."""
     with conn.cursor() as cur:

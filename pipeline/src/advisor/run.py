@@ -460,11 +460,14 @@ def execute_run(
         held, watch = repo.load_held_symbols(conn), repo.load_watchlist(conn)
         priority = priority_order(held, watch, AssetType.STOCK)
         crypto = priority_order(held, watch, AssetType.CRYPTO)
+        # Stocks grading waits on that aren't held or watched, such as one the owner has sold: they're
+        # priced and their closes stored, and get no actions or verdicts.
+        to_grade = [s for s in repo.symbols_to_grade(conn) if s not in priority]
 
         # Phase 1: holdings and watchlist of both markets are priced and saved before anything
         # else can fail. The benchmarks come along for the dashboard's price history and, with the
         # sector ETFs, for the model's relative-strength features.
-        first = fetch_prices([*priority, *BENCHMARKS, *SECTOR_FUNDS])
+        first = fetch_prices(list(dict.fromkeys([*priority, *to_grade, *BENCHMARKS, *SECTOR_FUNDS])))
         bars, flagged = dict(first.bars), dict(first.flagged)
         priority_rows = [screener.price_stats(s, bars[s]) for s in priority if s in bars]
         repo.write_features_live(
@@ -498,8 +501,9 @@ def execute_run(
         # A run that cannot publish skips the bulk fetch (about 7,400 Yahoo requests during a
         # TMX outage) but still retries the owner's unpriced holdings.
         universe_ok = all(len(universes[m]) >= limits[m] for m in Market)
+        fetched = {*priority, *(s for s in to_grade if s in bars)}  # a stock to grade isn't fetched twice
         rest = (
-            sorted({r.symbol for u in universes.values() for r in u} - set(priority))
+            sorted({r.symbol for u in universes.values() for r in u} - fetched)
             if universe_ok
             else []
         )
@@ -566,7 +570,7 @@ def execute_run(
             news = news_stage(deps, run_id, results, targets, coin_names, now_utc, deadline_at)
             # Price history for the dashboard (Plan 5a), only from a run that can publish: a failed
             # run's prices may be why it failed. Its errors land in the summary, never fail the run.
-            stocks = [*priority, *targets.ranked_stocks, *BENCHMARKS]
+            stocks = list(dict.fromkeys([*priority, *to_grade, *targets.ranked_stocks, *BENCHMARKS]))
             price_history = record_history(deps, now_utc, bars, candles, stocks, crypto, results)
 
             # Phase 3.5: forecasts for each market's holdings, watchlist and ranked shortlist, once

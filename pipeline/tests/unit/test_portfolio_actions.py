@@ -47,7 +47,7 @@ def test_a_hit_trailing_stop_sells_whatever_the_forecast():
 
 def test_stop_prices_under_one_use_four_significant_figures():
     a = decide(_holding(price=0.5, trailing_stop=0.512345, rows=[]))
-    assert a.reasons == ["closed at 0.5, under its trailing stop 0.5123"]
+    assert a.reasons == ["closed at 0.5000, under its trailing stop 0.5123"]
 
 
 def test_a_best_horizon_at_or_under_0_42_sells():
@@ -67,17 +67,17 @@ def test_reversed_pick_signals_sell():
 def test_a_big_gain_with_fading_momentum_trims():
     a = decide(_holding(value_cad=1250.0, momentum_pct=39.9))
     assert a.action == "trim"
-    assert a.reasons == ["up 25% and its 21-day momentum is at the 40th percentile"]
+    assert a.reasons == ["up 25% and its 21-day momentum is at the 39th percentile"]
     assert decide(_holding(value_cad=1249.0, momentum_pct=39.9)).action == "hold"
     assert decide(_holding(value_cad=1250.0, momentum_pct=40.0)).action == "hold"
     assert decide(_holding(value_cad=1250.0, momentum_pct=None)).action == "hold"
 
 
 def test_oversize_is_a_warning_never_a_trim():
-    big = _holding(value_cad=36_000.0, cost_cad=36_000.0, max_position_pct=1.5, risk_level="very_high")
+    big = _holding(value_cad=36_000.0, cost_cad=36_000.0, max_position_pct=1.5, risk_level="high")
     a = decide(big)
     assert a.action == "hold"
-    assert a.warnings == ["36% of the portfolio; Very High risk allows 1.5%"]
+    assert a.warnings == ["36% of the portfolio; High risk allows 1.5%"]
     still = decide(replace(big, rows=[_BUY_ROW]))
     assert still.action == "hold"
     assert len(still.warnings) == 1
@@ -132,3 +132,35 @@ def test_tax_warnings_only_in_taxable_accounts():
     assert add.warnings == ["sold at a loss on 2026-10-01: adding now denies that loss (superficial loss)"]
     # not an Add: no warning
     assert decide(_holding(sold_at_loss_on=date(2026, 10, 1))).warnings == []
+
+
+def test_micro_prices_print_without_scientific_notation():
+    a = decide(_holding(price=0.000003091, trailing_stop=0.000003123, rows=[]))
+    assert a.reasons == ["closed at 0.000003091, under its trailing stop 0.000003123"]
+    assert decide(_holding(price=0.5, trailing_stop=0.5, rows=[])).reasons == [
+        "closed at 0.5000, under its trailing stop 0.5000"
+    ]
+
+
+def test_a_qualifying_horizon_beats_a_worse_best_ratio_row():
+    # the best-ratio row has p 0.40, but another horizon qualifies as a Buy
+    bad = _row(h=5, p=0.40, q10=-0.01, q50=0.02, q90=0.03)
+    good = _row(h=20, p=0.60, q10=-0.10, q50=0.02, q90=0.10)
+    a = decide(_holding(rows=[bad, good]))
+    assert a.action == "add"
+    assert a.horizon == 20
+    over = decide(_holding(rows=[bad, good], value_cad=6000.0, cost_cad=6000.0))
+    assert over.action == "hold" and over.horizon == 20
+
+
+def test_no_portfolio_value_means_no_size_information():
+    a = decide(_holding(rows=[_BUY_ROW], portfolio_cad=0.0))
+    assert a.action == "add" and a.warnings == []
+
+
+def test_ordinals_and_size_decimals():
+    for pct, word in [(39.9, "39th"), (1, "1st"), (2, "2nd"), (3, "3rd"), (11, "11th"), (13, "13th"), (21, "21st"), (22, "22nd")]:
+        a = decide(_holding(value_cad=1250.0, momentum_pct=pct))
+        assert a.reasons == [f"up 25% and its 21-day momentum is at the {word} percentile"]
+    a = decide(_holding(value_cad=5300.0, cost_cad=5300.0, max_position_pct=5.0))
+    assert a.warnings == ["5.3% of the portfolio; Medium risk allows 5%"]

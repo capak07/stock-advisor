@@ -4,6 +4,7 @@ Position size is only ever a warning: an oversized holding is never trimmed for 
 Tax warnings never change the action.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -56,11 +57,19 @@ class Action:
 
 
 def _fmt(price: float) -> str:
-    """2 decimals, or 4 significant figures under 1."""
-    return f"{price:.2f}" if price >= 1 else f"{price:.4g}"
+    """2 decimals from 1 up; under 1, 4 significant figures without scientific notation."""
+    if price >= 1 or price <= 0:
+        return f"{price:.2f}"
+    return f"{price:.{3 - math.floor(math.log10(price))}f}"
 
 
-def _range(action: str, h: Holding, row: PredictionRow | None, reasons: list[str], warnings: list[str]) -> Action:
+def _ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _action(action: str, h: Holding, row: PredictionRow | None, reasons: list[str], warnings: list[str]) -> Action:
+    """Build the Action: the Review badge's reasons come last, the range is the given row's."""
     return Action(
         action,
         bool(h.review),
@@ -75,13 +84,19 @@ def _range(action: str, h: Holding, row: PredictionRow | None, reasons: list[str
 
 def decide(h: Holding) -> Action:
     """The first rule that fires wins: sell, then trim, then add, else hold."""
-    best = best_horizon(h.rows)
+    choice = choose(h.rows, h.cost, h.sane)
+    # the horizon that qualifies, so a stock the picks call a Buy is never sold for a weaker row
+    best = next((r for r in h.rows if r.horizon_days == choice.horizon), None) if choice else None
+    best = best or best_horizon(h.rows)
     benchmark = h.benchmark or (best.benchmark if best else None)
-    share = 100 * h.value_cad / h.portfolio_cad
+    # no portfolio value means no size information
+    share = 100 * h.value_cad / h.portfolio_cad if h.portfolio_cad > 0 else None
     warnings: list[str] = []
-    if share > h.max_position_pct:
+    if share is not None and share > h.max_position_pct:
         level = _LEVELS.get(h.risk_level, h.risk_level)
-        warnings.append(f"{share:.0f}% of the portfolio; {level} risk allows {h.max_position_pct:g}%")
+        cap = f"{h.max_position_pct:g}"
+        shown = f"{share:.1f}" if f"{share:.0f}" == cap else f"{share:.0f}"
+        warnings.append(f"{shown}% of the portfolio; {level} risk allows {cap}%")
 
     sell: list[str] = []
     if h.trailing_stop is not None and h.price <= h.trailing_stop:
@@ -96,16 +111,15 @@ def decide(h: Holding) -> Action:
                 "selling at a loss: buying it again within 30 days before or after the sale "
                 "denies the loss (superficial loss)"
             )
-        return _range("sell", h, best, sell, warnings)
+        return _action("sell", h, best, sell, warnings)
 
     if h.rows and h.momentum_pct is not None and h.cost_cad > 0:
         gain = h.value_cad / h.cost_cad - 1
         if gain >= GAIN_TRIM and h.momentum_pct < MOMENTUM_TRIM:
-            reason = f"up {gain:.0%} and its 21-day momentum is at the {h.momentum_pct:.0f}th percentile"
-            return _range("trim", h, best, [reason], warnings)
+            reason = f"up {gain:.0%} and its 21-day momentum is at the {_ordinal(math.floor(h.momentum_pct))} percentile"
+            return _action("trim", h, best, [reason], warnings)
 
-    choice = choose(h.rows, h.cost, h.sane)
-    if choice is not None and share < h.max_position_pct:
+    if choice is not None and (share is None or share < h.max_position_pct):
         reason = (
             f"would be a Buy today: P(beat {benchmark}) {choice.p_beat:.2f} "
             f"over {choice.horizon} trading days, below its max size"
@@ -114,7 +128,7 @@ def decide(h: Holding) -> Action:
             warnings.append(
                 f"sold at a loss on {h.sold_at_loss_on}: adding now denies that loss (superficial loss)"
             )
-        return Action("add", bool(h.review), [reason] + h.review, warnings, choice.horizon, choice.q10, choice.q50, choice.q90)
+        return _action("add", h, best, [reason], warnings)
 
     reason = (h.why_no_forecast or "no forecast yet") if not h.rows else "no rule fired"
-    return _range("hold", h, best, [reason], warnings)
+    return _action("hold", h, best, [reason], warnings)

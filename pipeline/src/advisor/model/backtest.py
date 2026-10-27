@@ -34,17 +34,42 @@ def round_trip_cost(market: Market, dollar_volume_20: np.ndarray, usd_fx_fee_pct
     return spread
 
 
-def simulate_picks(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> pd.DataFrame:
-    """One row per pick: each day and style, the best-ratio stocks within the sector cap.
-
-    A stock is a separate bet only once its earlier pick's hold has ended.
-    """
+def _priced(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> pd.DataFrame:
+    """The forecasts the pick rules consider, with their round-trip cost and q50-to-range ratio."""
     df = predictions.copy()
     if "jump_5d" in df:  # spec 6.1: the latest bar must not be a flagged, unconfirmed jump
         df = df[df["jump_5d"].fillna(0) != 1]
     df["cost"] = round_trip_cost(market, df["dollar_volume_20"].to_numpy(), usd_fx_fee_pct)
     width = df["q90"] - df["q10"]
     df["ratio"] = (df["q50"] / width).where(width > 0)
+    return df
+
+
+def pick_funnel(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> dict[str, Any]:
+    """How many forecasts pass each pick rule, and the highest P(beat) reached: why picks are few."""
+    df = _priced(predictions, market, usd_fx_fee_pct)
+    p = df["p"]
+    confident = p >= P_MIN  # a NaN P never is
+    affordable = df["q50"] > df["cost"]
+    known = p.notna().any()
+    return {
+        "forecasts": len(df),
+        "p_at_least_floor": int(confident.sum()),
+        "above_cost": int(affordable.sum()),
+        "both": int((confident & affordable & df["ratio"].notna()).sum()),
+        "p_max": float(p.max()) if known else None,
+        "p_99": float(p.quantile(0.99)) if known else None,
+        "mean_cost": float(df["cost"].mean()) if len(df) else None,
+        "p_max_by_horizon": {int(h): float(v) for h, v in p.groupby(df["horizon"]).max().dropna().items()},
+    }
+
+
+def simulate_picks(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> pd.DataFrame:
+    """One row per pick: each day and style, the best-ratio stocks within the sector cap.
+
+    A stock is a separate bet only once its earlier pick's hold has ended.
+    """
+    df = _priced(predictions, market, usd_fx_fee_pct)
     df = df[(df["p"] >= P_MIN) & (df["q50"] > df["cost"]) & df["ratio"].notna()]
     if df.empty:
         return pd.DataFrame(columns=PICK_COLUMNS)

@@ -18,7 +18,13 @@ from typing import Any
 import psycopg
 
 from advisor.config import Settings
-from advisor.model.backtest import MAX_CALIBRATION_PTS, gate, pick_metrics, simulate_picks
+from advisor.model.backtest import (
+    MAX_CALIBRATION_PTS,
+    gate,
+    pick_funnel,
+    pick_metrics,
+    simulate_picks,
+)
 from advisor.model.dataset import load_market
 from advisor.model.train import TrainConfig, fit_final, to_files, walk_forward
 from advisor.models import Market, StoredModel
@@ -124,7 +130,11 @@ def _train_market(
     walked = time.monotonic()
     usable = usable_horizons(wf.metrics, config.horizons)
     calibrated = wf.predictions[wf.predictions["p"].notna() & wf.predictions["horizon"].isin(usable)]
-    backtest = pick_metrics(simulate_picks(calibrated, market, repo.fee_settings(conn)[0]))
+    usd_fx_fee_pct = repo.fee_settings(conn)[0]
+    backtest = {
+        **pick_metrics(simulate_picks(calibrated, market, usd_fx_fee_pct)),
+        "funnel": pick_funnel(calibrated, market, usd_fx_fee_pct),
+    }
     # with no usable horizon, the worst of all gives the plain-words reason
     calibration_pts = calibration_of(wf.metrics, usable or config.horizons)
     picks_enabled, picks_reason = gate(backtest, calibration_pts)
@@ -158,7 +168,7 @@ def _train_market(
         "version": version, "promoted": promoted, "reason": reason, "picks_enabled": picks_enabled,
         "picks_reason": picks_reason, "calibration_pts": _clean(calibration_pts),
         "mean_rank_ic": _clean(mean_rank_ic), "seconds": seconds,
-        "usable_horizons": list(usable),
+        "usable_horizons": list(usable), "funnel": metrics["backtest"]["funnel"],
     }
 
 

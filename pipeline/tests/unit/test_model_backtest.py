@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from advisor.model.backtest import gate, pick_metrics, round_trip_cost, simulate_picks
+from advisor.model.backtest import gate, pick_funnel, pick_metrics, round_trip_cost, simulate_picks
 from advisor.models import Market
 
 DAY = pd.Timestamp("2025-03-03")
@@ -45,6 +45,27 @@ def test_unlabelled_stocks_do_not_share_a_sector_cap_and_nan_p_is_never_picked()
     rows.append(("NAN.TO", "Energy", 20, np.nan, -0.02, 0.05, 0.06, 0.0))
     picks = simulate_picks(frame(rows), Market.TSX, 1.5)
     assert sorted(picks["symbol"]) == [f"U{i}.TO" for i in range(5)]
+
+
+def test_the_funnel_counts_the_forecasts_each_pick_rule_lets_through():
+    rows = [
+        ("AAA", "Tech", 10, 0.60, -0.02, 0.05, 0.08, 0.0),  # passes both
+        ("BBB", "Tech", 10, 0.57, -0.02, 0.05, 0.08, 0.0),  # P below 0.58
+        ("CCC", "Tech", 63, 0.70, -0.02, 0.02, 0.08, 0.0),  # q50 below the 3.1% US round trip
+        ("DDD", "Tech", 63, 0.40, -0.02, 0.01, 0.08, 0.0),  # neither
+        ("EEE", "Tech", 63, np.nan, -0.02, 0.05, 0.08, 0.0),  # no calibrated P
+    ]
+    funnel = pick_funnel(frame(rows), Market.US, 1.5)
+    assert funnel == {
+        "forecasts": 5, "p_at_least_floor": 2, "above_cost": 3, "both": 1,
+        "p_max": pytest.approx(0.70), "p_99": pytest.approx(0.697), "mean_cost": pytest.approx(0.031),
+        "p_max_by_horizon": {10: pytest.approx(0.60), 63: pytest.approx(0.70)},
+    }
+
+
+def test_an_empty_funnel_has_no_maximum():
+    funnel = pick_funnel(frame([("X.TO", "Energy", 5, 0.5, -0.1, 0.0, 0.1, 0.0)]).iloc[0:0], Market.TSX, 1.5)
+    assert funnel["forecasts"] == 0 and funnel["p_max"] is None and funnel["p_max_by_horizon"] == {}
 
 
 def test_pick_metrics_are_per_style_and_overall():

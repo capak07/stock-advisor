@@ -20,6 +20,9 @@ def test_the_weekly_job_trains_promotes_and_stores_a_market(db, tmp_path):
     assert {"horizons", "backtest", "picks_enabled", "picks_reason", "rows", "features"} <= set(active.metrics)
     assert active.calibration_error <= 5
     assert report["TSX"]["usable_horizons"] == [5, 63]
+    # where the backtest's forecasts drop out of the pick rules, so "0 picks" can be read
+    assert {"forecasts", "p_at_least_floor", "above_cost", "both", "p_max"} <= set(report["TSX"]["funnel"])
+    assert active.metrics["backtest"]["funnel"] == report["TSX"]["funnel"]
     assert active.metrics["usable_horizons"] == [5, 63]
     model = from_files(repo.load_model_files(db, active.version))
     assert model.horizons == (5, 63)

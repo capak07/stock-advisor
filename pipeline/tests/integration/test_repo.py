@@ -543,3 +543,22 @@ def test_trades_and_rates_load_for_the_ledger(db):
     assert (trades[0].account, trades[0].symbol, trades[0].currency) == ("tfsa", "AAPL", "USD")
     assert repo.load_fx_rates(db) == {date(2026, 10, 12): 1.37, date(2026, 10, 13): 1.38}
     assert repo.latest_fx_rate(db) == 1.38
+
+
+def test_the_newest_trailing_stop_per_holding_is_remembered(db):
+    old = repo.create_run(db, RunKind.PRE_CLOSE, date(2026, 10, 13))
+    new = repo.create_run(db, RunKind.PRE_CLOSE, date(2026, 10, 14))
+    for run_id, stop, feature_day in [(old, 9.0, "2026-10-12"), (new, 9.5, "2026-10-13")]:
+        db.execute(
+            "insert into holding_actions (run_id, account, symbol, asset_type, action, trailing_stop, feature_day)"
+            " values (%s, 'tfsa', 'AAPL', 'stock', 'hold', %s, %s)",
+            (run_id, stop, feature_day),
+        )
+    # a newer row without a stop or feature day does not count
+    newest = repo.create_run(db, RunKind.PRE_CLOSE, date(2026, 10, 15))
+    db.execute(
+        "insert into holding_actions (run_id, account, symbol, asset_type, action)"
+        " values (%s, 'tfsa', 'AAPL', 'stock', 'hold')",
+        (newest,),
+    )
+    assert repo.previous_trailing_stops(db) == {("tfsa", "AAPL", "stock"): (date(2026, 10, 13), 9.5)}

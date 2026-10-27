@@ -110,6 +110,11 @@ def _wilder(x: pd.DataFrame, n: int) -> pd.DataFrame:
     return x.ewm(alpha=1 / n, adjust=False, min_periods=n).mean()
 
 
+def true_range(wide: Wide) -> pd.DataFrame:
+    prev = wide.close.shift(1)
+    return np.maximum(np.maximum(wide.high - wide.low, (wide.high - prev).abs()), (wide.low - prev).abs())
+
+
 def price_features(wide: Wide, dollar_volume: pd.DataFrame, jumps: pd.DataFrame) -> dict[str, pd.DataFrame]:
     c = wide.close
     prev = c.shift(1)
@@ -120,8 +125,7 @@ def price_features(wide: Wide, dollar_volume: pd.DataFrame, jumps: pd.DataFrame)
     delta = c.diff()
     up, down = _wilder(delta.clip(lower=0), 14), _wilder((-delta).clip(lower=0), 14)
     f["rsi_14"] = 100 * up / (up + down).replace(0, np.nan)
-    true_range = np.maximum(np.maximum(wide.high - wide.low, (wide.high - prev).abs()), (wide.low - prev).abs())
-    f["atr_14_pct"] = _wilder(true_range, 14) / c
+    f["atr_14_pct"] = _wilder(true_range(wide), 14) / c
     log_ret = np.log(c / prev)
     f["vol_20"] = log_ret.rolling(20).std() * np.sqrt(252)
     f["vol_60"] = log_ret.rolling(60).std() * np.sqrt(252)

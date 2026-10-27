@@ -554,6 +554,19 @@ def first_buys(conn: psycopg.Connection) -> dict[AssetRef, date]:
     return {AssetRef(r["symbol"], AssetType(r["asset_type"])): r["day"] for r in rows}
 
 
+def previous_trailing_stops(conn: psycopg.Connection) -> dict[tuple[str, str, str], tuple[date, float]]:
+    """Per holding (account, symbol, asset type), the feature day and trailing stop of its newest
+    holding action that has both."""
+    rows = conn.execute(
+        "select distinct on (account, symbol, asset_type) account, symbol, asset_type, feature_day, trailing_stop"
+        " from holding_actions where feature_day is not null and trailing_stop is not null"
+        " order by account, symbol, asset_type, run_id desc"
+    ).fetchall()
+    return {
+        (r["account"], r["symbol"], r["asset_type"]): (r["feature_day"], float(r["trailing_stop"])) for r in rows
+    }
+
+
 def write_fx_rates(conn: psycopg.Connection, rates: Sequence[tuple[date, float]]) -> None:
     """Store USD/CAD by day; a revised rate replaces the stored one."""
     if not rates:

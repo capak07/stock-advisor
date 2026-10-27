@@ -35,7 +35,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 ## Plan 3: model and features
 
 - **Unconfirmed jumps in the wild:** the first live run flagged an unconfirmed jump somewhere in the 100-day window for about 4.7% of priced symbols. Plan 4a blocks a pick or Buy on them; check what they are (microcaps, biotech, bad data).
-- **Non-common instruments (Plan 4a took the name-based part):** the directory filters now drop ETNs, structured trusts and notes, preferred classes, funds and partnership units (see Plan 4a known limits). What a name can't show is left: use yfinance `quoteType` from sector mapping, and run the same check on TSX symbols, for income trusts and closed-end funds whose names the TMX filter cannot recognise. Whether training already skips what the universe now drops is unchecked.
+- **Non-common instruments (Plan 4a took the name-based part):** the directory filters now drop ETNs, structured trusts and notes, preferred classes, funds and partnership units (see Plan 4a known limits). What a name can't show is left: use yfinance `quoteType` from sector mapping, and run the same check on TSX symbols, for income trusts and closed-end funds whose names the TMX filter cannot recognise. Training builds its universe with the same `NasdaqSymbols` and `TmxSymbols` fetches (`advisor/training/build.py`), so the name-based part of the old "exclude from training" item is done too. The next Saturday `train.yml` run trains on the narrower universe.
 - **Partial current-day bar** at the pre-close run, from Yahoo. Features must treat today's bar as incomplete.
 - **Benchmarks** (SPY, XIU.TO, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
 - **13F holder change (Plan 2g):** `sec_13f` gives each US stock the latest quarter's 13F shares, value and holder count, and the quarter before's shares and holder count.
@@ -117,12 +117,12 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
 
 ## Plan 4a known limits
 
-- **Universe exclusions are the owner's to readmit.** They dropped about 362 US listings and 12 TSX companies on the directories checked.
+- **Universe exclusions are the owner's to readmit.** They dropped about 362 US listings and 12 TSX companies, measured by running the new filters over the NASDAQ Trader files (`nasdaqlisted.txt`, `otherlisted.txt`) and the TMX directory saved during Plan 2's research (October 2026).
   - US partnership units are dropped as a group, Bermuda partnerships listed in the US included. That takes out BEP, BIP, IEP, EPD, SPH and Empire State Realty's OP units (ESBA, FISK, OGCP). Closed-end funds and BDCs, ETNs, structured notes and preferred classes go too.
   - The TSX filter also drops operating income funds (Chemtrade Logistics Income Fund, Boston Pizza Royalties Income Fund). That predates Plan 4a, whose TSX additions are physical-metal trusts and similar vehicles.
   - Readmit any by narrowing `nasdaq_symbols.py`'s `LP_UNITS` and `FUND` patterns or `tmx_symbols.py`'s `NON_EQUITY`.
 - **Live sanity is stricter than the backtest's `simulate_picks`:** it fails a NaN `jump_5d` and an ATR of 50% or more. Don't align one to the other without re-running the backtest.
-- **Zero-information stocks:** a stock with every risk component missing is Very High with a max of 0.5%, so it can be picked.
+- **Zero-information stocks:** a stock with every risk component missing is Very High with a max of 0.5%, so it can be picked when it qualifies.
 - **For the next pipeline plan (or 4c):**
   - `ActiveModel` could carry its metrics, which drops the second read of the stored model (`MarketModel.metrics`).
   - An earnings report released before the open on a pre-close run's feature day still counts as inside the hold: only the date is resolved, not the time.

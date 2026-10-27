@@ -14,6 +14,7 @@ from advisor.collectors.feeds import NewsItem, TickerNewsItem
 from advisor.collectors.sec_events import MaterialEvent
 from advisor.collectors.series import SeriesObservation
 from advisor.collectors.yfinance_earnings import EarningsReport
+from advisor.grade import grade_stage
 from advisor.markets import MARKETS
 from advisor.model.dataset import load_market
 from advisor.model.train import PARAMS, TrainConfig, fit_final, to_files, walk_forward
@@ -879,12 +880,27 @@ def test_a_split_rescales_the_stored_history(db, tmp_path):
         DailyClose(otcx, date(2026, 7, 1) + timedelta(days=i), 20.0, "USD") for i in range(70)
     ])
     hold(db)
+    # an open pick and a holding action recorded at 20, before the split
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, date(2026, 7, 31))
+    repo.write_picks(db, earlier, [PickRow(
+        "OTCX", Market.US, "swing", 21, date(2026, 11, 13), 20.0, 18.0, "medium", 41.5, 3.0, 1, [], [],
+        date(2026, 7, 31), 10.0,
+    )])
+    repo.write_holding_actions(db, earlier, [HoldingActionRow(
+        "tfsa", "OTCX", AssetType.STOCK, "hold", False, [], [], 18.0, None, None, None,
+        date(2026, 11, 13), 21, date(2026, 7, 31), 20.0, 10.0, "medium", 3.0,
+    )])
     outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
 
     assert outcome.summary["history"]["rescaled"] == ["OTCX"]
     stored = repo.stored_closes(db, [otcx], date(2026, 7, 1))[otcx]
     assert set(stored.values()) == {10.0}  # July rescaled, the fresh window replaced
     assert min(stored) == date(2026, 7, 1)
+    # the refs were halved with it: the split isn't a stop-out
+    pick = db.execute("select entry_ref_price, stop, status from picks").fetchone()
+    assert (float(pick["entry_ref_price"]), float(pick["stop"]), pick["status"]) == (10.0, 9.0, "open")
+    action = db.execute("select ref_price, trailing_stop from holding_actions where run_id = %s", (earlier,)).fetchone()
+    assert (float(action["ref_price"]), float(action["trailing_stop"])) == (10.0, 9.0)
 
 
 def test_a_rescale_whose_write_fails_is_undone_so_the_next_run_rescales_once(
@@ -1741,3 +1757,62 @@ def test_a_grading_failure_degrades_the_run_and_prices_still_publish(db, tmp_pat
     assert outcome.status is RunStatus.DEGRADED
     assert outcome.summary["graded"] == {"failed": "RuntimeError: grading broke"}
     assert run_row(db, outcome.run_id)["published"] is True
+
+
+PRE_CLOSE_NOW = datetime(2026, 10, 13, 19, 15, tzinfo=UTC)  # 15:15 on 10-13: that day's bars are partial
+
+
+def test_a_flagged_pick_waits_for_its_close_and_one_past_exit_by_is_graded(db, tmp_path, monkeypatch):
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_picks(db, earlier, [
+        earlier_pick("ZZZ.TO", date(2026, 12, 1), stop=7.0),  # no close anywhere: it waits, still open
+        earlier_pick("RY.TO", date(2026, 10, 1), stop=7.0),  # its hold ended on 10-01
+        earlier_pick("TD.TO", date(2026, 12, 1), stop=7.0, entry=8.0),
+    ])
+    monkeypatch.setattr("advisor.grade.exit_early", lambda picks, rows: [p.id for p in picks])  # all flagged
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_CLOSE, PRE_CLOSE_NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["graded"] == {"picks": 1, "exited_early": 1, "actions": 0}
+    rows = db.execute(
+        "select p.symbol, p.status, o.exit_reason from picks p left join pick_outcomes o on o.pick_id = p.id"
+        " order by p.id"
+    ).fetchall()
+    assert [(r["symbol"], r["status"], r["exit_reason"]) for r in rows] == [
+        ("ZZZ.TO", "open", None), ("RY.TO", "graded", "exit_by"), ("TD.TO", "exited_early", "exit_early"),
+    ]
+
+
+def test_a_pre_close_price_under_a_picks_stop_exits_it_early(db, tmp_path):
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_picks(db, earlier, [
+        earlier_pick("TD.TO", date(2026, 12, 1), stop=9.6),
+        earlier_pick("RY.TO", date(2026, 12, 1), stop=9.6),
+    ])
+    repo.write_holding_actions(db, earlier, [earlier_action("AAA", date(2026, 12, 1))])
+    # 15:15 prices: TD.TO under its stop; AAA under its trailing stop, which a partial bar never grades
+    prices = moved_prices({"TD.TO": {date(2026, 10, 13): 9.0}, "AAA": {date(2026, 10, 13): 8.0}})
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_CLOSE, PRE_CLOSE_NOW, min_universe=SMALL)
+    assert outcome.summary["graded"] == {"picks": 0, "exited_early": 1, "actions": 0}
+    status = [(r["symbol"], r["status"]) for r in db.execute("select symbol, status from picks order by id")]
+    assert status == [("TD.TO", "exited_early"), ("RY.TO", "open")]
+    [row] = db.execute("select * from pick_outcomes").fetchall()
+    assert (float(row["exit_price"]), row["exit_reason"], row["hit_stop"]) == (9.0, "stop", True)
+    assert row["ret"] == pytest.approx(-0.1)
+
+
+def test_a_partial_bar_is_never_final_even_without_its_markets_benchmark_bars(db):
+    # XIU.TO isn't in this run's bars, so its closes come from storage, today's partial one too
+    run_id = repo.create_run(db, RunKind.PRE_CLOSE, date(2026, 10, 13))
+    xiu = AssetRef("XIU.TO", AssetType.STOCK)
+    repo.write_daily_closes(db, [DailyClose(xiu, b.day, b.close, "CAD") for b in history("XIU.TO", 70, start=FRESH_START)])
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_holding_actions(db, earlier, [earlier_action("RY.TO", date(2026, 10, 13))])
+    bars = {
+        "SPY": history("SPY", 70, start=FRESH_START),
+        "RY.TO": [b if b.day < date(2026, 10, 13) else bar("RY.TO", b.day, 8.0)
+                  for b in history("RY.TO", 70, start=FRESH_START)],
+    }
+    assert grade_stage(db, run_id, bars, {}, RunKind.PRE_CLOSE, PRE_CLOSE_NOW) == {
+        "picks": 0, "exited_early": 0, "actions": 0,
+    }
+    assert grade_stage(db, run_id, bars, {}, RunKind.PRE_OPEN, NOW) == {"picks": 0, "exited_early": 0, "actions": 1}

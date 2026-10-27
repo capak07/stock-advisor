@@ -87,8 +87,11 @@ def rebase_factor(stored: Mapping[date, float], fresh: Sequence[DailyClose]) -> 
 def store_closes(conn: psycopg.Connection, closes: Sequence[DailyClose]) -> list[str]:
     """Write closes, first rescaling older stored ones that Yahoo re-adjusted.
 
-    Both happen in one transaction: a rescale kept without its fresh closes would be found, and
-    applied, again by the next run. Returns the rescaled symbols.
+    A stock's rescale also rescales the prices picks and holding actions recorded for it before
+    this run (`repo.rescale_refs`), so a split mid-hold isn't graded as a stop-out.
+
+    All of it happens in one transaction: a rescale kept without its fresh closes would be found,
+    and applied, again by the next run. Returns the rescaled symbols.
     """
     by_ref: dict[AssetRef, list[DailyClose]] = defaultdict(list)
     for close in closes:
@@ -102,6 +105,8 @@ def store_closes(conn: psycopg.Connection, closes: Sequence[DailyClose]) -> list
             factor = rebase_factor(stored.get(ref, {}), fresh)
             if factor is not None:
                 repo.rescale_closes(conn, ref, min(c.day for c in fresh), factor)
+                if ref.asset_type is AssetType.STOCK:  # the refs grading and trailing stops compare with
+                    repo.rescale_refs(conn, ref, factor)
                 rescaled.append(ref.symbol)
         repo.write_daily_closes(conn, closes)
     return sorted(rescaled)

@@ -10,7 +10,16 @@ from advisor.model.market_run import PARTIAL_KINDS, model_failure
 from advisor.model.market_run import (
     feature_day as market_feature_day,  # grade() has a feature_day parameter
 )
-from advisor.models import AssetRef, AssetType, DailyBar, Market, Outcome, PredictionRow, RunKind
+from advisor.models import (
+    ET,
+    AssetRef,
+    AssetType,
+    DailyBar,
+    Market,
+    Outcome,
+    PredictionRow,
+    RunKind,
+)
 from advisor.recommend.verdicts import AVOID_P
 from advisor.store import repo
 from advisor.store.repo import OpenPick
@@ -89,14 +98,18 @@ def grade_stage(
     holding actions whose time is up. Returns `summary["graded"]`; a failure is caught and
     returned as `model_failure`, never raised.
 
-    Closes come from this run's bars, or the stored ones for a symbol it didn't price. A partial
-    bar (today's, at a pre-close run) isn't a close yet: only an early exit, which leaves at the
-    run's own price, reads it.
+    Closes come from this run's bars, or the stored ones for a symbol it didn't price. On a
+    pre-close run today's bar is partial (the 15:15 price), not a close: stops and exit-by dates
+    are graded from final closes only. Only an early exit reads it, leaving at the run's own price:
+    a pick whose P fell to the avoid line, or whose price is at or under its stop. One that can't
+    be graded at that price stays open, and the next pre-close run tries again.
     """
     try:
         fee_pct = repo.fee_settings(conn)[0]
-        days: dict[Market, tuple[date, bool]] = {}
-        for market in Market:
+        today = now_utc.astimezone(ET).date()
+        partial_run = kind in PARTIAL_KINDS
+        days: dict[Market, tuple[date, bool]] = {}  # each market's feature day, and if it's partial
+        for market in Market if partial_run else ():
             if bars.get(MARKETS[market].benchmark):
                 day, partial = market_feature_day(market, bars, kind, now_utc)
                 days[market] = (day.date(), partial)
@@ -117,8 +130,9 @@ def grade_stage(
         def final(symbol: str) -> dict[date, float]:
             """The symbol's closes without today's partial bar."""
             if symbol not in finals:
-                day, partial = days.get(market_of(symbol), (None, False))
-                finals[symbol] = {d: c for d, c in closes.get(symbol, {}).items() if not (partial and d == day)}
+                finals[symbol] = {
+                    d: c for d, c in closes.get(symbol, {}).items() if not (partial_run and d == today)
+                }
             return finals[symbol]
 
         def grade_pick(pick: OpenPick, exit_now: date | None) -> Outcome | None:
@@ -136,23 +150,25 @@ def grade_stage(
                 pick.bench_ref_price, bench, fee_pct, market is Market.US, exit_now,
             )
 
-        early: list[int] = []
-        flagged: set[int] = set()
-        early_outcomes: list[tuple[int, Outcome]] = []
-        if kind in PARTIAL_KINDS:
-            early = exit_early(picks, rows)
-            flagged = set(early)
-            for pick in picks:
-                if pick.id in flagged and Market(pick.market) in days:
-                    outcome = grade_pick(pick, days[Market(pick.market)][0])
-                    if outcome is not None:
-                        early_outcomes.append((pick.id, outcome))
+        flagged = set(exit_early(picks, rows)) if partial_run else set()
+        graded: list[tuple[int, Outcome]] = []  # status 'graded'
+        exited: list[tuple[int, Outcome]] = []  # status 'exited_early'
+        for pick in picks:
+            outcome = grade_pick(pick, None)  # a stop or exit-by, from final closes
+            if outcome is not None:
+                graded.append((pick.id, outcome))
+                continue
+            if Market(pick.market) not in days:
+                continue
+            day, partial = days[Market(pick.market)]
+            price = closes.get(pick.symbol, {}).get(day)
+            stopped = partial and price is not None and price <= pick.stop
+            if pick.id in flagged or stopped:
+                outcome = grade_pick(pick, day)
+                if outcome is not None:
+                    # a flagged pick whose hold had already ended leaves at exit-by: a normal grade
+                    (graded if outcome.exit_reason == "exit_by" else exited).append((pick.id, outcome))
 
-        graded = [
-            (pick.id, outcome)
-            for pick in picks
-            if pick.id not in flagged and (outcome := grade_pick(pick, None)) is not None
-        ]
         graded_actions = []
         for action in actions:
             market = market_of(action.symbol)
@@ -165,10 +181,10 @@ def grade_stage(
                 graded_actions.append((action, outcome))
 
         with conn.transaction():  # every grade of the run lands together or not at all
-            repo.mark_exited_early(conn, early)
-            repo.write_pick_outcomes(conn, [*early_outcomes, *graded])
+            repo.write_pick_outcomes(conn, [*exited, *graded])
+            repo.mark_exited_early(conn, [pick_id for pick_id, _ in exited])
             repo.set_pick_status(conn, [pick_id for pick_id, _ in graded], "graded")
             repo.write_action_outcomes(conn, graded_actions)
     except Exception as exc:
         return model_failure(exc)
-    return {"picks": len(graded), "exited_early": len(early), "actions": len(graded_actions)}
+    return {"picks": len(graded), "exited_early": len(exited), "actions": len(graded_actions)}

@@ -11,6 +11,7 @@ from psycopg.types.json import Jsonb
 
 from advisor.collectors.base import Collector, CollectorResult
 from advisor.collectors.runner import SourceState
+from advisor.markets import MARKETS, TSX_SUFFIX, market_of
 from advisor.models import (
     ET,
     AssetRef,
@@ -370,8 +371,9 @@ def mark_exited_early(conn: psycopg.Connection, ids: Sequence[int]) -> None:
 
 
 def set_pick_status(conn: psycopg.Connection, ids: Sequence[int], status: str) -> None:
+    """Close these picks with `status`; only a pick still open changes."""
     if ids:
-        conn.execute("update picks set status = %s where id = any(%s)", (status, list(ids)))
+        conn.execute("update picks set status = %s where id = any(%s) and status = 'open'", (status, list(ids)))
 
 
 def write_pick_outcomes(conn: psycopg.Connection, rows: Sequence[tuple[int, Outcome]]) -> None:
@@ -674,6 +676,42 @@ def stored_closes(
         if ref in wanted:
             closes[ref][row["day"]] = float(row["close"])
     return dict(closes)
+
+
+def rescale_refs(conn: psycopg.Connection, ref: AssetRef, factor: float) -> None:
+    """Multiply the prices recorded for a stock that grading hasn't used yet by `factor`, when its
+    stored closes are rescaled: they were recorded in the same, older adjustment.
+
+    That is open picks' entry and stop, and ungraded holding actions' reference price and trailing
+    stop. A market's benchmark also moves its open picks' and ungraded actions' benchmark price.
+    """
+    ungraded = (
+        " and not exists (select 1 from holding_action_outcomes o where (o.run_id, o.account, o.symbol,"
+        "   o.asset_type) = (a.run_id, a.account, a.symbol, a.asset_type))"
+    )
+    conn.execute(
+        "update picks set entry_ref_price = entry_ref_price * %(f)s, stop = stop * %(f)s"
+        " where symbol = %(s)s and asset_type = %(t)s and status = 'open'",
+        {"f": factor, "s": ref.symbol, "t": ref.asset_type.value},
+    )
+    conn.execute(
+        "update holding_actions a set ref_price = ref_price * %(f)s, trailing_stop = trailing_stop * %(f)s"
+        " where a.symbol = %(s)s and a.asset_type = %(t)s" + ungraded,
+        {"f": factor, "s": ref.symbol, "t": ref.asset_type.value},
+    )
+    market = market_of(ref.symbol)
+    if ref.asset_type is not AssetType.STOCK or ref.symbol != MARKETS[market].benchmark:
+        return
+    conn.execute(
+        "update picks set bench_ref_price = bench_ref_price * %s where market = %s and status = 'open'",
+        (factor, market.value),
+    )
+    tsx = market is Market.TSX
+    conn.execute(
+        "update holding_actions a set bench_ref_price = bench_ref_price * %s"
+        " where a.asset_type = 'stock' and (a.symbol like %s) = %s" + ungraded,
+        (factor, f"%{TSX_SUFFIX}", tsx),
+    )
 
 
 def rescale_closes(conn: psycopg.Connection, ref: AssetRef, before: date, factor: float) -> int:

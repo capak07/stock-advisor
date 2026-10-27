@@ -14,6 +14,7 @@ from advisor.models import (
     AssetRef,
     AssetType,
     DailyClose,
+    HoldingActionRow,
     Market,
     PickRow,
     RunKind,
@@ -585,3 +586,77 @@ def test_the_newest_trailing_stop_per_holding_is_remembered(db):
         (newest,),
     )
     assert repo.previous_trailing_stops(db) == {("tfsa", "AAPL", "stock"): (date(2026, 10, 13), 9.5)}
+
+
+def _action(symbol: str, account: str = "tfsa", trailing_stop: float | None = 18.0) -> HoldingActionRow:
+    return HoldingActionRow(
+        account, symbol, AssetType.STOCK, "hold", False, [], [], trailing_stop, None, None, None,
+        date(2026, 11, 13), 21, date(2026, 10, 13), 20.0, 25.0, "medium", 3.0,
+    )
+
+
+def test_a_rescale_multiplies_the_refs_recorded_before_it(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    pick = PickRow(
+        "TD.TO", Market.TSX, "swing", 21, date(2026, 11, 13), 20.0, 18.0, "medium", 41.5, 3.0, 1, [], [],
+        date(2026, 10, 13), 25.0,
+    )
+    repo.write_picks(db, run_id, [
+        pick,
+        replace(pick, rank=2),  # graded below: untouched
+        replace(pick, symbol="RY.TO", rank=3),
+        replace(pick, symbol="AAPL", market=Market.US, rank=1),
+    ])
+    db.execute("update picks set status = 'graded' where rank = 2")
+    repo.write_holding_actions(db, run_id, [
+        _action("TD.TO"), _action("TD.TO", "rrsp", trailing_stop=None), _action("RY.TO"), _action("AAPL"),
+    ])
+    graded_run = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    repo.write_holding_actions(db, graded_run, [_action("TD.TO")])
+    db.execute(
+        "insert into holding_action_outcomes (run_id, account, symbol, asset_type, exit_price, ret,"
+        " ret_net_of_fx, bench_ret, excess, beat, hit_stop) values (%s, 'tfsa', 'TD.TO', 'stock', 21, 0.05,"
+        " 0.05, 0, 0.05, true, false)",
+        (graded_run,),
+    )
+
+    repo.rescale_refs(db, AssetRef("TD.TO", AssetType.STOCK), 0.5)  # a 2-for-1 split
+    picks = db.execute("select symbol, rank, entry_ref_price, stop, bench_ref_price from picks order by id").fetchall()
+    assert [(p["symbol"], float(p["entry_ref_price"]), float(p["stop"])) for p in picks] == [
+        ("TD.TO", 10.0, 9.0), ("TD.TO", 20.0, 18.0), ("RY.TO", 20.0, 18.0), ("AAPL", 20.0, 18.0),
+    ]
+    actions = (
+        "select run_id, account, symbol, ref_price, trailing_stop, bench_ref_price from holding_actions"
+        " order by run_id, account, symbol"
+    )
+    held = db.execute(actions).fetchall()
+    assert [(a["run_id"], a["account"], a["symbol"], float(a["ref_price"]),
+             None if a["trailing_stop"] is None else float(a["trailing_stop"])) for a in held] == [
+        (run_id, "rrsp", "TD.TO", 10.0, None),
+        (run_id, "tfsa", "AAPL", 20.0, 18.0),
+        (run_id, "tfsa", "RY.TO", 20.0, 18.0),
+        (run_id, "tfsa", "TD.TO", 10.0, 9.0),
+        (graded_run, "tfsa", "TD.TO", 20.0, 18.0),  # graded: its outcome stands
+    ]
+
+    # The TSX benchmark's rescale moves every TSX ref to it, and nothing of the US's.
+    repo.rescale_refs(db, AssetRef("XIU.TO", AssetType.STOCK), 2.0)
+    picks = db.execute("select symbol, bench_ref_price from picks order by id").fetchall()
+    assert [(p["symbol"], float(p["bench_ref_price"])) for p in picks] == [
+        ("TD.TO", 50.0), ("TD.TO", 25.0), ("RY.TO", 50.0), ("AAPL", 25.0),
+    ]
+    held = db.execute(actions).fetchall()
+    assert [float(a["bench_ref_price"]) for a in held] == [50.0, 25.0, 50.0, 50.0, 25.0]
+
+
+def test_a_picks_status_changes_only_while_it_is_open(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    pick = PickRow(
+        "TD.TO", Market.TSX, "swing", 21, date(2026, 11, 13), 20.0, 18.0, "medium", 41.5, 3.0, 1, [], [],
+        date(2026, 10, 13), 25.0,
+    )
+    repo.write_picks(db, run_id, [pick, replace(pick, symbol="RY.TO", rank=2)])
+    repo.mark_exited_early(db, [p.id for p in repo.open_picks(db) if p.symbol == "TD.TO"])
+    repo.set_pick_status(db, [r["id"] for r in db.execute("select id from picks")], "graded")
+    rows = db.execute("select symbol, status from picks order by id").fetchall()
+    assert [(r["symbol"], r["status"]) for r in rows] == [("TD.TO", "exited_early"), ("RY.TO", "graded")]

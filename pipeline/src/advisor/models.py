@@ -95,6 +95,45 @@ class PickRow:
     catalysts: list[dict[str, Any]]  # JSON-ready
 
 
+@dataclass(frozen=True)
+class LinkedPick:
+    """The pick a holding was bought on, as the holdings stage reads it."""
+
+    id: int
+    horizon_days: int
+    exit_by: date
+    stop: float  # the trailing stop never sits below it
+    status: str  # open, exited_early or graded
+    top_factors: list[dict[str, Any]]  # what drove its forecast then
+
+
+@dataclass(frozen=True)
+class HoldingActionRow:
+    """One holding's action of a run, per account (spec §7.3), with what grading it later needs.
+
+    Prices are in the asset's own currency: USD for US stocks and coins, CAD for TSX stocks.
+    """
+
+    account: str
+    symbol: str
+    asset_type: AssetType
+    action: str  # sell, trim, add or hold
+    review: bool
+    reasons: list[str]
+    warnings: list[str]
+    trailing_stop: float | None
+    q10: float | None
+    q50: float | None
+    q90: float | None
+    exit_by: date | None
+    horizon_days: int | None  # None without a forecast (always for a coin)
+    feature_day: date | None
+    ref_price: float | None  # the feature day's close; None when not priced
+    bench_ref_price: float | None  # the benchmark's close that day; None for a coin
+    risk_level: str
+    max_position_pct: float
+
+
 class SymbolInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 

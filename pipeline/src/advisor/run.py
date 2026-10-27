@@ -46,6 +46,7 @@ from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, R
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
 from advisor.news.stage import RECENT, WINDOW, process_news
+from advisor.portfolio.stage import advise_stage
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.recommend.stage import recommend_stage
 from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
@@ -472,6 +473,7 @@ def execute_run(
         # Held and watched crypto too; CoinGecko's CAD quote is what values a crypto holding.
         quotes: dict[str, CryptoQuote] = {}
         candles: dict[str, list[DailyBar]] = {}
+        crypto_features: dict[str, dict] = {}  # the holdings stage reads a coin's price check here
         if crypto:
 
             def crypto_records(name: str) -> list:
@@ -479,9 +481,9 @@ def execute_run(
 
             quotes = {quote.symbol: quote for quote in crypto_records(QUOTES)}
             candles, checks = group_bars(crypto_records(BARS)), group_bars(crypto_records(CHECK))
-            repo.write_features_live(
-                conn, run_id, crypto_feature_rows(crypto, quotes, candles, checks, now_utc), now_utc
-            )
+            coin_rows = crypto_feature_rows(crypto, quotes, candles, checks, now_utc)
+            repo.write_features_live(conn, run_id, coin_rows, now_utc)
+            crypto_features = {ref.symbol: features for ref, features in coin_rows}
 
         # Phase 2: each market's universe, then one price fetch for everything not yet priced.
         universes: dict[Market, list[SymbolInfo]] = {}
@@ -549,6 +551,7 @@ def execute_run(
         held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
         picks_summary = {m.value: {"skipped": "the run can't publish"} for m in Market}
         verdicts_failure: dict | None = None
+        actions_summary: dict = {"skipped": "the run can't publish"}
         if enriched:
             results = run_enrichment(
                 tracker,
@@ -589,6 +592,19 @@ def execute_run(
             except Exception as exc:
                 picks_summary = {m.value: model_failure(exc) for m in Market}
                 verdicts_failure = model_failure(exc)  # no verdicts were written either
+                advice = {}  # its holdings get the fallback rules
+
+            # The holdings stage: one action per holding and account, after stage 8's writes. It
+            # catches its own failures too; this guard backs that up, so prices always publish.
+            try:
+                actions_summary = advise_stage(
+                    conn, run_id, models=models, forecasts=forecasts, advice=advice,
+                    model_summary=model_summary, bars=bars, flagged=flagged, quotes=quotes,
+                    candles=candles, crypto_features=crypto_features, results=results, kind=kind,
+                    now_utc=now_utc,
+                )
+            except Exception as exc:
+                actions_summary = model_failure(exc)
 
         summary = {
             "markets": {
@@ -617,6 +633,7 @@ def execute_run(
             "history": price_history,
             "model": model_summary,
             "picks": picks_summary,
+            "actions": actions_summary,
         }
         if verdicts_failure is not None:
             summary["verdicts"] = verdicts_failure
@@ -628,9 +645,11 @@ def execute_run(
             universe_ok=universe_ok,
             prices_ok=prices_ok,
             holdings_ok=held_stocks <= bars.keys() and held_crypto <= quotes.keys(),
-            # a failed model, market's picks or the verdicts degrade the run; prices still publish
+            # a failed model, market's picks, the verdicts or the holdings' actions degrade the run;
+            # prices still publish
             models_ok=not any("failed" in m for m in [*model_summary.values(), *picks_summary.values()])
-            and verdicts_failure is None,
+            and verdicts_failure is None
+            and "failed" not in actions_summary,
         )
         if status is RunStatus.FAILED:
             summary["failed_reason"] = [

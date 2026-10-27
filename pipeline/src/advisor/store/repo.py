@@ -15,6 +15,8 @@ from advisor.models import (
     AssetRef,
     AssetType,
     DailyClose,
+    HoldingActionRow,
+    LinkedPick,
     Market,
     PickRow,
     PredictionRow,
@@ -301,6 +303,38 @@ def write_picks(conn: psycopg.Connection, run_id: int, rows: Sequence[PickRow]) 
                     run_id, r.symbol, r.market.value, r.style, r.horizon_days, r.exit_by, r.entry_ref_price,
                     r.stop, r.risk_level, r.risk_score, r.max_position_pct, r.rank,
                     Jsonb(r.top_factors), Jsonb(r.catalysts),
+                )
+                for r in rows
+            ],
+        )
+
+
+def load_picks(conn: psycopg.Connection, ids: Sequence[int]) -> dict[int, LinkedPick]:
+    """The picks with these ids, by id: the ones holdings were bought on."""
+    if not ids:
+        return {}
+    rows = conn.execute(
+        "select id, horizon_days, exit_by, stop, status, top_factors from picks where id = any(%s)", (list(ids),)
+    ).fetchall()
+    return {
+        r["id"]: LinkedPick(r["id"], r["horizon_days"], r["exit_by"], float(r["stop"]), r["status"], r["top_factors"])
+        for r in rows
+    }
+
+
+def write_holding_actions(conn: psycopg.Connection, run_id: int, rows: Sequence[HoldingActionRow]) -> None:
+    """Store a run's action for each holding, per account."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into holding_actions (run_id, account, symbol, asset_type, action, review, reasons, warnings,"
+            " trailing_stop, q10, q50, q90, exit_by, horizon_days, feature_day, ref_price, bench_ref_price,"
+            " risk_level, max_position_pct)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            [
+                (
+                    run_id, r.account, r.symbol, r.asset_type.value, r.action, r.review, Jsonb(r.reasons),
+                    Jsonb(r.warnings), r.trailing_stop, r.q10, r.q50, r.q90, r.exit_by, r.horizon_days,
+                    r.feature_day, r.ref_price, r.bench_ref_price, r.risk_level, r.max_position_pct,
                 )
                 for r in rows
             ],

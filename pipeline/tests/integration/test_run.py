@@ -107,6 +107,7 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         "history": {"closes": 490, "backfilled": [], "fx": 0, "rescaled": [], "pruned": 0},
         "model": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
         "picks": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
+        "actions": {"written": 0, "by_action": {"sell": 0, "trim": 0, "add": 0, "hold": 0}},
     }
     # The benchmarks and sector ETFs are priced with the holdings, then one call covers both markets.
     assert deps.collectors["yfinance_bars"].calls == [FUNDS, EVERYONE]
@@ -1550,3 +1551,69 @@ def test_a_verdict_failure_degrades_the_run_and_keeps_the_picks(db, tmp_path, ts
     assert outcome.summary["picks"]["TSX"] == {"swing": 0, "position": 2}
     assert db.execute("select count(*) as n from watchlist_verdicts").fetchone()["n"] == 0
     assert run_row(db, outcome.run_id)["published"] is True
+
+
+def holding_actions(db, run_id):
+    rows = db.execute("select * from holding_actions where run_id = %s", (run_id,)).fetchall()
+    return {r["symbol"]: r for r in rows}
+
+
+def test_holdings_get_actions_and_a_coin_gets_the_fallback(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    hold(db, "RY.TO")
+    hold_crypto(db)
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    extra = crypto_sources()
+
+    def candles(symbols):  # a daily range, so the coin's ATR, and its stop's distance, isn't zero
+        return [
+            b.model_copy(update={"high": b.close * 1.02, "low": b.close * 0.98})
+            for s in symbols for b in history(s, 30, 82000.0, source="coinbase", start=date(2026, 9, 14))
+        ]
+
+    extra["coinbase_candles"].records_for = candles
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    rows = holding_actions(db, outcome.run_id)
+    assert set(rows) == {"RY.TO", "BTC"}
+    stock = rows["RY.TO"]
+    assert (stock["account"], stock["asset_type"], stock["horizon_days"]) == ("tfsa", "stock", 63)
+    assert (stock["feature_day"], stock["exit_by"]) == (date(2026, 10, 13), date(2027, 1, 13))
+    assert (float(stock["ref_price"]), float(stock["bench_ref_price"])) == (10.0, 10.0)  # its close and XIU.TO's
+    assert stock["risk_level"] in {"low", "medium", "high", "very_high"} and stock["trailing_stop"] is not None
+    coin = rows["BTC"]
+    assert (coin["account"], coin["action"], coin["reasons"]) == ("crypto", "hold", ["no crypto model yet"])
+    assert (coin["horizon_days"], coin["exit_by"], coin["bench_ref_price"]) == (None, None, None)
+    assert (float(coin["ref_price"]), coin["feature_day"]) == (82000.0, date(2026, 10, 13))
+    assert float(coin["trailing_stop"]) < 82000.0
+    assert (coin["risk_level"], coin["max_position_pct"]) == ("very_high", 0.5)
+    assert outcome.summary["actions"]["written"] == 2
+
+
+def test_an_actions_failure_degrades_the_run_and_prices_still_publish(db, tmp_path, monkeypatch):
+    hold(db, "RY.TO")
+
+    def broken(holding):
+        raise RuntimeError("actions broke")
+
+    monkeypatch.setattr("advisor.portfolio.stage.decide", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["actions"] == {"failed": "RuntimeError: actions broke"}
+    assert holding_actions(db, outcome.run_id) == {}
+    assert run_row(db, outcome.run_id)["published"] is True
+    assert "RY.TO" in market_features(db, outcome.run_id)
+
+
+def test_a_ledger_problem_is_reported_with_the_actions(db, tmp_path):
+    hold(db, "RY.TO")
+    db.execute(
+        "insert into sells (account, symbol, asset_type, qty, price, currency, sold_at)"
+        " values ('tfsa', 'TD.TO', 'stock', 5, 12, 'CAD', '2026-10-01')"
+    )
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["actions"]["written"] == 1
+    assert outcome.summary["actions"]["problems"] == [
+        "TD.TO on 2026-10-01: a sell with nothing held, so it's left out."
+    ]

@@ -11,6 +11,7 @@ from advisor.models import PredictionRow
 from advisor.recommend.picks import best_horizon, choose
 
 AVOID_P = 0.42
+NO_COIN_MODEL = "no crypto model yet"  # spec §5.4: coins get the fallback rules
 
 
 @dataclass(frozen=True)
@@ -69,4 +70,4 @@ def stock_verdict(
 
 
 def coin_verdict(symbol: str) -> Verdict:
-    return Verdict(symbol, "crypto", "hold", ["no crypto model yet"])
+    return Verdict(symbol, "crypto", "hold", [NO_COIN_MODEL])

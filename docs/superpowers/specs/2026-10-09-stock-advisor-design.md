@@ -471,7 +471,7 @@ Each holding gets exactly one action, chosen in this order of precedence:
 **Badges on top of the action:**
 - **Review:** earnings or a binary catalyst is within 5 trading days, **or** the latest bar is a flagged, unconfirmed jump.
 
-**Size is a warning, not a Trim** (owner decision 2026-10-27). A position over its risk-based max is flagged by §7.4's warning and keeps whatever action the other rules give it. Why: size alone isn't a view on the stock, and a forced Trim would sell winners for being winners.
+**Size is a warning, not a Trim** (owner decision 2026-10-27). A position over its risk-based max is flagged by §7.4's warning and keeps whatever action the other rules give it, and an oversized holding is never an Add. Why: the portfolio is small (four holdings, about C$2,800), so every holding is far over its risk-based max and a size Trim would fire on every holding at every run.
 
 **Trailing stop:** the highest close since purchase minus 2.5 × ATR(14). It only moves up, and never sits below the original stop. A stop that would be 0 or less (ATR of 40% or more) is not shown.
 

@@ -115,6 +115,7 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
 ## Plan 4c known limits
 
 - Holdings outside a forecast population are Very High (0.5%) by default.
+- While the portfolio is small, every holding shows the §7.4 oversize warning at every run and is never an Add (owner decision 2026-10-27; revisit if the portfolio grows).
 - Coins have no model, so they get stops only.
 - Ungraded rows wait for closes; a pre-close run's 15:15 price grades only an early exit.
 - Grading is by closes, not intraday lows.

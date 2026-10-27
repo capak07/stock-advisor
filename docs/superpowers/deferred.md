@@ -100,7 +100,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Missing versus zero:** when no news item came in at all (every news source failed), the run leaves the `news_*` features missing. When items came in but none for an asset, its counts are 0 and its sentiment is empty. Treat missing as unknown.
 - **`features_live` rows:** `merge_features_live` creates a row with only `news_*` keys for a shortlisted stock that had no row. A later plain `write_features_live` for the same run and asset would hit the unique key, so merge there too, or write before the news stage.
 
-## Plan 4: what is left after 4a
+## Plan 4: what is left after 4a (4c is built)
 
 Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchlist_verdicts`) is built. The rest:
 
@@ -111,11 +111,18 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
   - the status bar's Paper badges.
 
   Show P(beat) only for the horizons a stock's `predictions` rows carry: a market with no usable horizons has none. A verdict's `details` has `market_picks_enabled`; a Buy in a disabled market shows the pick's fields but isn't on a list.
-- **Plan 4c, the portfolio advisor:**
-  - holding actions (Sell / Trim / Add / Hold), including Add / Hold for a stock that is both held and watched (its verdict is `held: true` with no rank);
-  - the pre-close exit-early re-check;
-  - grading of picks and holding actions, and their outcomes;
-  - spec §10's fallback for a holding the model may not score.
+
+## Plan 4c known limits
+
+- Holdings outside a forecast population are Very High (0.5%) by default.
+- Coins have no model, so they get stops only.
+- Ungraded rows wait for closes; a pre-close run's 15:15 price grades only an early exit.
+- Grading is by closes, not intraday lows.
+- One bad holding drops every holding's row for that run (single transaction).
+- A split is detected only for symbols whose closes the run stores, so an open pick off the shortlist isn't rescaled. Fix: add open picks to the history list. Dormant while picks are off.
+- A US stock with no stored FX rate is valued at cost.
+- Spec §7.5's one-time note on US dividend payers in a TFSA isn't built: no source says which stocks pay dividends.
+- Minor: a break-even sell can read as a Loss through float noise (the web ledger has the same exposure); `stops.py` imports the private `_wilder`.
 
 ## Plan 4a known limits
 
@@ -183,7 +190,6 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
 - **`runs.summary`** gained `crypto` (held and watched coins) and `crypto_unquoted` in Plan 2e, and `news` (items, stories, rows, assets, sentiment status) in Plan 2f.
 - **News text is untrusted:** titles, outlets and links come from third-party feeds. Render them as text, never as HTML. `parse_feed` keeps only http and https links.
 - **Sentiment status:** the scheduled run installs the `nlp` extra. So `summary.news.sentiment` reading `unavailable` means a broken install, and `failed: …` a model or scoring error. The run still publishes in both cases; Source health shows the reason (Plan 5c).
-- A table for holding-action outcomes. Spec §6.5 grades holding actions, but §8 has no table for them.
 - Decide spec §7.2 ("holdings analysis survives a later failure") against "failed runs are never published".
 - A `published_runs` view, so the dashboard never reads unpublished rows.
 - Show missed or dropped schedule slots on the dashboard.

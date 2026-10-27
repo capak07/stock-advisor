@@ -277,9 +277,10 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
    - Live sector labels come from `symbols.sector`, which `train.yml` fills weekly: the labels training reads.
    - For the US stocks being forecast, the run downloads 3 years of split events (best-effort) so EPS is put onto today's shares with the split factor at its filing date, as in training.
 8. **Recommender and portfolio advisor** (§6, §7).
-   - Plan 4a built the picks and watchlist verdicts (`advisor.recommend.stage`), written after every earlier stage's writes. Holding actions come later.
+   - Plan 4a built the picks and watchlist verdicts (`advisor.recommend.stage`), written after every earlier stage's writes. Plan 4c built the holding actions (`advisor.portfolio`), written after those.
    - A failure degrades the run per market and never stops its prices publishing: a market whose forecasts are missing is skipped, one whose recommender fails writes no picks, and a failure writing the verdicts leaves them unwritten. Each market's outcome is in `summary.picks`, a verdicts failure in `summary.verdicts`.
-9. **Grader.** Grade every pick and holding action whose horizon ended (§6.5).
+   - Holding actions are written in one transaction, so one holding that fails drops every holding's row for that run and degrades it. The outcome is in `summary.actions`.
+9. **Grader.** Grade every pick and holding action whose horizon ended, and re-check open picks for an early exit (§6.5). Built in Plan 4c (`advisor.grade`). A failure degrades the run and never stops publishing; the counts, or the failure, are in `summary.graded`.
 10. **Publish.** Store the day's closes and USD/CAD for the dashboard (`daily_closes`, `fx_rates`, §8). Stock closes cover only the last 100 days per run, though the price window is 400, so each run doesn't rewrite about 168,000 closes. Write a run summary (per-market counts included), then set `published = true`.
 
 ## 5. Prediction
@@ -405,7 +406,9 @@ The score is a weighted sum of percentile ranks within the symbol's market. Plan
 
   A stock with no forecast gets Hold with the reason: no model or no usable horizon, not eligible for the model, not priced this run, the model failed this run, "no forecast this run" for a priced, eligible stock with none, or the recommender failed. A watched coin gets Hold with "no crypto model yet" (§5.4 isn't built). A Buy's fields are the pick's, whether or not the market has picks; each stock verdict says in `market_picks_enabled` whether its market has them. A watched stock that is also held keeps its verdict, marked `held`, with no rank.
 - **Exit early:** the pre-close run re-checks open picks. A pick is flagged when P has fallen to 0.42 or below, or its stop has been hit.
-- **Grading:** when a pick's exit-by date passes, or its stop is hit, record:
+  - A pre-close or early-close run's 15:15 price is partial, not a close. It never grades an exit-by or a holding action. But an open pick whose 15:15 price is at or under its stop, or whose P at its horizon fell to 0.42 or below, exits early in that run: status `exited_early`, graded at that price.
+  - A flagged pick that can't be graded that run stays open and is retried.
+- **Grading:** grading uses closes, so a stop counts as hit on a close at or under it (not on an intraday low). When a pick's exit-by date passes, or its stop is hit, record:
   - the exit price;
   - return;
   - the benchmark's return over the same window;
@@ -413,7 +416,8 @@ The score is a weighted sum of percentile ranks within the symbol's market. Plan
   - whether it beat the benchmark;
   - whether the stop was hit.
 
-  US returns are also shown net of the conversion fee. Holding actions are graded the same way over their stated horizon.
+  US returns are also shown net of the conversion fee: ret - 2 x fee. Holding actions are graded the same way over their stated horizon, into `holding_action_outcomes` (§8).
+- **Reference prices follow Yahoo's re-adjustments.** Yahoo rescales past closes after a split or dividend. When a symbol's stored closes are rescaled, the same transaction rescales its open picks' entry prices and stops, its ungraded holding actions' reference prices and trailing stops, and (for a benchmark) the open picks' and ungraded actions' benchmark reference prices. Otherwise a 2:1 split would read as a stop-out.
 
 ### 6.6 Paper period
 
@@ -457,16 +461,21 @@ Each holding gets exactly one action, chosen in this order of precedence:
    - the trailing stop is hit, **or**
    - P(beat benchmark) over the best horizon is ≤ 0.42, **or**
    - for a holding linked to a pick, the main signals behind that pick have reversed sign.
+   - "The best horizon" is the qualifying horizon (§6.2's hold) when one exists, else the best-ratio horizon. Otherwise a stock that qualifies as a Buy could be a Sell.
+   - "Reversed" means more than half of the pick's top factors flipped sign at its horizon.
 2. **Trim:**
-   - the position exceeds the max size for its current risk level, **or**
    - the unrealized gain is 25% or more **and** the 21-day momentum percentile has dropped below 40.
-3. **Add:** the holding would qualify as a Buy pick today (§6.1) **and** the position is below its max size.
+3. **Add:** the holding would qualify as a Buy pick today (§6.1) **and** the position is below its max size. An oversized holding is never an Add.
 4. **Hold:** everything else, shown with the expected remaining hold time and an exit-by date.
 
 **Badges on top of the action:**
 - **Review:** earnings or a binary catalyst is within 5 trading days, **or** the latest bar is a flagged, unconfirmed jump.
 
-**Trailing stop:** the highest close since purchase minus 2.5 × ATR(14). It only moves up, and never sits below the original stop.
+**Size is a warning, not a Trim** (owner decision 2026-10-27). A position over its risk-based max is flagged by §7.4's warning and keeps whatever action the other rules give it. Why: size alone isn't a view on the stock, and a forced Trim would sell winners for being winners.
+
+**Trailing stop:** the highest close since purchase minus 2.5 × ATR(14). It only moves up, and never sits below the original stop. A stop that would be 0 or less (ATR of 40% or more) is not shown.
+
+**Risk level for sizing:** a holding outside a forecast population (a coin included) is Very High, with a max of 0.5%, by default.
 
 ### 7.4 Portfolio-level checks
 
@@ -506,13 +515,14 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 | `symbols` | symbol, asset_type, **market** (US / TSX / null for crypto), name, exchange, sector, industry, market_cap, active |
 | `features_live` | run_id, symbol, asset_type, features (jsonb), as_of. Holds the shortlists, holdings and watchlist |
 | `predictions` | run_id, symbol, asset_type, horizon_days, q10, q50, q90, p_beat, benchmark, model_version |
-| `picks` | id, run_id, symbol, asset_type, **market**, style (swing / position), horizon_days, exit_by, entry_ref_price, stop, risk_level, risk_score, max_position_pct, rank, top_factors (jsonb), catalysts (jsonb), status (open / exited_early / graded) |
+| `picks` | id, run_id, symbol, asset_type, **market**, style (swing / position), horizon_days, exit_by, entry_ref_price, stop, risk_level, risk_score, max_position_pct, rank, top_factors (jsonb), catalysts (jsonb), status (open / exited_early / graded), feature_day and bench_ref_price (nullable, for grading) |
 | `pick_outcomes` | pick_id, exit_price, exit_reason, ret, ret_net_of_fx, bench_ret, excess, beat, hit_stop, graded_at |
 | `watchlist` | symbol, asset_type, added_at |
 | `watchlist_verdicts` | run_id, symbol, asset_type, verdict, reasons (jsonb), details (jsonb) |
 | `lots` (buys) | id, **account**, symbol, asset_type, qty, price, **currency**, **fx_rate_cad**, bought_at, pick_id, notes |
 | `sells` | id, **account**, symbol, asset_type, qty, price, **currency**, **fx_rate_cad**, sold_at |
-| `holding_actions` | run_id, **account**, symbol, asset_type, action (sell / trim / add / hold), review, reasons (jsonb), trailing_stop, q10, q50, q90, exit_by, warnings (jsonb) |
+| `holding_actions` | run_id, **account**, symbol, asset_type, action (sell / trim / add / hold), review, reasons (jsonb), trailing_stop, q10, q50, q90, exit_by, warnings (jsonb), and for grading (nullable; rows from before Plan 4c have none): horizon_days, feature_day, ref_price, bench_ref_price, risk_level, max_position_pct |
+| `holding_action_outcomes` | run_id, account, symbol, asset_type (→ `holding_actions`, cascade), exit_price, ret, ret_net_of_fx, bench_ret, excess, beat, hit_stop, graded_at |
 | `news_items` | id, symbol, published_at, outlet, url, title, sentiment, cluster_id. Pruned after 90 days |
 | `models` | version, kind (stock_us / stock_tsx / crypto), trained_at, metrics (jsonb), calibration_error, active |
 | `model_files` | version (→ models, cascade), name, body (gzip). The active model and one other per kind |

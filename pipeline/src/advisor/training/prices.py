@@ -9,6 +9,7 @@ yf.download never raises when Yahoo blocks it, it returns empty frames, so sever
 downloads in a row mean throttling and the remaining ones are not sent.
 """
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ PAUSE_SECONDS = 3.0
 PRICE_COLUMNS = ["open", "high", "low", "close"]
 COLUMNS = ["symbol", "day", *PRICE_COLUMNS, "volume"]
 EVENT_COLUMNS = ["symbol", "day", "dividend", "split"]
+
+log = logging.getLogger(__name__)
 
 
 class YahooThrottled(Exception):
@@ -140,6 +143,7 @@ def download_history(
     download: Downloader = training_download,
     sleep: Callable[[float], None] = time.sleep,
     pause: float = PAUSE_SECONDS,
+    log_as: str = "prices",
 ) -> PriceHistory:
     unique = list(dict.fromkeys(symbols))
     chunks = [unique[i : i + SYMBOLS_PER_DOWNLOAD] for i in range(0, len(unique), SYMBOLS_PER_DOWNLOAD)]
@@ -150,6 +154,7 @@ def download_history(
         if index:
             check_deadline()
             sleep(pause)
+        log.info("%s: download %d/%d (%d symbols)", log_as, index + 1, len(chunks), len(chunk))
         mapping = {to_yahoo(s): s for s in chunk}
         # yfinance's end is exclusive, so ask for the day after
         wide = download(list(mapping), start, end + timedelta(days=1))

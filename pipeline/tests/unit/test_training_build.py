@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import zipfile
 from datetime import UTC, date, datetime
 
@@ -144,3 +145,54 @@ def test_yahoo_throttling_the_second_ask_counts_its_symbols_as_missing(fixtures_
     monkeypatch.setattr(build_module, "download_history", throttled_retry)
     with web(fixtures_dir) as client, pytest.raises(BuildFailed, match="no bars for 1 of 3 US stocks"):
         build(tmp_path, NOW, deps(client, [], silent_once=frozenset({"JPM"})), limit=10)
+
+
+def fred_down(fixtures_dir) -> httpx.Client:
+    """The `web` fixtures, with FRED timing out on every request."""
+    healthy = web(fixtures_dir)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "fred.stlouisfed.org":
+            raise httpx.ReadTimeout("The read operation timed out", request=request)
+        return healthy._transport.handle_request(request)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_a_dead_fred_fails_fast_with_a_readable_error_and_a_partial_manifest(fixtures_dir, tmp_path):
+    asked: list[list[str]] = []
+    with fred_down(fixtures_dir) as client, pytest.raises(BuildFailed) as failure:
+        build(tmp_path, NOW, deps(client, asked), limit=10)
+    assert str(failure.value) == (
+        "macro step failed: FRED did not answer for T10Y2Y after 6 tries (ReadTimeout: The read operation timed out)"
+    )
+    assert asked == []  # macro runs before the long Yahoo download, so nothing was downloaded
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["failed"] == {"step": "macro", "error": str(failure.value)}
+    assert set(manifest["files"]) == {"sectors.parquet"}  # what was written before the failure
+
+
+def test_a_failure_after_prices_leaves_them_listed_in_the_manifest(fixtures_dir, tmp_path, monkeypatch):
+    def broken_zip(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("advisor.training.build.reduce_companyfacts", broken_zip)
+    with web(fixtures_dir) as client, pytest.raises(BuildFailed, match="fundamentals step failed: OSError: disk full"):
+        build(tmp_path, NOW, deps(client, []), limit=10)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    assert manifest["failed"]["step"] == "fundamentals"
+    assert {"prices_US.parquet", "prices_TSX.parquet", "macro.parquet", "tickers.parquet"} <= set(manifest["files"])
+
+
+def test_progress_is_logged_without_changing_what_is_written(fixtures_dir, tmp_path, caplog):
+    quiet, loud = tmp_path / "quiet", tmp_path / "loud"
+    with web(fixtures_dir) as client:
+        build(quiet, NOW, deps(client, []), limit=10)
+    with caplog.at_level(logging.INFO, logger="advisor.training"), web(fixtures_dir) as client:
+        build(loud, NOW, deps(client, []), limit=10)
+    lines = [r.getMessage() for r in caplog.records]
+    for expected in ("macro: FRED T10Y2Y", "macro: Bank of Canada", "prices US: download 1/1", "prices TSX: download 1/1",
+                     "fundamentals: companyfacts", "done in"):
+        assert any(expected in line for line in lines), expected
+    for name in json.loads((quiet / "manifest.json").read_text())["files"]:
+        assert pd.read_parquet(quiet / name).equals(pd.read_parquet(loud / name)), name

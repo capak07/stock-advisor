@@ -262,11 +262,12 @@ def get_with_retries(
     base_delay: float = 1.0,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
+    timeout: httpx.Timeout | None = None,  # None: the client's own
 ) -> httpx.Response:
     """GET with exponential backoff on transport errors and 429/5xx; other errors raise at once."""
     return _send_with_retries(
         client, "GET", url, params=params, headers=headers, limiter=limiter, attempts=attempts,
-        base_delay=base_delay, sleep=sleep, clock=clock,
+        base_delay=base_delay, sleep=sleep, clock=clock, timeout=timeout,
     )
 
 
@@ -302,6 +303,7 @@ def _send_with_retries(
     base_delay: float,
     sleep: Callable[[float], None],
     clock: Callable[[], float],
+    timeout: httpx.Timeout | None = None,
 ) -> httpx.Response:
     last_error: Exception | None = None
     for attempt in range(attempts):
@@ -311,7 +313,10 @@ def _send_with_retries(
             limiter.acquire()
             check_deadline(clock)  # a busy shared limiter may have slept past the deadline
         try:
-            response = client.request(method, url, params=params, json=json, headers=headers)
+            response = client.request(
+                method, url, params=params, json=json, headers=headers,
+                timeout=httpx.USE_CLIENT_DEFAULT if timeout is None else timeout,
+            )
         except httpx.TransportError as exc:
             last_error = exc
         else:

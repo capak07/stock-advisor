@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from advisor.collectors import boc_valet, fred
-from advisor.training.macro import COLUMNS, macro_history
+from advisor.training.macro import ATTEMPTS, COLUMNS, MacroUnavailable, macro_history
 
 START, END = date(2026, 4, 1), date(2026, 10, 15)
 
@@ -45,3 +45,67 @@ def test_every_live_series_is_fetched_from_the_start(fixtures_dir):
 def test_a_series_without_values_fails_the_build(fixtures_dir):
     with sources(fixtures_dir, [], fred_missing="VIXCLS") as client, pytest.raises(ValueError, match="VIXCLS"):
         macro_history(client, START, END)
+
+
+def flaky_sources(fixtures_dir, failures: dict[str, list]) -> tuple[httpx.Client, list[str]]:
+    """Like `sources`, but each FRED series first answers with its queued failures in order: an
+    exception class to raise (a timeout) or a response to send (a 429)."""
+    asked: list[str] = []
+    healthy = sources(fixtures_dir, [])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "fred.stlouisfed.org":
+            series = request.url.params["id"]
+            asked.append(series)
+            queued = failures.get(series, [])
+            if queued:
+                failure = queued.pop(0)
+                if isinstance(failure, httpx.Response):
+                    return failure
+                raise failure("The read operation timed out", request=request)
+        return healthy._transport.handle_request(request)
+
+    return httpx.Client(transport=httpx.MockTransport(handler)), asked
+
+
+def test_a_fred_read_timeout_is_retried_and_the_build_goes_on(fixtures_dir):
+    pauses: list[float] = []
+    client, asked = flaky_sources(fixtures_dir, {"DGS10": [httpx.ReadTimeout, httpx.ConnectTimeout]})
+    with client:
+        frame = macro_history(client, START, END, sleep=pauses.append)
+    assert set(frame["series"]) == set(fred.SERIES) | set(boc_valet.SERIES)
+    assert asked.count("DGS10") == 3
+    assert pauses == [10.0, 20.0]  # patient backoff, not the live collectors' 1 s and 2 s
+
+
+def test_fred_retry_after_is_honoured(fixtures_dir):
+    pauses: list[float] = []
+    busy = httpx.Response(429, headers={"Retry-After": "45"})
+    client, _ = flaky_sources(fixtures_dir, {"T10Y2Y": [busy]})
+    with client:
+        macro_history(client, START, END, sleep=pauses.append)
+    assert pauses == [45.0]
+
+
+def test_fred_still_down_after_every_try_fails_with_the_series_named(fixtures_dir):
+    pauses: list[float] = []
+    client, asked = flaky_sources(fixtures_dir, {"VIXCLS": [httpx.ReadTimeout] * ATTEMPTS})
+    with client, pytest.raises(MacroUnavailable, match=r"FRED did not answer for VIXCLS after 6 tries \(ReadTimeout"):
+        macro_history(client, START, END, sleep=pauses.append)
+    assert asked.count("VIXCLS") == ATTEMPTS == 6
+    assert pauses == [10.0, 20.0, 40.0, 80.0, 160.0]
+    assert asked[-1] == "VIXCLS"  # nothing after the dead series is asked
+
+
+def test_macro_requests_get_a_longer_read_timeout(fixtures_dir):
+    timeouts: list[dict] = []
+    healthy = sources(fixtures_dir, [])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        timeouts.append(request.extensions["timeout"])
+        return healthy._transport.handle_request(request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler), timeout=60.0) as client:
+        macro_history(client, START, END)
+    assert {t["read"] for t in timeouts} == {120.0}
+    assert {t["connect"] for t in timeouts} == {15.0}

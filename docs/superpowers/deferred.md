@@ -62,7 +62,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
   - `fundamentals.parquet`: `cik, metric, concept, unit, start, end, value, filed, form, accession`, every re-report kept. `tickers.parquet` maps `symbol` to `cik`. Pick a concept per period by `METRICS` priority and the earliest `filed` strictly before the day (`filed < day`), which Plan 3b's `advisor.model.fundamentals` does: companyfacts has no acceptance time, and most filings land after the close or before the open. Tickers and fundamentals cover the US universe only.
   - `events_US.parquet` and `events_TSX.parquet`: `symbol, day, dividend, split`, Yahoo's split and dividend events (`split` is the ratio, 0 where none). Prices are adjusted to today's scale, while as-filed EPS and share counts before a split are on the old scale. Convert facts with the product of later split ratios. Recover the price actually paid from the adjusted price with the split and dividend factors before computing P/E, P/S or FCF yield, or the "price >= $1" filter.
   - `macro.parquet`: `series, day, value` for the live collectors' FRED and Bank of Canada series.
-  - `manifest.json`: sizes, timings and missing symbols.
+  - `manifest.json`: sizes, timings and missing symbols. A failed build still writes it, with `failed: {step, error}` and only the files written before the failure; the job uploads it either way.
+  - Macro runs right after sectors, before the Yahoo download, so a FRED outage fails the build in minutes. Its requests wait up to 120 s to read and try 6 times, 10 s to 160 s apart (longer when Retry-After asks). The build logs each FRED series and each Yahoo download.
 - **What the training data lacks:**
   - It covers only stocks listed today (survivorship bias, spec §5.2). Yahoo has nothing for delisted tickers, and SEC's ticker map is current-only.
   - FRED's HY spread starts in 2023.

@@ -588,6 +588,7 @@ def execute_run(
                 )
             except Exception as exc:
                 picks_summary = {m.value: model_failure(exc) for m in Market}
+                verdicts_failure = model_failure(exc)  # no verdicts were written either
 
         summary = {
             "markets": {

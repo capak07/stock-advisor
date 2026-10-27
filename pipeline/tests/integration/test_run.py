@@ -1303,6 +1303,22 @@ def test_a_recommender_failure_degrades_the_run_and_prices_still_publish(db, tmp
     assert run_row(db, outcome.run_id)["published"] is True
 
 
+def test_a_crashed_recommend_stage_still_records_the_verdicts_failure(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+
+    def crash(*args, **kwargs):
+        raise RuntimeError("stage broke")
+
+    monkeypatch.setattr("advisor.run.recommend_stage", crash)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["verdicts"]["failed"].startswith("RuntimeError")
+    assert outcome.summary["picks"]["TSX"]["failed"].startswith("RuntimeError")
+    assert run_row(db, outcome.run_id)["published"] is True
+
+
 def test_one_markets_recommender_failure_spares_the_other_market_and_the_verdicts(
     db, tmp_path, tsx_model_files, monkeypatch
 ):

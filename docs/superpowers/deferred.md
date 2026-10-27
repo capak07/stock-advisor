@@ -117,11 +117,13 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
 
 ## Plan 4a known limits
 
-- **Universe exclusions are the owner's to readmit.** They dropped about 362 US listings and 12 TSX companies, measured by running the new filters over the NASDAQ Trader files (`nasdaqlisted.txt`, `otherlisted.txt`) and the TMX directory saved during Plan 2's research (October 2026).
+- **Universe exclusions are the owner's to readmit.** They dropped about 350 US listings and 11 TSX companies, measured by running the full filters over the NASDAQ Trader files (`nasdaqlisted.txt`, `otherlisted.txt`) and the TMX directory saved during Plan 2's research (October 2026). The 13 `$` preferreds the symbol pattern already dropped, and the Sprott copper and uranium `.U`/`.UN`-only listings, were excluded before and are not in the count.
   - US partnership units are dropped as a group, Bermuda partnerships listed in the US included. That takes out BEP, BIP, IEP, EPD, SPH and Empire State Realty's OP units (ESBA, FISK, OGCP). Closed-end funds and BDCs, ETNs, structured notes and preferred classes go too.
   - The TSX filter also drops operating income funds (Chemtrade Logistics Income Fund, Boston Pizza Royalties Income Fund). That predates Plan 4a, whose TSX additions are physical-metal trusts and similar vehicles.
   - Readmit any by narrowing `nasdaq_symbols.py`'s `LP_UNITS` and `FUND` patterns or `tmx_symbols.py`'s `NON_EQUITY`.
 - **Live sanity is stricter than the backtest's `simulate_picks`:** it fails a NaN `jump_5d` and an ATR of 50% or more. Don't align one to the other without re-running the backtest.
+- **The gate's population differs from live.** `simulate_picks` ranks every eligible stock-day in the universe, while live picks rank only the stocks forecast in a run (holdings, watchlist and the screener's top 300 US / 100 TSX). So the backtest vouches for the rules, not for that narrower population. Options: fit a walk-forward screener and apply its shortlist per day in `simulate_picks`, or forecast the whole eligible universe live. The owner's decision.
+- **A missed earnings lookup counts as no event.** When the best-effort `yfinance_earnings` misses a symbol, its event risk is 0 (not unknown) and its catalyst is dropped. Fix: treat uncovered symbols as NaN.
 - **Zero-information stocks:** a stock with every risk component missing is Very High with a max of 0.5%, so it can be picked when it qualifies.
 - **For the next pipeline plan (or 4c):**
   - `ActiveModel` could carry its metrics, which drops the second read of the stored model (`MarketModel.metrics`).

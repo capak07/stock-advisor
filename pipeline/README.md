@@ -28,7 +28,7 @@ Stage 8 (`advisor.recommend.stage`) turns each market's forecasts into picks and
 `summary.picks` has an entry per market:
 - `{swing, position}`: how many picks each list got;
 - `{disabled: reason}`: the model's backtest gate (`picks_enabled`, `picks_reason`) is off or missing, so no picks, though the watchlist still gets verdicts;
-- `{skipped: ...}`: the market had no forecasts (no model, no usable horizons, the model failed, or the run couldn't publish); `{failed: ...}`: the recommender or its write failed.
+- `{skipped: ...}`: the market had no forecasts (no model, no usable horizons, the model failed, or the run couldn't publish); `{failed: ...}`: a step of the picks stage failed (the feature day, the inputs, the news read, the recommender, the contributions or the write).
 
 `summary.verdicts` exists only when writing the verdicts failed: `{failed: ...}`. A market whose recommender failed gives its watched stocks Hold with "the recommender failed this run".
 

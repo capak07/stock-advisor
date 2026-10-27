@@ -385,7 +385,7 @@ The score is a weighted sum of percentile ranks within the symbol's market. Plan
 | Very High | ≥ 90 | 0.5% |
 
 **Floors:**
-- a market cap under US$300M or C$300M is at least **High**;
+- a US market cap under US$300M (TSX has no market cap) is at least **High**;
 - all crypto is at least **High**;
 - a stock missing more than half of its market's feature groups is at least **Medium**.
 

@@ -211,6 +211,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # its request lines include query strings
     now = datetime.now(UTC)
     with contextlib.ExitStack() as stack:
         client = stack.enter_context(make_client(timeout=60.0))
@@ -235,7 +236,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             manifest = build(args.out, now, deps, limit=args.limit)
         except BuildFailed as exc:
-            log.error("%s (see %s)", exc, args.out / "manifest.json")
+            log.error("%s (see %s)", exc, args.out / "manifest.json", exc_info=exc.__cause__ or exc)
             return 1
     print(json.dumps({k: v for k, v in manifest.items() if k != "missing"}))
     return 0

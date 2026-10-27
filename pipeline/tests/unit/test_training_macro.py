@@ -5,7 +5,13 @@ import httpx
 import pytest
 
 from advisor.collectors import boc_valet, fred
-from advisor.training.macro import ATTEMPTS, COLUMNS, MacroUnavailable, macro_history
+from advisor.training.macro import (
+    ATTEMPTS,
+    BUDGET_SECONDS,
+    COLUMNS,
+    MacroUnavailable,
+    macro_history,
+)
 
 START, END = date(2026, 4, 1), date(2026, 10, 15)
 
@@ -109,3 +115,29 @@ def test_macro_requests_get_a_longer_read_timeout(fixtures_dir):
         macro_history(client, START, END)
     assert {t["read"] for t in timeouts} == {120.0}
     assert {t["connect"] for t in timeouts} == {15.0}
+
+
+def test_a_slow_fred_is_stopped_by_the_macro_budget(fixtures_dir):
+    now = [0.0]
+    healthy = sources(fixtures_dir, [])
+    asked: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "fred.stlouisfed.org":
+            asked.append(request.url.params["id"])
+            now[0] += 200.0  # each series answers, but only after 200 s
+        return healthy._transport.handle_request(request)
+
+    assert BUDGET_SECONDS == 20 * 60
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client, pytest.raises(
+        MacroUnavailable, match=r"FRED did not answer for \w+ within the macro step's 20 minutes"
+    ):
+        macro_history(client, START, END, sleep=lambda s: None, clock=lambda: now[0])
+    assert len(asked) == 6  # the 7th would start at 1200 s
+
+
+def test_a_refused_series_says_so_rather_than_timing_out(fixtures_dir):
+    client, asked = flaky_sources(fixtures_dir, {"DGS10": [httpx.Response(404, text="Series not found")]})
+    with client, pytest.raises(MacroUnavailable, match=r"FRED refused DGS10 \(HTTP 404"):
+        macro_history(client, START, END, sleep=lambda s: None)
+    assert asked.count("DGS10") == 1

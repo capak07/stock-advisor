@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -60,3 +62,12 @@ def test_shares_after_a_split_are_not_scaled_by_it_again(tmp_path):
     data = load_market(tmp_path, Market.US)
     row = data.rows[(data.rows["day"] == sample) & (data.rows["symbol"] == stocks[0])].iloc[0]
     assert row["log_mcap"] == pytest.approx(np.log(close * 400.0))
+
+
+def test_a_failed_build_is_never_trained_on(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=1, days=400)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    manifest["failed"] = {"step": "macro", "error": "macro step failed: FRED did not answer"}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="the training data build failed: macro step failed"):
+        load_market(tmp_path, Market.TSX)

@@ -95,7 +95,10 @@ def load_market(data_dir: Path, market: Market) -> MarketData:
     benchmark = MARKETS[market].benchmark
     etfs = sorted(SECTOR_ETFS[market].values())
     # the build ran during its last session, so that day's bar is partial
-    end = pd.Timestamp(json.loads((data_dir / "manifest.json").read_text())["end"])
+    manifest = json.loads((data_dir / "manifest.json").read_text())
+    if "failed" in manifest:  # its files are partial, or left over from an earlier build
+        raise ValueError(f"the training data build failed: {manifest['failed']['error']}")
+    end = pd.Timestamp(manifest["end"])
     prices = pd.read_parquet(data_dir / f"prices_{market}.parquet")
     prices = prices[pd.to_datetime(prices["day"]) < end]
     events = pd.read_parquet(data_dir / f"events_{market}.parquet")

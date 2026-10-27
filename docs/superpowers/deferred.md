@@ -63,7 +63,7 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
   - `events_US.parquet` and `events_TSX.parquet`: `symbol, day, dividend, split`, Yahoo's split and dividend events (`split` is the ratio, 0 where none). Prices are adjusted to today's scale, while as-filed EPS and share counts before a split are on the old scale. Convert facts with the product of later split ratios. Recover the price actually paid from the adjusted price with the split and dividend factors before computing P/E, P/S or FCF yield, or the "price >= $1" filter.
   - `macro.parquet`: `series, day, value` for the live collectors' FRED and Bank of Canada series.
   - `manifest.json`: sizes, timings and missing symbols. A failed build still writes it, with `failed: {step, error}` and only the files written before the failure; the job uploads it either way.
-  - Macro runs right after sectors, before the Yahoo download, so a FRED outage fails the build in minutes. Its requests wait up to 120 s to read and try 6 times, 10 s to 160 s apart (longer when Retry-After asks). The build logs each FRED series and each Yahoo download.
+  - Macro runs right after sectors, before the Yahoo download, so a FRED outage fails the build in minutes. Its requests wait up to 120 s to read and try 6 times, 10 s to 160 s apart (longer when Retry-After asks), within 20 minutes for the whole step. The build logs each FRED series and each Yahoo download. `load_market` refuses a manifest marked `failed`, so a reused `--out` directory is never trained on.
 - **What the training data lacks:**
   - It covers only stocks listed today (survivorship bias, spec §5.2). Yahoo has nothing for delisted tickers, and SEC's ticker map is current-only.
   - FRED's HY spread starts in 2023.

@@ -196,3 +196,31 @@ def test_progress_is_logged_without_changing_what_is_written(fixtures_dir, tmp_p
         assert any(expected in line for line in lines), expected
     for name in json.loads((quiet / "manifest.json").read_text())["files"]:
         assert pd.read_parquet(quiet / name).equals(pd.read_parquet(loud / name)), name
+
+
+class NoSymbols:
+    def __init__(self, client) -> None:
+        pass
+
+    def fetch(self, symbols, now):
+        return []
+
+
+def test_main_logs_the_cause_with_its_traceback_and_quiets_httpx(monkeypatch, tmp_path, caplog):
+    def broken_build(out, now, deps, limit=None):
+        try:
+            {}["cik"]
+        except KeyError as exc:
+            raise BuildFailed("fundamentals step failed: KeyError: 'cik'") from exc
+
+    monkeypatch.setenv("SEC_USER_AGENT", "stock-advisor test@example.com")
+    monkeypatch.setattr(build_module, "NasdaqSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "TmxSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "build", broken_build)
+    httpx_log = logging.getLogger("httpx")
+    monkeypatch.setattr(httpx_log, "level", httpx_log.level)  # restored after the test
+    assert build_module.main(["--out", str(tmp_path), "--no-db"]) == 1
+    (error,) = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert "fundamentals step failed: KeyError" in error.getMessage()
+    assert error.exc_info is not None and error.exc_info[0] is KeyError  # the real traceback
+    assert httpx_log.level == logging.WARNING  # httpx's per-request lines carry query strings

@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -28,6 +29,23 @@ from advisor.models import (
 from advisor.news.stage import NewsRow, StoredNews
 from advisor.portfolio.ledger import Trade
 from advisor.recommend.verdicts import Verdict
+
+
+@dataclass(frozen=True)
+class OpenPick:
+    """A pick still open, as grading reads it (spec §6.5)."""
+
+    id: int
+    symbol: str
+    market: str
+    horizon_days: int
+    exit_by: date
+    entry_ref_price: float
+    stop: float
+    feature_day: date  # the day entry_ref_price and bench_ref_price closed
+    bench_ref_price: float
+    run_kind: str  # the kind of the run that made the pick
+
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
 NEWS_KEPT = timedelta(days=90)  # spec §10: news is pruned after 90 days
@@ -296,17 +314,40 @@ def write_picks(conn: psycopg.Connection, run_id: int, rows: Sequence[PickRow]) 
     with conn.cursor() as cur:
         cur.executemany(
             "insert into picks (run_id, symbol, asset_type, market, style, horizon_days, exit_by,"
-            " entry_ref_price, stop, risk_level, risk_score, max_position_pct, rank, top_factors, catalysts)"
-            " values (%s, %s, 'stock', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " entry_ref_price, stop, risk_level, risk_score, max_position_pct, rank, top_factors, catalysts,"
+            " feature_day, bench_ref_price)"
+            " values (%s, %s, 'stock', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 (
                     run_id, r.symbol, r.market.value, r.style, r.horizon_days, r.exit_by, r.entry_ref_price,
                     r.stop, r.risk_level, r.risk_score, r.max_position_pct, r.rank,
-                    Jsonb(r.top_factors), Jsonb(r.catalysts),
+                    Jsonb(r.top_factors), Jsonb(r.catalysts), r.feature_day, r.bench_ref_price,
                 )
                 for r in rows
             ],
         )
+
+
+def open_picks(conn: psycopg.Connection) -> list[OpenPick]:
+    """The picks still open, each with the kind of the run that made it."""
+    rows = conn.execute(
+        "select p.id, p.symbol, p.market, p.horizon_days, p.exit_by, p.entry_ref_price, p.stop, p.feature_day,"
+        " p.bench_ref_price, r.kind from picks p join runs r on r.id = p.run_id"
+        " where p.status = 'open' order by p.id"
+    ).fetchall()
+    return [
+        OpenPick(
+            r["id"], r["symbol"], r["market"], r["horizon_days"], r["exit_by"], float(r["entry_ref_price"]),
+            float(r["stop"]), r["feature_day"], float(r["bench_ref_price"]), r["kind"],
+        )
+        for r in rows
+    ]
+
+
+def mark_exited_early(conn: psycopg.Connection, ids: Sequence[int]) -> None:
+    """Close these open picks as exited early: the run that flagged them grades them at its close."""
+    if ids:
+        conn.execute("update picks set status = 'exited_early' where id = any(%s) and status = 'open'", (list(ids),))
 
 
 def load_picks(conn: psycopg.Connection, ids: Sequence[int]) -> dict[int, LinkedPick]:

@@ -1266,11 +1266,13 @@ def test_qualifying_forecasts_become_picks_and_watched_stocks_get_verdicts(db, t
     monkeypatch.setattr("advisor.run.predict_rows", confident)
     outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     assert outcome.status is RunStatus.SUCCESS
-    picks = db.execute("select symbol, market, style, horizon_days, stop, entry_ref_price, rank from picks"
+    picks = db.execute("select symbol, market, style, horizon_days, stop, entry_ref_price, rank, feature_day,"
+                       " bench_ref_price from picks"
                        " where run_id = %s", (outcome.run_id,)).fetchall()
     assert [p["symbol"] for p in picks] == ["TD.TO"]  # RY.TO is held: never a pick
     assert picks[0]["style"] == "position" and picks[0]["market"] == "TSX" and picks[0]["rank"] == 1
     assert float(picks[0]["stop"]) >= float(picks[0]["entry_ref_price"]) * 0.85  # numeric columns read as Decimal
+    assert (picks[0]["feature_day"], float(picks[0]["bench_ref_price"])) == (date(2026, 10, 13), 10.0)  # XIU.TO's close
     verdicts = {r["symbol"]: r["verdict"] for r in db.execute(
         "select symbol, verdict from watchlist_verdicts where run_id = %s", (outcome.run_id,)).fetchall()}
     assert verdicts == {"TD.TO": "buy", "ETH": "hold"}

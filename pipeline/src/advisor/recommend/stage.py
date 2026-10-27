@@ -17,7 +17,7 @@ from advisor.collectors.base import CollectorResult
 from advisor.collectors.clinical_trials import TrialActivity
 from advisor.collectors.sec_events import MaterialEvent
 from advisor.collectors.yfinance_earnings import EarningsReport
-from advisor.markets import market_of
+from advisor.markets import MARKETS, market_of
 from advisor.model.backtest import round_trip_cost
 from advisor.model.features import PRICE_FEATURES, RS_FEATURES
 from advisor.model.fundamentals import FUNDAMENTAL_FEATURES
@@ -288,6 +288,7 @@ def recommend_market(
     labels = model.sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
     candidates = [c for s, c in choices.items() if s not in held]
     sectors = {c.symbol: (labels.get(c.symbol) if pd.notna(labels.get(c.symbol)) else None) for c in candidates}
+    bench_close = bars[MARKETS[market].benchmark][-1].close  # the benchmark's feature-day close
     picks = []
     for c, rank in rank_picks(candidates, sectors):
         d = details[c.symbol]
@@ -295,6 +296,7 @@ def recommend_market(
         picks.append(PickRow(
             c.symbol, market, c.style, c.horizon, exits[c.horizon], d["entry_ref_price"], d["stop"],
             d["risk_level"], d["risk_score"], d["max_position_pct"], rank, d["top_factors"], d["catalysts"],
+            day, bench_close,
         ))
     counts = {style: sum(1 for p in picks if p.style == style) for style in ("swing", "position")}
     return picks, details, counts, risk

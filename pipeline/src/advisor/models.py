@@ -93,6 +93,8 @@ class PickRow:
     rank: int  # within its style and market, from 1
     top_factors: list[dict[str, Any]]  # JSON-ready
     catalysts: list[dict[str, Any]]  # JSON-ready
+    feature_day: date  # the market's feature day, the day entry_ref_price closed
+    bench_ref_price: float  # the market's benchmark close on that day
 
 
 @dataclass(frozen=True)

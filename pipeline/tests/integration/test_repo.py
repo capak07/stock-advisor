@@ -1,4 +1,5 @@
 import math
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -477,6 +478,7 @@ def test_picks_round_trip_with_their_market_and_json_lists(db):
         "TD.TO", Market.TSX, "position", 63, date(2027, 1, 14), 80.5, 72.0, "medium", 41.5, 3.0, 1,
         [{"feature": "ret_63", "contribution": 0.012}],
         [{"type": "earnings", "date": "2026-12-04"}],
+        date(2026, 10, 13), 25.25,
     )
     repo.write_picks(db, run_id, [pick])
     repo.write_picks(db, run_id, [])
@@ -490,6 +492,27 @@ def test_picks_round_trip_with_their_market_and_json_lists(db):
     assert (row["risk_level"], row["risk_score"], row["max_position_pct"], row["rank"]) == ("medium", 41.5, 3.0, 1)
     assert row["top_factors"] == [{"feature": "ret_63", "contribution": 0.012}]
     assert row["catalysts"] == [{"type": "earnings", "date": "2026-12-04"}]
+    assert (row["feature_day"], float(row["bench_ref_price"])) == (date(2026, 10, 13), 25.25)
+
+
+def test_open_picks_carry_their_runs_kind_and_exited_early_ones_drop_out(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    pick = PickRow(
+        "TD.TO", Market.TSX, "swing", 21, date(2026, 11, 13), 80.5, 72.0, "medium", 41.5, 3.0, 1, [], [],
+        date(2026, 10, 13), 25.25,
+    )
+    repo.write_picks(db, run_id, [pick, replace(pick, symbol="RY.TO", rank=2)])
+    db.execute("update picks set status = 'graded' where symbol = 'RY.TO'")
+    [open_pick] = repo.open_picks(db)
+    assert (open_pick.symbol, open_pick.market, open_pick.horizon_days, open_pick.exit_by) == (
+        "TD.TO", "TSX", 21, date(2026, 11, 13),
+    )
+    assert (open_pick.entry_ref_price, open_pick.stop, open_pick.bench_ref_price) == (80.5, 72.0, 25.25)
+    assert (open_pick.feature_day, open_pick.run_kind) == (date(2026, 10, 13), "pre_open")
+    repo.mark_exited_early(db, [open_pick.id])
+    repo.mark_exited_early(db, [])
+    assert repo.open_picks(db) == []
+    assert db.execute("select status from picks where symbol = 'TD.TO'").fetchone()["status"] == "exited_early"
 
 
 def test_watchlist_verdicts_round_trip_with_reasons_and_details(db):

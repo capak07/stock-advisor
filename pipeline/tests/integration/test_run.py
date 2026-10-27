@@ -1296,7 +1296,7 @@ def test_a_recommender_failure_degrades_the_run_and_prices_still_publish(db, tmp
     def broken(*args, **kwargs):
         raise RuntimeError("risk frame broke")
 
-    monkeypatch.setattr("advisor.run.risk_levels", broken)
+    monkeypatch.setattr("advisor.recommend.stage.risk_levels", broken)
     outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     assert outcome.status is RunStatus.DEGRADED
     assert outcome.summary["picks"]["TSX"]["failed"].startswith("RuntimeError")
@@ -1319,7 +1319,7 @@ def test_one_markets_recommender_failure_spares_the_other_market_and_the_verdict
             raise RuntimeError("US risk frame broke")
         return risk_levels(frame)
 
-    monkeypatch.setattr("advisor.run.risk_levels", broken_for_us)
+    monkeypatch.setattr("advisor.recommend.stage.risk_levels", broken_for_us)
     outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     assert outcome.status is RunStatus.DEGRADED
     assert outcome.summary["picks"] == {
@@ -1527,7 +1527,7 @@ def test_a_verdict_failure_degrades_the_run_and_keeps_the_picks(db, tmp_path, ts
     def broken(*args, **kwargs):
         raise RuntimeError("verdicts broke")
 
-    monkeypatch.setattr("advisor.run.stock_verdict", broken)
+    monkeypatch.setattr("advisor.recommend.stage.stock_verdict", broken)
     outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     assert outcome.status is RunStatus.DEGRADED
     assert outcome.summary["verdicts"] == {"failed": "RuntimeError: verdicts broke"}

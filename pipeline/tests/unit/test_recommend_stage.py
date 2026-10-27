@@ -10,7 +10,7 @@ from advisor.collectors.yfinance_earnings import EarningsReport
 from advisor.model.features import PRICE_FEATURES, RS_FEATURES
 from advisor.model.fundamentals import FUNDAMENTAL_FEATURES
 from advisor.models import ET, Market
-from advisor.run import hold_events, is_sane, risk_frame, scheduled_events
+from advisor.recommend.stage import hold_events, is_sane, risk_frame, scheduled_events
 from fakes import bar
 
 NAN = float("nan")

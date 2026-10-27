@@ -30,8 +30,8 @@
 .warn-cell { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
 .warn-cell svg { width: 14px; height: 14px; color: var(--attention); }
 #holdings td.h-note { white-space: normal; min-width: 150px; max-width: 190px; }
-/* Phones: each holding becomes a stacked row (symbol, then account, value and P/L, then the note).
-   Cells are placed by class, not position, so model columns can be added later (Plan 4). */
+/* Phones: each holding becomes a stacked row (symbol and action, then account, value and P/L, then
+   the likely range, then the note). Cells are placed by class, not position. */
 @media (max-width: 639px) {
   #holdings thead { display: none; }
   #holdings, #holdings tbody { display: block; }
@@ -48,6 +48,9 @@
   #holdings td.h-pl br { display: none; }
   #holdings td.h-pl .sub::before { content: " · "; }
   #holdings td.h-note:has(.warn-cell) { display: block; grid-area: note; }
+  #holdings tr:has(td.h-action) { grid-template-areas: "sym sym act" "acct val pl" "rng rng rng" "note note note"; }
+  #holdings td.h-action:has(.chip) { display: block; grid-area: act; justify-self: end; }
+  #holdings td.h-range:has(.range) { display: block; grid-area: rng; }
   .table-scroll { overflow: visible; margin: 0; padding: 0; }
 }
 .before-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 12.5px; color: var(--muted-foreground); margin-bottom: 12px; }

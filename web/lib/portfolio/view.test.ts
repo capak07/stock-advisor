@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { HoldingAction } from './actions'
 import { FxRates, PriceBook } from './lookup'
 import type { Close, Trade } from './types'
 import { portfolioView } from './view'
@@ -34,16 +35,34 @@ const TRADES = [
   trade({ ...coin, side: 'sell', qty: 1, price: 3900, day: '2026-10-03' }),
   trade({ symbol: 'NEWCO', qty: 5, price: 10 }),
 ]
-const view = portfolioView(
-  {
-    trades: TRADES,
-    prices: PRICES,
-    fx: FX,
-    names: new Map([['AAPL', 'Apple Inc.']]),
-    guideline: { roundTrips: 24, shortHoldShare: 0.5 },
-  },
-  TODAY,
-)
+const AAPL_ACTION: HoldingAction = {
+  account: 'tfsa',
+  symbol: 'AAPL',
+  assetType: 'stock',
+  action: 'trim',
+  review: false,
+  reasons: ['Trim it.'],
+  warnings: ['Above its max size'],
+  trailingStop: 190,
+  q10: -0.05,
+  q50: 0.01,
+  q90: 0.06,
+  horizonDays: 21,
+  exitBy: '2026-11-16',
+  riskLevel: 'medium',
+}
+const GUIDE = { roundTrips: 24, shortHoldShare: 0.5 }
+const INPUTS = {
+  trades: TRADES,
+  prices: PRICES,
+  fx: FX,
+  names: new Map([['AAPL', 'Apple Inc.']]),
+  guideline: GUIDE,
+  actions: [],
+  sectors: new Map(),
+}
+const view = portfolioView(INPUTS, TODAY)
+const modelView = portfolioView({ ...INPUTS, actions: [AAPL_ACTION], sectors: new Map([['AAPL', 'Technology']]) }, TODAY)
 
 describe('portfolioView', () => {
   it('values and orders the holdings, largest first', () => {
@@ -89,14 +108,41 @@ describe('portfolioView', () => {
   it("gives each sell option its latest close, so a holdings report can price a position it no longer lists", () => {
     expect(view.sellable.map((s) => [s.symbol, s.lastClose])).toEqual([
       ['AAPL', { day: '2026-10-16', close: 220, currency: 'USD' }],
-      ['ETH', { day: '2026-10-16', close: 2800, currency: 'USD' }],
+      ['ETH', { day: '2026-10-16', close: expect.closeTo(3920), currency: 'CAD' }],
       ['NEWCO', null],
     ])
   })
 
+  it("a coin's last close is offered in CAD", () => {
+    // Coinbase closes are in USD; coins trade in CAD: 2,800 × 1.4.
+    const eth = view.sellable.find((s) => s.symbol === 'ETH')
+    expect(eth?.currency).toBe('CAD')
+    expect(eth?.lastClose).toEqual({ day: '2026-10-16', close: expect.closeTo(3920), currency: 'CAD' })
+    const noRate = portfolioView({ ...INPUTS, fx: new FxRates([]) }, TODAY)
+    expect(noRate.sellable.find((s) => s.symbol === 'ETH')?.lastClose).toBeNull()
+    expect(noRate.sellable.find((s) => s.symbol === 'AAPL')?.lastClose).toEqual({ day: '2026-10-16', close: 220, currency: 'USD' })
+  })
+
+  it("gives each holding its action, with the action's warnings in the notes", () => {
+    const rows = Object.fromEntries(modelView.holdings.map((h) => [h.symbol, h]))
+    expect(rows.AAPL.action).toEqual(AAPL_ACTION)
+    expect(rows.AAPL.notes).toEqual([{ text: 'Above its max size', warn: true }])
+    expect(rows.ETH.action).toBeNull()
+  })
+
+  it('checks sectors and splits value by risk level', () => {
+    // AAPL is 3,080 of 7,070: 43.6%.
+    expect(modelView.warnings.map((w) => w.title)).toEqual([
+      'ETH: superficial-loss window',
+      'Technology is 43.6% of the portfolio (guideline 25%)',
+    ])
+    expect(modelView.byRisk.map((s) => s.label)).toEqual(['Medium', 'Not rated'])
+    expect(view.byRisk.map((s) => s.label)).toEqual(['Not rated'])
+  })
+
   it('is empty without trades', () => {
     const empty = portfolioView(
-      { trades: [], prices: PRICES, fx: FX, names: new Map(), guideline: { roundTrips: 24, shortHoldShare: 0.5 } },
+      { ...INPUTS, trades: [] },
       TODAY,
     )
     expect(empty.holdings).toEqual([])

@@ -6,7 +6,7 @@ import type { Account, AssetType, Close, Currency, RecordedTrade, Trade } from '
 import type { Supabase } from '../supabase/server'
 import { fetchAll } from './fetch'
 import { loadSettings, type Settings } from './settings'
-import { loadNames } from './symbols'
+import { loadNames, loadSectors } from './symbols'
 
 interface TradeRow {
   id: number
@@ -103,6 +103,7 @@ export interface PortfolioData {
   prices: PriceBook
   fx: FxRates
   names: Map<string, string>
+  sectors: Map<string, string>
   settings: Settings
 }
 
@@ -113,9 +114,11 @@ export async function loadPortfolio(supabase: Supabase): Promise<PortfolioData> 
   const firstDay = trades.reduce<string | null>((min, t) => (min === null || t.day < min ? t.day : min), null)
   // A week before the first buy, so a buy on a holiday still finds the close before it.
   const since = firstDay === null ? '9999-12-31' : addDays(firstDay, -7)
-  const [prices, names] = await Promise.all([
+  const stocks = traded.filter((a) => a.assetType === 'stock').map((a) => a.symbol)
+  const [prices, names, sectors] = await Promise.all([
     loadCloses(supabase, firstDay === null ? [] : [...traded, ...BENCHMARK_ASSETS], since),
-    loadNames(supabase, traded.filter((a) => a.assetType === 'stock').map((a) => a.symbol)),
+    loadNames(supabase, stocks),
+    loadSectors(supabase, stocks),
   ])
-  return { trades, prices, fx, names, settings }
+  return { trades, prices, fx, names, sectors, settings }
 }

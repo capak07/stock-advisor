@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
-import { resetData, seedPortfolio } from './db'
+import { addDays } from '../lib/dates'
+import { daysAgo, resetData, seedCloses, seedFx, seedHoldingAction, seedLot, seedPortfolio, seedRun, seedSymbols, today, weekdays } from './db'
 
 test.beforeEach(resetData)
 
@@ -36,4 +37,68 @@ test('holdings are valued in CAD, charted against both benchmarks, and warned ab
   const breakdown = page.getByRole('heading', { name: 'Breakdown' }).locator('..')
   await expect(breakdown).toContainText('By market')
   await expect(breakdown).toContainText('TFSA')
+})
+
+test('the actions of the latest run fill the Actions card and the holdings table', async ({ page }) => {
+  const days = weekdays(daysAgo(30))
+  await seedSymbols([
+    { symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' },
+    { symbol: 'MSFT', market: 'US', name: 'Microsoft Corporation' },
+  ])
+  await seedFx(days, 1.4)
+  await seedCloses('SHOP.TO', 'stock', 'CAD', days, 160, -0.5)
+  await seedCloses('MSFT', 'stock', 'USD', days, 400, 0.5)
+  await seedLot({ account: 'tfsa', symbol: 'SHOP.TO', asset_type: 'stock', qty: 10, price: 160, currency: 'CAD', bought_at: days[0] })
+  await seedLot({ account: 'tfsa', symbol: 'MSFT', asset_type: 'stock', qty: 5, price: 400, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
+  const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date().toISOString() })
+  await seedHoldingAction(runId, {
+    account: 'tfsa',
+    symbol: 'SHOP.TO',
+    asset_type: 'stock',
+    action: 'sell',
+    reasons: ['Trailing stop C$146.10 hit; it closed at C$145.50.'],
+    trailing_stop: 146.1,
+    q10: -0.098,
+    q50: -0.026,
+    q90: 0.041,
+    horizon_days: 10,
+    risk_level: 'high',
+  })
+  await seedHoldingAction(runId, {
+    account: 'tfsa',
+    symbol: 'MSFT',
+    asset_type: 'stock',
+    action: 'hold',
+    reasons: ['Hold.'],
+    warnings: ['Above its max size'],
+    trailing_stop: 398.5,
+    q10: -0.071,
+    q50: 0.014,
+    q90: 0.096,
+    horizon_days: 40,
+    exit_by: addDays(today(), 40),
+    risk_level: 'medium',
+  })
+  await page.goto('/')
+
+  const actions = page.getByRole('heading', { name: 'Actions' }).locator('../..')
+  const sell = actions.locator('.action-card.sell')
+  await expect(sell).toHaveCount(1)
+  await expect(sell).toContainText('SHOP.TO')
+  await expect(sell).toContainText('Trailing stop C$146.10 hit; it closed at C$145.50.')
+  const toggle = page.getByRole('button', { name: /1 holding · MSFT/ })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('#hold-list')).toContainText(/hold ~40 days · exit by/)
+
+  const shop = holdings(page).filter({ hasText: 'SHOP.TO' })
+  await expect(shop.locator('.chip.sell')).toHaveText('Sell')
+  await expect(shop).toContainText('C$146.10')
+  await expect(shop).toContainText('High')
+  const msft = holdings(page).filter({ hasText: 'MSFT' })
+  await expect(msft.locator('.chip.hold')).toHaveText('Hold')
+  await expect(msft).toContainText('US$398.50')
+  await expect(msft).toContainText('Above its max size')
+  await expect(page.getByText('appear once the model runs')).toHaveCount(0)
 })

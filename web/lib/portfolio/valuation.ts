@@ -1,7 +1,10 @@
 import { marketOf } from '../symbols'
+import { RISK_LABELS, RISK_LEVELS, type HoldingAction } from './actions'
+import { positionKey } from './ledger'
 import type { FxRates, PriceBook } from './lookup'
 import { ACCOUNT_LABELS, TAXABLE, assetKey } from './types'
 import type { Account, Market, Position } from './types'
+import type { Warning } from './warnings'
 
 export interface Holding extends Position {
   market: Market | null
@@ -71,6 +74,60 @@ export function breakdown(holdings: readonly Holding[], by: 'market' | 'account'
     .map(([label, value]) => ({ label, share: (value / total) * 100 }))
     .sort((a, b) => b.share - a.share)
 }
+
+export const NOT_RATED = 'Not rated'
+
+/**
+ * Shares of portfolio value by the risk level of each holding's latest action (spec §7.4), from Low
+ * to Very high. A holding with no action row, or none with a risk level, is "Not rated", last.
+ */
+export function byRisk(holdings: readonly Holding[], actions: readonly HoldingAction[]): Slice[] {
+  const total = holdings.reduce((sum, h) => sum + h.valueCad, 0)
+  if (total <= 0) return []
+  const risk = new Map(actions.map((a) => [positionKey(a), a.riskLevel]))
+  const sums = new Map<string, number>()
+  for (const h of holdings) {
+    const level = risk.get(positionKey(h))
+    const label = level ? RISK_LABELS[level] : NOT_RATED
+    sums.set(label, (sums.get(label) ?? 0) + h.valueCad)
+  }
+  return [...RISK_LEVELS.map((level) => RISK_LABELS[level]), NOT_RATED]
+    .filter((label) => sums.has(label))
+    .map((label) => ({ label, share: ((sums.get(label) ?? 0) / total) * 100 }))
+}
+
+/** The most of the portfolio's value one sector should hold (spec §7.4). */
+export const SECTOR_GUIDELINE_PCT = 25
+
+/**
+ * One warning per sector above 25% of the portfolio's value (spec §7.4). Coins and stocks with no
+ * sector label count toward the total but belong to no sector.
+ */
+export function sectorWarnings(holdings: readonly Holding[], sectors: ReadonlyMap<string, string>): Warning[] {
+  const total = holdings.reduce((sum, h) => sum + h.valueCad, 0)
+  if (total <= 0) return []
+  const bySector = new Map<string, { value: number; symbols: Map<string, number> }>()
+  for (const h of holdings) {
+    const sector = h.assetType === 'stock' ? sectors.get(h.symbol) : undefined
+    if (!sector) continue
+    const entry = bySector.get(sector) ?? { value: 0, symbols: new Map<string, number>() }
+    entry.value += h.valueCad
+    entry.symbols.set(h.symbol, (entry.symbols.get(h.symbol) ?? 0) + h.valueCad)
+    bySector.set(sector, entry)
+  }
+  return [...bySector]
+    .map(([sector, { value, symbols }]) => ({ sector, share: (value / total) * 100, symbols }))
+    .filter((s) => s.share > SECTOR_GUIDELINE_PCT)
+    .sort((a, b) => b.share - a.share)
+    .map(({ sector, share, symbols }) => ({
+      title: `${sector} is ${share.toFixed(1)}% of the portfolio (guideline ${SECTOR_GUIDELINE_PCT}%)`,
+      detail: listed([...symbols].sort((a, b) => b[1] - a[1]).map(([symbol]) => symbol)),
+    }))
+}
+
+/** "AAPL", "AAPL and MSFT", "AAPL, MSFT and NVDA" */
+const listed = (items: readonly string[]): string =>
+  items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 
 /** The estimated taxable amount of an unrealized gain or loss: 50% inclusion (spec §7.5). */
 export const taxableEstimate = (h: Holding): number | null => (TAXABLE.has(h.account) ? h.gainCad * 0.5 : null)

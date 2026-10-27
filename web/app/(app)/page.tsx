@@ -4,6 +4,7 @@ import { TradeButtons } from '@/components/portfolio/TradeForms'
 import { TradeList } from '@/components/portfolio/TradeList'
 import { ValueCard } from '@/components/portfolio/ValueCard'
 import { ownerClient } from '@/lib/auth'
+import { loadHoldingActions } from '@/lib/data/actions'
 import { loadPortfolio } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
 import { tradeList } from '@/lib/portfolio/trade-list'
@@ -11,11 +12,11 @@ import { portfolioView } from '@/lib/portfolio/view'
 
 export const metadata: Metadata = { title: 'My Portfolio' }
 
-/** My Portfolio, the home page (spec §9), as it stands before the model: values, returns, warnings. */
+/** My Portfolio, the home page (spec §9): values, returns, the latest run's actions, warnings. */
 export default async function PortfolioPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
-  const data = await loadPortfolio(supabase)
+  const [data, latest] = await Promise.all([loadPortfolio(supabase), loadHoldingActions(supabase)])
   const today = todayInToronto()
   const view = portfolioView(
     {
@@ -23,6 +24,8 @@ export default async function PortfolioPage() {
       prices: data.prices,
       fx: data.fx,
       names: data.names,
+      sectors: data.sectors,
+      actions: latest?.actions ?? [],
       guideline: {
         roundTrips: data.settings.tfsa_round_trips_warn,
         shortHoldShare: data.settings.tfsa_short_hold_share_warn,
@@ -46,10 +49,10 @@ export default async function PortfolioPage() {
       </div>
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>
-        <ActionsCard />
+        <ActionsCard holdings={view.holdings} />
         <aside className="grid gap-4">
           <WarningsCard warnings={view.warnings} />
-          <BreakdownCard byMarket={view.byMarket} byAccount={view.byAccount} />
+          <BreakdownCard byRisk={view.byRisk} byMarket={view.byMarket} byAccount={view.byAccount} />
         </aside>
       </section>
       <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} />

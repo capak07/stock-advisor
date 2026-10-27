@@ -14,6 +14,20 @@ export async function loadNames(supabase: Supabase, symbols: readonly string[]):
   return new Map(rows.map((r) => [r.symbol, r.name]))
 }
 
+/** Sector labels of listed stocks, for the sector check (spec §7.4); unlabelled stocks are left out. */
+export async function loadSectors(supabase: Supabase, symbols: readonly string[]): Promise<Map<string, string>> {
+  if (symbols.length === 0) return new Map()
+  const rows = must(
+    await supabase
+      .from('symbols')
+      .select('symbol, sector')
+      .eq('asset_type', 'stock')
+      .in('symbol', [...new Set(symbols)])
+      .not('sector', 'is', null),
+  ) as { symbol: string; sector: string }[]
+  return new Map(rows.map((r) => [r.symbol, r.sector]))
+}
+
 /** Whether a stock is in the US or TSX lists the pipeline keeps (ETFs aren't). */
 export async function isListedStock(supabase: Supabase, symbol: string): Promise<boolean> {
   const rows = must(

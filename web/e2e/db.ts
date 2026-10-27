@@ -103,6 +103,43 @@ export async function seedRun(run: {
   return row.id as number
 }
 
+/** A run's action for one holding, as the pipeline's portfolio stage writes it. */
+export async function seedHoldingAction(
+  runId: number,
+  row: {
+    account: string
+    symbol: string
+    asset_type: 'stock' | 'crypto'
+    action: 'sell' | 'trim' | 'add' | 'hold'
+    review?: boolean
+    reasons: string[]
+    warnings?: string[]
+    trailing_stop?: number | null
+    q10?: number | null
+    q50?: number | null
+    q90?: number | null
+    horizon_days?: number | null
+    exit_by?: string | null
+    risk_level?: 'low' | 'medium' | 'high' | 'very_high' | null
+  },
+) {
+  const { reasons, warnings = [], ...rest } = row
+  await sql`insert into holding_actions ${sql({
+    run_id: runId,
+    review: false,
+    trailing_stop: null,
+    q10: null,
+    q50: null,
+    q90: null,
+    horizon_days: null,
+    exit_by: null,
+    risk_level: null,
+    ...rest,
+    reasons: sql.json(reasons),
+    warnings: sql.json(warnings),
+  })}`
+}
+
 /** A small registry like the pipeline's: US-only filings, a source for both markets, a coin source. */
 export const SOURCES = [
   { name: 'yfinance_bars', category: 'prices', core: true, cadence: 'per_run', asset_types: ['stock'], markets: ['TSX', 'US'] },

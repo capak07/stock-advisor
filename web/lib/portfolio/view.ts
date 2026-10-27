@@ -1,11 +1,21 @@
 import { fmtMoney } from '../format'
 import { tradeCurrency } from '../symbols'
+import type { HoldingAction } from './actions'
 import { buildLedger, positionKey } from './ledger'
 import type { FxRate, FxRates, PriceBook } from './lookup'
 import { PERIODS, growth, periodReturns, type Period, type PeriodReturns } from './returns'
 import { ACCOUNT_LABELS, assetKey } from './types'
 import type { Account, AssetType, Close, Currency, Market, Trade } from './types'
-import { breakdown, taxableEstimate, totals, valueHoldings, type Slice, type Totals } from './valuation'
+import {
+  breakdown,
+  byRisk,
+  sectorWarnings,
+  taxableEstimate,
+  totals,
+  valueHoldings,
+  type Slice,
+  type Totals,
+} from './valuation'
 import { superficialLossWarnings, tfsaWarnings, type TfsaGuideline, type Warning } from './warnings'
 
 export interface Note {
@@ -23,6 +33,8 @@ export interface HoldingRow {
   valueCad: number
   gainCad: number
   gainPct: number
+  /** The latest run's action; null for a holding bought after it, or before the first. */
+  action: HoldingAction | null
   notes: Note[]
 }
 
@@ -35,7 +47,7 @@ export interface SellOption {
   qty: number
   costCad: number
   currency: Currency
-  /** The latest stored close, or null when none is stored. */
+  /** The latest stored close in the trade currency, or null when there's none (or, for a coin, no rate). */
   lastClose: Close | null
 }
 
@@ -51,6 +63,7 @@ export interface PortfolioView {
   warnings: Warning[]
   byMarket: Slice[]
   byAccount: Slice[]
+  byRisk: Slice[]
   sellable: SellOption[]
 }
 
@@ -60,10 +73,28 @@ export interface PortfolioInputs {
   fx: FxRates
   names: Map<string, string>
   guideline: TfsaGuideline
+  /** The holding actions of the newest published run that has any. */
+  actions: HoldingAction[]
+  /** Stock sectors by symbol (`symbols.sector`). */
+  sectors: Map<string, string>
 }
 
-/** Everything the portfolio page shows before the model exists (spec §7.4, §7.5, §9). */
-export function portfolioView({ trades, prices, fx, names, guideline }: PortfolioInputs, today: string): PortfolioView {
+/**
+ * The latest close in the currency the asset trades in. Coinbase closes are in USD, but coins
+ * trade in CAD: a coin's close converts at the latest rate, or is null without one.
+ */
+function lastClose(p: { assetType: AssetType; symbol: string }, prices: PriceBook, fx: FxRates): Close | null {
+  const close = prices.latest(assetKey(p.assetType, p.symbol))
+  if (close === null || p.assetType !== 'crypto' || close.currency === 'CAD') return close
+  const rate = fx.latest()?.usdCad
+  return rate === undefined ? null : { day: close.day, close: close.close * rate, currency: 'CAD' }
+}
+
+/** Everything the portfolio page shows: values, returns, the model's actions and the checks (spec §7, §9). */
+export function portfolioView(
+  { trades, prices, fx, names, guideline, actions, sectors }: PortfolioInputs,
+  today: string,
+): PortfolioView {
   const ledger = buildLedger(trades, fx)
   const valued = valueHoldings(ledger.positions, prices, fx).sort((a, b) => b.valueCad - a.valueCad)
   const lossWarnings = superficialLossWarnings(ledger.sales, trades, today)
@@ -71,14 +102,18 @@ export function portfolioView({ trades, prices, fx, names, guideline }: Portfoli
     ...ledger.problems.map((problem) => ({ title: 'A trade was left out', detail: problem })),
     ...tfsaWarnings(ledger.sales, guideline, today),
     ...lossWarnings,
+    ...sectorWarnings(valued, sectors),
   ]
+  const actionOf = new Map(actions.map((a) => [positionKey(a), a]))
 
   const holdings = valued.map((h): HoldingRow => {
+    const action = actionOf.get(positionKey(h)) ?? null
     const notes: Note[] = []
     if (h.priceCad === null) notes.push({ text: 'No close yet; at cost', warn: true })
     for (const w of lossWarnings) if (w.symbol === h.symbol && w.note) notes.push({ text: w.note, warn: true })
     const taxable = taxableEstimate(h)
     if (taxable !== null) notes.push({ text: `Taxable: est. ${fmtMoney(taxable, { signed: true })}`, warn: false })
+    for (const text of action?.warnings ?? []) notes.push({ text, warn: true })
     return {
       key: positionKey(h),
       account: h.account,
@@ -88,6 +123,7 @@ export function portfolioView({ trades, prices, fx, names, guideline }: Portfoli
       valueCad: h.valueCad,
       gainCad: h.gainCad,
       gainPct: h.gainPct,
+      action,
       notes,
     }
   })
@@ -111,6 +147,7 @@ export function portfolioView({ trades, prices, fx, names, guideline }: Portfoli
     warnings,
     byMarket: breakdown(valued, 'market'),
     byAccount: breakdown(valued, 'account'),
+    byRisk: byRisk(valued, actions),
     sellable: [...ledger.positions]
       .sort((a, b) => a.symbol.localeCompare(b.symbol) || a.account.localeCompare(b.account))
       .map((p) => ({
@@ -121,7 +158,7 @@ export function portfolioView({ trades, prices, fx, names, guideline }: Portfoli
         qty: p.qty,
         costCad: p.costCad,
         currency: tradeCurrency(p.assetType, p.symbol),
-        lastClose: prices.latest(assetKey(p.assetType, p.symbol)),
+        lastClose: lastClose(p, prices, fx),
       })),
   }
 }

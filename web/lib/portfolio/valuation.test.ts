@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import type { HoldingAction } from './actions'
 import { FxRates, PriceBook } from './lookup'
 import type { Close, Position } from './types'
-import { breakdown, taxableEstimate, totals, valueHoldings } from './valuation'
+import { breakdown, byRisk, sectorWarnings, taxableEstimate, totals, valueHoldings, type Holding } from './valuation'
 
 const FX = new FxRates([
   { day: '2026-10-15', usdCad: 1.35 },
@@ -80,5 +81,95 @@ describe('valueHoldings', () => {
   it('estimates tax on gains in taxable accounts only', () => {
     expect(taxableEstimate(btc)).toBe(500)
     expect(taxableEstimate(aapl)).toBeNull()
+  })
+})
+
+const holding = (symbol: string, valueCad: number, over: Partial<Holding> = {}): Holding => ({
+  account: 'tfsa',
+  symbol,
+  assetType: 'stock',
+  qty: 1,
+  costCad: valueCad,
+  openedOn: '2026-09-01',
+  market: 'US',
+  priceCad: valueCad,
+  priceDay: '2026-10-16',
+  valueCad,
+  gainCad: 0,
+  gainPct: 0,
+  ...over,
+})
+const rated = (symbol: string, riskLevel: HoldingAction['riskLevel'], over: Partial<HoldingAction> = {}): HoldingAction => ({
+  account: 'tfsa',
+  symbol,
+  assetType: 'stock',
+  action: 'hold',
+  review: false,
+  reasons: ['Hold.'],
+  warnings: [],
+  trailingStop: null,
+  q10: null,
+  q50: null,
+  q90: null,
+  horizonDays: null,
+  exitBy: null,
+  riskLevel,
+  ...over,
+})
+const shares = (slices: { label: string; share: number }[]) => slices.map((s) => [s.label, Math.round(s.share * 10) / 10])
+
+describe('byRisk', () => {
+  it("byRisk groups value by the action's risk level, unrated last", () => {
+    const holdings = [
+      holding('NEWCO', 100),
+      holding('NVDA', 300),
+      holding('RY.TO', 200, { market: 'TSX' }),
+      holding('RY.TO', 100, { account: 'rrsp', market: 'TSX' }),
+      holding('BTC', 200, { account: 'crypto', assetType: 'crypto', market: null }),
+      holding('MSFT', 100),
+    ]
+    const actions = [
+      rated('NVDA', 'high'),
+      rated('RY.TO', 'low'),
+      rated('RY.TO', 'medium', { account: 'rrsp' }),
+      rated('BTC', 'very_high', { account: 'crypto', assetType: 'crypto' }),
+      rated('MSFT', null),
+      rated('GONE', 'low'),
+    ]
+    // 1,000 in all. NEWCO has no action row and MSFT no risk level: 200 not rated.
+    expect(shares(byRisk(holdings, actions))).toEqual([
+      ['Low', 20],
+      ['Medium', 10],
+      ['High', 30],
+      ['Very high', 20],
+      ['Not rated', 20],
+    ])
+    expect(byRisk([], actions)).toEqual([])
+  })
+})
+
+describe('sectorWarnings', () => {
+  it('a sector over 25% of the portfolio is warned about', () => {
+    const sectors = new Map([
+      ['AAPL', 'Technology'],
+      ['MSFT', 'Technology'],
+      ['RY.TO', 'Financials'],
+      ['BTC', 'Technology'],
+    ])
+    const holdings = [
+      holding('AAPL', 160),
+      holding('MSFT', 100),
+      holding('MSFT', 50, { account: 'rrsp' }),
+      holding('RY.TO', 250, { market: 'TSX' }),
+      holding('NEWCO', 140),
+      holding('BTC', 300, { account: 'crypto', assetType: 'crypto', market: null }),
+    ]
+    // 1,000 in all. Technology 310 (31%) is warned; Financials at exactly 25% isn't; the coin isn't
+    // a stock, so its 30% is in no sector, though it counts toward the total.
+    expect(sectorWarnings(holdings, sectors)).toEqual([
+      { title: 'Technology is 31.0% of the portfolio (guideline 25%)', detail: 'AAPL and MSFT' },
+    ])
+    expect(sectorWarnings([holding('BTC', 300, { account: 'crypto', assetType: 'crypto', market: null })], sectors)).toEqual([])
+    expect(sectorWarnings([], sectors)).toEqual([])
   })
 })

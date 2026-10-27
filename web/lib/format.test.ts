@@ -20,6 +20,11 @@ describe('formats', () => {
   it('writes prices in their currency and quantities without trailing zeros', () => {
     expect(fmtPrice(163.4, 'USD')).toBe('US$163.40')
     expect(fmtPrice(0.4321, 'CAD')).toBe('C$0.4321')
+    expect(fmtPrice(12.3, 'CAD')).toBe('C$12.30')
+    expect(fmtPrice(0.5, 'USD')).toBe('US$0.5000')
+    // a coin worth a fraction of a cent keeps 4 significant figures, never an exponent
+    expect(fmtPrice(2.5e-6, 'USD')).toBe('US$0.000002500')
+    expect(fmtPrice(0.00001234, 'CAD')).toBe('C$0.00001234')
     expect(fmtQty(10)).toBe('10')
     expect(fmtQty(0.12345678)).toBe('0.12345678')
   })

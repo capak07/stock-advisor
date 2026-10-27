@@ -24,9 +24,15 @@ export const fmtMoney = (value: number, { prefix = 'C$', digits = 0, signed = fa
 export const fmtAmount = (value: number, { digits = 0, signed = false } = {}): string =>
   fmtMoney(value, { prefix: '', digits, signed })
 
-/** A price in its own currency: "US$163.40", "C$171.20". */
-export const fmtPrice = (value: number, currency: 'CAD' | 'USD'): string =>
-  fmtMoney(value, { prefix: currency === 'USD' ? 'US$' : 'C$', digits: value < 1 ? 4 : 2 })
+/** A price in its own currency: "US$163.40", "C$171.20"; under 1, four significant figures, so a
+ * coin worth a fraction of a cent still shows: "C$0.4321", "US$0.000002500". */
+export const fmtPrice = (value: number, currency: 'CAD' | 'USD'): string => {
+  const prefix = currency === 'USD' ? 'US$' : 'C$'
+  if (value === 0 || Math.abs(value) >= 1) return fmtMoney(value, { prefix, digits: value < 1 ? 4 : 2 })
+  // Intl's standard notation never switches to an exponent
+  const text = Math.abs(value).toLocaleString('en-CA', { minimumSignificantDigits: 4, maximumSignificantDigits: 4 })
+  return `${value < 0 ? MINUS : ''}${prefix}${text}`
+}
 
 /** Quantities keep up to 8 decimals for coins: "10", "0.5", "1.25". */
 export const fmtQty = (value: number): string =>

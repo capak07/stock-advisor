@@ -60,7 +60,16 @@ export function ActionsCard({ holdings, asOf }: { holdings: HoldingRow[]; asOf: 
                     style={{ '--i': i } as CSSProperties}
                   >
                     <div className="flex items-center justify-between">
-                      <span className={`chip ${group}`}>{group === 'review' ? 'Review' : ACTION_LABELS[a.action]}</span>
+                      <span>
+                        <span className={`chip ${group}`}>{group === 'review' ? 'Review' : ACTION_LABELS[a.action]}</span>
+                        {/* a Sell or Trim keeps its own group; its review flag shows beside it */}
+                        {group !== 'review' && a.review && (
+                          <>
+                            {' '}
+                            <span className="chip review">Review</span>
+                          </>
+                        )}
+                      </span>
                       <span className="sub">
                         {ACCOUNT_LABELS[a.account]}
                         {group === 'review' && ` · ${ACTION_LABELS[a.action]}`}

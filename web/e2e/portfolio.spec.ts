@@ -59,7 +59,8 @@ test('the actions of the latest run fill the Actions card and the holdings table
     symbol: 'SHOP.TO',
     asset_type: 'stock',
     action: 'sell',
-    reasons: ['closed at 141.00, under its trailing stop 146.10'],
+    review: true,
+    reasons: ['closed at 141.00, under its trailing stop 146.10', 'earnings on Oct 28'],
     trailing_stop: 146.1,
     q10: -0.098,
     q50: -0.026,
@@ -104,6 +105,9 @@ test('the actions of the latest run fill the Actions card and the holdings table
   await expect(sell).toHaveCount(1)
   await expect(sell).toContainText('SHOP.TO')
   await expect(sell).toContainText('Closed at 141.00, under its trailing stop 146.10')
+  // a Sell asked to review keeps its group and shows both chips
+  await expect(sell.locator('.chip.sell')).toHaveText('Sell')
+  await expect(sell.locator('.chip.review')).toHaveText('Review')
   await expect(actions).toContainText(`Sell → Trim → Review → Add → Hold · as of ${shortDay(today())}`)
   const review = actions.locator('.action-card.review')
   await expect(review).toHaveCount(1)
@@ -121,6 +125,7 @@ test('the actions of the latest run fill the Actions card and the holdings table
   await expect(shop.locator('.chip.sell')).toHaveText('Sell')
   await expect(shop).toContainText('C$146.10')
   await expect(shop).toContainText('High')
+  await expect(shop.locator('.chip.review')).toHaveText('Review')
   const msft = holdings(page).filter({ hasText: 'MSFT' })
   await expect(msft.locator('.chip.hold')).toHaveText('Hold')
   await expect(msft).toContainText('US$398.50')

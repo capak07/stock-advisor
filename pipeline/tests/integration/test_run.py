@@ -1477,6 +1477,47 @@ def test_earnings_trial_readouts_and_recent_8ks_are_catalysts(db, tmp_path, tsx_
     assert len(rows["TD.TO"]["top_factors"]) == 3
 
 
+@pytest.mark.parametrize(
+    ("kind", "now", "tonight_counts"),
+    [
+        # before the open the entry is 10-13's close, so a report that evening is already out
+        (RunKind.PRE_OPEN, NOW, False),
+        # at 15:15 on 10-13 the entry is that afternoon's price, so the report lands in the hold
+        (RunKind.PRE_CLOSE, datetime(2026, 10, 13, 19, 15, tzinfo=UTC), True),
+    ],
+)
+def test_an_earnings_report_on_the_feature_day_counts_only_at_a_pre_close_run(
+    db, tmp_path, tsx_model_files, monkeypatch, kind, now, tonight_counts
+):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    tonight = [EarningsReport(symbol="TD.TO", report_at=datetime(2026, 10, 13, 17, 0, tzinfo=ET))]
+    extra = {"yfinance_earnings": FakeCollector(
+        "yfinance_earnings", core=False, record_type=EarningsReport, records_for=lambda _: tonight,
+    )}
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), kind, now, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    row = db.execute("select catalysts from picks where symbol = 'TD.TO' and run_id = %s",
+                     (outcome.run_id,)).fetchone()
+    assert row["catalysts"] == ([{"type": "earnings", "date": "2026-10-13"}] if tonight_counts else [])
+
+
+def test_a_watched_stock_that_is_held_keeps_its_buy_and_says_it_is_held(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock'), ('RY.TO', 'stock')")
+    hold(db, "TD.TO")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert [r["symbol"] for r in db.execute("select symbol from picks").fetchall()] == ["RY.TO"]
+    verdicts = verdict_rows(db, outcome.run_id)
+    held = verdicts["TD.TO"]
+    assert held["verdict"] == "buy" and held["details"]["held"] is True
+    assert "rank" not in held["details"] and held["details"]["style"] == "position"  # a pick's fields, no rank
+    assert "held" not in verdicts["RY.TO"]["details"] and verdicts["RY.TO"]["details"]["rank"] == 1
+
+
 def test_a_verdict_failure_degrades_the_run_and_keeps_the_picks(db, tmp_path, tsx_model_files, monkeypatch):
     activate_tsx(db, tsx_model_files)
     db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")

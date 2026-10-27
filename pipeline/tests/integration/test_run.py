@@ -22,7 +22,9 @@ from advisor.models import (
     AssetRef,
     AssetType,
     DailyClose,
+    HoldingActionRow,
     Market,
+    PickRow,
     PredictionRow,
     RunKind,
     RunStatus,
@@ -108,6 +110,7 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         "model": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
         "picks": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
         "actions": {"written": 0, "by_action": {"sell": 0, "trim": 0, "add": 0, "hold": 0}},
+        "graded": {"picks": 0, "exited_early": 0, "actions": 0},
     }
     # The benchmarks and sector ETFs are priced with the holdings, then one call covers both markets.
     assert deps.collectors["yfinance_bars"].calls == [FUNDS, EVERYONE]
@@ -1619,3 +1622,122 @@ def test_a_ledger_problem_is_reported_with_the_actions(db, tmp_path):
     assert outcome.summary["actions"]["problems"] == [
         "TD.TO on 2026-10-01: a sell with nothing held, so it's left out."
     ]
+
+
+EARLIER = date(2026, 9, 1)  # the feature day of the picks and actions an earlier run made
+
+
+def moved_prices(moves):
+    """Fresh 70-day histories at 10, except the closes `moves[symbol]` gives by day."""
+
+    def records_for(symbols):
+        return [
+            b.model_copy(update=dict.fromkeys(("open", "high", "low", "close"), moves[s][b.day]))
+            if b.day in moves.get(s, {}) else b
+            for s in symbols for b in history(s, 70, start=FRESH_START)
+        ]
+
+    return FakeCollector("yfinance_bars", records_for=records_for)
+
+
+def from_day(first, close):
+    """`close` on every day of the fake histories from `first` on."""
+    return {first + timedelta(days=i): close for i in range((date(2026, 10, 13) - first).days + 1)}
+
+
+def earlier_action(symbol, exit_by, trailing_stop=9.0):
+    return HoldingActionRow(
+        "tfsa", symbol, AssetType.STOCK, "hold", False, [], [], trailing_stop, None, None, None,
+        exit_by, 21, EARLIER, 10.0, 10.0, "medium", 3.0,
+    )
+
+
+def earlier_pick(symbol, exit_by, stop, entry=10.0, horizon=21):
+    return PickRow(
+        symbol, Market.TSX, "swing", horizon, exit_by, entry, stop, "medium", 41.5, 3.0, 1, [], [], EARLIER, 10.0,
+    )
+
+
+def test_a_holding_action_past_its_exit_by_is_graded(db, tmp_path):
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_holding_actions(db, earlier, [
+        earlier_action("AAA", date(2026, 10, 1)),
+        earlier_action("BBB", date(2026, 11, 2)),  # its hold isn't over
+    ])
+    prices = moved_prices({"AAA": from_day(date(2026, 9, 15), 10.5), "SPY": from_day(date(2026, 9, 15), 10.2)})
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["graded"] == {"picks": 0, "exited_early": 0, "actions": 1}
+    [row] = db.execute("select * from holding_action_outcomes").fetchall()
+    assert (row["run_id"], row["account"], row["symbol"], row["asset_type"]) == (earlier, "tfsa", "AAA", "stock")
+    assert (float(row["exit_price"]), row["beat"], row["hit_stop"]) == (10.5, True, False)
+    assert row["ret"] == pytest.approx(0.05)
+    assert row["bench_ret"] == pytest.approx(0.02)  # SPY's
+    assert row["ret_net_of_fx"] == pytest.approx(0.05 - 0.03)  # the 1.5% fee each way
+    assert row["excess"] == pytest.approx(0.03)
+    # graded once: the next run leaves it be
+    again = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert again.summary["graded"] == {"picks": 0, "exited_early": 0, "actions": 0}
+
+
+def test_an_open_pick_whose_stop_is_hit_is_graded_and_closed(db, tmp_path):
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_picks(db, earlier, [
+        earlier_pick("TD.TO", date(2026, 11, 13), stop=9.6),
+        earlier_pick("RY.TO", date(2026, 11, 13), stop=9.6),  # never under its stop
+        earlier_pick("RY.TO", date(2026, 10, 1), stop=9.6),  # made before 0009, below
+    ])
+    db.execute("update picks set feature_day = null, bench_ref_price = null where exit_by = '2026-10-01'")
+    prices = moved_prices({"TD.TO": {date(2026, 9, 21): 9.5, date(2026, 9, 22): 9.4}})
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["graded"] == {"picks": 1, "exited_early": 0, "actions": 0}
+    status = [(r["symbol"], r["status"]) for r in db.execute("select symbol, status from picks order by id")]
+    # the pick made before 0009 has no feature day or benchmark price to grade from: it stays open
+    assert status == [("TD.TO", "graded"), ("RY.TO", "open"), ("RY.TO", "open")]
+    [row] = db.execute("select * from pick_outcomes").fetchall()
+    assert (float(row["exit_price"]), row["exit_reason"], row["hit_stop"], row["beat"]) == (9.5, "stop", True, False)
+    assert row["ret"] == pytest.approx(-0.05)
+    assert row["ret_net_of_fx"] == row["ret"]  # a TSX pick pays no conversion
+    assert (row["bench_ret"], row["excess"]) == (0.0, pytest.approx(-0.05))
+
+
+def test_a_pre_close_run_exits_a_pick_whose_odds_fell_at_its_price(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    monkeypatch.setattr("advisor.run.predict_rows", split_odds)  # RY.TO's P falls to 0.30
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_picks(db, earlier, [earlier_pick("RY.TO", date(2026, 12, 1), stop=7.0, entry=8.0, horizon=63)])
+    # 15:15 on 2026-10-13: that day's bar is partial, and the exit is at its price
+    now = datetime(2026, 10, 13, 19, 15, tzinfo=UTC)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_CLOSE, now, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["graded"] == {"picks": 0, "exited_early": 1, "actions": 0}
+    assert db.execute("select status from picks where run_id = %s", (earlier,)).fetchone()["status"] == "exited_early"
+    [row] = db.execute("select * from pick_outcomes").fetchall()
+    assert (float(row["exit_price"]), row["exit_reason"], row["hit_stop"]) == (10.0, "exit_early", False)
+    assert (row["ret"], row["bench_ret"]) == (pytest.approx(0.25), 0.0)
+
+
+def test_a_partial_bar_never_grades_a_hold_that_ends_today(db, tmp_path):
+    earlier = repo.create_run(db, RunKind.PRE_OPEN, EARLIER)
+    repo.write_holding_actions(db, earlier, [earlier_action("AAA", date(2026, 10, 13))])
+    prices = moved_prices({"AAA": {date(2026, 10, 13): 8.0}})  # 15:15 on exit-by, under its stop
+    now = datetime(2026, 10, 13, 19, 15, tzinfo=UTC)
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_CLOSE, now, min_universe=SMALL)
+    assert outcome.summary["graded"] == {"picks": 0, "exited_early": 0, "actions": 0}
+    # the next morning that close is final
+    tomorrow = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert tomorrow.summary["graded"] == {"picks": 0, "exited_early": 0, "actions": 1}
+    row = db.execute("select exit_price, hit_stop from holding_action_outcomes").fetchone()
+    assert (float(row["exit_price"]), row["hit_stop"]) == (8.0, True)
+
+
+def test_a_grading_failure_degrades_the_run_and_prices_still_publish(db, tmp_path, monkeypatch):
+    def broken(conn):
+        raise RuntimeError("grading broke")
+
+    monkeypatch.setattr(repo, "actions_to_grade", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["graded"] == {"failed": "RuntimeError: grading broke"}
+    assert run_row(db, outcome.run_id)["published"] is True

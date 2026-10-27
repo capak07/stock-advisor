@@ -110,6 +110,21 @@ class LinkedPick:
 
 
 @dataclass(frozen=True)
+class Outcome:
+    """How a graded pick or holding action ended (spec §6.5)."""
+
+    exit_day: date
+    exit_price: float
+    exit_reason: str  # stop, exit_by or exit_early
+    ret: float
+    ret_net_of_fx: float  # US: less the conversion fee both ways; TSX: ret
+    bench_ret: float  # the benchmark's return over the same days
+    excess: float
+    beat: bool
+    hit_stop: bool
+
+
+@dataclass(frozen=True)
 class HoldingActionRow:
     """One holding's action of a run, per account (spec §7.3), with what grading it later needs.
 

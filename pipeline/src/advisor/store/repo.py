@@ -19,6 +19,7 @@ from advisor.models import (
     HoldingActionRow,
     LinkedPick,
     Market,
+    Outcome,
     PickRow,
     PredictionRow,
     RunKind,
@@ -42,9 +43,26 @@ class OpenPick:
     exit_by: date
     entry_ref_price: float
     stop: float
-    feature_day: date  # the day entry_ref_price and bench_ref_price closed
-    bench_ref_price: float
+    # the day entry_ref_price and bench_ref_price closed; both are None on a pick made before
+    # migration 0009, which can't be graded
+    feature_day: date | None
+    bench_ref_price: float | None
     run_kind: str  # the kind of the run that made the pick
+
+
+@dataclass(frozen=True)
+class ActionToGrade:
+    """A stock holding action with an exit-by date and no outcome yet, as grading reads it."""
+
+    run_id: int
+    account: str
+    symbol: str
+    asset_type: str
+    feature_day: date
+    exit_by: date
+    ref_price: float
+    bench_ref_price: float
+    trailing_stop: float | None
 
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
@@ -338,7 +356,8 @@ def open_picks(conn: psycopg.Connection) -> list[OpenPick]:
     return [
         OpenPick(
             r["id"], r["symbol"], r["market"], r["horizon_days"], r["exit_by"], float(r["entry_ref_price"]),
-            float(r["stop"]), r["feature_day"], float(r["bench_ref_price"]), r["kind"],
+            float(r["stop"]), r["feature_day"],
+            None if r["bench_ref_price"] is None else float(r["bench_ref_price"]), r["kind"],
         )
         for r in rows
     ]
@@ -348,6 +367,65 @@ def mark_exited_early(conn: psycopg.Connection, ids: Sequence[int]) -> None:
     """Close these open picks as exited early: the run that flagged them grades them at its close."""
     if ids:
         conn.execute("update picks set status = 'exited_early' where id = any(%s) and status = 'open'", (list(ids),))
+
+
+def set_pick_status(conn: psycopg.Connection, ids: Sequence[int], status: str) -> None:
+    if ids:
+        conn.execute("update picks set status = %s where id = any(%s)", (status, list(ids)))
+
+
+def write_pick_outcomes(conn: psycopg.Connection, rows: Sequence[tuple[int, Outcome]]) -> None:
+    """Store graded picks' outcomes, by pick id."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into pick_outcomes (pick_id, exit_price, exit_reason, ret, ret_net_of_fx, bench_ret, excess,"
+            " beat, hit_stop) values (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            [
+                (
+                    pick_id, o.exit_price, o.exit_reason, o.ret, o.ret_net_of_fx, o.bench_ret, o.excess,
+                    o.beat, o.hit_stop,
+                )
+                for pick_id, o in rows
+            ],
+        )
+
+
+def actions_to_grade(conn: psycopg.Connection) -> list[ActionToGrade]:
+    """Stock holding actions with an exit-by date and what grading needs, not yet graded."""
+    rows = conn.execute(
+        "select a.run_id, a.account, a.symbol, a.asset_type, a.feature_day, a.exit_by, a.ref_price,"
+        " a.bench_ref_price, a.trailing_stop from holding_actions a"
+        " where a.asset_type = 'stock' and a.exit_by is not null and a.feature_day is not null"
+        " and a.ref_price is not null and a.bench_ref_price is not null"
+        " and not exists (select 1 from holding_action_outcomes o where (o.run_id, o.account, o.symbol,"
+        "   o.asset_type) = (a.run_id, a.account, a.symbol, a.asset_type))"
+        " order by a.run_id, a.account, a.symbol"
+    ).fetchall()
+    return [
+        ActionToGrade(
+            r["run_id"], r["account"], r["symbol"], r["asset_type"], r["feature_day"], r["exit_by"],
+            float(r["ref_price"]), float(r["bench_ref_price"]),
+            None if r["trailing_stop"] is None else float(r["trailing_stop"]),
+        )
+        for r in rows
+    ]
+
+
+def write_action_outcomes(conn: psycopg.Connection, rows: Sequence[tuple[ActionToGrade, Outcome]]) -> None:
+    """Store graded holding actions' outcomes."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into holding_action_outcomes (run_id, account, symbol, asset_type, exit_price, ret,"
+            " ret_net_of_fx, bench_ret, excess, beat, hit_stop)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            [
+                (
+                    a.run_id, a.account, a.symbol, a.asset_type, o.exit_price, o.ret, o.ret_net_of_fx,
+                    o.bench_ret, o.excess, o.beat, o.hit_stop,
+                )
+                for a, o in rows
+            ],
+        )
 
 
 def load_picks(conn: psycopg.Connection, ids: Sequence[int]) -> dict[int, LinkedPick]:

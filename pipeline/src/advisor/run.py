@@ -36,6 +36,7 @@ from advisor.company_names import CompanyNames
 from advisor.config import Settings
 from advisor.crypto_prices import BARS, CHECK, CRYPTO_STAGE, QUOTES, crypto_feature_rows
 from advisor.enrich import EnrichTargets, interleave, ranked_shortlist, run_enrichment
+from advisor.grade import grade_stage
 from advisor.history import record as record_price_history
 from advisor.markets import BENCHMARKS, MARKETS, market_of
 from advisor.model.live import bars_frame, facts_frame, live_features, split_events
@@ -552,6 +553,7 @@ def execute_run(
         picks_summary = {m.value: {"skipped": "the run can't publish"} for m in Market}
         verdicts_failure: dict | None = None
         actions_summary: dict = {"skipped": "the run can't publish"}
+        graded_summary: dict = {"skipped": "the run can't publish"}
         if enriched:
             results = run_enrichment(
                 tracker,
@@ -606,6 +608,14 @@ def execute_run(
             except Exception as exc:
                 actions_summary = model_failure(exc)
 
+            # Stage 9: grading, after the holdings stage, so this run's own picks and actions are
+            # in too. It catches its own failures; this guard backs that up, so prices always publish.
+            try:
+                forecast_rows = {s: r for a in advice.values() for s, r in a.inputs.rows.items()}
+                graded_summary = grade_stage(conn, run_id, bars, forecast_rows, kind, now_utc)
+            except Exception as exc:
+                graded_summary = model_failure(exc)
+
         summary = {
             "markets": {
                 m.value: {
@@ -634,6 +644,7 @@ def execute_run(
             "model": model_summary,
             "picks": picks_summary,
             "actions": actions_summary,
+            "graded": graded_summary,
         }
         if verdicts_failure is not None:
             summary["verdicts"] = verdicts_failure
@@ -645,11 +656,12 @@ def execute_run(
             universe_ok=universe_ok,
             prices_ok=prices_ok,
             holdings_ok=held_stocks <= bars.keys() and held_crypto <= quotes.keys(),
-            # a failed model, market's picks, the verdicts or the holdings' actions degrade the run;
-            # prices still publish
+            # a failed model, market's picks, the verdicts, the holdings' actions or grading degrade
+            # the run; prices still publish
             models_ok=not any("failed" in m for m in [*model_summary.values(), *picks_summary.values()])
             and verdicts_failure is None
-            and "failed" not in actions_summary,
+            and "failed" not in actions_summary
+            and "failed" not in graded_summary,
         )
         if status is RunStatus.FAILED:
             summary["failed_reason"] = [

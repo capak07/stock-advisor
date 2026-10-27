@@ -582,7 +582,7 @@ def execute_run(
             # Stage 8: picks and watchlist verdicts, after every earlier stage's writes. It catches
             # its own failures per market; the guard here only backs that up, so prices always publish.
             try:
-                picks_summary, verdicts_failure = recommend_stage(
+                picks_summary, verdicts_failure, advice = recommend_stage(
                     conn, run_id, models, forecasts, model_summary, bars, flagged, held_stocks, watch,
                     results, kind, now_utc,
                 )

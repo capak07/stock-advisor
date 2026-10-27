@@ -40,6 +40,7 @@ from advisor.store import repo
 
 EIGHT_K_DAYS = 3  # decision 11: 8-K filings this many days old or newer are a pick's catalysts
 NOT_ELIGIBLE = "not eligible for the model (under $1, thin trading or new)"
+RECOMMENDER_FAILED = "the recommender failed this run"
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,19 @@ class StockInputs:
     rows: dict[str, list[PredictionRow]]  # finite forecasts only
     sane: dict[str, bool]
     cost: dict[str, float]
+
+
+@dataclass(frozen=True)
+class MarketAdvice:
+    """A market's stage-8 work that the holdings stage reuses, so holdings are judged on the same numbers."""
+
+    inputs: StockInputs
+    # every population stock (a forecast stock with finite rows), indexed by symbol: risk_level,
+    # max_position_pct and the rest of `risk_levels`' output
+    risk: pd.DataFrame
+
+
+NO_RISK = pd.DataFrame({"risk_level": pd.Series(dtype=object), "max_position_pct": pd.Series(dtype=float)})
 
 
 def _finite(row: PredictionRow) -> bool:
@@ -212,9 +226,9 @@ def recommend_market(
     news: Mapping[str, float],
     results: Mapping[str, CollectorResult],
     today: date,
-) -> tuple[list[PickRow], dict[str, dict], dict]:
+) -> tuple[list[PickRow], dict[str, dict], dict, pd.DataFrame]:
     """Stage 8 for one market: its picks, the pick fields of every qualifying stock (a watched Buy
-    carries them), and its `summary["picks"]` entry.
+    carries them), its `summary["picks"]` entry, and the risk of every stock with a forecast.
 
     Every qualifying stock gets the fields, held or not and enabled or not; only a market whose
     backtest gate passed gets picks, and never of a stock already held (decision 7).
@@ -241,7 +255,7 @@ def recommend_market(
 
     enabled = model.metrics.get("picks_enabled") is True
     if not population:
-        return [], {}, {"swing": 0, "position": 0} if enabled else {"disabled": picks_reason(model)}
+        return [], {}, {"swing": 0, "position": 0} if enabled else {"disabled": picks_reason(model)}, NO_RISK.copy()
     risk = risk_levels(risk_frame(market, forecast.features, width, in_hold, news))
 
     factors: dict[str, list[dict]] = {}
@@ -269,7 +283,7 @@ def recommend_market(
             "catalysts": [e for _, e in catalysts],
         }
     if not enabled:
-        return [], details, {"disabled": picks_reason(model)}
+        return [], details, {"disabled": picks_reason(model)}, risk
 
     labels = model.sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
     candidates = [c for s, c in choices.items() if s not in held]
@@ -283,12 +297,26 @@ def recommend_market(
             d["risk_level"], d["risk_score"], d["max_position_pct"], rank, d["top_factors"], d["catalysts"],
         ))
     counts = {style: sum(1 for p in picks if p.style == style) for style in ("swing", "position")}
-    return picks, details, counts
+    return picks, details, counts, risk
 
 
 def picks_reason(model: MarketModel) -> str:
     reason = model.metrics.get("picks_reason")
     return str(reason) if reason else "the model has no backtest gate result"
+
+
+def why_no_forecast(symbol: str, features: pd.DataFrame) -> str:
+    """Why a stock of a market that has forecasts got none itself."""
+    if symbol not in features.index:
+        return "not priced this run"
+    if not bool(features.at[symbol, "eligible"]):
+        return NOT_ELIGIBLE
+    return "no forecast this run"
+
+
+def missing_market_reason(market: Market, model_summary: Mapping[str, dict]) -> str:
+    """Why a market has no forecasts at all: its model was skipped, or failed."""
+    return model_summary.get(market.value, {}).get("skipped") or "the model failed this run"
 
 
 def watch_verdicts(
@@ -313,13 +341,8 @@ def watch_verdicts(
         if market not in inputs:
             verdict = stock_verdict(ref.symbol, [], 0.0, False, None, no_forecast[market])
         else:
-            features, given = forecasts[market].features, inputs[market]
-            if ref.symbol not in features.index:
-                why = "not priced this run"
-            elif not bool(features.at[ref.symbol, "eligible"]):
-                why = NOT_ELIGIBLE
-            else:
-                why = "no forecast this run"
+            given = inputs[market]
+            why = why_no_forecast(ref.symbol, forecasts[market].features)
             verdict = stock_verdict(
                 ref.symbol, given.rows.get(ref.symbol, []), given.cost.get(ref.symbol, 0.0),
                 given.sane.get(ref.symbol, False), details.get(market, {}).get(ref.symbol), why,
@@ -344,19 +367,21 @@ def recommend_stage(
     results: Mapping[str, CollectorResult],
     kind: RunKind,
     now_utc: datetime,
-) -> tuple[dict[str, dict], dict | None]:
-    """Stage 8: each market's picks, then the watchlist's verdicts. Returns `summary["picks"]` and
-    the verdicts' failure, if any. Every failure is caught here: it degrades the run, never fails it.
+) -> tuple[dict[str, dict], dict | None, dict[Market, MarketAdvice]]:
+    """Stage 8: each market's picks, then the watchlist's verdicts. Returns `summary["picks"]`, the
+    verdicts' failure, if any, and each market's `MarketAdvice` (none for a market that failed here).
+    Every failure is caught here: it degrades the run, never fails it.
     """
     today = now_utc.astimezone(ET).date()
     summary: dict[str, dict] = {}
     inputs: dict[Market, StockInputs] = {}
     details: dict[Market, dict[str, dict]] = {}
     no_forecast: dict[Market, str] = {}
+    advice: dict[Market, MarketAdvice] = {}
     for market in Market:
         if market not in forecasts:
             skipped = model_summary.get(market.value, {}).get("skipped")
-            no_forecast[market] = skipped or "the model failed this run"
+            no_forecast[market] = missing_market_reason(market, model_summary)
             summary[market.value] = {"skipped": skipped or "no forecasts: the model failed"}
             continue
         try:
@@ -364,22 +389,23 @@ def recommend_stage(
             fee = repo.fee_settings(conn)[0]
             inputs[market] = stock_inputs(market, forecasts[market], bars, flagged, day.date(), partial, fee)
             news = repo.news_sentiment(conn, run_id, list(inputs[market].rows))
-            picks, found, summary[market.value] = recommend_market(
+            picks, found, summary[market.value], risk = recommend_market(
                 market, models[market], forecasts[market], inputs[market], bars, held, news, results, today
             )
             with conn.transaction():  # a market's picks land together or not at all
                 repo.write_picks(conn, run_id, picks)
             details[market] = found
+            advice[market] = MarketAdvice(inputs[market], risk)
         except Exception as exc:
             summary[market.value] = model_failure(exc)
             # a Buy must carry a pick's fields, and these weren't built: its stocks are Hold
             inputs.pop(market, None)
-            no_forecast[market] = "the recommender failed this run"
+            no_forecast[market] = RECOMMENDER_FAILED
     enabled = {m: model.metrics.get("picks_enabled") is True for m, model in models.items()}
     try:
         verdicts = watch_verdicts(watch, held, forecasts, inputs, details, enabled, no_forecast)
         with conn.transaction():
             repo.write_watchlist_verdicts(conn, run_id, verdicts)
     except Exception as exc:
-        return summary, model_failure(exc)
-    return summary, None
+        return summary, model_failure(exc), advice
+    return summary, None, advice

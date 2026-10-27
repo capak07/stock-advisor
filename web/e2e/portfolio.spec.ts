@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addDays } from '../lib/dates'
+import { addDays, shortDay } from '../lib/dates'
 import { daysAgo, resetData, seedCloses, seedFx, seedHoldingAction, seedLot, seedPortfolio, seedRun, seedSymbols, today, weekdays } from './db'
 
 test.beforeEach(resetData)
@@ -44,19 +44,22 @@ test('the actions of the latest run fill the Actions card and the holdings table
   await seedSymbols([
     { symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' },
     { symbol: 'MSFT', market: 'US', name: 'Microsoft Corporation' },
+    { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
   ])
   await seedFx(days, 1.4)
   await seedCloses('SHOP.TO', 'stock', 'CAD', days, 160, -0.5)
   await seedCloses('MSFT', 'stock', 'USD', days, 400, 0.5)
+  await seedCloses('AAPL', 'stock', 'USD', days, 200, 0.5)
   await seedLot({ account: 'tfsa', symbol: 'SHOP.TO', asset_type: 'stock', qty: 10, price: 160, currency: 'CAD', bought_at: days[0] })
   await seedLot({ account: 'tfsa', symbol: 'MSFT', asset_type: 'stock', qty: 5, price: 400, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
+  await seedLot({ account: 'tfsa', symbol: 'AAPL', asset_type: 'stock', qty: 5, price: 200, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
   const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date().toISOString() })
   await seedHoldingAction(runId, {
     account: 'tfsa',
     symbol: 'SHOP.TO',
     asset_type: 'stock',
     action: 'sell',
-    reasons: ['Trailing stop C$146.10 hit; it closed at C$145.50.'],
+    reasons: ['closed at 141.00, under its trailing stop 146.10'],
     trailing_stop: 146.1,
     q10: -0.098,
     q50: -0.026,
@@ -79,13 +82,35 @@ test('the actions of the latest run fill the Actions card and the holdings table
     exit_by: addDays(today(), 40),
     risk_level: 'medium',
   })
+  await seedHoldingAction(runId, {
+    account: 'tfsa',
+    symbol: 'AAPL',
+    asset_type: 'stock',
+    action: 'hold',
+    review: true,
+    reasons: ['no rule fired', 'earnings on Oct 30'],
+    trailing_stop: 209.8,
+    q10: -0.048,
+    q50: 0.003,
+    q90: 0.052,
+    horizon_days: 10,
+    exit_by: addDays(today(), 10),
+    risk_level: 'medium',
+  })
   await page.goto('/')
 
   const actions = page.getByRole('heading', { name: 'Actions' }).locator('../..')
   const sell = actions.locator('.action-card.sell')
   await expect(sell).toHaveCount(1)
   await expect(sell).toContainText('SHOP.TO')
-  await expect(sell).toContainText('Trailing stop C$146.10 hit; it closed at C$145.50.')
+  await expect(sell).toContainText('Closed at 141.00, under its trailing stop 146.10')
+  await expect(actions).toContainText(`Sell → Trim → Review → Add → Hold · as of ${shortDay(today())}`)
+  const review = actions.locator('.action-card.review')
+  await expect(review).toHaveCount(1)
+  await expect(review).toContainText('AAPL')
+  await expect(review).toContainText('TFSA · Hold')
+  await expect(review).toContainText('Earnings on Oct 30')
+  await expect(review).not.toContainText('rule fired')
   const toggle = page.getByRole('button', { name: /1 holding · MSFT/ })
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await toggle.click()
@@ -100,5 +125,8 @@ test('the actions of the latest run fill the Actions card and the holdings table
   await expect(msft.locator('.chip.hold')).toHaveText('Hold')
   await expect(msft).toContainText('US$398.50')
   await expect(msft).toContainText('Above its max size')
+  const aapl = holdings(page).filter({ hasText: 'AAPL' })
+  await expect(aapl.locator('.chip.hold')).toHaveText('Hold')
+  await expect(aapl.locator('.chip.review')).toHaveText('Review')
   await expect(page.getByText('appear once the model runs')).toHaveCount(0)
 })

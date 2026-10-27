@@ -172,4 +172,13 @@ describe('sectorWarnings', () => {
     expect(sectorWarnings([holding('BTC', 300, { account: 'crypto', assetType: 'crypto', market: null })], sectors)).toEqual([])
     expect(sectorWarnings([], sectors)).toEqual([])
   })
+
+  it('compares the share as shown, to one decimal', () => {
+    const sectors = new Map([['AAPL', 'Technology']])
+    // 25.04% shows as 25.0%: not above the guideline. 25.06% shows as 25.1%: above it.
+    expect(sectorWarnings([holding('AAPL', 2504), holding('NEWCO', 7496)], sectors)).toEqual([])
+    expect(sectorWarnings([holding('AAPL', 2506), holding('NEWCO', 7494)], sectors).map((w) => w.title)).toEqual([
+      'Technology is 25.1% of the portfolio (guideline 25%)',
+    ])
+  })
 })

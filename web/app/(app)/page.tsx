@@ -49,7 +49,7 @@ export default async function PortfolioPage() {
       </div>
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>
-        <ActionsCard holdings={view.holdings} />
+        <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} />
         <aside className="grid gap-4">
           <WarningsCard warnings={view.warnings} />
           <BreakdownCard byRisk={view.byRisk} byMarket={view.byMarket} byAccount={view.byAccount} />

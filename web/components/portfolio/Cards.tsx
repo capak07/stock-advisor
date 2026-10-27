@@ -3,7 +3,15 @@ import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { shortDay } from '@/lib/dates'
 import { fmtAmount, fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
-import { ACTION_LABELS, RISK_LABELS, actionGroup, actionGroups, type HoldingAction } from '@/lib/portfolio/actions'
+import {
+  ACTION_LABELS,
+  RISK_LABELS,
+  actionGroup,
+  actionGroups,
+  cardReason,
+  holdText,
+  type HoldingAction,
+} from '@/lib/portfolio/actions'
 import { positionKey } from '@/lib/portfolio/ledger'
 import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 import { NOT_RATED, type Slice } from '@/lib/portfolio/valuation'
@@ -17,13 +25,8 @@ type Acted = HoldingRow & { action: HoldingAction }
 
 const acted = (holdings: readonly HoldingRow[]): Acted[] => holdings.filter((h): h is Acted => h.action !== null)
 
-const holdText = (a: HoldingAction): string =>
-  a.horizonDays !== null && a.exitBy !== null
-    ? `hold ~${a.horizonDays} days · exit by ${shortDay(a.exitBy)}`
-    : (a.reasons[0] ?? '')
-
 /** Sell → Trim → Review → Add cards from the latest run's actions, then the plain Holds folded (spec §7.2, §7.3). */
-export function ActionsCard({ holdings }: { holdings: HoldingRow[] }) {
+export function ActionsCard({ holdings, asOf }: { holdings: HoldingRow[]; asOf: string | null }) {
   const rows = acted(holdings)
   const byKey = new Map(rows.map((h) => [positionKey(h.action), h]))
   const { cards, hold } = actionGroups(rows.map((h) => h.action))
@@ -31,7 +34,9 @@ export function ActionsCard({ holdings }: { holdings: HoldingRow[] }) {
     <div className="card card-pad enter" aria-labelledby="actions-h">
       <div className="section-head">
         <h2 id="actions-h">Actions</h2>
-        <span className="sub">Sell → Trim → Review → Add → Hold</span>
+        <span className="sub">
+          Sell → Trim → Review → Add → Hold{asOf && rows.length > 0 && ` · as of ${shortDay(asOf)}`}
+        </span>
       </div>
       {rows.length === 0 ? (
         <div className="empty">
@@ -64,7 +69,7 @@ export function ActionsCard({ holdings }: { holdings: HoldingRow[] }) {
                     <div>
                       <span className="sym">{a.symbol}</span> {h.name && <span className="sub">{h.name}</span>}
                     </div>
-                    <p style={{ fontSize: 13, margin: 0 }}>{a.reasons[0]}</p>
+                    <p style={{ fontSize: 13, margin: 0 }}>{cardReason(a)}</p>
                     <div className={`num ${tone}`} style={{ fontSize: 13 }}>
                       {fmtMoney(h.gainCad, { signed: true })} · {fmtPct(h.gainPct)}
                     </div>
@@ -169,7 +174,7 @@ export function WarningsCard({ warnings }: { warnings: Warning[] }) {
       </div>
       {warnings.length === 0 ? (
         <p className="sub" style={{ margin: '8px 0 0' }}>
-          None. TFSA trading frequency and superficial losses are checked here.
+          None. TFSA trading frequency, superficial losses and sector weights are checked here.
         </p>
       ) : (
         warnings.map((w) => (

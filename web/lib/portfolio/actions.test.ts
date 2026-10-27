@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actionGroups, type HoldingAction } from './actions'
+import { actionGroups, cardReason, holdText, type HoldingAction } from './actions'
 
 const action = (over: Partial<HoldingAction>): HoldingAction => ({
   account: 'tfsa',
@@ -54,5 +54,31 @@ describe('actionGroups', () => {
     ])
     expect(names(cards)).toEqual(['SHOP.TO:sell+review', 'NVDA:trim+review', 'AAPL:hold+review'])
     expect(hold).toEqual([])
+  })
+})
+
+describe('cardReason', () => {
+  it("a Review card shows its review reasons, capitalised", () => {
+    expect(cardReason(action({ review: true, reasons: ['no rule fired', 'earnings on Oct 30'] }))).toBe('Earnings on Oct 30')
+    expect(
+      cardReason(action({ action: 'add', review: true, reasons: ['would be a Buy today', 'earnings on Oct 30', 'a data source failed'] })),
+    ).toBe('Earnings on Oct 30; a data source failed')
+    expect(cardReason(action({ review: true, reasons: ['no rule fired'] }))).toBe('No rule fired')
+  })
+
+  it('other cards show the headline, capitalised', () => {
+    expect(cardReason(action({ action: 'sell', reasons: ['closed at 141.00, under its trailing stop 146.10'] }))).toBe(
+      'Closed at 141.00, under its trailing stop 146.10',
+    )
+    // A Sell with review keeps its headline.
+    expect(cardReason(action({ action: 'sell', review: true, reasons: ['stop hit', 'earnings on Oct 30'] }))).toBe('Stop hit')
+    expect(cardReason(action({ reasons: [] }))).toBe('')
+  })
+})
+
+describe('holdText', () => {
+  it('names the horizon and exit day, or the capitalised reason without them', () => {
+    expect(holdText(action({ horizonDays: 40, exitBy: '2026-12-11' }))).toBe('hold ~40 days · exit by Dec 11')
+    expect(holdText(action({ reasons: ['no rule fired'] }))).toBe('No rule fired')
   })
 })

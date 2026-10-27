@@ -1,3 +1,4 @@
+import { shortDay } from '../dates'
 import type { Account, AssetType } from './types'
 
 export type ActionKind = 'sell' | 'trim' | 'add' | 'hold'
@@ -45,3 +46,21 @@ export function actionGroups(actions: readonly HoldingAction[]): { cards: Holdin
     hold: actions.filter((a) => actionGroup(a) === null).sort(bySymbol),
   }
 }
+
+/** The pipeline's reasons are lowercase fragments; a card shows one as a sentence. */
+const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
+
+/**
+ * The sentence on an action card. A Review card gives its review reasons, which follow the
+ * headline; the other cards give the headline.
+ */
+export function cardReason(a: HoldingAction): string {
+  const review = actionGroup(a) === 'review' ? a.reasons.slice(1).join('; ') : ''
+  return sentence(review || (a.reasons[0] ?? ''))
+}
+
+/** A plain Hold's line: how long to hold and when to exit, or its reason without a horizon (coins). */
+export const holdText = (a: HoldingAction): string =>
+  a.horizonDays !== null && a.exitBy !== null
+    ? `hold ~${a.horizonDays} days · exit by ${shortDay(a.exitBy)}`
+    : sentence(a.reasons[0] ?? '')

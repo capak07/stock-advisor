@@ -117,7 +117,8 @@ export function sectorWarnings(holdings: readonly Holding[], sectors: ReadonlyMa
   }
   return [...bySector]
     .map(([sector, { value, symbols }]) => ({ sector, share: (value / total) * 100, symbols }))
-    .filter((s) => s.share > SECTOR_GUIDELINE_PCT)
+    // Compared as shown, to one decimal, so a warning never reads "25.0% (guideline 25%)".
+    .filter((s) => Number(s.share.toFixed(1)) > SECTOR_GUIDELINE_PCT)
     .sort((a, b) => b.share - a.share)
     .map(({ sector, share, symbols }) => ({
       title: `${sector} is ${share.toFixed(1)}% of the portfolio (guideline ${SECTOR_GUIDELINE_PCT}%)`,

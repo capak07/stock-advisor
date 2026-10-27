@@ -41,18 +41,21 @@ const toAction = (r: ActionRow): HoldingAction => ({
   riskLevel: r.risk_level,
 })
 
-/** The holding actions of the newest published run that has any, or null before the first. */
-export async function loadHoldingActions(supabase: Supabase): Promise<{ runId: number; actions: HoldingAction[] } | null> {
+/** The holding actions of the newest published run that has any, with that run's day; null before the first. */
+export async function loadHoldingActions(
+  supabase: Supabase,
+): Promise<{ runId: number; day: string; actions: HoldingAction[] } | null> {
   const newest = must(
     await supabase
       .from('holding_actions')
-      .select('run_id, runs!inner(published)')
+      .select('run_id, runs!inner(published, et_date)')
       .eq('runs.published', true)
       .order('run_id', { ascending: false })
       .limit(1),
-  ) as { run_id: number }[]
+  ) as unknown as { run_id: number; runs: { et_date: string } }[] // one run per row: an object, not a list
   if (newest.length === 0) return null
   const runId = newest[0].run_id
+  const day = newest[0].runs.et_date
   const rows = (await fetchAll((from, to) =>
     supabase
       .from('holding_actions')
@@ -63,5 +66,5 @@ export async function loadHoldingActions(supabase: Supabase): Promise<{ runId: n
       .order('asset_type')
       .range(from, to),
   )) as ActionRow[]
-  return { runId, actions: rows.map(toAction) }
+  return { runId, day, actions: rows.map(toAction) }
 }

@@ -120,7 +120,8 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
 - Ungraded rows wait for closes; a pre-close run's 15:15 price grades only an early exit.
 - Grading is by closes, not intraday lows.
 - One bad holding drops every holding's row for that run (single transaction).
-- A split is detected only for symbols whose closes the run stores, so an open pick off the shortlist isn't rescaled. Fix: add open picks to the history list. Dormant while picks are off.
+- A lone bad close under the 50% jump threshold isn't flagged, so it can still raise a trailing stop for good.
+- If the history step fails on the run where a split first appears, that run's new-basis refs can be rescaled again by the next run.
 - A US stock with no stored FX rate is valued at cost.
 - Spec §7.5's one-time note on US dividend payers in a TFSA isn't built: no source says which stocks pay dividends.
 - Minor: a break-even sell can read as a Loss through float noise (the web ledger has the same exposure); `stops.py` imports the private `_wilder`.

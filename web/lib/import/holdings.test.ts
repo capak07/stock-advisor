@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { Trade } from '../portfolio/types'
 import { parseCsv } from './csv'
 import { isHoldingsReport, readHoldingsReport, type HeldPosition } from './holdings'
 
@@ -12,8 +13,8 @@ const RCI = 'TFSA,TFSA,Trade,BBBB00000CAD,RCI.B,TSX,XTSE,Rogers Communications I
 
 const TODAY = '2026-10-27'
 const report = (...lines: string[]) => parseCsv([HEADER, ...lines].join('\r\n'))
-const read = (lines: string[], held: HeldPosition[] = [], rateFrom: string | null = '2017-01-03') =>
-  readHoldingsReport(report(...lines), { today: TODAY, held, rateFrom })
+const read = (lines: string[], held: HeldPosition[] = [], rateFrom: string | null = '2017-01-03', existing: Trade[] = []) =>
+  readHoldingsReport(report(...lines), { today: TODAY, held, rateFrom, existing })
 const holding = (p: Partial<HeldPosition> & Pick<HeldPosition, 'account' | 'symbol' | 'qty' | 'costCad'>): HeldPosition => ({
   assetType: p.account === 'crypto' ? 'crypto' : 'stock',
   lastClose: null,
@@ -53,11 +54,70 @@ describe('readHoldingsReport', () => {
     expect(t.qty * t.price * t.fxRate!).toBeCloseTo(186.36, 6) // so the recorded cost matches 986.36
   })
 
-  it('buys at the market price when the book value did not rise with the quantity', () => {
-    const [row] = read([VEEA], [holding({ account: 'tfsa', symbol: 'VEEA', qty: 100, costCad: 1200 })])
-    expect(row.status).toBe('ready')
-    expect(row.reason).toBe("Up from 100; the book value didn't rise, so at the market price.")
-    expect(row.trade).toMatchObject({ side: 'buy', qty: 18, price: 6 })
+  it('asks for a split or a transfer to be added by hand: the quantity moved but the book value did not follow', () => {
+    const rows = read(
+      [VEEA, XRPN],
+      [
+        holding({ account: 'tfsa', symbol: 'VEEA', qty: 100, costCad: 1200 }),
+        holding({ account: 'tfsa', symbol: 'XRPN', qty: 40, costCad: 600 }),
+      ],
+    )
+    expect(rows.map((r) => [r.status, r.reason, r.trade])).toEqual([
+      ['error', "VEEA (TFSA) rose from 100 but its book value didn't: a split or a transfer in? Add it under Buy.", null],
+      ['error', "XRPN (TFSA) fell from 40 but its book value didn't: a reverse split or a transfer out? Add it under Sell.", null],
+    ])
+  })
+
+  it('shows recorded quantities as quantities, and reads a rounded report quantity as no change', () => {
+    const [up] = read([VEEA], [holding({ account: 'tfsa', symbol: 'VEEA', qty: 0.1 + 0.2, costCad: 2 })])
+    expect(up.reason).toBe('Up from 0.3.')
+    const [same] = read([XRPN], [holding({ account: 'tfsa', symbol: 'XRPN', qty: 10.14723, costCad: 699.9 })])
+    expect([same.status, same.reason]).toEqual(['duplicate', 'No change since it was recorded.']) // the report prints 10.147
+  })
+
+  it('refuses a report older than the trades recorded for a position', () => {
+    const later: Trade = { side: 'buy', account: 'tfsa', symbol: 'VEEA', assetType: 'stock', qty: 18, price: 6, currency: 'USD', fxRateCad: 1.4, day: '2026-10-29' }
+    const rows = readHoldingsReport(report(VEEA, RCI), {
+      today: '2026-10-30',
+      held: [holding({ account: 'tfsa', symbol: 'VEEA', qty: 118, costCad: 986.36 }), holding({ account: 'tfsa', symbol: 'GONE', qty: 3, costCad: 90 })],
+      rateFrom: '2017-01-03',
+      existing: [later, { ...later, symbol: 'GONE', day: '2026-10-28' }],
+    })
+    expect(rows.map((r) => [r.line, r.status, r.reason])).toEqual([
+      [2, 'error', 'VEEA (TFSA) has a trade recorded on Oct 29, after this report: import a newer report.'],
+      [3, 'ready', 'New position.'],
+      [null, 'error', 'GONE (TFSA) has a trade recorded on Oct 28, after this report: import a newer report.'],
+    ])
+  })
+
+  it('trades nothing for a position in the report twice, as with two accounts of one type', () => {
+    const rows = read([VEEA, VEEA.replace('118', '10')], [holding({ account: 'tfsa', symbol: 'VEEA', qty: 128, costCad: 1100 })])
+    const twice = 'VEEA (TFSA) is in the report more than once: add its changes under Buy or Sell.'
+    expect(rows.map((r) => [r.status, r.reason, r.trade])).toEqual([
+      ['error', twice, null],
+      ['error', twice, null],
+    ])
+  })
+
+  it("never sells a recorded position in an account whose report rows couldn't all be read", () => {
+    const rows = read(
+      [VEEA.replace('VEEA,NASDAQ,XNAS', 'AAPL,NEO,NEOE').replace(/,USD,/g, ',CAD,'), BONK],
+      [
+        holding({ account: 'tfsa', symbol: 'AAPL', qty: 2, costCad: 600, lastClose: { day: '2026-10-24', close: 250, currency: 'USD' } }),
+        holding({ account: 'crypto', symbol: 'ETH', qty: 0.5, costCad: 2000, lastClose: { day: '2026-10-24', close: 5000, currency: 'CAD' } }),
+      ],
+    )
+    expect(rows.map((r) => [r.line, r.status, r.reason])).toEqual([
+      [2, 'error', 'Only TSX and US listings can be imported (AAPL trades on NEOE).'],
+      [3, 'ready', 'New position.'],
+      [null, 'error', "AAPL (TFSA) is not in the report, but some of its TFSA rows couldn't be read, so it isn't sold."],
+      [null, 'ready', 'Not in the report: sold at the last close (Oct 24).'],
+    ])
+  })
+
+  it('names a last close in the wrong currency', () => {
+    const rows = read([BONK], [holding({ account: 'crypto', symbol: 'ETH', qty: 0.5, costCad: 2000, lastClose: { day: '2026-10-24', close: 3500, currency: 'USD' } })])
+    expect(rows[1].reason).toBe('ETH (Crypto) is not in the report and its last close is in USD, not CAD: add its sell under Sell.')
   })
 
   it('records a smaller position as a sell at the market price, at the Bank of Canada rate', () => {
@@ -121,8 +181,8 @@ describe('readHoldingsReport', () => {
       [4, 'error', 'The date is after today.'],
       [5, 'error', 'BONK is a coin, but the account is TFSA.'],
       [6, 'error', 'Can\'t read the quantity "lots".'],
-      [7, 'ready', 'New position.'],
-      [8, 'error', 'ABCD (TFSA) is in the report twice.'],
+      [7, 'error', 'ABCD (TFSA) is in the report more than once: add its changes under Buy or Sell.'],
+      [8, 'error', 'ABCD (TFSA) is in the report more than once: add its changes under Buy or Sell.'],
     ]) // no "not in the report" sells of the recorded VEEA or XRPN
   })
 })

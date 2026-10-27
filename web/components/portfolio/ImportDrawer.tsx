@@ -79,6 +79,7 @@ function ImportForm({
 
   const load = async (picked: File | undefined) => {
     setFileError(null)
+    setReport(false)
     if (!picked) return
     const rows = parseCsv(await picked.text())
     if (rows.length < 2) {
@@ -87,6 +88,7 @@ function ImportForm({
     }
     setFile({ name: picked.name, rows })
     setReport(isHoldingsReport(rows[0]))
+    setIncludeUnlisted(isHoldingsReport(rows[0])) // a report lists what is held, ETFs included
     if (isHoldingsReport(rows[0])) {
       setUnlisted(null)
       setStep('review')
@@ -104,7 +106,7 @@ function ImportForm({
       !file || step !== 'review'
         ? []
         : report
-          ? readHoldingsReport(file.rows, { today, held, rateFrom })
+          ? readHoldingsReport(file.rows, { today, held, rateFrom, existing })
           : readRows(file.rows, { meanings, account: account === 'column' ? null : account, dateOrder, today, existing, rateFrom }),
     [file, step, report, held, meanings, account, dateOrder, today, existing, rateFrom],
   )

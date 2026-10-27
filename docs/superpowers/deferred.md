@@ -250,3 +250,7 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
   - If space gets tight, prune news after 30 days. The volume z-score needs only 21.
 - **Unscored duplicates:** say a story was stored unscored (scoring was skipped or failed), and a later run sees it under another item's key. That run doesn't write the row again, so the sentiment stays empty.
 - **Company names:** on 2026-10-16, `search_name` was checked against the full NASDAQ Trader and TMX directories (6,645 names). If Google News finds nothing for a holding, check its directory name: an unusual suffix leaves a quoted query that matches nothing.
+- **Holdings-report import (2026-10-27):** Wealthsimple's holdings report is compared with the recorded positions, and each change becomes a trade dated on the report. Its limits:
+  - Only net changes are seen. A sell and rebuy between two reports is recorded as the difference. Sells are at that day's market price, not the actual fill.
+  - A split, a transfer, a position held in two accounts of one type, or a report older than a position's last recorded trade is refused with a reason, to be added under Buy or Sell. So is any gone position in an account with an unreadable row.
+  - Deferred: the import action drops a trade identical to a recorded one (`sameTrade`), to protect against a stale tab. A report buy whose day, quantity and price exactly match a recorded buy is therefore skipped until the next report. This is rare: its price comes from the book value.

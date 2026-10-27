@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from advisor.collectors.sec import SecEdgar
-from advisor.training.fundamentals import COLUMNS, reduce_companyfacts, universe_ciks
+from advisor.training.fundamentals import COLUMNS, fact_rows, reduce_companyfacts, universe_ciks
 
 COMPANIES = {"AAPL": 320193, "JPM": 19617, "BRK_B": 1067983, "GOOGL": 1652044}
 AGENT = "stock-advisor test@example.com"
@@ -48,6 +48,17 @@ def test_every_re_report_keeps_its_own_filing_date(bulk_zip):
 def test_periods_ending_before_the_history_starts_are_left_out(bulk_zip):
     facts, _ = reduce_companyfacts(bulk_zip, [320193], date(2025, 6, 1))
     assert len(facts) == 112 and facts["end"].min() >= date(2025, 6, 1)
+
+
+def test_a_mistyped_year_never_reaches_the_training_data():
+    # CIK 926423's 10-Q of 2023-06-14 dated a quarter's start 0202-02-01, which pandas cannot hold
+    fact = {"start": "0202-02-01", "end": "2022-04-30", "val": -2476000, "accn": "0001437749-23-017412",
+            "form": "10-Q", "filed": "2023-06-14"}
+    payload = {"facts": {"us-gaap": {"OperatingIncomeLoss": {"units": {"USD": [
+        fact, {**fact, "start": "2022-02-01"},
+    ]}}}}}
+    rows = fact_rows(926423, payload, date(2018, 1, 1))
+    assert [(row[4], row[5]) for row in rows] == [(date(2022, 2, 1), date(2022, 4, 30))]
 
 
 def test_share_classes_map_to_their_company(fixtures_dir):

@@ -45,6 +45,23 @@ def test_facts_filed_after_as_of_are_left_out(fixtures_dir):
     assert max(f.filed for f in facts) == date(2026, 5, 1)
 
 
+def test_facts_with_a_mistyped_year_are_left_out():
+    # as filed: CIK 926423 typed a start of 0202-02-01 (for 2022), CIK 1434737 shares as of 2207-03-31
+    def filed(**dates) -> dict:
+        return {**dates, "val": 1.0, "accn": "0001437749-23-017412", "form": "10-Q", "filed": "2023-06-14"}
+
+    payload = {"facts": {
+        "us-gaap": {"OperatingIncomeLoss": {"units": {"USD": [
+            filed(start="0202-02-01", end="2022-04-30"),
+            filed(start="2022-02-01", end="2201-04-30"),
+            filed(start="2022-02-01", end="2022-04-30"),
+        ]}}},
+        "dei": {"EntityCommonStockSharesOutstanding": {"units": {"shares": [filed(end="2207-03-31")]}}},
+    }}
+    facts = extract_facts("X", payload, date(2023, 7, 1))
+    assert [(f.metric, f.start, f.end) for f in facts] == [("operating_income", date(2022, 2, 1), date(2022, 4, 30))]
+
+
 def test_fallback_concepts_cover_banks_and_multi_class_issuers(fixtures_dir):
     jpm = {(f.metric, f.concept) for f in extract_facts("JPM", companyfacts(fixtures_dir, "JPM"), TODAY)}
     assert ("revenue", "us-gaap:RevenuesNetOfInterestExpense") in jpm

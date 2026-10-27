@@ -18,6 +18,9 @@ from advisor.models import ET, AssetType, Market
 
 FORMS = frozenset({"10-K", "10-K/A", "10-Q", "10-Q/A", "10-KT"})  # 8-K XBRL is often partial
 LOOKBACK = timedelta(days=3 * 365)  # 12 quarters: growth, margins and their trend
+# a period dated outside these years was mistyped by its filer (0202 for 2022, 2201 for 2015);
+# periods since a company's founding do start in the 1920s, and pandas holds no year before 1677
+YEARS = range(1900, 2100)
 USD, PER_SHARE, SHARES = "USD", "USD/shares", "shares"
 # metric -> (taxonomy, concept, unit) in priority order; companies switch concepts over time
 METRICS: dict[str, tuple[tuple[str, str, str], ...]] = {
@@ -93,12 +96,17 @@ class FinancialFact(BaseModel):
 
 
 def metric_facts(payload: Mapping[str, Any]) -> Iterator[tuple[str, str, str, Mapping[str, Any]]]:
-    """Every METRICS concept's raw fact from 10-K/10-Q filings, as (metric, "taxonomy:Concept", unit, fact)."""
+    """Every METRICS concept's raw fact from 10-K/10-Q filings, as (metric, "taxonomy:Concept", unit, fact).
+
+    Facts whose period is dated outside YEARS are left out.
+    """
     facts = payload.get("facts", {})
     for metric, concepts in METRICS.items():
         for taxonomy, concept, unit in concepts:
             for fact in facts.get(taxonomy, {}).get(concept, {}).get("units", {}).get(unit, []):
-                if fact.get("form") in FORMS:
+                if fact.get("form") in FORMS and all(
+                    int(fact[key][:4]) in YEARS for key in ("start", "end") if key in fact
+                ):
                     yield metric, f"{taxonomy}:{concept}", unit, fact
 
 

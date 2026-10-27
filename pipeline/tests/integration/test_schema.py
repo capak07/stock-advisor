@@ -393,3 +393,64 @@ def test_the_owner_reads_model_files_and_only_the_pipeline_writes_them(owned_db)
         assert owned_db.execute("update model_files set body = '\\x00'").rowcount == 1
     with pytest.raises(psycopg.errors.CheckViolation):
         owned_db.execute("insert into model_files (version, name, body) values ('v1', 'Bad Name', '\\x00')")
+
+
+def _run(db) -> int:
+    return db.execute(
+        "insert into runs (kind, et_date) values ('pre_open', '2026-10-14') returning id"
+    ).fetchone()["id"]
+
+
+def test_holding_actions_carry_what_grading_needs(db):
+    run_id = _run(db)
+    action = (
+        "insert into holding_actions (run_id, account, symbol, asset_type, action, horizon_days,"
+        " feature_day, ref_price, bench_ref_price, risk_level, max_position_pct)"
+        " values (%s, 'tfsa', 'AAPL', 'stock', 'hold', 10, '2026-10-13', 100, 500, %s, 5)"
+    )
+    db.execute(action, (run_id, "medium"))
+    row = db.execute(
+        "select horizon_days, feature_day, ref_price, bench_ref_price, risk_level, max_position_pct"
+        " from holding_actions"
+    ).fetchone()
+    assert row["horizon_days"] == 10
+    assert str(row["feature_day"]) == "2026-10-13"
+    assert (row["ref_price"], row["bench_ref_price"]) == (100, 500)
+    assert (row["risk_level"], row["max_position_pct"]) == ("medium", 5)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(action.replace("'tfsa'", "'rrsp'"), (run_id, "extreme"))
+
+
+def test_a_holding_action_outcome_belongs_to_its_action(db):
+    run_id = _run(db)
+    outcome = (
+        "insert into holding_action_outcomes (run_id, account, symbol, asset_type, exit_price,"
+        " ret, ret_net_of_fx, bench_ret, excess, beat, hit_stop)"
+        " values (%s, 'tfsa', 'AAPL', 'stock', %s, 0.05, 0.04, 0.01, 0.04, true, false)"
+    )
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+        db.execute(outcome, (run_id, 110))
+    db.execute(
+        "insert into holding_actions (run_id, account, symbol, asset_type, action)"
+        " values (%s, 'tfsa', 'AAPL', 'stock', 'hold')",
+        (run_id,),
+    )
+    db.execute(outcome, (run_id, 110))
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(outcome.replace("'AAPL'", "'MSFT'"), (run_id, 0))
+    db.execute("delete from runs where id = %s", (run_id,))
+    assert db.execute("select count(*) as n from holding_action_outcomes").fetchone()["n"] == 0
+
+
+def test_picks_record_their_feature_day_and_benchmark_price(db):
+    run_id = _run(db)
+    db.execute(
+        "insert into picks (run_id, symbol, market, style, horizon_days, exit_by, entry_ref_price,"
+        " stop, risk_level, risk_score, max_position_pct, rank, feature_day, bench_ref_price)"
+        " values (%s, 'AAPL', 'US', 'swing', 10, '2026-10-28', 10, 9, 'low', 0.1, 5, 1,"
+        " '2026-10-13', 500)",
+        (run_id,),
+    )
+    row = db.execute("select feature_day, bench_ref_price from picks").fetchone()
+    assert str(row["feature_day"]) == "2026-10-13"
+    assert row["bench_ref_price"] == 500

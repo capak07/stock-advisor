@@ -6,6 +6,7 @@ test.beforeEach(async () => {
   await seedSymbols([
     { symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' },
     { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
+    { symbol: 'VEEA', market: 'US', name: 'Veea Inc.' },
   ])
   await seedFx([daysAgo(40)], 1.37)
 })
@@ -14,12 +15,12 @@ test.beforeEach(async () => {
 const csv = (...rows: string[]) =>
   ['Date,Activity Type,Symbol,Quantity,Price,Currency,Account', ...rows].join('\r\n')
 
-async function upload(page: Page, text: string) {
+async function upload(page: Page, text: string, name = 'activities.csv') {
   await page.goto('/')
   await page.getByRole('button', { name: 'Import file' }).click()
   const drawer = page.getByRole('dialog', { name: 'Import a file' })
-  await drawer.getByLabel('Activity file (CSV)').setInputFiles({
-    name: 'activities.csv',
+  await drawer.getByLabel('Activity file or holdings report (CSV)').setInputFiles({
+    name,
     mimeType: 'text/csv',
     buffer: Buffer.from(text),
   })
@@ -141,4 +142,51 @@ test('when the buys can\'t be taken back, the drawer says so', async ({ page }) 
     const [{ n }] = await sql`select count(*)::int as n from lots`
     expect(n).toBe(1)
   })
+})
+
+/** Wealthsimple's holdings report, dated today (month/day/year); the account numbers are made up. */
+function holdingsReport(...rows: string[]) {
+  const [y, m, d] = daysAgo(0).split('-')
+  const header =
+    'Account Name,Account Type,Account Classification,Account Number,Symbol,Exchange,MIC,Name,Security Type,Quantity,Position Direction,Market Price,Market Price Currency,Book Value (CAD),Book Value Currency (CAD),Book Value (Market),Book Value Currency (Market),Market Value,Market Value Currency,Market Unrealized Returns,Market Unrealized Returns Currency,,,,Date'
+  return [header, ...rows.map((r) => `${r},,,,${m}/${d}/${y}`)].join('\r\n')
+}
+const BONK = 'Crypto,Crypto,Trade,AAAA00000CAD,BONK,,,Bonk,CRYPTOCURRENCY,95934743,LONG,4.28956E-06,CAD,500,CAD,500,CAD,411.35,CAD,-88.65,CAD'
+const VEEA = 'TFSA,TFSA,Trade,BBBB00000CAD,VEEA,NASDAQ,XNAS,Veea Inc.,EQUITY,118,LONG,6,USD,986.36,CAD,678.4977517,USD,708,USD,29.50,USD'
+const RY = 'TFSA,TFSA,Trade,BBBB00000CAD,RY,TSX,XTSE,Royal Bank of Canada,EQUITY,10,LONG,190,CAD,1845,CAD,1845,CAD,1900,CAD,55,CAD'
+
+test('a holdings report seeds every position at its book value, without matching columns', async ({ page }) => {
+  const drawer = await upload(page, holdingsReport(BONK, VEEA, RY), 'holdings-report.csv')
+  await expect(drawer.getByText('2 · Review')).toBeVisible()
+  await expect(drawer.getByText(/ready to import/)).toHaveText('3 ready to import')
+  await expect(drawer.locator('#import-rows')).toContainText('RY.TO')
+  await drawer.getByRole('button', { name: 'Import 3 trades' }).click()
+
+  await expect(page.getByRole('status')).toHaveText('Imported 3 trades')
+  await expect(page.locator('#holdings tbody tr')).toHaveCount(3)
+  const lots = await sql`select symbol, bought_at::text as day, (qty * price * coalesce(fx_rate_cad, 1))::float as cad
+    from lots order by symbol`
+  expect(lots.map((l) => [l.symbol, l.day, Math.round(l.cad * 100) / 100])).toEqual([
+    ['BONK', daysAgo(0), 500],
+    ['RY.TO', daysAgo(0), 1845],
+    ['VEEA', daysAgo(0), 986.36],
+  ])
+})
+
+test("a later holdings report adds what changed, and the same report again adds nothing", async ({ page }) => {
+  await seedLot({ account: 'tfsa', symbol: 'VEEA', asset_type: 'stock', qty: 100, price: 5.5, currency: 'USD', fx_rate_cad: 1.45, bought_at: daysAgo(30) })
+  await seedLot({ account: 'tfsa', symbol: 'RY.TO', asset_type: 'stock', qty: 15, price: 180, currency: 'CAD', bought_at: daysAgo(30) })
+  let drawer = await upload(page, holdingsReport(VEEA, RY), 'holdings-report.csv')
+  await expect(drawer.locator('#import-rows')).toContainText('Up from 100.')
+  await expect(drawer.locator('#import-rows')).toContainText('Down from 15.')
+  await drawer.getByRole('button', { name: 'Import 2 trades' }).click()
+  await expect(page.getByRole('status')).toHaveText('Imported 2 trades')
+
+  const [veea] = await sql`select sum(qty * price * fx_rate_cad)::float as cad, sum(qty)::float as qty from lots where symbol = 'VEEA'`
+  expect([veea.qty, Math.round(veea.cad * 100) / 100]).toEqual([118, 986.36])
+  const [sell] = await sql`select qty::float, price::float, sold_at::text as day from sells`
+  expect(sell).toEqual({ qty: 5, price: 190, day: daysAgo(0) })
+
+  drawer = await upload(page, holdingsReport(VEEA, RY), 'holdings-report.csv')
+  await expect(drawer.getByText(/ready to import/)).toHaveText('0 ready to import · 2 already recorded or repeated')
 })

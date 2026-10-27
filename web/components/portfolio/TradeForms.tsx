@@ -422,6 +422,7 @@ export function TradeButtons({
         open={open === 'import'}
         round={round}
         existing={existing}
+        held={sellable}
         rateFrom={rates[0]?.day ?? null}
         today={today}
         onClose={close}

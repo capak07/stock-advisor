@@ -119,8 +119,8 @@ export interface ImportTrade {
 export type RowStatus = 'ready' | 'skipped' | 'duplicate' | 'error'
 
 export interface ImportRow {
-  /** The row's line in the file, counting the header as line 1. */
-  line: number
+  /** The row's line in the file, counting the header as line 1; null for a row the file implies but lacks. */
+  line: number | null
   status: RowStatus
   reason: string | null
   trade: ImportTrade | null

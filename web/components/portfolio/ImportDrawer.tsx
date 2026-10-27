@@ -7,6 +7,7 @@ import { Drawer } from '@/components/Drawer'
 import { longDay } from '@/lib/dates'
 import { fmtPrice, fmtQty } from '@/lib/format'
 import { parseCsv } from '@/lib/import/csv'
+import { isHoldingsReport, readHoldingsReport, type HeldPosition } from '@/lib/import/holdings'
 import {
   MEANINGS,
   guessMeanings,
@@ -26,6 +27,11 @@ const STEPS: { step: Step; label: string }[] = [
   { step: 'columns', label: '2 · Columns' },
   { step: 'review', label: '3 · Review' },
 ]
+// a holdings report's columns are known, so it goes straight to the review
+const REPORT_STEPS: { step: Step; label: string }[] = [
+  { step: 'file', label: '1 · File' },
+  { step: 'review', label: '2 · Review' },
+]
 const SHOWN = 50
 
 interface Loaded {
@@ -43,21 +49,25 @@ const STATUS: Record<ImportRow['status'] | 'unlisted', string> = {
 
 /**
  * Import a broker's activity file (spec §7.1, the mockup's three steps): pick the CSV, say what
- * each column means, review every row, then add the ready ones in one go.
+ * each column means, review every row, then add the ready ones in one go. A Wealthsimple holdings
+ * report skips the columns: its changes from the recorded positions are reviewed instead.
  */
 function ImportForm({
   existing,
+  held,
   rateFrom,
   today,
   onDone,
 }: {
   existing: Trade[]
+  held: HeldPosition[]
   rateFrom: string | null
   today: string
   onDone: (m: string) => void
 }) {
   const [step, setStep] = useState<Step>('file')
   const [file, setFile] = useState<Loaded | null>(null)
+  const [report, setReport] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
   const [meanings, setMeanings] = useState<Meaning[]>([])
   const [account, setAccount] = useState<Account | 'column'>('tfsa')
@@ -75,8 +85,14 @@ function ImportForm({
       setFileError('That file has no rows under its header.')
       return
     }
-    const guessed = guessMeanings(rows[0])
     setFile({ name: picked.name, rows })
+    setReport(isHoldingsReport(rows[0]))
+    if (isHoldingsReport(rows[0])) {
+      setUnlisted(null)
+      setStep('review')
+      return
+    }
+    const guessed = guessMeanings(rows[0])
     setMeanings(guessed)
     setAccount(guessed.includes('account') ? 'column' : 'tfsa')
     setStep('columns')
@@ -85,10 +101,12 @@ function ImportForm({
   const problems = file ? meaningProblems(meanings, account === 'column') : []
   const read = useMemo(
     () =>
-      file && step === 'review'
-        ? readRows(file.rows, { meanings, account: account === 'column' ? null : account, dateOrder, today, existing, rateFrom })
-        : [],
-    [file, step, meanings, account, dateOrder, today, existing, rateFrom],
+      !file || step !== 'review'
+        ? []
+        : report
+          ? readHoldingsReport(file.rows, { today, held, rateFrom })
+          : readRows(file.rows, { meanings, account: account === 'column' ? null : account, dateOrder, today, existing, rateFrom }),
+    [file, step, report, held, meanings, account, dateOrder, today, existing, rateFrom],
   )
   const readySymbols = useMemo(
     () => [...new Set(read.filter((r) => r.status === 'ready' && r.trade?.assetType === 'stock').map((r) => r.trade!.symbol))],
@@ -129,7 +147,7 @@ function ImportForm({
     <>
       <div className="drawer-body">
         <div className="flex flex-wrap gap-2 sub">
-          {STEPS.map((s) => (
+          {(report ? REPORT_STEPS : STEPS).map((s) => (
             <span key={s.step} className={`badge ${s.step === step ? 'badge-current' : ''}`} aria-current={s.step === step ? 'step' : undefined}>
               {s.label}
             </span>
@@ -139,9 +157,12 @@ function ImportForm({
         {step === 'file' && (
           <>
             <label className={`field ${fileError ? 'invalid' : ''}`}>
-              <span>Activity file (CSV)</span>
+              <span>Activity file or holdings report (CSV)</span>
               <input className="input" type="file" accept=".csv,text/csv" onChange={(e) => load(e.target.files?.[0])} />
-              <span className="hint">Export your activity from the broker as CSV, for example in Wealthsimple: Activity → Export.</span>
+              <span className="hint">
+                Export your activity from the broker as CSV, for example in Wealthsimple: Activity → Export. A Wealthsimple
+                holdings report works too: what changed since the last one is added as buys and sells on its date.
+              </span>
               <span className="error">{fileError}</span>
             </label>
           </>
@@ -255,12 +276,12 @@ function ImportForm({
                   </tr>
                 </thead>
                 <tbody>
-                  {read.slice(0, SHOWN).map((r) => {
+                  {read.slice(0, SHOWN).map((r, i) => {
                     const status = isUnlisted(r) ? 'unlisted' : r.status
                     const t = r.trade
                     return (
-                      <tr key={r.line}>
-                        <td className="num sub">{r.line}</td>
+                      <tr key={r.line ?? `held-${i}`}>
+                        <td className="num sub">{r.line ?? '—'}</td>
                         <td>
                           {t ? (
                             <>
@@ -306,7 +327,7 @@ function ImportForm({
         )}
         {step === 'review' && (
           <>
-            <button type="button" className="btn btn-secondary" onClick={() => setStep('columns')}>
+            <button type="button" className="btn btn-secondary" onClick={() => setStep(report ? 'file' : 'columns')}>
               Back
             </button>
             <button type="button" className="btn btn-primary" disabled={pending || unlisted === null || counts.ready === 0} onClick={submit}>
@@ -324,6 +345,7 @@ export function ImportDrawer({
   open,
   round,
   existing,
+  held,
   rateFrom,
   today,
   onClose,
@@ -332,6 +354,8 @@ export function ImportDrawer({
   open: boolean
   round: number
   existing: Trade[]
+  /** The recorded open positions, for a holdings report to compare with. */
+  held: HeldPosition[]
   /** The earliest day with a stored USD/CAD rate, or null when none is stored. */
   rateFrom: string | null
   today: string
@@ -340,7 +364,7 @@ export function ImportDrawer({
 }) {
   return (
     <Drawer id="import-drawer" title="Import a file" open={open} onClose={onClose}>
-      <ImportForm key={round} existing={existing} rateFrom={rateFrom} today={today} onDone={onDone} />
+      <ImportForm key={round} existing={existing} held={held} rateFrom={rateFrom} today={today} onDone={onDone} />
     </Drawer>
   )
 }

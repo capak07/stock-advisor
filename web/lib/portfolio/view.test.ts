@@ -86,6 +86,14 @@ describe('portfolioView', () => {
     ])
   })
 
+  it("gives each sell option its latest close, so a holdings report can price a position it no longer lists", () => {
+    expect(view.sellable.map((s) => [s.symbol, s.lastClose])).toEqual([
+      ['AAPL', { day: '2026-10-16', close: 220, currency: 'USD' }],
+      ['ETH', { day: '2026-10-16', close: 2800, currency: 'USD' }],
+      ['NEWCO', null],
+    ])
+  })
+
   it('is empty without trades', () => {
     const empty = portfolioView(
       { trades: [], prices: PRICES, fx: FX, names: new Map(), guideline: { roundTrips: 24, shortHoldShare: 0.5 } },

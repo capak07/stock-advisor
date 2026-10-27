@@ -3,8 +3,8 @@ import { tradeCurrency } from '../symbols'
 import { buildLedger, positionKey } from './ledger'
 import type { FxRate, FxRates, PriceBook } from './lookup'
 import { PERIODS, growth, periodReturns, type Period, type PeriodReturns } from './returns'
-import { ACCOUNT_LABELS } from './types'
-import type { Account, AssetType, Currency, Market, Trade } from './types'
+import { ACCOUNT_LABELS, assetKey } from './types'
+import type { Account, AssetType, Close, Currency, Market, Trade } from './types'
 import { breakdown, taxableEstimate, totals, valueHoldings, type Slice, type Totals } from './valuation'
 import { superficialLossWarnings, tfsaWarnings, type TfsaGuideline, type Warning } from './warnings'
 
@@ -35,6 +35,8 @@ export interface SellOption {
   qty: number
   costCad: number
   currency: Currency
+  /** The latest stored close, or null when none is stored. */
+  lastClose: Close | null
 }
 
 export interface PortfolioView {
@@ -119,6 +121,7 @@ export function portfolioView({ trades, prices, fx, names, guideline }: Portfoli
         qty: p.qty,
         costCad: p.costCad,
         currency: tradeCurrency(p.assetType, p.symbol),
+        lastClose: prices.latest(assetKey(p.assetType, p.symbol)),
       })),
   }
 }

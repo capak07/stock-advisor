@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import zipfile
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 
 import httpx
@@ -147,29 +148,52 @@ def test_yahoo_throttling_the_second_ask_counts_its_symbols_as_missing(fixtures_
         build(tmp_path, NOW, deps(client, [], silent_once=frozenset({"JPM"})), limit=10)
 
 
-def fred_down(fixtures_dir) -> httpx.Client:
-    """The `web` fixtures, with FRED timing out on every request."""
+def fred_down(fixtures_dir, answer: Callable[[httpx.Request], httpx.Response] | None = None) -> httpx.Client:
+    """The `web` fixtures, with FRED timing out on every request (or giving `answer`'s response)."""
     healthy = web(fixtures_dir)
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "fred.stlouisfed.org":
+            if answer is not None:
+                return answer(request)
             raise httpx.ReadTimeout("The read operation timed out", request=request)
         return healthy._transport.handle_request(request)
 
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def test_a_dead_fred_fails_fast_with_a_readable_error_and_a_partial_manifest(fixtures_dir, tmp_path):
-    asked: list[list[str]] = []
-    with fred_down(fixtures_dir) as client, pytest.raises(BuildFailed) as failure:
-        build(tmp_path, NOW, deps(client, asked), limit=10)
-    assert str(failure.value) == (
-        "macro step failed: FRED did not answer for T10Y2Y after 6 tries (ReadTimeout: The read operation timed out)"
-    )
-    assert asked == []  # macro runs before the long Yahoo download, so nothing was downloaded
-    manifest = json.loads((tmp_path / "manifest.json").read_text())
-    assert manifest["failed"] == {"step": "macro", "error": str(failure.value)}
-    assert set(manifest["files"]) == {"sectors.parquet"}  # what was written before the failure
+def test_a_fred_that_never_answers_is_recorded_and_the_build_goes_on(fixtures_dir, tmp_path, caplog):
+    # nothing trains on macro.parquet (spec §5.1), and FRED stalls requests from GitHub's runners
+    with caplog.at_level(logging.WARNING, logger="advisor.training"), fred_down(fixtures_dir) as client:
+        manifest = build(tmp_path, NOW, deps(client, []), limit=10)
+    reason = "FRED did not answer for T10Y2Y after 6 tries (ReadTimeout: The read operation timed out)"
+    assert manifest["unavailable"] == {"macro": reason}
+    assert "failed" not in manifest
+    assert "macro.parquet" not in manifest["files"] and not (tmp_path / "macro.parquet").exists()
+    assert {"prices_US.parquet", "prices_TSX.parquet", "fundamentals.parquet"} <= set(manifest["files"])
+    assert json.loads((tmp_path / "manifest.json").read_text()) == manifest
+    assert any(r.levelno == logging.WARNING and reason in r.getMessage() for r in caplog.records)
+
+
+def test_a_series_fred_refuses_still_fails_the_build(fixtures_dir, tmp_path):
+    def refuse(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="Series not found")
+
+    with fred_down(fixtures_dir, refuse) as client, pytest.raises(
+        BuildFailed, match=r"macro step failed: FRED refused T10Y2Y \(HTTP 404\)"
+    ):
+        build(tmp_path, NOW, deps(client, []), limit=10)
+    assert json.loads((tmp_path / "manifest.json").read_text())["failed"]["step"] == "macro"
+
+
+def test_a_series_fred_sends_empty_still_fails_the_build(fixtures_dir, tmp_path):
+    def empty(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=f"observation_date,{request.url.params['id']}\n")
+
+    with fred_down(fixtures_dir, empty) as client, pytest.raises(
+        BuildFailed, match="macro step failed: ValueError: FRED sent no values for T10Y2Y"
+    ):
+        build(tmp_path, NOW, deps(client, []), limit=10)
 
 
 def test_a_failure_after_prices_leaves_them_listed_in_the_manifest(fixtures_dir, tmp_path, monkeypatch):

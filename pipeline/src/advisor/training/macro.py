@@ -44,6 +44,10 @@ class MacroUnavailable(RuntimeError):
     """FRED or the Bank of Canada did not answer after every try."""
 
 
+class MacroRefused(RuntimeError):
+    """FRED or the Bank of Canada answered, but refused a series (a 4xx): likely renamed or gone."""
+
+
 def _fetch(
     client: httpx.Client,
     source: str,
@@ -68,7 +72,7 @@ def _fetch(
             raise MacroUnavailable(
                 f"{source} did not answer for {what} after {ATTEMPTS} tries ({exc})"
             ) from exc
-        raise MacroUnavailable(
+        raise MacroRefused(
             f"{source} refused {what} (HTTP {exc.response.status_code}): "
             f"{exc.response.text[:200]}"
         ) from exc

@@ -9,6 +9,7 @@ from advisor.training.macro import (
     ATTEMPTS,
     BUDGET_SECONDS,
     COLUMNS,
+    MacroRefused,
     MacroUnavailable,
     macro_history,
 )
@@ -138,6 +139,6 @@ def test_a_slow_fred_is_stopped_by_the_macro_budget(fixtures_dir):
 
 def test_a_refused_series_says_so_rather_than_timing_out(fixtures_dir):
     client, asked = flaky_sources(fixtures_dir, {"DGS10": [httpx.Response(404, text="Series not found")]})
-    with client, pytest.raises(MacroUnavailable, match=r"FRED refused DGS10 \(HTTP 404"):
+    with client, pytest.raises(MacroRefused, match=r"FRED refused DGS10 \(HTTP 404"):
         macro_history(client, START, END, sleep=lambda s: None)
     assert asked.count("DGS10") == 1

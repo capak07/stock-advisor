@@ -34,7 +34,7 @@ from advisor.store import repo
 from advisor.store.db import connect
 from advisor.training import prices
 from advisor.training.fundamentals import reduce_companyfacts, universe_ciks
-from advisor.training.macro import MacroUnavailable, macro_history
+from advisor.training.macro import MacroRefused, MacroUnavailable, macro_history
 from advisor.training.prices import YahooThrottled, download_history, history_start
 from advisor.training.sectors import all_sector_etfs, classify, industries, screen_industries
 
@@ -115,7 +115,14 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None) -
         # that is down fails the build in minutes, not after half an hour of prices
         step = "macro"
         began = time.monotonic()
-        _write(macro_history(deps.http, start, today, sleep=deps.sleep), out, "macro.parquet", manifest)
+        try:
+            _write(macro_history(deps.http, start, today, sleep=deps.sleep), out, "macro.parquet", manifest)
+        except MacroUnavailable as exc:
+            # nothing trains on macro.parquet yet (spec §5.1), and FRED stalls requests from
+            # GitHub's runners, so a source that never answers is recorded, not fatal. A series
+            # refused or sent empty still fails: that is a change to fix, not an outage.
+            manifest["unavailable"] = {"macro": str(exc)}
+            log.warning("macro: skipped, macro.parquet not written: %s", exc)
         timed("macro", began)
 
         for market in Market:
@@ -182,7 +189,7 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None) -
         manifest["missing"]["ciks"] = len(absent_ciks)
         timed("fundamentals", began)
     except Exception as exc:
-        readable = isinstance(exc, BuildFailed | MacroUnavailable)
+        readable = isinstance(exc, BuildFailed | MacroRefused)
         message = f"{step} step failed: {exc if readable else f'{type(exc).__name__}: {exc}'}"
         manifest["failed"] = {"step": step, "error": message}
         (out / "manifest.json").write_text(json.dumps(manifest, indent=2))

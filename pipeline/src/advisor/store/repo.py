@@ -16,6 +16,7 @@ from advisor.models import (
     AssetType,
     DailyClose,
     Market,
+    PickRow,
     PredictionRow,
     RunKind,
     RunStatus,
@@ -23,6 +24,7 @@ from advisor.models import (
     SymbolInfo,
 )
 from advisor.news.stage import NewsRow, StoredNews
+from advisor.recommend.verdicts import Verdict
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
 NEWS_KEPT = timedelta(days=90)  # spec §10: news is pruned after 90 days
@@ -284,6 +286,53 @@ def write_predictions(conn: psycopg.Connection, run_id: int, rows: Sequence[Pred
                 for r in rows
             ],
         )
+
+
+def write_picks(conn: psycopg.Connection, run_id: int, rows: Sequence[PickRow]) -> None:
+    """Store a run's stock picks."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into picks (run_id, symbol, asset_type, market, style, horizon_days, exit_by,"
+            " entry_ref_price, stop, risk_level, risk_score, max_position_pct, rank, top_factors, catalysts)"
+            " values (%s, %s, 'stock', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            [
+                (
+                    run_id, r.symbol, r.market.value, r.style, r.horizon_days, r.exit_by, r.entry_ref_price,
+                    r.stop, r.risk_level, r.risk_score, r.max_position_pct, r.rank,
+                    Jsonb(r.top_factors), Jsonb(r.catalysts),
+                )
+                for r in rows
+            ],
+        )
+
+
+def write_watchlist_verdicts(conn: psycopg.Connection, run_id: int, verdicts: Sequence[Verdict]) -> None:
+    """Store a run's verdict for each watched symbol."""
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into watchlist_verdicts (run_id, symbol, asset_type, verdict, reasons, details)"
+            " values (%s, %s, %s, %s, %s, %s)",
+            [(run_id, v.symbol, v.asset_type, v.verdict, Jsonb(v.reasons), Jsonb(v.details)) for v in verdicts],
+        )
+
+
+def news_sentiment(conn: psycopg.Connection, run_id: int, symbols: Sequence[str]) -> dict[str, float]:
+    """Each stock's mean news sentiment this run, for the risk score's signal disagreement.
+
+    A stock the news stage covered but couldn't score maps to NaN; one it never covered is left
+    out, which is what makes its news feature group missing.
+    """
+    rows = conn.execute(
+        "select symbol, features from features_live"
+        " where run_id = %s and asset_type = 'stock' and symbol = any(%s)",
+        (run_id, list(symbols)),
+    ).fetchall()
+    out: dict[str, float] = {}
+    for r in rows:
+        if any(key.startswith("news_") for key in r["features"]):
+            mean = r["features"].get("news_sentiment_mean")
+            out[r["symbol"]] = float(mean) if mean is not None else float("nan")
+    return out
 
 
 def fee_settings(conn: psycopg.Connection) -> tuple[float, float]:

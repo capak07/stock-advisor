@@ -1,4 +1,5 @@
 import dataclasses
+import math
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
@@ -7,14 +8,27 @@ import pytest
 
 from advisor.collectors.base import Category, PartialFetch, Scope, check_deadline
 from advisor.collectors.cache import DiskCache
+from advisor.collectors.clinical_trials import TrialActivity
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.feeds import NewsItem, TickerNewsItem
+from advisor.collectors.sec_events import MaterialEvent
 from advisor.collectors.series import SeriesObservation
+from advisor.collectors.yfinance_earnings import EarningsReport
 from advisor.markets import MARKETS
 from advisor.model.dataset import load_market
 from advisor.model.train import PARAMS, TrainConfig, fit_final, to_files, walk_forward
-from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus
+from advisor.models import (
+    ET,
+    AssetRef,
+    AssetType,
+    DailyClose,
+    Market,
+    PredictionRow,
+    RunKind,
+    RunStatus,
+)
 from advisor.news.stage import NewsRow
+from advisor.recommend.risk import risk_levels
 from advisor.run import RunDeps, empty_news_summary, execute_run
 from advisor.store import repo
 from advisor.training.sectors import all_sector_etfs
@@ -92,6 +106,7 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         # 70 closes for each shortlisted stock and for SPY and XIU.TO
         "history": {"closes": 490, "backfilled": [], "fx": 0, "rescaled": [], "pruned": 0},
         "model": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
+        "picks": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
     }
     # The benchmarks and sector ETFs are priced with the holdings, then one call covers both markets.
     assert deps.collectors["yfinance_bars"].calls == [FUNDS, EVERYONE]
@@ -1236,3 +1251,245 @@ def test_the_chart_history_keeps_only_the_last_100_days_of_the_longer_window(db,
         "select min(day) as first, count(*) as n from daily_closes where symbol = 'AAA'"
     ).fetchone()
     assert (row["first"], row["n"]) == (date(2026, 7, 6), 100)  # 100 days before 2026-10-14
+
+
+def confident(active, features, benchmark):
+    return [PredictionRow(s, 63, -0.05, 0.04, 0.10, 0.65, benchmark, active.version) for s in features.index]
+
+
+def test_qualifying_forecasts_become_picks_and_watched_stocks_get_verdicts(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock'), ('ETH', 'crypto')")
+    hold(db, "RY.TO")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    picks = db.execute("select symbol, market, style, horizon_days, stop, entry_ref_price, rank from picks"
+                       " where run_id = %s", (outcome.run_id,)).fetchall()
+    assert [p["symbol"] for p in picks] == ["TD.TO"]  # RY.TO is held: never a pick
+    assert picks[0]["style"] == "position" and picks[0]["market"] == "TSX" and picks[0]["rank"] == 1
+    assert float(picks[0]["stop"]) >= float(picks[0]["entry_ref_price"]) * 0.85  # numeric columns read as Decimal
+    verdicts = {r["symbol"]: r["verdict"] for r in db.execute(
+        "select symbol, verdict from watchlist_verdicts where run_id = %s", (outcome.run_id,)).fetchall()}
+    assert verdicts == {"TD.TO": "buy", "ETH": "hold"}
+    assert outcome.summary["picks"]["TSX"] == {"swing": 0, "position": 1}
+
+
+def test_a_disabled_market_gets_verdicts_but_no_picks(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": false, \"picks_reason\": \"only 12 backtest picks (needs 30)\"}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert db.execute("select count(*) as n from picks").fetchone()["n"] == 0
+    assert outcome.summary["picks"]["TSX"] == {"disabled": "only 12 backtest picks (needs 30)"}
+    verdict = db.execute("select verdict, details from watchlist_verdicts where symbol = 'TD.TO'").fetchone()
+    assert verdict["verdict"] == "buy" and verdict["details"]["market_picks_enabled"] is False
+
+
+def test_a_recommender_failure_degrades_the_run_and_prices_still_publish(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("risk frame broke")
+
+    monkeypatch.setattr("advisor.run.risk_levels", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["picks"]["TSX"]["failed"].startswith("RuntimeError")
+    assert run_row(db, outcome.run_id)["published"] is True
+
+
+def test_one_markets_recommender_failure_spares_the_other_market_and_the_verdicts(
+    db, tmp_path, tsx_model_files, monkeypatch
+):
+    activate_tsx(db, tsx_model_files)
+    # the TSX model's features are a subset of the US ones, so it stands in for a US model here
+    repo.save_model(db, "stock_us-1", "stock_us", NOW, {"usable_horizons": [63]}, 3.0, tsx_model_files)
+    repo.activate_model(db, "stock_us", "stock_us-1")
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock'), ('AAA', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+
+    def broken_for_us(frame):
+        if "AAA" in frame.index:
+            raise RuntimeError("US risk frame broke")
+        return risk_levels(frame)
+
+    monkeypatch.setattr("advisor.run.risk_levels", broken_for_us)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["picks"] == {
+        "US": {"failed": "RuntimeError: US risk frame broke"}, "TSX": {"swing": 0, "position": 2},
+    }
+    rows = db.execute("select market, count(*) as n from picks group by market").fetchall()
+    assert [(r["market"], r["n"]) for r in rows] == [("TSX", 2)]
+    verdicts = verdict_rows(db, outcome.run_id)
+    assert verdicts["TD.TO"]["verdict"] == "buy"
+    # a Buy must carry a pick's fields: without them the US stock waits
+    assert (verdicts["AAA"]["verdict"], verdicts["AAA"]["reasons"]) == ("hold", ["the recommender failed this run"])
+    assert run_row(db, outcome.run_id)["published"] is True
+
+
+def split_odds(active, features, benchmark):
+    """TD.TO qualifies; RY.TO is unlikely to beat the benchmark at any horizon."""
+    return [
+        PredictionRow(s, 63, -0.05, 0.04, 0.10, 0.65 if s == "TD.TO" else 0.30, benchmark, active.version)
+        for s in features.index
+    ]
+
+
+def verdict_rows(db, run_id):
+    rows = db.execute(
+        "select symbol, verdict, reasons, details from watchlist_verdicts where run_id = %s", (run_id,)
+    ).fetchall()
+    return {r["symbol"]: r for r in rows}
+
+
+def test_every_verdict_of_a_disabled_market_says_its_picks_are_off(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": false, \"picks_reason\": \"no\"}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock'), ('RY.TO', 'stock'),"
+               " ('AAA', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", split_odds)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    verdicts = verdict_rows(db, outcome.run_id)
+    assert {s: v["verdict"] for s, v in verdicts.items()} == {"TD.TO": "buy", "RY.TO": "avoid", "AAA": "hold"}
+    assert all(v["details"]["market_picks_enabled"] is False for v in verdicts.values())
+    assert verdicts["AAA"]["reasons"] == ["no active model"]  # the US has no model in this test
+    # a buy carries the same fields as a pick, even when its market's picks are off
+    buy = verdicts["TD.TO"]["details"]
+    assert (buy["style"], buy["horizon_days"], buy["entry_ref_price"]) == ("position", 63, 10.0)
+    assert buy["risk_level"] in {"low", "medium", "high", "very_high"} and len(buy["top_factors"]) == 3
+    assert outcome.summary["picks"] == {"US": {"skipped": "no active model"}, "TSX": {"disabled": "no"}}
+
+
+def test_an_enabled_markets_verdicts_say_so_and_a_watched_pick_carries_its_rank(
+    db, tmp_path, tsx_model_files, monkeypatch
+):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock'), ('RY.TO', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", split_odds)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    verdicts = verdict_rows(db, outcome.run_id)
+    assert all(v["details"]["market_picks_enabled"] is True for v in verdicts.values())
+    assert verdicts["TD.TO"]["details"]["rank"] == 1
+    assert verdicts["RY.TO"]["reasons"] == ["P(beat XIU.TO) at most 0.30 at every horizon"]
+
+
+def test_a_watched_stock_the_model_may_not_score_is_hold_with_the_reason(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+
+    def records_for(symbols):  # TD.TO has no bar on 10-13, the TSX's last session
+        return [b for s in symbols for b in history(s, 69 if s == "TD.TO" else 70, start=FRESH_START)]
+
+    prices = FakeCollector("yfinance_bars", best_effort=True, records_for=records_for)
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    verdict = verdict_rows(db, outcome.run_id)["TD.TO"]
+    assert (verdict["verdict"], verdict["reasons"]) == (
+        "hold", ["not eligible for the model (under $1, thin trading or new)"],
+    )
+    assert db.execute("select count(*) as n from picks").fetchone()["n"] == 1  # RY.TO still is one
+
+
+def test_a_jump_in_the_last_five_sessions_is_never_a_pick(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+
+    def records_for(symbols):  # TD.TO jumped 60% the session before last and stayed there
+        jumped = {"open": 16.0, "high": 16.0, "low": 16.0, "close": 16.0}
+        return [
+            b.model_copy(update=jumped) if s == "TD.TO" and b.day >= date(2026, 10, 12) else b
+            for s in symbols for b in history(s, 70, start=FRESH_START)
+        ]
+
+    prices = FakeCollector("yfinance_bars", best_effort=True, records_for=records_for)
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert [r["symbol"] for r in db.execute("select symbol from picks").fetchall()] == ["RY.TO"]
+    verdict = verdict_rows(db, outcome.run_id)["TD.TO"]
+    assert (verdict["verdict"], verdict["reasons"]) == (
+        "hold", ["doesn't qualify as a buy", "the model's sanity checks failed on this run"],
+    )
+
+
+def test_a_non_finite_forecast_never_reaches_the_rules(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock')")
+
+    def unbounded(active, features, benchmark):  # TD.TO's range has no top: its ratio would be 0, not NaN
+        return [
+            PredictionRow(s, 63, -0.05, 0.04, math.inf if s == "TD.TO" else 0.10, 0.65, benchmark, active.version)
+            for s in features.index
+        ]
+
+    monkeypatch.setattr("advisor.run.predict_rows", unbounded)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert [r["symbol"] for r in db.execute("select symbol from picks").fetchall()] == ["RY.TO"]
+    verdict = verdict_rows(db, outcome.run_id)["TD.TO"]
+    assert (verdict["verdict"], verdict["reasons"]) == ("hold", ["no forecast this run"])
+
+
+def test_earnings_trial_readouts_and_recent_8ks_are_catalysts(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    earnings = [
+        EarningsReport(symbol="TD.TO", report_at=datetime(2026, 12, 4, 7, 0, tzinfo=ET)),
+        EarningsReport(symbol="TD.TO", report_at=datetime(2026, 8, 28, 7, 0, tzinfo=ET)),  # already out
+    ]
+    trials = [
+        TrialActivity(symbol="TD.TO", as_of=date(2026, 10, 14), next_completion=date(2026, 11, 30),
+                      next_completion_exact=False),
+        TrialActivity(symbol="RY.TO", as_of=date(2026, 10, 14), next_completion=date(2027, 9, 1)),
+    ]
+    filings = [
+        MaterialEvent(symbol="TD.TO", accession="a-1", form="8-K", filing_date=date(2026, 10, 13),
+                      items=["2.02", "9.01"]),
+        MaterialEvent(symbol="TD.TO", accession="a-0", form="8-K", filing_date=date(2026, 10, 1)),
+    ]
+    extra = {  # the code reads any market's filings; the real 8-K source covers the US only
+        name: FakeCollector(name, core=False, record_type=type(records[0]), records_for=lambda _, r=records: r)
+        for name, records in (("yfinance_earnings", earnings), ("clinical_trials", trials), ("sec_8k", filings))
+    }
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    rows = {r["symbol"]: r for r in db.execute(
+        "select symbol, catalysts, top_factors, exit_by from picks where run_id = %s", (outcome.run_id,))}
+    assert rows["TD.TO"]["catalysts"] == [  # by date
+        {"type": "8-K", "date": "2026-10-13", "items": ["2.02", "9.01"]},
+        {"type": "trial_completion", "date": "2026-11-30", "exact": False},
+        {"type": "earnings", "date": "2026-12-04"},
+    ]
+    assert rows["RY.TO"]["catalysts"] == []  # its readout falls after the exit-by date
+    assert rows["RY.TO"]["exit_by"] == date(2027, 1, 13)  # 63 TSX sessions after 2026-10-13
+    assert len(rows["TD.TO"]["top_factors"]) == 3
+
+
+def test_a_verdict_failure_degrades_the_run_and_keeps_the_picks(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")
+    db.execute("insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock')")
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("verdicts broke")
+
+    monkeypatch.setattr("advisor.run.stock_verdict", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.DEGRADED
+    assert outcome.summary["verdicts"] == {"failed": "RuntimeError: verdicts broke"}
+    assert outcome.summary["picks"]["TSX"] == {"swing": 0, "position": 2}
+    assert db.execute("select count(*) as n from watchlist_verdicts").fetchone()["n"] == 0
+    assert run_row(db, outcome.run_id)["published"] is True

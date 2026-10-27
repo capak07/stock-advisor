@@ -76,6 +76,25 @@ class PredictionRow:
     model_version: str
 
 
+@dataclass(frozen=True)
+class PickRow:
+    """One stock pick of a run (spec §6.1-§6.5): its hold, entry, stop, risk and why."""
+
+    symbol: str
+    market: Market
+    style: str  # swing or position
+    horizon_days: int
+    exit_by: date  # the horizon's last session on the market's own calendar
+    entry_ref_price: float  # the feature day's close
+    stop: float
+    risk_level: str
+    risk_score: float
+    max_position_pct: float
+    rank: int  # within its style and market, from 1
+    top_factors: list[dict[str, Any]]  # JSON-ready
+    catalysts: list[dict[str, Any]]  # JSON-ready
+
+
 class SymbolInfo(BaseModel):
     model_config = ConfigDict(frozen=True)
 

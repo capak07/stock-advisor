@@ -10,10 +10,12 @@ import math
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import httpx
+import numpy as np
 import pandas as pd
 import psycopg
 
@@ -27,26 +29,46 @@ from advisor.collectors.base import (
     make_client,
 )
 from advisor.collectors.cache import DiskCache
+from advisor.collectors.clinical_trials import TrialActivity
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.registry import build_registry
+from advisor.collectors.sec_events import MaterialEvent
 from advisor.collectors.sec_xbrl import FinancialFact
 from advisor.collectors.tracker import SourceTracker
 from advisor.collectors.yfinance_bars import Downloader, yahoo_download
+from advisor.collectors.yfinance_earnings import EarningsReport
 from advisor.company_names import CompanyNames
 from advisor.config import Settings
 from advisor.crypto_prices import BARS, CHECK, CRYPTO_STAGE, QUOTES, crypto_feature_rows
 from advisor.enrich import EnrichTargets, interleave, ranked_shortlist, run_enrichment
 from advisor.history import record as record_price_history
 from advisor.markets import BENCHMARKS, MARKETS, market_of
+from advisor.model.backtest import round_trip_cost
+from advisor.model.features import PRICE_FEATURES, RS_FEATURES
+from advisor.model.fundamentals import FUNDAMENTAL_FEATURES
 from advisor.model.live import bars_frame, facts_frame, live_features, split_events
 from advisor.model.predict import ActiveModel, load_active, predict_rows, screen_scores
 from advisor.model.weekly import KIND
-from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, RunStatus, SymbolInfo
+from advisor.models import (
+    ET,
+    AssetRef,
+    AssetType,
+    DailyBar,
+    Market,
+    PickRow,
+    PredictionRow,
+    RunKind,
+    RunStatus,
+    SymbolInfo,
+)
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
 from advisor.news.stage import RECENT, WINDOW, process_news
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
-from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
+from advisor.recommend.picks import SWING_ATR, best_horizon, choose, rank_picks, stop_price
+from advisor.recommend.risk import disagreement, risk_levels
+from advisor.recommend.verdicts import Verdict, coin_verdict, stock_verdict
+from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind, sessions_after
 from advisor.screener import ScreenRow
 from advisor.store import repo
 from advisor.store.db import connect
@@ -62,6 +84,8 @@ SCORING_RESERVE_SECONDS = 120  # FinBERT runs only with this much of the run bud
 HISTORY_RECENT = timedelta(days=100)  # the chart's closes per run; the longer bar window is the model's
 SECTOR_FUNDS = [etf for etfs in all_sector_etfs().values() for etf in etfs]
 PARTIAL_KINDS = frozenset({RunKind.PRE_CLOSE, RunKind.EARLY_CLOSE})  # runs during a session
+EIGHT_K_DAYS = 3  # decision 11: 8-K filings this many days old or newer are a pick's catalysts
+NOT_ELIGIBLE = "not eligible for the model (under $1, thin trading or new)"
 
 
 def no_scorer() -> Scorer | None:
@@ -281,10 +305,14 @@ def record_history(
 
 @dataclass(frozen=True)
 class MarketModel:
-    """A market's active model, with the sector labels its relative-strength features compare by."""
+    """A market's active model, with the sector labels its relative-strength features compare by.
+
+    `metrics` are the stored model's, which hold its backtest gate (`picks_enabled`, `picks_reason`).
+    """
 
     active: ActiveModel
     sectors: pd.DataFrame
+    metrics: Mapping[str, Any] = field(default_factory=dict)
 
 
 def model_failure(exc: Exception) -> dict:
@@ -306,11 +334,14 @@ def load_models(conn: psycopg.Connection) -> tuple[dict[Market, MarketModel], di
                 summary[market.value] = {"skipped": "no active model" if none else "no usable horizons"}
                 continue
             labels = repo.stock_sectors(conn, market)
+            stored = repo.active_model(conn, KIND[market])
         except Exception as exc:  # a broken model never stops the run's prices from publishing
             summary[market.value] = model_failure(exc)
             continue
         sectors = pd.DataFrame(labels, columns=["symbol", "sector", "industry"])
-        models[market] = MarketModel(active, sectors)
+        # a model activated since load_active read it: its gate isn't this model's, so no picks
+        metrics = stored.metrics if stored is not None and stored.version == active.version else {}
+        models[market] = MarketModel(active, sectors, metrics)
         summary[market.value] = {
             "version": active.version, "screened": 0, "predicted": 0, "not_eligible": 0,
             "horizons": list(active.usable),
@@ -394,6 +425,14 @@ def model_feature_rows(features: pd.DataFrame, names: Sequence[str]) -> list[tup
     return rows
 
 
+@dataclass(frozen=True)
+class Forecast:
+    """A market's stage-7 output that stage 8 recommends from."""
+
+    features: pd.DataFrame  # one row per priced symbol, forecast or not (`eligible` says which)
+    rows: list[PredictionRow]
+
+
 def forecast_market(
     deps: RunDeps,
     run_id: int,
@@ -404,11 +443,11 @@ def forecast_market(
     kind: RunKind,
     now_utc: datetime,
     results: Mapping[str, CollectorResult],
-) -> dict:
+) -> tuple[dict, Forecast]:
     """Stage 7: forecasts for the `symbols` the model may score, and every one's model features.
 
     Training kept only eligible stock-days, so an ineligible stock gets `model_eligible: false` and
-    no forecast. Returns the market's summary fields.
+    no forecast. Returns the market's summary fields, and its features and forecasts for stage 8.
 
     US fundamentals come from the run's SEC facts. Split events are best-effort: without them a
     stock that split since its last filing gets off fundamentals, which beats no forecast at all.
@@ -435,7 +474,321 @@ def forecast_market(
         repo.merge_features_live(
             deps.conn, run_id, model_feature_rows(features, model.active.model.features), now_utc
         )
-    return {"predicted": len({r.symbol for r in rows}), "not_eligible": len(features) - len(eligible), **added}
+    fields = {"predicted": len({r.symbol for r in rows}), "not_eligible": len(features) - len(eligible), **added}
+    return fields, Forecast(features, list(rows))
+
+
+@dataclass(frozen=True)
+class StockInputs:
+    """What the pick and verdict rules read for a market's forecast stocks, keyed by symbol."""
+
+    day: date  # the market's feature day
+    rows: dict[str, list[PredictionRow]]  # finite forecasts only
+    sane: dict[str, bool]
+    cost: dict[str, float]
+
+
+def _finite(row: PredictionRow) -> bool:
+    return all(math.isfinite(v) for v in (row.q10, row.q50, row.q90, row.p_beat))
+
+
+def is_sane(
+    symbol: str,
+    features: pd.DataFrame,
+    bars: Mapping[str, Sequence[DailyBar]],
+    flagged: Mapping[str, set[date]],
+    day: date,
+) -> bool:
+    """Decision 8 (spec §6.1): today's data may back a pick.
+
+    The last bar is on the feature day with a positive close and isn't a flagged jump, no jump in
+    the last 5 sessions, and ATR is known and small enough that a swing stop, 2 ATR below entry,
+    stays above zero (a pick needs a stop).
+    """
+    history = bars.get(symbol)
+    if not history or symbol not in features.index:
+        return False
+    last = history[-1]
+    if last.day != day or not last.close > 0 or last.day in flagged.get(symbol, ()):
+        return False
+    atr = float(features.at[symbol, "atr_14_pct"])
+    return float(features.at[symbol, "jump_5d"]) == 0 and 0 <= atr < 1 / SWING_ATR  # NaN fails both
+
+
+def stock_inputs(
+    market: Market,
+    forecast: Forecast,
+    bars: Mapping[str, Sequence[DailyBar]],
+    flagged: Mapping[str, set[date]],
+    day: date,
+    usd_fx_fee_pct: float,
+) -> StockInputs:
+    """Each forecast stock's finite rows, sanity flag and round-trip cost (the backtest gate's)."""
+    by_symbol: dict[str, list[PredictionRow]] = {}
+    for row in forecast.rows:
+        by_symbol.setdefault(row.symbol, []).append(row)
+    features = forecast.features
+    rows, sane, cost = {}, {}, {}
+    for symbol, its in by_symbol.items():
+        rows[symbol] = [r for r in its if _finite(r)]  # a non-finite value never reaches the rules
+        sane[symbol] = len(rows[symbol]) == len(its) and is_sane(symbol, features, bars, flagged, day)
+        volume = features.at[symbol, "dollar_volume_20"] if symbol in features.index else math.nan
+        cost[symbol] = float(round_trip_cost(market, np.array([volume], dtype=float), usd_fx_fee_pct)[0])
+    return StockInputs(day, rows, sane, cost)
+
+
+def _records(results: Mapping[str, CollectorResult], name: str, kind: type) -> list:
+    result = results.get(name)
+    return [r for r in (result.records if result is not None else []) if isinstance(r, kind)]
+
+
+def _et_day(at: datetime) -> date:
+    return at.astimezone(ET).date() if at.tzinfo is not None else at.date()
+
+
+def scheduled_events(results: Mapping[str, CollectorResult]) -> dict[str, list[tuple[date, dict]]]:
+    """Each stock's coming earnings reports and phase 2/3 trial completions (decisions 4 and 11)."""
+    out: dict[str, dict[tuple, tuple[date, dict]]] = {}
+    for report in _records(results, "yfinance_earnings", EarningsReport):
+        day = _et_day(report.report_at)
+        out.setdefault(report.symbol, {})[("earnings", day)] = (day, {"type": "earnings", "date": day.isoformat()})
+    for trial in _records(results, "clinical_trials", TrialActivity):
+        if trial.next_completion is not None:
+            day, exact = trial.next_completion, trial.next_completion_exact
+            out.setdefault(trial.symbol, {})[("trial", day)] = (
+                day, {"type": "trial_completion", "date": day.isoformat(), "exact": exact},
+            )
+    return {symbol: list(events.values()) for symbol, events in out.items()}
+
+
+def recent_filings(results: Mapping[str, CollectorResult], today: date) -> dict[str, list[tuple[date, dict]]]:
+    """Each stock's 8-K filings from the last `EIGHT_K_DAYS` days (decision 11)."""
+    out: dict[str, list[tuple[date, dict]]] = {}
+    for event in _records(results, "sec_8k", MaterialEvent):
+        if today - timedelta(days=EIGHT_K_DAYS) <= event.filing_date <= today:
+            out.setdefault(event.symbol, []).append(
+                (event.filing_date, {"type": "8-K", "date": event.filing_date.isoformat(), "items": list(event.items)})
+            )
+    return out
+
+
+def risk_frame(
+    market: Market,
+    features: pd.DataFrame,
+    width: Mapping[str, float],
+    event: Mapping[str, float],
+    news: Mapping[str, float],
+) -> pd.DataFrame:
+    """`risk_levels`' input for the market's forecast stocks (the keys of `width`), decisions 1-6."""
+    symbols = list(width)
+    f = features.reindex(symbols)
+
+    def column(name: str) -> pd.Series:  # a feature the market doesn't have is missing for all
+        return f[name].astype(float) if name in f else pd.Series(math.nan, index=symbols)
+
+    sentiment = pd.Series([news.get(s, math.nan) for s in symbols], index=symbols, dtype=float)
+    fundamental = column("rev_growth")  # US only
+    groups = [f.reindex(columns=PRICE_FEATURES), f.reindex(columns=RS_FEATURES)]
+    if market is Market.US:
+        groups.append(f.reindex(columns=FUNDAMENTAL_FEATURES))
+    missing = [g.astype(float).isna().all(axis=1) for g in groups]
+    missing.append(pd.Series([s not in news for s in symbols], index=symbols))  # the news group
+    return pd.DataFrame(
+        {
+            "vol_60": column("vol_60"),
+            "width": pd.Series(width, dtype=float),
+            "disagreement": [
+                disagreement(t, u, n)
+                for t, u, n in zip(column("ex_bench_63"), fundamental, sentiment, strict=True)
+            ],
+            "log_adv20": column("log_adv20"),
+            "event": pd.Series(event, dtype=float).reindex(symbols),
+            "log_mcap": column("log_mcap"),  # US only: a TSX stock has no size component or floor
+            "groups_missing_share": sum(m.astype(float) for m in missing) / len(missing),
+        },
+        index=symbols,
+    )
+
+
+def recommend_market(
+    market: Market,
+    model: MarketModel,
+    forecast: Forecast,
+    inputs: StockInputs,
+    bars: Mapping[str, Sequence[DailyBar]],
+    held: set[str],
+    news: Mapping[str, float],
+    results: Mapping[str, CollectorResult],
+    today: date,
+) -> tuple[list[PickRow], dict[str, dict], dict]:
+    """Stage 8 for one market: its picks, the pick fields of every qualifying stock (a watched Buy
+    carries them), and its `summary["picks"]` entry.
+
+    Every qualifying stock gets the fields, held or not and enabled or not; only a market whose
+    backtest gate passed gets picks, and never of a stock already held (decision 7).
+    """
+    day = inputs.day
+    population = {s: rows for s, rows in inputs.rows.items() if rows}
+    choices = {
+        s: c for s, rows in population.items() if (c := choose(rows, inputs.cost[s], inputs.sane[s])) is not None
+    }
+    # decision 2: the chosen horizon, else the best-ratio one, sets the risk width and event window
+    horizon: dict[str, int] = {}
+    width: dict[str, float] = {}
+    for s, rows in population.items():
+        chosen, best = choices.get(s), best_horizon(rows)
+        if chosen is not None:
+            horizon[s], width[s] = chosen.horizon, chosen.q90 - chosen.q10
+        elif best is not None:
+            horizon[s], width[s] = best.horizon_days, best.q90 - best.q10
+        else:  # no horizon with a positive width: no width, and no hold to hold an event
+            width[s] = math.nan
+    exits = {h: sessions_after(market, day, h) for h in set(horizon.values())}
+    scheduled = scheduled_events(results)
+    in_hold = {
+        s: [(d, e) for d, e in scheduled.get(s, []) if day < d <= exits[h]] for s, h in horizon.items()
+    }
+    event = {s: float(bool(in_hold[s])) if s in horizon else math.nan for s in population}
+
+    enabled = model.metrics.get("picks_enabled") is True
+    if not population:
+        return [], {}, {"swing": 0, "position": 0} if enabled else {"disabled": picks_reason(model)}
+    risk = risk_levels(risk_frame(market, forecast.features, width, event, news))
+
+    factors: dict[str, list[dict]] = {}
+    for h in {c.horizon for c in choices.values()}:
+        at_h = [s for s, c in choices.items() if c.horizon == h]
+        explained = model.active.model.contributions(forecast.features.loc[at_h], h)
+        factors |= {
+            str(s): [p for p in parts if math.isfinite(p["contribution"])] for s, parts in explained.items()
+        }
+    filings = recent_filings(results, today)
+    details: dict[str, dict] = {}
+    for s, c in choices.items():
+        entry = bars[s][-1].close  # decision 9: the feature day's close (sanity checked the day)
+        catalysts = sorted([*in_hold[s], *filings.get(s, [])], key=lambda pair: (pair[0], pair[1]["type"]))
+        details[s] = {
+            "style": c.style,
+            "horizon_days": c.horizon,
+            "exit_by": exits[c.horizon].isoformat(),
+            "entry_ref_price": entry,
+            "stop": stop_price(c.style, entry, float(forecast.features.at[s, "atr_14_pct"])),
+            "risk_level": str(risk.at[s, "risk_level"]),
+            "risk_score": float(risk.at[s, "risk_score"]),
+            "max_position_pct": float(risk.at[s, "max_position_pct"]),
+            "top_factors": factors.get(s, []),
+            "catalysts": [e for _, e in catalysts],
+        }
+    if not enabled:
+        return [], details, {"disabled": picks_reason(model)}
+
+    labels = model.sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
+    candidates = [c for s, c in choices.items() if s not in held]
+    sectors = {c.symbol: (labels.get(c.symbol) if pd.notna(labels.get(c.symbol)) else None) for c in candidates}
+    picks = []
+    for c, rank in rank_picks(candidates, sectors):
+        d = details[c.symbol]
+        d["rank"] = rank
+        picks.append(PickRow(
+            c.symbol, market, c.style, c.horizon, exits[c.horizon], d["entry_ref_price"], d["stop"],
+            d["risk_level"], d["risk_score"], d["max_position_pct"], rank, d["top_factors"], d["catalysts"],
+        ))
+    counts = {style: sum(1 for p in picks if p.style == style) for style in ("swing", "position")}
+    return picks, details, counts
+
+
+def picks_reason(model: MarketModel) -> str:
+    reason = model.metrics.get("picks_reason")
+    return str(reason) if reason else "the model has no backtest gate result"
+
+
+def watch_verdicts(
+    watch: set[AssetRef],
+    forecasts: Mapping[Market, Forecast],
+    inputs: Mapping[Market, StockInputs],
+    details: Mapping[Market, dict[str, dict]],
+    enabled: Mapping[Market, bool],
+    no_forecast: Mapping[Market, str],
+) -> list[Verdict]:
+    """A verdict for every watched symbol (spec §6.5); each stock's says whether its market has picks."""
+    verdicts = []
+    for ref in sorted(watch):
+        if ref.asset_type is AssetType.CRYPTO:
+            verdicts.append(coin_verdict(ref.symbol))
+            continue
+        market = market_of(ref.symbol)
+        if market not in inputs:
+            verdict = stock_verdict(ref.symbol, [], 0.0, False, None, no_forecast[market])
+        else:
+            features, given = forecasts[market].features, inputs[market]
+            if ref.symbol not in features.index:
+                why = "not priced this run"
+            elif not bool(features.at[ref.symbol, "eligible"]):
+                why = NOT_ELIGIBLE
+            else:
+                why = "no forecast this run"
+            verdict = stock_verdict(
+                ref.symbol, given.rows.get(ref.symbol, []), given.cost.get(ref.symbol, 0.0),
+                given.sane.get(ref.symbol, False), details.get(market, {}).get(ref.symbol), why,
+            )
+        flag = {"market_picks_enabled": enabled.get(market, False)}
+        verdicts.append(replace(verdict, details={**verdict.details, **flag}))
+    return verdicts
+
+
+def recommend_stage(
+    deps: RunDeps,
+    run_id: int,
+    models: Mapping[Market, MarketModel],
+    forecasts: Mapping[Market, Forecast],
+    model_summary: Mapping[str, dict],
+    bars: Mapping[str, Sequence[DailyBar]],
+    flagged: Mapping[str, set[date]],
+    held: set[str],
+    watch: set[AssetRef],
+    results: Mapping[str, CollectorResult],
+    kind: RunKind,
+    now_utc: datetime,
+) -> tuple[dict[str, dict], dict | None]:
+    """Stage 8: each market's picks, then the watchlist's verdicts. Returns `summary["picks"]` and
+    the verdicts' failure, if any. Every failure is caught here: it degrades the run, never fails it.
+    """
+    conn = deps.conn
+    today = now_utc.astimezone(ET).date()
+    summary: dict[str, dict] = {}
+    inputs: dict[Market, StockInputs] = {}
+    details: dict[Market, dict[str, dict]] = {}
+    no_forecast: dict[Market, str] = {}
+    for market in Market:
+        if market not in forecasts:
+            skipped = model_summary.get(market.value, {}).get("skipped")
+            no_forecast[market] = skipped or "the model failed this run"
+            summary[market.value] = {"skipped": skipped or "no forecasts: the model failed"}
+            continue
+        try:
+            day = feature_day(market, bars, kind, now_utc)[0].date()
+            fee = repo.fee_settings(conn)[0]
+            inputs[market] = stock_inputs(market, forecasts[market], bars, flagged, day, fee)
+            news = repo.news_sentiment(conn, run_id, list(inputs[market].rows))
+            picks, found, summary[market.value] = recommend_market(
+                market, models[market], forecasts[market], inputs[market], bars, held, news, results, today
+            )
+            with conn.transaction():  # a market's picks land together or not at all
+                repo.write_picks(conn, run_id, picks)
+            details[market] = found
+        except Exception as exc:
+            summary[market.value] = model_failure(exc)
+            # a Buy must carry a pick's fields, and these weren't built: its stocks are Hold
+            inputs.pop(market, None)
+            no_forecast[market] = "the recommender failed this run"
+    enabled = {m: model.metrics.get("picks_enabled") is True for m, model in models.items()}
+    try:
+        verdicts = watch_verdicts(watch, forecasts, inputs, details, enabled, no_forecast)
+        with conn.transaction():
+            repo.write_watchlist_verdicts(conn, run_id, verdicts)
+    except Exception as exc:
+        return summary, model_failure(exc)
+    return summary, None
 
 
 def execute_run(
@@ -565,6 +918,9 @@ def execute_run(
         )
         news = empty_news_summary()
         price_history: dict = {}
+        held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
+        picks_summary = {m.value: {"skipped": "the run can't publish"} for m in Market}
+        verdicts_failure: dict | None = None
         if enriched:
             results = run_enrichment(
                 tracker,
@@ -582,16 +938,28 @@ def execute_run(
 
             # Phase 3.5: forecasts for each market's holdings, watchlist and ranked shortlist, once
             # enrichment has brought the US filings. Each symbol is forecast once.
+            forecasts: dict[Market, Forecast] = {}
             for market, model in models.items():
                 own = [s for s in priority if market_of(s) is market]
                 symbols = list(dict.fromkeys([*own, *ranked[market]]))
                 try:
-                    model_summary[market.value] |= forecast_market(
+                    fields, forecasts[market] = forecast_market(
                         deps, run_id, market, model, symbols, bars, kind, now_utc, results
                     )
+                    model_summary[market.value] |= fields
                 except Exception as exc:  # its screener still ranked the shortlist: keep the version
                     kept = {k: model_summary[market.value][k] for k in ("version", "screened")}
                     model_summary[market.value] = kept | model_failure(exc)
+
+            # Stage 8: picks and watchlist verdicts, after every earlier stage's writes. It catches
+            # its own failures per market; the guard here only backs that up, so prices always publish.
+            try:
+                picks_summary, verdicts_failure = recommend_stage(
+                    deps, run_id, models, forecasts, model_summary, bars, flagged, held_stocks, watch,
+                    results, kind, now_utc,
+                )
+            except Exception as exc:
+                picks_summary = {m.value: model_failure(exc) for m in Market}
 
         summary = {
             "markets": {
@@ -619,9 +987,11 @@ def execute_run(
             "news": news,
             "history": price_history,
             "model": model_summary,
+            "picks": picks_summary,
         }
+        if verdicts_failure is not None:
+            summary["verdicts"] = verdicts_failure
         model_version = ",".join(m["version"] for m in model_summary.values() if "version" in m)
-        held_stocks = {ref.symbol for ref in held if ref.asset_type is AssetType.STOCK}
         held_crypto = {ref.symbol for ref in held if ref.asset_type is AssetType.CRYPTO}
         status = decide_status(
             tracker.merged(),
@@ -629,7 +999,9 @@ def execute_run(
             universe_ok=universe_ok,
             prices_ok=prices_ok,
             holdings_ok=held_stocks <= bars.keys() and held_crypto <= quotes.keys(),
-            models_ok=not any("failed" in m for m in model_summary.values()),
+            # a failed model, market's picks or the verdicts degrade the run; prices still publish
+            models_ok=not any("failed" in m for m in [*model_summary.values(), *picks_summary.values()])
+            and verdicts_failure is None,
         )
         if status is RunStatus.FAILED:
             summary["failed_reason"] = [

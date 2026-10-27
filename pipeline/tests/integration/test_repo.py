@@ -1,3 +1,4 @@
+import math
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -8,8 +9,18 @@ import pytest
 from advisor.collectors.base import Cadence, Category, CollectorResult, CollectorStatus
 from advisor.collectors.registry import build_registry
 from advisor.config import Settings
-from advisor.models import AssetRef, AssetType, DailyClose, Market, RunKind, RunStatus, SymbolInfo
+from advisor.models import (
+    AssetRef,
+    AssetType,
+    DailyClose,
+    Market,
+    PickRow,
+    RunKind,
+    RunStatus,
+    SymbolInfo,
+)
 from advisor.news.stage import NewsRow, StoredNews
+from advisor.recommend.verdicts import Verdict
 from advisor.store import repo
 from fakes import FakeCollector, info
 
@@ -458,3 +469,55 @@ def test_pruning_keeps_the_active_model_and_the_newest_others(db):
 
 def test_fee_settings_are_read_in_percent(db):
     assert repo.fee_settings(db) == (1.5, 2.0)
+
+
+def test_picks_round_trip_with_their_market_and_json_lists(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    pick = PickRow(
+        "TD.TO", Market.TSX, "position", 63, date(2027, 1, 14), 80.5, 72.0, "medium", 41.5, 3.0, 1,
+        [{"feature": "ret_63", "contribution": 0.012}],
+        [{"type": "earnings", "date": "2026-12-04"}],
+    )
+    repo.write_picks(db, run_id, [pick])
+    repo.write_picks(db, run_id, [])
+    row = db.execute("select * from picks").fetchone()
+    assert (row["run_id"], row["symbol"], row["asset_type"], row["market"], row["style"]) == (
+        run_id, "TD.TO", "stock", "TSX", "position",
+    )
+    assert (row["horizon_days"], row["exit_by"], float(row["entry_ref_price"]), float(row["stop"])) == (
+        63, date(2027, 1, 14), 80.5, 72.0,
+    )
+    assert (row["risk_level"], row["risk_score"], row["max_position_pct"], row["rank"]) == ("medium", 41.5, 3.0, 1)
+    assert row["top_factors"] == [{"feature": "ret_63", "contribution": 0.012}]
+    assert row["catalysts"] == [{"type": "earnings", "date": "2026-12-04"}]
+
+
+def test_watchlist_verdicts_round_trip_with_reasons_and_details(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    verdicts = [
+        Verdict("TD.TO", "stock", "buy", ["P(beat XIU.TO) 0.65 over 63 trading days"], {"stop": 72.0}),
+        Verdict("ETH", "crypto", "hold", ["no crypto model yet"]),
+    ]
+    repo.write_watchlist_verdicts(db, run_id, verdicts)
+    repo.write_watchlist_verdicts(db, run_id, [])
+    rows = db.execute("select * from watchlist_verdicts order by symbol").fetchall()
+    assert [(r["run_id"], r["symbol"], r["asset_type"], r["verdict"]) for r in rows] == [
+        (run_id, "ETH", "crypto", "hold"), (run_id, "TD.TO", "stock", "buy"),
+    ]
+    assert rows[0]["reasons"] == ["no crypto model yet"] and rows[0]["details"] == {}
+    assert rows[1]["reasons"] == ["P(beat XIU.TO) 0.65 over 63 trading days"]
+    assert rows[1]["details"] == {"stop": 72.0}
+
+
+def test_news_sentiment_is_read_per_stock_and_nan_when_news_ran_without_scores(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    stock = AssetType.STOCK
+    repo.write_features_live(db, run_id, [
+        (AssetRef("AAA", stock), {"last_close": 10.0, "news_stories_48h": 3, "news_sentiment_mean": 0.4}),
+        (AssetRef("BBB", stock), {"last_close": 10.0, "news_stories_48h": 0, "news_sentiment_mean": None}),
+        (AssetRef("CCC", stock), {"last_close": 10.0}),  # the news stage never reached it
+        (AssetRef("DDD", stock), {"news_stories_48h": 1, "news_sentiment_mean": -0.2}),  # not asked for
+    ], NOW)
+    out = repo.news_sentiment(db, run_id, ["AAA", "BBB", "CCC"])
+    assert set(out) == {"AAA", "BBB"}
+    assert out["AAA"] == 0.4 and math.isnan(out["BBB"])

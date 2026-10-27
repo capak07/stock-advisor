@@ -521,3 +521,25 @@ def test_news_sentiment_is_read_per_stock_and_nan_when_news_ran_without_scores(d
     out = repo.news_sentiment(db, run_id, ["AAA", "BBB", "CCC"])
     assert set(out) == {"AAA", "BBB"}
     assert out["AAA"] == 0.4 and math.isnan(out["BBB"])
+
+
+def test_trades_and_rates_load_for_the_ledger(db):
+    db.execute(
+        "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at, pick_id)"
+        " values ('tfsa', 'AAPL', 'stock', 3, 10, 'USD', 1.36, '2026-01-05', null)"
+    )
+    db.execute(
+        "insert into sells (account, symbol, asset_type, qty, price, currency, fx_rate_cad, sold_at)"
+        " values ('tfsa', 'AAPL', 'stock', 1, 12, 'USD', 1.38, '2026-03-02')"
+    )
+    repo.write_fx_rates(db, [(date(2026, 10, 12), 1.37), (date(2026, 10, 13), 1.38)])
+    trades = repo.load_trades(db)
+    trades.sort(key=lambda t: t.day)
+    assert [(t.side, t.day, t.qty, t.price, t.fx_rate_cad, t.pick_id) for t in trades] == [
+        ("buy", date(2026, 1, 5), 3.0, 10.0, 1.36, None),
+        ("sell", date(2026, 3, 2), 1.0, 12.0, 1.38, None),
+    ]
+    assert trades[0].asset_type is AssetType.STOCK
+    assert (trades[0].account, trades[0].symbol, trades[0].currency) == ("tfsa", "AAPL", "USD")
+    assert repo.load_fx_rates(db) == {date(2026, 10, 12): 1.37, date(2026, 10, 13): 1.38}
+    assert repo.latest_fx_rate(db) == 1.38

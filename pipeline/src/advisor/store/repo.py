@@ -24,6 +24,7 @@ from advisor.models import (
     SymbolInfo,
 )
 from advisor.news.stage import NewsRow, StoredNews
+from advisor.portfolio.ledger import Trade
 from advisor.recommend.verdicts import Verdict
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
@@ -568,6 +569,37 @@ def write_fx_rates(conn: psycopg.Connection, rates: Sequence[tuple[date, float]]
 
 def earliest_fx_rate(conn: psycopg.Connection) -> date | None:
     return conn.execute("select min(day) as day from fx_rates").fetchone()["day"]
+
+
+def latest_fx_rate(conn: psycopg.Connection) -> float | None:
+    row = conn.execute("select usd_cad from fx_rates order by day desc limit 1").fetchone()
+    return None if row is None else float(row["usd_cad"])
+
+
+def load_fx_rates(conn: psycopg.Connection) -> dict[date, float]:
+    rows = conn.execute("select day, usd_cad from fx_rates").fetchall()
+    return {r["day"]: float(r["usd_cad"]) for r in rows}
+
+
+def load_trades(conn: psycopg.Connection) -> list[Trade]:
+    """Every buy (lots) and sell, for the ledger to put in order."""
+    rows = conn.execute(
+        "select 'buy' as side, account, symbol, asset_type, qty, price, currency, fx_rate_cad,"
+        "   bought_at as day, pick_id from lots"
+        " union all"
+        " select 'sell', account, symbol, asset_type, qty, price, currency, fx_rate_cad,"
+        "   sold_at, null from sells"
+    ).fetchall()
+    return [
+        Trade(
+            side=r["side"], account=r["account"], symbol=r["symbol"],
+            asset_type=AssetType(r["asset_type"]), qty=float(r["qty"]), price=float(r["price"]),
+            currency=r["currency"],
+            fx_rate_cad=None if r["fx_rate_cad"] is None else float(r["fx_rate_cad"]),
+            day=r["day"], pick_id=r["pick_id"],
+        )
+        for r in rows
+    ]
 
 
 def prune_daily_closes(conn: psycopg.Connection, before: date, keep: Iterable[str]) -> int:

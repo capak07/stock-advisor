@@ -166,11 +166,18 @@ def _stop(p: Position, seen: _Priced, view: RunView, forecast: Forecast | None) 
         atr = float(forecast.features.at[p.symbol, "atr_14_pct"])  # the model's own
     else:
         atr = atr_pct(seen.history)
-    closes = [b.close for b in seen.history if b.day >= p.opened_on]
+    # an unconfirmed jump would raise the stop for good, so it never sets the high
+    history = seen.history
+    if seen.market is None and view.crypto_features.get(p.symbol, {}).get("unconfirmed_price") is True:
+        history = history[:-1]
+    flagged = view.flagged.get(p.symbol, ())
+    closes = [b.close for b in history if b.day >= p.opened_on and b.day not in flagged]
     found = view.previous.get((p.account, p.symbol, p.asset_type.value))
     previous = found[1] if found is not None and found[0] >= p.opened_on else None
     pick = view.picks.get(p.pick_id) if p.pick_id is not None else None
-    stop = trailing_stop(closes, seen.price, atr, previous, pick.stop if pick else None)
+    # only an open pick's stop follows a split (`repo.rescale_refs`), so only it is a floor
+    floor = pick.stop if pick is not None and pick.status == "open" else None
+    stop = trailing_stop(closes, seen.price, atr, previous, floor)
     return stop if stop is not None and stop > 0 else None  # a stop at or under zero stops nothing
 
 

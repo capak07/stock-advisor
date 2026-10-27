@@ -272,3 +272,41 @@ def test_a_taxable_loss_in_the_last_30_days_is_remembered_across_accounts():
     assert h.sold_at_loss_on == date(2026, 9, 20)
     (h,) = holding_inputs([_position("AAA")], losses[:1], view)
     assert h.sold_at_loss_on is None  # 34 days ago
+
+
+def _ry_view(closes: list[float], **kw) -> RunView:
+    """RY.TO with a forecast whose ATR is 4%, so its stop is the high less 10% of the last close."""
+    forecast, advice = _tsx({"RY.TO": [_row("RY.TO")]}, {"RY.TO": {}}, {"RY.TO": ("low", 5.0)})
+    return _view(forecasts={Market.TSX: forecast}, advice={Market.TSX: advice},
+                 bars={**_view().bars, "RY.TO": _bars("RY.TO", closes)}, **kw)
+
+
+def test_a_close_from_before_the_position_opened_doesnt_set_the_high():
+    closes = [100.0] + [60.0] * 49  # 50 bars back from Oct 13: the 100 is Aug 25, before Sep 1
+    (h,) = holding_inputs([_position("RY.TO")], [], _ry_view(closes))
+    assert h.trailing_stop == pytest.approx(60 - 2.5 * 0.04 * 60)
+
+
+def test_a_flagged_close_doesnt_raise_the_stop():
+    view = _ry_view([50.0, 80.0, 60.0], flagged={"RY.TO": {DAY - timedelta(days=1)}})  # the 80 is unconfirmed
+    (h,) = holding_inputs([_position("RY.TO")], [], view)
+    assert h.trailing_stop == pytest.approx(60 - 2.5 * 0.04 * 60)  # not 80 - 6
+
+
+def test_an_unconfirmed_coin_candle_doesnt_raise_the_stop():
+    candles = _candles("BONK")  # rising: the latest close is the high
+    view = _view(candles={"BONK": candles}, crypto_features={"BONK": {"unconfirmed_price": True}})
+    (coin,) = holding_inputs([_position("BONK", "crypto", asset_type=AssetType.CRYPTO)], [], view)
+    closes = [c.close for c in candles[:-1]]
+    expected = trailing_stop(closes, candles[-1].close, atr_pct(candles), None, None)
+    assert coin.trailing_stop == pytest.approx(expected)
+    assert max(closes) < candles[-1].close
+
+
+def test_a_graded_picks_stop_isnt_a_floor():
+    pick = LinkedPick(id=7, horizon_days=63, exit_by=date(2026, 9, 30), stop=70.0, status="graded", top_factors=[])
+    view = _ry_view([60.0], picks={7: pick})
+    (h,) = holding_inputs([_position("RY.TO", pick_id=7)], [], view)
+    assert h.trailing_stop == pytest.approx(60 - 2.5 * 0.04 * 60)  # not the graded pick's stale 70
+    (h,) = holding_inputs([_position("RY.TO", pick_id=7)], [], replace(view, picks={7: replace(pick, status="open")}))
+    assert h.trailing_stop == 70.0

@@ -34,14 +34,8 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 
 ## Plan 3: model and features
 
-- **Unconfirmed jumps in the wild:** the first live run flagged an unconfirmed jump somewhere in the 100-day window for about 4.7% of priced symbols. Check what they are (microcaps, biotech, bad data) before Plan 4 blocks a Buy on them.
-- **Exclude non-common instruments before any pick exists, and from training (Plan 4):**
-  - ETNs with `ETF=N` (AMUB, BDCZ, DGP and others);
-  - structured trusts (GJH, JBK, KTN);
-  - CHSCN (a preferred);
-  - Empire State Realty OP units.
-
-  Use yfinance `quoteType` from sector mapping. Closed-end funds are an owner decision. Run the same check on TSX symbols, for income trusts and closed-end funds whose names the TMX filter cannot recognise.
+- **Unconfirmed jumps in the wild:** the first live run flagged an unconfirmed jump somewhere in the 100-day window for about 4.7% of priced symbols. Plan 4a blocks a pick or Buy on them; check what they are (microcaps, biotech, bad data).
+- **Non-common instruments (Plan 4a took the name-based part):** the directory filters now drop ETNs, structured trusts and notes, preferred classes, funds and partnership units (see Plan 4a known limits). What a name can't show is left: use yfinance `quoteType` from sector mapping, and run the same check on TSX symbols, for income trusts and closed-end funds whose names the TMX filter cannot recognise. Whether training already skips what the universe now drops is unchecked.
 - **Partial current-day bar** at the pre-close run, from Yahoo. Features must treat today's bar as incomplete.
 - **Benchmarks** (SPY, XIU.TO, sector ETFs) need a distinct asset type. Otherwise `upsert_symbols` deactivates them.
 - **13F holder change (Plan 2g):** `sec_13f` gives each US stock the latest quarter's 13F shares, value and holder count, and the quarter before's shares and holder count.
@@ -104,12 +98,36 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Missing versus zero:** when no news item came in at all (every news source failed), the run leaves the `news_*` features missing. When items came in but none for an asset, its counts are 0 and its sentiment is empty. Treat missing as unknown.
 - **`features_live` rows:** `merge_features_live` creates a row with only `news_*` keys for a shortlisted stock that had no row. A later plain `write_features_live` for the same run and asset would hit the unique key, so merge there too, or write before the news stage.
 
-## Plan 4: recommendations
+## Plan 4: what is left after 4a
 
-- Exclude non-common instruments before any pick, and from training (the list under Plan 3).
-- Block Buy on `jump_5d`.
-- Read `picks_enabled` and `picks_reason` from the active model's metrics (spec §6.6).
-- **Read forecasts from `predictions`** for picks, verdicts and actions, together with the model features in `features_live` (ATR is there for stops). Show P(beat) only for the horizons a stock's `predictions` rows carry: a market with no usable horizons has none.
+Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchlist_verdicts`) is built. The rest:
+
+- **Plan 4b, the dashboard:**
+  - Today's Picks;
+  - the watchlist's verdict columns;
+  - the Ticker page's forecast range and top factors (catalysts and past picks as well);
+  - the status bar's Paper badges.
+
+  Show P(beat) only for the horizons a stock's `predictions` rows carry: a market with no usable horizons has none. A verdict's `details` has `market_picks_enabled`; a Buy in a disabled market shows the pick's fields but isn't on a list.
+- **Plan 4c, the portfolio advisor:**
+  - holding actions (Sell / Trim / Add / Hold), including Add / Hold for a stock that is both held and watched (its verdict is `held: true` with no rank);
+  - the pre-close exit-early re-check;
+  - grading of picks and holding actions, and their outcomes;
+  - spec §10's fallback for a holding the model may not score.
+
+## Plan 4a known limits
+
+- **Universe exclusions are the owner's to readmit.** They dropped about 362 US listings and 12 TSX companies on the directories checked.
+  - US partnership units are dropped as a group, Bermuda partnerships listed in the US included. That takes out BEP, BIP, IEP, EPD, SPH and Empire State Realty's OP units (ESBA, FISK, OGCP). Closed-end funds and BDCs, ETNs, structured notes and preferred classes go too.
+  - The TSX filter also drops operating income funds (Chemtrade Logistics Income Fund, Boston Pizza Royalties Income Fund). That predates Plan 4a, whose TSX additions are physical-metal trusts and similar vehicles.
+  - Readmit any by narrowing `nasdaq_symbols.py`'s `LP_UNITS` and `FUND` patterns or `tmx_symbols.py`'s `NON_EQUITY`.
+- **Live sanity is stricter than the backtest's `simulate_picks`:** it fails a NaN `jump_5d` and an ATR of 50% or more. Don't align one to the other without re-running the backtest.
+- **Zero-information stocks:** a stock with every risk component missing is Very High with a max of 0.5%, so it can be picked.
+- **For the next pipeline plan (or 4c):**
+  - `ActiveModel` could carry its metrics, which drops the second read of the stored model (`MarketModel.metrics`).
+  - An earnings report released before the open on a pre-close run's feature day still counts as inside the hold: only the date is resolved, not the time.
+  - No test gives a verdict a NaN `p_beat`, and none sits on the 0.58 boundary.
+  - The new exclusion runs before the ADR guard in `nasdaq_symbols.py`, so an ADR whose name matches one (such as "fund") is dropped.
 
 ## Plan 3b known limits
 

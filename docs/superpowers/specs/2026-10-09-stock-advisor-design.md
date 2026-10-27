@@ -17,6 +17,7 @@
 
 - **Plan 3b (2026-10-21):** the stock model drops macro features (owner's decision, §5.1), trained models are stored in Postgres (§5.2, §8), and the promotion and pick-disabling gates get exact definitions (§5.2, §6.6).
 - **Plan 3c (2026-10-26):** every run forecasts with the active model. The screener ranks by model score, the bulk price window is 400 days (§4.3), the pre-close run treats today's bar as partial (§3), and `runs.model_version` holds the active versions (§8).
+- **Plan 4a (2026-10-26):** every run turns the forecasts into picks and watchlist verdicts (§4.3 stage 8, §6). Owner decisions on the universe: the US leaves out partnership units (including Bermuda partnerships listed in the US), closed-end funds and BDCs, ETNs, structured notes and preferred classes; the TSX leaves out physical-metal trusts and similar vehicles (§2 R2, §3). Plan 4a also settles §6.4's open points and §6.5's held-stock, factor and catalyst rules.
 
 ## 1. Purpose
 
@@ -38,8 +39,8 @@ A personal decision-support app for **real investing**. Twice each trading day i
 
 - R1. For real investing with the owner's own money.
 - R2. **Universe:**
-  - all US-listed common stocks;
-  - all **TSX-listed** common stocks and REIT units;
+  - all US-listed common stocks, leaving out partnership units, closed-end funds and BDCs, ETNs, structured notes and preferred classes;
+  - all **TSX-listed** common stocks and REIT units, leaving out physical-metal trusts and similar vehicles;
   - a **watchlist** that can hold any listed US or TSX stock, or one of the 300 biggest coins by market cap that Coinbase trades in USD, since its candles are the only daily closes coins get (CoinGecko's list, stored once a day).
 - R3. Runs before market open and before market close on each trading day of either market.
 - R4. Uses at least 50 data sources.
@@ -112,7 +113,7 @@ Next.js dashboard on Vercel (web/), Supabase Auth login (single user)
 
 | | US | TSX |
 |---|---|---|
-| Stock list | NASDAQ Trader directory | TMX company directory: TSX only, common shares and REIT units. It excludes ETFs, CDRs, preferreds, warrants, debentures and split shares |
+| Stock list | NASDAQ Trader directory. It excludes ETFs, warrants, rights, SPAC units, preferreds and preferred classes, debt, ETNs, structured notes, funds (closed-end funds and BDCs) and partnership units | TMX company directory: TSX only, common shares and REIT units. It excludes ETFs, CDRs, preferreds, warrants, debentures, split shares, funds, physical-metal trusts and ActivETFs |
 | Symbol format | `AAPL`, `BRK.B` | Yahoo's format: `RY.TO`, `RCI-B.TO`, `REI-UN.TO` |
 | Calendar | NYSE | TSX |
 | Currency | USD | CAD |
@@ -276,6 +277,8 @@ None needs an API key or an account. ⚠ means best-effort (unofficial or fragil
    - Live sector labels come from `symbols.sector`, which `train.yml` fills weekly: the labels training reads.
    - For the US stocks being forecast, the run downloads 3 years of split events (best-effort) so EPS is put onto today's shares with the split factor at its filing date, as in training.
 8. **Recommender and portfolio advisor** (§6, §7).
+   - Plan 4a built the picks and watchlist verdicts (`advisor.recommend.stage`), written after every earlier stage's writes. Holding actions come later.
+   - A failure degrades the run per market and never stops its prices publishing: a market whose forecasts are missing is skipped, one whose recommender fails writes no picks, and a failure writing the verdicts leaves them unwritten. Each market's outcome is in `summary.picks`, a verdicts failure in `summary.verdicts`.
 9. **Grader.** Grade every pick and holding action whose horizon ended (§6.5).
 10. **Publish.** Store the day's closes and USD/CAD for the dashboard (`daily_closes`, `fx_rates`, §8). Stock closes cover only the last 100 days per run, though the price window is 400, so each run doesn't rewrite about 168,000 closes. Write a run summary (per-market counts included), then set `published = true`.
 
@@ -356,7 +359,14 @@ For each qualifying symbol, pick the horizon h with the best **q50 / (q90 − q1
 
 ### 6.4 Risk level
 
-The score is a weighted sum of percentile ranks within the symbol's market:
+The score is a weighted sum of percentile ranks within the symbol's market. Plan 4a's decisions:
+- **Population:** the ranks are taken among the market's stocks forecast this run (holdings, watchlist and shortlist), the only ones with a range width.
+- **Representative horizon:** a stock that qualifies uses its chosen horizon's range width and event window. One that doesn't uses its best-ratio horizon (§6.2) among those with a positive width.
+- **Disagreement** is 1 − |mean of the signs| of the available directions: technical (`ex_bench_63`), fundamental (US only, `rev_growth`) and sentiment (`news_sentiment_mean`). It needs at least two. A missing component drops out and the remaining weights are renormalised.
+- **Event risk** is 1 when an earnings report or a phase 2/3 trial completion falls inside the hold, otherwise 0. The hold is the days after the feature day up to the exit-by date. At a pre-close or early-close run whose feature day is today, the entry is the 3:15 PM price, so an event on the feature day counts too.
+- **Small size and its floor** use market cap, which only US stocks have. A TSX stock has no size component and no market-cap floor.
+- **Feature groups** for the Medium floor are price/volume, relative strength and news in both markets, and fundamentals in the US only. A group is missing when all its features are.
+- A stock with every component missing scores 100: Very High, 0.5%.
 
 | Component | Weight |
 |---|---|
@@ -382,10 +392,18 @@ The score is a weighted sum of percentile ranks within the symbol's market:
 ### 6.5 Output limits and grading
 
 - **Pick lists:** each run gives **per market** at most **10 Swing + 10 Position** picks, with no more than **3 per sector** in each list, ranked by q50 / (q90 − q10). A stock with no sector label counts alone for the cap.
+  - A stock already held is never a pick (it gets a holding action, §7.3). A watched stock can be one.
+  - Entry reference is the feature day's close, which at the pre-close run is the 3:15 PM price.
+  - **Sanity checks** (§6.1) are that the last bar is on the market's feature day, with a positive close and not a flagged jump; the three quantiles are finite; no flagged jump in the last 5 sessions (`jump_5d`, which must be known); and ATR is known and under 50% of price, so a stop stays positive. This is stricter than the backtest's rule on `jump_5d` and ATR.
+  - **Top factors:** the 3 features with the largest absolute contribution to the chosen horizon's q50 (LightGBM `pred_contrib`, in excess-return units).
+  - **Catalysts:** earnings reports and phase 2/3 trial completions inside the hold, and 8-K filings from the last 3 days.
+  - **Gate:** a market whose model lacks `picks_enabled` (§6.6) counts as disabled and gets no picks, though its watchlist still gets verdicts.
 - **Watchlist verdicts:** every watchlist symbol gets one. A **Buy** verdict carries the same fields as a pick.
   - **Buy** if it qualifies.
   - **Avoid** if P ≤ 0.42 at every horizon.
   - **Hold** otherwise.
+
+  A stock with no forecast gets Hold with the reason: no model or no usable horizon, not eligible for the model, not priced this run, or the recommender failed. A watched coin gets Hold with "no crypto model yet" (§5.4 isn't built). A Buy's fields are the pick's, whether or not the market has picks; each stock verdict says in `market_picks_enabled` whether its market has them. A watched stock that is also held keeps its verdict, marked `held`, with no rank.
 - **Exit early:** the pre-close run re-checks open picks. A pick is flagged when P has fallen to 0.42 or below, or its stop has been hit.
 - **Grading:** when a pick's exit-by date passes, or its stop is hit, record:
   - the exit price;

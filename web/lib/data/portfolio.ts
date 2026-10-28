@@ -4,7 +4,9 @@ import { FxRates, PriceBook } from '../portfolio/lookup'
 import { assetKey } from '../portfolio/types'
 import type { Account, AssetType, Close, Currency, RecordedTrade, Trade } from '../portfolio/types'
 import type { Supabase } from '../supabase/server'
+import { withQuotes } from '../quotes'
 import { fetchAll } from './fetch'
+import { liveQuotes } from './quotes'
 import { loadSettings, type Settings } from './settings'
 import { loadNames, loadSectors } from './symbols'
 
@@ -115,10 +117,12 @@ export async function loadPortfolio(supabase: Supabase): Promise<PortfolioData> 
   // A week before the first buy, so a buy on a holiday still finds the close before it.
   const since = firstDay === null ? '9999-12-31' : addDays(firstDay, -7)
   const stocks = traded.filter((a) => a.assetType === 'stock').map((a) => a.symbol)
-  const [prices, names, sectors] = await Promise.all([
+  const [stored, names, sectors, live] = await Promise.all([
     loadCloses(supabase, firstDay === null ? [] : [...traded, ...BENCHMARK_ASSETS], since),
     loadNames(supabase, stocks),
     loadSectors(supabase, stocks),
+    liveQuotes(),
   ])
-  return { trades, prices, fx, names, sectors, settings }
+  // a Refresh's live prices value the holdings until the next run (lib/quotes.ts)
+  return { trades, prices: withQuotes(stored, live), fx, names, sectors, settings }
 }

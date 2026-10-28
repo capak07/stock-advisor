@@ -1,6 +1,7 @@
 import { LogOut } from 'lucide-react'
 import { Shell } from '@/components/shell/Shell'
 import { session } from '@/lib/auth'
+import { liveQuotes } from '@/lib/data/quotes'
 import { lastPublishedRun, recentRuns } from '@/lib/data/runs'
 import { signOut } from './actions'
 
@@ -32,9 +33,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     )
   }
 
-  const [runs, lastPublished] = await Promise.all([recentRuns(supabase), lastPublishedRun(supabase)])
+  const [runs, lastPublished, live] = await Promise.all([recentRuns(supabase), lastPublishedRun(supabase), liveQuotes()])
   return (
-    <Shell runs={runs} lastPublished={lastPublished}>
+    <Shell runs={runs} lastPublished={lastPublished} liveAt={live?.fetchedAt ?? null}>
       {children}
     </Shell>
   )

@@ -73,6 +73,15 @@ export class PriceBook {
     return this.byKey.get(key)?.[0] ?? null
   }
 
+  /** A copy with each `close` as its key's latest, replacing a stored close on the same day (live quotes). */
+  withLatest(extra: ReadonlyMap<string, Close>): PriceBook {
+    const merged = new Map(this.byKey)
+    for (const [key, close] of extra) {
+      merged.set(key, [...(merged.get(key) ?? []).filter((c) => c.day < close.day), close])
+    }
+    return new PriceBook(merged)
+  }
+
   days(key: string): string[] {
     return (this.byKey.get(key) ?? []).map((c) => c.day)
   }

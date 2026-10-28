@@ -6,8 +6,10 @@ import { assetKey } from '../portfolio/types'
 import type { Run } from '../runs'
 import { marketOf } from '../symbols'
 import type { Supabase } from '../supabase/server'
+import { withQuotes } from '../quotes'
 import { fetchAll, must } from './fetch'
 import { loadCloses, loadFx, loadTrades } from './portfolio'
+import { liveQuotes } from './quotes'
 import { runById } from './runs'
 import { loadSettings } from './settings'
 import { loadNames, loadSectors } from './symbols'
@@ -95,11 +97,13 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
   const symbols = [...rows.keys()]
   const byFeature = new Map(features.map((f) => [f.symbol, f]))
   const since = addDays(run.et_date, -PRICE_LOOKBACK_DAYS)
-  const [names, sectors, prices] = await Promise.all([
+  const [names, sectors, stored, live] = await Promise.all([
     loadNames(supabase, symbols),
     loadSectors(supabase, symbols),
     loadCloses(supabase, [...symbols.map((symbol) => ({ symbol, assetType: 'stock' as const })), { symbol: 'BTC', assetType: 'crypto' }], since),
+    liveQuotes(),
   ])
+  const prices = withQuotes(stored, live) // a Refresh's live prices count the shares (lib/quotes.ts)
 
   const candidates = symbols.map((symbol): Candidate => {
     const f = byFeature.get(symbol)
@@ -121,7 +125,8 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     }
   })
 
-  const btcQuote = num((must(btc) as { price_cad: unknown }[])[0]?.price_cad)
+  const btcLive = live?.quotes[assetKey('crypto', 'BTC')]?.price ?? null // live coin quotes are CAD
+  const btcQuote = btcLive ?? num((must(btc) as { price_cad: unknown }[])[0]?.price_cad)
   const btcClose = prices.latest(assetKey('crypto', 'BTC'))
   const held = new Set(
     buildLedger(trades, fx)

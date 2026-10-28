@@ -264,6 +264,7 @@ html.dark .tab-indicator { background: var(--accent); }
 @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
 @keyframes attention { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--tone) 50%, transparent), var(--shadow-xs); } 100% { box-shadow: 0 0 0 6px color-mix(in oklch, var(--tone) 0%, transparent), var(--shadow-xs); } }
 @keyframes running { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shake { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes highlight { from { background: var(--attention-soft); } to { background: transparent; } }
 @keyframes skeleton { 0%, 100% { background: var(--muted); } 50% { background: var(--accent); } }
@@ -276,11 +277,12 @@ html.dark .tab-indicator { background: var(--accent); }
 .dot.running { animation: running 1600ms ease-in-out infinite; }
 .shake { animation: shake 150ms ease-in-out 2; }
 .row-added td { animation: highlight 400ms ease-out; }
+.icon-btn.spinning svg { animation: spin 900ms linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
   .enter, .stagger > *, [data-panel], .empty { animation: fade 150ms ease-out both !important; animation-delay: 0ms !important; }
-  .dot.running, .action-card.attention, .skeleton, .shake { animation: none !important; }
+  .dot.running, .action-card.attention, .skeleton, .shake, .icon-btn.spinning svg { animation: none !important; }
   .chart .draw { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; animation: none !important; }
   .chart .cone, .chart .late { animation: none !important; opacity: 1 !important; transform: none !important; }
 }

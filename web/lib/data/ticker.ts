@@ -2,11 +2,13 @@ import 'server-only'
 import { addDays, todayInToronto } from '../dates'
 import { buildLedger } from '../portfolio/ledger'
 import type { FxRates } from '../portfolio/lookup'
-import type { AssetType, Close, Currency, Market, Position } from '../portfolio/types'
+import { assetKey, type AssetType, type Close, type Currency, type Market, type Position } from '../portfolio/types'
 import type { Run } from '../runs'
 import { isValidSymbol, marketOf } from '../symbols'
 import type { Supabase } from '../supabase/server'
+import { withLiveClose } from '../quotes'
 import { fetchAll, must } from './fetch'
+import { liveQuotes } from './quotes'
 import type { Catalyst, Factor, Style } from './picks'
 import { loadFx, loadTrades, type AssetRef } from './portfolio'
 import { lastPublishedRun } from './runs'
@@ -132,6 +134,7 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
     supabase.from('watchlist').select('symbol').eq('asset_type', ref.assetType).eq('symbol', ref.symbol).limit(1),
     loadTrades(supabase, ref),
   ])
+  const live = await liveQuotes()
 
   const features = run
     ? (must(
@@ -155,11 +158,18 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
     name: stock?.name ?? null,
     market: ref.assetType === 'crypto' ? null : (stock?.market ?? marketOf(ref.symbol)),
     exchange: stock?.exchange ?? null,
-    closes: (closes as { day: string; close: string | number; currency: Currency }[]).map((c) => ({
-      day: c.day,
-      close: Number(c.close),
-      currency: c.currency,
-    })),
+    // a Refresh's live price ends the chart, in the series' own currency (lib/quotes.ts)
+    closes: [
+      ...withLiveClose(
+        (closes as { day: string; close: string | number; currency: Currency }[]).map((c) => ({
+          day: c.day,
+          close: Number(c.close),
+          currency: c.currency,
+        })),
+        live?.quotes[assetKey(ref.assetType, ref.symbol)],
+        fx.latest()?.usdCad ?? null,
+      ),
+    ],
     fx,
     headlines: (
       must(headlines) as {

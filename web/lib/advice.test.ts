@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { costText, describeFactor, factorBars, FACTORS, holdText, tfsaNote } from './advice'
+import { catalystsLine, costText, describeFactor, factorBars, FACTORS, holdText, tfsaNote } from './advice'
 
 describe('advice text', () => {
   it('labels every model feature', () => {
@@ -32,5 +32,18 @@ describe('advice text', () => {
     expect(costText('TSX', 0.001, 1.5)).toBe('0.1% round trip · spread')
     expect(tfsaNote('swing')).toBe('Adds 1 to your TFSA round-trip count')
     expect(tfsaNote('position')).toBe('A long hold keeps TFSA trades low')
+  })
+
+  it('names the catalysts inside the hold', () => {
+    expect(catalystsLine([])).toBe('No catalysts inside the hold')
+    expect(
+      catalystsLine([
+        { type: 'earnings', date: '2026-10-28' },
+        { type: '8-K', date: '2026-10-15', items: ['2.02'] },
+      ]),
+    ).toBe('Earnings Oct 28, inside the hold · 8-K Oct 15')
+    expect(catalystsLine([{ type: 'trial_completion', date: '2026-11-03', exact: false }])).toBe(
+      'Phase 2/3 trial completion around Nov 3, inside the hold',
+    )
   })
 })

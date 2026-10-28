@@ -11,8 +11,8 @@ export const sql = postgres(DB_URL, { onnotice: () => {} })
 
 /** Everything the owner or a run writes, emptied between tests. Users and app_config stay. */
 export async function resetData() {
-  // runs cascades to source_health and features_live
-  await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols, news_items, sources
+  // runs cascades to source_health, features_live, predictions, picks and verdicts; models to model_files
+  await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols, news_items, sources, models
             restart identity cascade`
   await sql`update settings set usd_fx_fee_pct = 1.5, crypto_fee_pct = 2.0, tfsa_round_trips_warn = 24,
             tfsa_short_hold_share_warn = 0.5, updated_at = now() where id = 1`
@@ -189,6 +189,91 @@ export async function seedNews(
 export async function seedFeatures(runId: number, symbol: string, assetType: 'stock' | 'crypto', features: JSONValue) {
   await sql`insert into features_live (run_id, symbol, asset_type, features, as_of)
             values (${runId}, ${symbol}, ${assetType}, ${sql.json(features)}, now())`
+}
+
+/** A market's active model, with its backtest gate in `metrics` (picks_enabled, picks_reason). */
+export async function seedModel(kind: 'stock_us' | 'stock_tsx', metrics: JSONValue) {
+  await sql`insert into models (version, kind, trained_at, metrics, active)
+            values (${`${kind}-test`}, ${kind}, now(), ${sql.json(metrics)}, true)`
+}
+
+/** A run's forecast for one stock at one horizon; the benchmark follows the symbol's market. */
+export async function seedPrediction(
+  runId: number,
+  symbol: string,
+  horizon: number,
+  q: { q10: number; q50: number; q90: number; p: number },
+) {
+  await sql`insert into predictions (run_id, symbol, asset_type, horizon_days, q10, q50, q90, p_beat, benchmark, model_version)
+            values (${runId}, ${symbol}, 'stock', ${horizon}, ${q.q10}, ${q.q50}, ${q.q90}, ${q.p},
+                    ${symbol.endsWith('.TO') ? 'XIU.TO' : 'SPY'}, 'test')`
+}
+
+/** A pick as stage 8 writes it; returns its id. */
+export async function seedPick(
+  runId: number,
+  pick: {
+    symbol: string
+    market: 'US' | 'TSX'
+    style: 'swing' | 'position'
+    horizon: number
+    rank: number
+    exitBy: string
+    entry: number
+    stop: number
+    riskLevel: 'low' | 'medium' | 'high' | 'very_high'
+    maxPct: number
+    topFactors?: { feature: string; contribution: number }[]
+    catalysts?: JSONValue[]
+    status?: 'open' | 'exited_early' | 'graded'
+  },
+) {
+  const [row] = await sql`insert into picks ${sql({
+    run_id: runId,
+    symbol: pick.symbol,
+    asset_type: 'stock',
+    market: pick.market,
+    style: pick.style,
+    horizon_days: pick.horizon,
+    exit_by: pick.exitBy,
+    entry_ref_price: pick.entry,
+    stop: pick.stop,
+    risk_level: pick.riskLevel,
+    risk_score: 50,
+    max_position_pct: pick.maxPct,
+    rank: pick.rank,
+    top_factors: sql.json(pick.topFactors ?? []),
+    catalysts: sql.json(pick.catalysts ?? []),
+    status: pick.status ?? 'open',
+  })} returning id`
+  return row.id as number
+}
+
+/** A pick's graded outcome; `gradedAt` decides which run's grading wrote it. */
+export async function seedOutcome(
+  pickId: number,
+  o: { exitPrice: number; exitReason: string; ret: number; benchRet: number; beat: boolean; hitStop?: boolean; gradedAt?: Date },
+) {
+  await sql`insert into pick_outcomes ${sql({
+    pick_id: pickId,
+    exit_price: o.exitPrice,
+    exit_reason: o.exitReason,
+    ret: o.ret,
+    ret_net_of_fx: o.ret,
+    bench_ret: o.benchRet,
+    excess: o.ret - o.benchRet,
+    beat: o.beat,
+    hit_stop: o.hitStop ?? false,
+    graded_at: o.gradedAt ?? new Date(),
+  })}`
+}
+
+export async function seedVerdict(
+  runId: number,
+  v: { symbol: string; assetType: 'stock' | 'crypto'; verdict: 'buy' | 'hold' | 'avoid'; reasons: string[]; details?: JSONValue },
+) {
+  await sql`insert into watchlist_verdicts (run_id, symbol, asset_type, verdict, reasons, details)
+            values (${runId}, ${v.symbol}, ${v.assetType}, ${v.verdict}, ${sql.json(v.reasons)}, ${sql.json(v.details ?? {})})`
 }
 
 /** RY.TO and AAPL in the TFSA, ETH in the crypto account (part sold at a loss 5 days ago). */

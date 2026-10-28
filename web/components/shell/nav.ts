@@ -1,4 +1,4 @@
-import { Activity, Eye, PiggyBank, Settings, Wallet, type LucideIcon } from 'lucide-react'
+import { Activity, Eye, PiggyBank, Settings, Sparkles, Wallet, type LucideIcon } from 'lucide-react'
 
 export interface NavItem {
   href: string
@@ -8,9 +8,10 @@ export interface NavItem {
   primary: boolean
 }
 
-/** The pages built so far. Picks and Track record join with the model (Plans 3 and 4). */
+/** The pages built so far. Track record joins with live grading (Plan 4c). */
 export const NAV: readonly NavItem[] = [
   { href: '/', label: 'Portfolio', icon: Wallet, primary: true },
+  { href: '/picks', label: 'Picks', icon: Sparkles, primary: true },
   { href: '/watchlist', label: 'Watchlist', icon: Eye, primary: true },
   { href: '/invest', label: 'Invest', icon: PiggyBank, primary: true },
   { href: '/sources', label: 'Sources', icon: Activity, primary: false },

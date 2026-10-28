@@ -106,3 +106,22 @@ export const costText = (market: 'US' | 'TSX', cost: number, usdFxFeePct: number
 
 export const tfsaNote = (style: 'swing' | 'position'): string =>
   style === 'swing' ? 'Adds 1 to your TFSA round-trip count' : 'A long hold keeps TFSA trades low'
+
+/** A catalyst as stage 8 stores it: an event inside the hold, or an 8-K from the last 3 days. */
+export interface CatalystEvent {
+  type: string
+  date: string
+  exact?: boolean
+  items?: string[]
+}
+
+/** "Earnings Oct 28, inside the hold", "Phase 2/3 trial completion around Nov 3, inside the hold", "8-K Oct 15" */
+export function catalystText(c: CatalystEvent): string {
+  const day = shortDay(c.date)
+  if (c.type === 'earnings') return `Earnings ${day}, inside the hold`
+  if (c.type === 'trial_completion') return `Phase 2/3 trial completion ${c.exact === false ? 'around ' : ''}${day}, inside the hold`
+  return `${c.type} ${day}`
+}
+
+export const catalystsLine = (catalysts: readonly CatalystEvent[]): string =>
+  catalysts.length === 0 ? 'No catalysts inside the hold' : catalysts.map(catalystText).join(' · ')

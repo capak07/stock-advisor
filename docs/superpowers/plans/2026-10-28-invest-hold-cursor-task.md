@@ -1,6 +1,6 @@
 # Cursor task: the Invest page's "How long to hold" picker
 
-**Do this after the order-guidance task.** It's on branch `invest-hold`, which Claude branched from `order-guidance`. Merge `order-guidance` into it first (`git merge order-guidance`); they touch different files except the Invest page.
+**Work on `main`** after Claude merges `order-guidance`, which already includes `invest-hold`'s engine. Create a branch for it: `git switch -c invest-hold-picker`.
 
 ## Already built (use, don't change)
 

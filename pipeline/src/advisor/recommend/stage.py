@@ -226,9 +226,10 @@ def recommend_market(
     news: Mapping[str, float],
     results: Mapping[str, CollectorResult],
     today: date,
-) -> tuple[list[PickRow], dict[str, dict], dict, pd.DataFrame]:
+) -> tuple[list[PickRow], dict[str, dict], dict, pd.DataFrame, dict[str, dict]]:
     """Stage 8 for one market: its picks, the pick fields of every qualifying stock (a watched Buy
-    carries them), its `summary["picks"]` entry, and the risk of every stock with a forecast.
+    carries them), its `summary["picks"]` entry, the risk of every stock with a forecast, and the
+    advice each of those stocks' Ticker page explains it with (`features_live.features.advice`).
 
     Every qualifying stock gets the fields, held or not and enabled or not; only a market whose
     backtest gate passed gets picks, and never of a stock already held (decision 7).
@@ -255,21 +256,36 @@ def recommend_market(
 
     enabled = model.metrics.get("picks_enabled") is True
     if not population:
-        return [], {}, {"swing": 0, "position": 0} if enabled else {"disabled": picks_reason(model)}, NO_RISK.copy()
+        status = {"swing": 0, "position": 0} if enabled else {"disabled": picks_reason(model)}
+        return [], {}, status, NO_RISK.copy(), {}
     risk = risk_levels(risk_frame(market, forecast.features, width, in_hold, news))
 
+    # every stock with a hold is explained at it: a pick's factors, and any Ticker page's (Plan 4b)
     factors: dict[str, list[dict]] = {}
-    for h in {c.horizon for c in choices.values()}:
-        at_h = [s for s, c in choices.items() if c.horizon == h]
+    for h in set(horizon.values()):
+        at_h = [s for s, x in horizon.items() if x == h]
         explained = model.active.model.contributions(forecast.features.loc[at_h], h)
         factors |= {
             str(s): [p for p in parts if math.isfinite(p["contribution"])] for s, parts in explained.items()
         }
     filings = recent_filings(results, today)
+
+    def catalysts_of(s: str) -> list[dict]:
+        events = sorted([*in_hold.get(s, []), *filings.get(s, [])], key=lambda pair: (pair[0], pair[1]["type"]))
+        return [e for _, e in events]
+
+    explanations = {
+        s: {
+            "horizon": int(h),
+            "top_factors": factors.get(s, []),
+            "catalysts": catalysts_of(s),
+            "round_trip_cost": float(inputs.cost[s]),
+        }
+        for s, h in horizon.items()
+    }
     details: dict[str, dict] = {}
     for s, c in choices.items():
         entry = bars[s][-1].close  # decision 9: the feature day's close (sanity checked the day)
-        catalysts = sorted([*in_hold[s], *filings.get(s, [])], key=lambda pair: (pair[0], pair[1]["type"]))
         details[s] = {
             "style": c.style,
             "horizon_days": c.horizon,
@@ -280,10 +296,10 @@ def recommend_market(
             "risk_score": float(risk.at[s, "risk_score"]),
             "max_position_pct": float(risk.at[s, "max_position_pct"]),
             "top_factors": factors.get(s, []),
-            "catalysts": [e for _, e in catalysts],
+            "catalysts": catalysts_of(s),
         }
     if not enabled:
-        return [], details, {"disabled": picks_reason(model)}, risk
+        return [], details, {"disabled": picks_reason(model)}, risk, explanations
 
     labels = model.sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
     candidates = [c for s, c in choices.items() if s not in held]
@@ -299,7 +315,7 @@ def recommend_market(
             day, bench_close,
         ))
     counts = {style: sum(1 for p in picks if p.style == style) for style in ("swing", "position")}
-    return picks, details, counts, risk
+    return picks, details, counts, risk, explanations
 
 
 def picks_reason(model: MarketModel) -> str:
@@ -391,11 +407,16 @@ def recommend_stage(
             fee = repo.fee_settings(conn)[0]
             inputs[market] = stock_inputs(market, forecasts[market], bars, flagged, day.date(), partial, fee)
             news = repo.news_sentiment(conn, run_id, list(inputs[market].rows))
-            picks, found, summary[market.value], risk = recommend_market(
+            picks, found, summary[market.value], risk, explanations = recommend_market(
                 market, models[market], forecasts[market], inputs[market], bars, held, news, results, today
             )
-            with conn.transaction():  # a market's picks land together or not at all
+            with conn.transaction():  # a market's picks and its stocks' advice land together or not at all
                 repo.write_picks(conn, run_id, picks)
+                repo.merge_features_live(
+                    conn, run_id,
+                    [(AssetRef(s, AssetType.STOCK), {"advice": e}) for s, e in explanations.items()],
+                    now_utc,
+                )
             details[market] = found
             advice[market] = MarketAdvice(inputs[market], risk)
         except Exception as exc:

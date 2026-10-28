@@ -1277,6 +1277,22 @@ def confident(active, features, benchmark):
     return [PredictionRow(s, 63, -0.05, 0.04, 0.10, 0.65, benchmark, active.version) for s in features.index]
 
 
+def test_every_forecast_stock_gets_advice_for_its_ticker_page(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)  # picks stay disabled: advice is stored all the same
+    hold(db, "RY.TO")  # held: never a pick, but still forecast
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    rows = {r["symbol"]: r["features"] for r in db.execute(
+        "select symbol, features from features_live where run_id = %s and asset_type = 'stock'", (outcome.run_id,)).fetchall()}
+    for symbol in ("RY.TO", "TD.TO"):
+        advice = rows[symbol]["advice"]
+        assert advice["horizon"] == 63
+        assert len(advice["top_factors"]) == 3 and all("feature" in f for f in advice["top_factors"])
+        assert advice["round_trip_cost"] == pytest.approx(0.003)  # TSX spread: the fakes trade $2M a day, under $10M
+        assert isinstance(advice["catalysts"], list)
+    assert "advice" not in rows.get("XIU.TO", {})  # a benchmark isn't forecast
+
+
 def test_qualifying_forecasts_become_picks_and_watched_stocks_get_verdicts(db, tmp_path, tsx_model_files, monkeypatch):
     activate_tsx(db, tsx_model_files)
     db.execute("update models set metrics = metrics || '{\"picks_enabled\": true}'::jsonb")

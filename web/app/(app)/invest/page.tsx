@@ -18,7 +18,9 @@ interface Props {
 }
 
 const NOT_VALIDATED =
-  "Not validated: none of these meets the picks' bar today (picks are off). They're the model's best-ranked, not recommendations."
+  "Not validated: none of these meets the picks' bar today. They're the model's best-ranked, not recommendations."
+const PARTLY_VALIDATED =
+  "Not validated: only the stocks marked “passes the bar” meet the picks' bar today. The rest are the model's best-ranked, not recommendations."
 
 /**
  * Invest (docs/superpowers/specs/2026-10-27-invest-page-design.md): split an amount over up to five
@@ -123,7 +125,7 @@ function Result({ run, amount, allocation }: { run: Run; amount: number; allocat
       {notValidated && (
         <div className="banner warn" role="alert" style={{ marginBottom: 12 }}>
           <TriangleAlert />
-          <div>{NOT_VALIDATED}</div>
+          <div>{mixed ? PARTLY_VALIDATED : NOT_VALIDATED}</div>
         </div>
       )}
       <ul className="invest-list stagger" id="invest-lines">

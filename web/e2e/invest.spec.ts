@@ -59,7 +59,8 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   await expect(page).toHaveURL(/\/invest\?amount=1%2C000&crypto=10$/)
 
   await expect(page.getByText(/^From the Pre-open run of .+ · returns are vs SPY \(US\) or XIU\.TO \(TSX\), not plain gains$/)).toBeVisible()
-  await expect(page.getByRole('alert').filter({ hasText: "Not validated: none of these meets the picks' bar today" })).toBeVisible()
+  // two of the five pass, so the warning points at their chips
+  await expect(page.getByRole('alert').filter({ hasText: 'Not validated: only the stocks marked “passes the bar” meet' })).toBeVisible()
   await expect(stockRows(page)).toHaveCount(5)
   await expect(stockRows(page).filter({ hasText: 'PFE' })).toHaveCount(0)
 

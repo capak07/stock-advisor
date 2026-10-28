@@ -21,6 +21,7 @@
 - **Plan 4b (2026-10-27):** the suggestions dashboard (§9): Today's Picks with its Exit early card and graded-count paper banners, "I bought this", the Watchlist's verdict column, and the Ticker page's forecast cone, top factors, catalysts and graded past picks. Stage 8 now stores an explanation for every forecast stock, not only its picks (§5.2, §6.5).
 - **Prediction upgrade (2026-10-28):** owner-approved design in docs/superpowers/specs/2026-10-28-prediction-upgrade-design.md — an evaluation harness, a crypto model, factor-adjusted targets, GARCH volatility and a tuned policy, each accepted only on held-out evidence (§5.2, §6.6). Plan 6a builds the harness.
 - **Plan 6e (2026-10-29):** the policy is tuned on inner folds and goes live only on held-out evidence (§6).
+- **Plan 6b (2026-10-29):** the crypto model replaces 'no crypto model yet' (§5.4).
 
 ## 1. Purpose
 

@@ -14,7 +14,7 @@ Plans: `docs/superpowers/plans/`
 - `supabase/migrations/` — Postgres schema, row-level security, and roles (append-only)
 - `supabase/config.toml` — the local Supabase stack the dashboard's tests run against
 - `.github/workflows/` — `ci.yml` (tests on push), `run.yml` (scheduled pipeline runs),
-  `health.yml` (daily live check of every data source), `train.yml` (weekly training),
+  `health.yml` (daily live check of every data source), `train.yml` (weekly training; it downloads Coinbase history, about 5 minutes),
   `benchmark.yml` (monthly benchmark). The monthly benchmark may change the live buy/sell lines and stops, and the report says why.
 
 ## Local development

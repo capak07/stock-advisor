@@ -11,6 +11,19 @@ export const P_MIN = 0.58
 export const STOCKS = 5
 export const PER_SECTOR = 2
 export const MAX_SHARE = 0.4
+/**
+ * How long the owner wants to hold (owner decision 2026-10-28): each choice ranks stocks only on the
+ * forecast horizons it names, so the hold time shown is the one asked for. The model forecasts 5,
+ * 10, 20, 21, 63 and 126 trading days, and only its usable ones.
+ */
+export const HOLDS = [
+  { value: 'any', label: 'Any', horizons: null },
+  { value: '21', label: '~1 month', horizons: [20, 21] },
+  { value: '63', label: '~3 months', horizons: [63] },
+  { value: '126', label: '~6 months', horizons: [126] },
+] as const satisfies readonly { value: string; label: string; horizons: readonly number[] | null }[]
+export type Hold = (typeof HOLDS)[number]['value']
+
 const LARGE_DOLLAR_VOLUME = 10_000_000
 const SPREAD_LARGE = 0.001
 const SPREAD_SMALL = 0.003
@@ -53,6 +66,8 @@ export interface InvestInput {
   cryptoPct: number
   /** How many stocks to split over, 1 to STOCKS (default STOCKS); 1 puts it all in the top-ranked one. */
   stocks?: number
+  /** The forecast horizons to rank on (a HOLDS entry's); null or absent for any. */
+  horizons?: readonly number[] | null
   usdFxFeePct: number
   candidates: Candidate[]
   /** Stocks already held: they get holding actions on My Portfolio instead. */
@@ -156,8 +171,10 @@ function choose(input: InvestInput) {
   const ranked = input.candidates.flatMap((c) => {
     if (input.held.has(c.symbol) || c.jump5d !== 0) return []
     const cost = roundTripCost(c.market, c.dollarVolume20, input.usdFxFeePct)
-    const qualifying = best(c.rows, (r) => r.pBeat >= P_MIN && r.q50 > cost)
-    const pick = qualifying ?? best(c.rows, (r) => r.q50 > 0)
+    const allowed = input.horizons
+    const rows = allowed ? c.rows.filter((r) => allowed.includes(r.horizonDays)) : c.rows
+    const qualifying = best(rows, (r) => r.pBeat >= P_MIN && r.q50 > cost)
+    const pick = qualifying ?? best(rows, (r) => r.q50 > 0)
     return pick ? [{ candidate: c, cost, row: pick.row, ratio: pick.ratio, qualifies: qualifying !== null }] : []
   })
   ranked.sort(

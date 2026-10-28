@@ -112,6 +112,27 @@ describe('allocate: choosing the stocks', () => {
   })
 })
 
+describe('allocate: how long to hold', () => {
+  it("ranks only on the chosen hold's forecast, so its hold time is what was asked", () => {
+    const candidates = [
+      stock('SHORT.TO', { rows: [row(5, 0.09, 0.7), row(63, 0.02, 0.6)] }), // great over 5 days, modest over 3 months
+      stock('LONG.TO', { rows: [row(5, 0.01, 0.6), row(63, 0.07, 0.62)] }),
+      stock('NO63.TO', { rows: [row(5, 0.08, 0.7)] }), // no 3-month forecast at all
+    ]
+    const out = allocate(input(candidates, { horizons: [63] }))
+    expect(out.stocks.map((l) => [l.symbol, l.horizonDays])).toEqual([
+      ['LONG.TO', 63],
+      ['SHORT.TO', 63],
+    ])
+    expect(allocate(input(candidates)).stocks[0].symbol).toBe('SHORT.TO') // any hold: its 5-day forecast wins
+  })
+
+  it('a month takes either of the 20- and 21-day forecasts', () => {
+    const out = allocate(input([stock('A.TO', { rows: [row(5, 0.09, 0.7), row(21, 0.03, 0.6)] })], { horizons: [20, 21] }))
+    expect(out.stocks[0].horizonDays).toBe(21)
+  })
+})
+
 describe('allocate: splitting the money', () => {
   it('gives steadier stocks more, in proportion to 1 / volatility, and adds up exactly', () => {
     const out = allocate(

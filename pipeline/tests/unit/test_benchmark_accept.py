@@ -92,3 +92,18 @@ def test_with_no_honest_baseline_horizon_the_candidate_must_bring_one():
     d = accept_model(scores(cal={5: 6.5, 63: 8.0}), dishonest)
     assert not d.accepted and "no horizon has probabilities within 5 points" in d.reasons
     assert accept_model(scores(cal={5: 4.0, 63: 8.0}), dishonest).accepted
+
+
+def test_scores_are_read_from_the_per_fold_metrics():
+    nan = float("nan")
+    metrics = {
+        "0": {5: {"rank_ic": 0.10, "pinball": 0.02, "calibration_pts": nan}},
+        "1": {5: {"rank_ic": 0.02, "pinball": 0.01, "calibration_pts": 4.0},
+              63: {"rank_ic": 0.04, "pinball": 0.03, "calibration_pts": 2.0}},
+        "pooled": {5: {"rank_ic": 0.05, "pinball": 0.01, "calibration_pts": 3.0},
+                   63: {"rank_ic": 0.07, "pinball": 0.03, "calibration_pts": 6.0}},
+    }
+    s = Scores.of(metrics, (5, 63))
+    assert s.rank_ic == {"0": pytest.approx(0.10), "1": pytest.approx(0.03), "pooled": pytest.approx(0.06)}
+    assert s.pinball == pytest.approx(0.02)
+    assert s.calibration == {5: 3.0, 63: 6.0}

@@ -104,12 +104,12 @@ def _mean_or_nan(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else float("nan")
 
 
-def _clean(value: Any) -> Any:
+def json_safe(value: Any) -> Any:
     """JSON-safe: NaN becomes null, numpy numbers plain ones, Timestamps ISO strings."""
     if isinstance(value, Mapping):
-        return {str(k): _clean(v) for k, v in value.items()}
+        return {str(k): json_safe(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_clean(v) for v in value]
+        return [json_safe(v) for v in value]
     if hasattr(value, "isoformat"):
         return value.isoformat()
     if hasattr(value, "item"):
@@ -151,7 +151,7 @@ def _train_market(
         gain = model.boosters[h]["beat"].feature_importance("gain")
         top = sorted(zip(model.features, gain, strict=True), key=lambda p: -p[1])[:TOP_FEATURES]
         importance[h] = {name: float(g) for name, g in top}
-    metrics = _clean({
+    metrics = json_safe({
         "horizons": wf.metrics, "mean_rank_ic": mean_rank_ic, "backtest": backtest,
         "picks_enabled": picks_enabled, "picks_reason": picks_reason, "rows": len(data.rows),
         "folds": [[f.start, f.end] for f in wf.folds], "features": model.features,
@@ -159,15 +159,15 @@ def _train_market(
         "usable_horizons": list(usable),
     })
     version = version_for(market, now)
-    repo.save_model(conn, version, kind, now, metrics, _clean(calibration_pts), files)
+    repo.save_model(conn, version, kind, now, metrics, json_safe(calibration_pts), files)
     promoted, reason = should_promote(metrics, calibration_pts, repo.active_model(conn, kind), now)
     if promoted:
         repo.activate_model(conn, kind, version)
     repo.prune_models(conn, kind)
     return {
         "version": version, "promoted": promoted, "reason": reason, "picks_enabled": picks_enabled,
-        "picks_reason": picks_reason, "calibration_pts": _clean(calibration_pts),
-        "mean_rank_ic": _clean(mean_rank_ic), "seconds": seconds,
+        "picks_reason": picks_reason, "calibration_pts": json_safe(calibration_pts),
+        "mean_rank_ic": json_safe(mean_rank_ic), "seconds": seconds,
         "usable_horizons": list(usable), "funnel": metrics["backtest"]["funnel"],
     }
 

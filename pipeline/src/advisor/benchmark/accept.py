@@ -6,9 +6,10 @@ never passes. Among the ablation rows that pass, the best ranking wins, and it m
 configuration already accepted, so the accepted choice only changes on evidence.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from advisor.benchmark.metrics import summary
 from advisor.model.backtest import MAX_CALIBRATION_PTS
 
 PINBALL_TOLERANCE = 0.005  # a candidate's pooled pinball loss may be at most 0.5% worse
@@ -22,6 +23,14 @@ class Scores:
     rank_ic: Mapping[str, float]  # per outer fold ("0".."3") and "pooled"; mean over horizons
     pinball: float  # pooled, mean over horizons and the three quantiles
     calibration: Mapping[int, float]  # pooled, per horizon, in points
+
+    @classmethod
+    def of(cls, metrics: Mapping[str, Mapping[int, Mapping[str, float]]], horizons: Sequence[int]) -> "Scores":
+        """From `model_metrics`: the horizons' mean per fold, and the pooled calibration per horizon."""
+        means = summary(dict(metrics), horizons)
+        pooled = metrics["pooled"]
+        calibration = {h: pooled[h]["calibration_pts"] for h in horizons if h in pooled}
+        return cls({k: m["rank_ic"] for k, m in means.items()}, means["pooled"]["pinball"], calibration)
 
 
 @dataclass(frozen=True)

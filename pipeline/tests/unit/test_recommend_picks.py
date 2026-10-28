@@ -1,6 +1,9 @@
+from dataclasses import replace
+
 import pytest
 
 from advisor.models import PredictionRow
+from advisor.policy import DEFAULT_POLICY
 from advisor.recommend.picks import best_horizon, choose, rank_picks, stop_price
 
 
@@ -25,6 +28,17 @@ def test_the_hold_is_chosen_by_ratio_not_by_return_or_probability():
 
 def test_a_nan_probability_never_qualifies():
     assert choose([row(20, float("nan"), -0.02, 0.03, 0.06)], cost=0.001, sane=True) is None
+
+
+def test_a_lower_buy_line_picks_a_row_the_default_skips():
+    rows = [row(10, 0.55, -0.02, 0.04, 0.10)]
+    assert choose(rows, cost=0.001, sane=True) is None
+    picked = choose(rows, cost=0.001, sane=True, policy=replace(DEFAULT_POLICY, p_buy=0.54))
+    assert picked.horizon == 10
+
+
+def test_a_tighter_swing_stop_sits_closer_to_the_entry():
+    assert stop_price("swing", 100.0, 0.02, policy=replace(DEFAULT_POLICY, swing_atr=1.5)) == pytest.approx(97.0)
 
 
 def test_a_position_stop_is_never_more_than_fifteen_percent_below_entry():

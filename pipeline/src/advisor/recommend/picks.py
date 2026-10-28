@@ -6,8 +6,9 @@ The qualify, ratio and sector rules mirror `simulate_picks`, so the backtest gat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from advisor.model.backtest import P_MIN, PER_SECTOR, PICKS_PER_STYLE, SWING_HORIZONS
+from advisor.model.backtest import PER_SECTOR, PICKS_PER_STYLE, SWING_HORIZONS
 from advisor.models import PredictionRow
+from advisor.policy import DEFAULT_POLICY, Policy
 
 SWING_ATR = 2.0
 POSITION_ATR = 3.0
@@ -37,21 +38,29 @@ def _style(horizon: int) -> str:
     return "swing" if horizon in SWING_HORIZONS else "position"
 
 
-def choose(rows: Sequence[PredictionRow], cost: float, sane: bool) -> Choice | None:
-    """The best-ratio horizon that qualifies, or None (also None when the sanity checks failed)."""
+def choose(
+    rows: Sequence[PredictionRow], cost: float, sane: bool, policy: Policy = DEFAULT_POLICY
+) -> Choice | None:
+    """The best horizon that qualifies, or None (also None when the sanity checks failed).
+
+    `rule="ratio"` ranks by expected return per unit of range; `"p"` ranks by P(beat).
+    A tie goes to the shorter horizon. `horizons`, when set, is the only set considered.
+    """
     if not sane:
         return None
-    best: tuple[float, PredictionRow] | None = None
+    best: tuple[float, int, PredictionRow, float] | None = None
     for r in rows:
         ratio = _ratio(r)
-        if ratio is None or not (r.p_beat >= P_MIN and r.q50 > cost):  # written so NaN fails
+        if ratio is None or not (r.p_beat >= policy.p_buy and r.q50 > cost):  # written so NaN fails
             continue
-        # a tie goes to the shorter horizon, as in the backtest
-        if best is None or ratio > best[0] or (ratio == best[0] and r.horizon_days < best[1].horizon_days):
-            best = (ratio, r)
+        if policy.horizons is not None and r.horizon_days not in policy.horizons:
+            continue
+        key = r.p_beat if policy.rule == "p" else ratio
+        if best is None or key > best[0] or (key == best[0] and r.horizon_days < best[1]):
+            best = (key, r.horizon_days, r, ratio)
     if best is None:
         return None
-    ratio, r = best
+    _, _, r, ratio = best
     return Choice(r.symbol, r.horizon_days, _style(r.horizon_days), r.p_beat, r.q10, r.q50, r.q90, ratio, cost)
 
 
@@ -67,11 +76,11 @@ def best_horizon(rows: Sequence[PredictionRow]) -> PredictionRow | None:
     return best[1] if best else None
 
 
-def stop_price(style: str, entry: float, atr_pct: float) -> float:
-    """Swing: 2 ATR below entry. Position: 3 ATR below, but never more than 15% below."""
+def stop_price(style: str, entry: float, atr_pct: float, policy: Policy = DEFAULT_POLICY) -> float:
+    """Swing: `swing_atr` below entry. Position: `position_atr` below, but never more than 15% below."""
     if style == "swing":
-        return entry * (1 - SWING_ATR * atr_pct)
-    return max(entry * (1 - POSITION_ATR * atr_pct), entry * (1 - POSITION_MAX_DROP))
+        return entry * (1 - policy.swing_atr * atr_pct)
+    return max(entry * (1 - policy.position_atr * atr_pct), entry * (1 - POSITION_MAX_DROP))
 
 
 def rank_picks(choices: Sequence[Choice], sectors: Mapping[str, str | None]) -> list[tuple[Choice, int]]:

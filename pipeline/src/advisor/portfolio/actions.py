@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from advisor.models import AssetType, PredictionRow
+from advisor.policy import DEFAULT_POLICY, Policy
 from advisor.recommend.picks import best_horizon, choose
-from advisor.recommend.verdicts import AVOID_P
 
 GAIN_TRIM = 0.25
 MOMENTUM_TRIM = 40.0
@@ -42,6 +42,7 @@ class Holding:
     signals_reversed: bool | None  # None: not linked to a pick, or not checkable
     review: list[str]  # the Review badge's reasons
     sold_at_loss_on: date | None  # newest taxable loss within 30 days of this asset, any account
+    policy: Policy = DEFAULT_POLICY
 
 
 @dataclass(frozen=True)
@@ -84,7 +85,7 @@ def _action(action: str, h: Holding, row: PredictionRow | None, reasons: list[st
 
 def decide(h: Holding) -> Action:
     """The first rule that fires wins: sell, then trim, then add, else hold."""
-    choice = choose(h.rows, h.cost, h.sane)
+    choice = choose(h.rows, h.cost, h.sane, h.policy)
     # the horizon that qualifies, so a stock the picks call a Buy is never sold for a weaker row
     best = next((r for r in h.rows if r.horizon_days == choice.horizon), None) if choice else None
     best = best or best_horizon(h.rows)
@@ -101,7 +102,7 @@ def decide(h: Holding) -> Action:
     sell: list[str] = []
     if h.trailing_stop is not None and h.price <= h.trailing_stop:
         sell.append(f"closed at {_fmt(h.price)}, under its trailing stop {_fmt(h.trailing_stop)}")
-    if best is not None and best.p_beat <= AVOID_P:
+    if best is not None and best.p_beat <= h.policy.p_sell:
         sell.append(f"P(beat {benchmark}) {best.p_beat:.2f} over {best.horizon_days} trading days")
     if h.signals_reversed is True:
         sell.append("the signals behind its pick have reversed")

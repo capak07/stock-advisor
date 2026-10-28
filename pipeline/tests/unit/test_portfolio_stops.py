@@ -1,4 +1,5 @@
 import math
+from dataclasses import replace
 from datetime import date, timedelta
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 
 from advisor.model.features import Wide, jump_days, price_features
 from advisor.models import DailyBar
+from advisor.policy import DEFAULT_POLICY
 from advisor.portfolio.stops import atr_pct, trailing_stop
 
 
@@ -36,6 +38,10 @@ def test_atr_pct_matches_the_model_feature():
 def test_atr_pct_is_nan_without_enough_bars():
     assert math.isnan(atr_pct(make_bars(14)))
     assert not math.isnan(atr_pct(make_bars(15)))
+
+
+def test_a_wider_trail_sits_further_below_the_high():
+    assert trailing_stop([10], 10, 0.10, None, None, policy=replace(DEFAULT_POLICY, trail_atr=3.0)) == pytest.approx(7.0)
 
 
 def test_the_stop_is_the_highest_close_less_two_and_a_half_atr():

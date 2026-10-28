@@ -1811,7 +1811,8 @@ def test_a_flagged_pick_waits_for_its_close_and_one_past_exit_by_is_graded(db, t
         earlier_pick("RY.TO", date(2026, 10, 1), stop=7.0),  # its hold ended on 10-01
         earlier_pick("TD.TO", date(2026, 12, 1), stop=7.0, entry=8.0),
     ])
-    monkeypatch.setattr("advisor.grade.exit_early", lambda picks, rows: [p.id for p in picks])  # all flagged
+    # all flagged; policies is the third argument the live run now passes
+    monkeypatch.setattr("advisor.grade.exit_early", lambda picks, rows, policies=None: [p.id for p in picks])
     # an open pick's stock is priced even off the shortlist; Yahoo has nothing for ZZZ.TO
     prices = FakeCollector("yfinance_bars", records_for=lambda symbols: [
         b for s in symbols if s != "ZZZ.TO" for b in history(s, 70, start=FRESH_START)

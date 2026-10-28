@@ -47,6 +47,7 @@ from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, R
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
 from advisor.news.stage import RECENT, WINDOW, process_news
+from advisor.policy import policy_of
 from advisor.portfolio.stage import advise_stage
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.recommend.stage import recommend_stage
@@ -616,7 +617,8 @@ def execute_run(
             # in too. It catches its own failures; this guard backs that up, so prices always publish.
             try:
                 forecast_rows = {s: r for a in advice.values() for s, r in a.inputs.rows.items()}
-                graded_summary = grade_stage(conn, run_id, bars, forecast_rows, kind, now_utc)
+                policies = {market.value: policy_of(model.metrics) for market, model in models.items()}
+                graded_summary = grade_stage(conn, run_id, bars, forecast_rows, kind, now_utc, policies)
             except Exception as exc:
                 graded_summary = model_failure(exc)
 

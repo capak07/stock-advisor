@@ -6,11 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from advisor.model.backtest import P_MIN
-from advisor.portfolio.stops import TRAIL_ATR
-from advisor.recommend.picks import POSITION_ATR, SWING_ATR
-from advisor.recommend.verdicts import AVOID_P
-
 _KEYS = ("p_buy", "p_sell", "swing_atr", "position_atr", "trail_atr", "rule", "horizons")
 _RULES = ("ratio", "p")
 _MULTIPLIERS = ("swing_atr", "position_atr", "trail_atr")
@@ -76,7 +71,9 @@ def _horizons(value: Any) -> tuple[int, ...] | None:
     return tuple(days)
 
 
-DEFAULT_POLICY = Policy(P_MIN, AVOID_P, SWING_ATR, POSITION_ATR, TRAIL_ATR, "ratio", None)
+# Today's rules. These match P_MIN, AVOID_P, SWING_ATR, POSITION_ATR and TRAIL_ATR; importing
+# those here would cycle once the live modules import Policy.
+DEFAULT_POLICY = Policy(0.58, 0.42, 2.0, 3.0, 2.5, "ratio", None)
 
 
 def policy_of(metrics: Mapping) -> Policy:

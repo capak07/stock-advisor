@@ -20,20 +20,27 @@ from advisor.models import (
     PredictionRow,
     RunKind,
 )
-from advisor.recommend.verdicts import AVOID_P
+from advisor.policy import DEFAULT_POLICY, Policy
 from advisor.store import repo
 from advisor.store.repo import OpenPick
 
 
-def exit_early(picks: Sequence[OpenPick], rows: Mapping[str, list[PredictionRow]]) -> list[int]:
+def exit_early(
+    picks: Sequence[OpenPick],
+    rows: Mapping[str, list[PredictionRow]],
+    policies: Mapping[str, Policy] | None = None,
+) -> list[int]:
     """Ids of the picks whose forecast at their own horizon has fallen to the avoid line.
 
-    A pick the run has no forecast for at its horizon isn't flagged.
+    `policies` is keyed by market. A market with none uses today's rules. A pick the run has no
+    forecast for at its horizon isn't flagged.
     """
+    policies = policies or {}
     flagged = []
     for pick in picks:
         row = next((r for r in rows.get(pick.symbol, []) if r.horizon_days == pick.horizon_days), None)
-        if row is not None and row.p_beat <= AVOID_P:
+        sell = policies.get(pick.market, DEFAULT_POLICY).p_sell
+        if row is not None and row.p_beat <= sell:
             flagged.append(pick.id)
     return flagged
 
@@ -93,6 +100,7 @@ def grade_stage(
     rows: Mapping[str, list[PredictionRow]],
     kind: RunKind,
     now_utc: datetime,
+    policies: Mapping[str, Policy] | None = None,
 ) -> dict:
     """Stage 9: exits open picks early on a pre-close run, then grades the picks and stock
     holding actions whose time is up. Returns `summary["graded"]`; a failure is caught and
@@ -150,7 +158,7 @@ def grade_stage(
                 pick.bench_ref_price, bench, fee_pct, market is Market.US, exit_now,
             )
 
-        flagged = set(exit_early(picks, rows)) if partial_run else set()
+        flagged = set(exit_early(picks, rows, policies)) if partial_run else set()
         graded: list[tuple[int, Outcome]] = []  # status 'graded'
         exited: list[tuple[int, Outcome]] = []  # status 'exited_early'
         for pick in picks:

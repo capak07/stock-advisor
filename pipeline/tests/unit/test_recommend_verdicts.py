@@ -1,9 +1,20 @@
+from dataclasses import replace
+
 from advisor.models import PredictionRow
+from advisor.policy import DEFAULT_POLICY
 from advisor.recommend.verdicts import coin_verdict, stock_verdict
 
 
 def row(h, p, q50=0.04):
     return PredictionRow("AAA", h, q50 - 0.05, q50, q50 + 0.06, p, "SPY", "v1")
+
+
+def test_a_higher_sell_line_avoids_a_stock_the_default_holds():
+    held = stock_verdict("AAA", [row(63, 0.45)], 0.001, True, None, None)
+    avoided = stock_verdict(
+        "AAA", [row(63, 0.45)], 0.001, True, None, None, policy=replace(DEFAULT_POLICY, p_sell=0.46)
+    )
+    assert held.verdict == "hold" and avoided.verdict == "avoid"
 
 
 def test_a_qualifying_watched_stock_is_a_buy_with_the_picks_fields():

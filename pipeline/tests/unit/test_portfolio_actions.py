@@ -2,6 +2,7 @@ from dataclasses import replace
 from datetime import date
 
 from advisor.models import AssetType, PredictionRow
+from advisor.policy import DEFAULT_POLICY
 from advisor.portfolio.actions import Holding, decide
 
 
@@ -36,6 +37,12 @@ def _holding(**kw) -> Holding:
 
 # choose's own boundary row: p 0.58, q50 just over cost
 _BUY_ROW = _row(p=0.58, q50=0.0051)
+
+
+def test_a_higher_sell_line_sells_a_forecast_the_default_holds():
+    held = decide(_holding(rows=[_row(p=0.45)]))
+    sold = decide(_holding(rows=[_row(p=0.45)], policy=replace(DEFAULT_POLICY, p_sell=0.46)))
+    assert held.action == "hold" and sold.action == "sell"
 
 
 def test_a_hit_trailing_stop_sells_whatever_the_forecast():

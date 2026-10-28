@@ -32,7 +32,8 @@ from advisor.models import (
     PredictionRow,
     RunKind,
 )
-from advisor.recommend.picks import SWING_ATR, best_horizon, choose, rank_picks, stop_price
+from advisor.policy import DEFAULT_POLICY, Policy, policy_of
+from advisor.recommend.picks import best_horizon, choose, rank_picks, stop_price
 from advisor.recommend.risk import disagreement, risk_levels
 from advisor.recommend.verdicts import Verdict, coin_verdict, stock_verdict
 from advisor.schedule import sessions_after
@@ -79,6 +80,7 @@ def is_sane(
     bars: Mapping[str, Sequence[DailyBar]],
     flagged: Mapping[str, set[date]],
     day: date,
+    policy: Policy = DEFAULT_POLICY,
 ) -> bool:
     """Decision 8 (spec §6.1): today's data may back a pick.
 
@@ -96,7 +98,7 @@ def is_sane(
     if last.day != day or not last.close > 0 or last.day in flagged.get(symbol, ()):
         return False
     atr = float(features.at[symbol, "atr_14_pct"])
-    return float(features.at[symbol, "jump_5d"]) == 0 and 0 <= atr < 1 / SWING_ATR  # NaN fails both
+    return float(features.at[symbol, "jump_5d"]) == 0 and 0 <= atr < 1 / policy.swing_atr  # NaN fails both
 
 
 def stock_inputs(
@@ -107,6 +109,7 @@ def stock_inputs(
     day: date,
     same_day: bool,
     usd_fx_fee_pct: float,
+    policy: Policy = DEFAULT_POLICY,
 ) -> StockInputs:
     """Each forecast stock's finite rows, sanity flag and round-trip cost (the backtest gate's)."""
     by_symbol: dict[str, list[PredictionRow]] = {}
@@ -116,7 +119,9 @@ def stock_inputs(
     rows, sane, cost = {}, {}, {}
     for symbol, its in by_symbol.items():
         rows[symbol] = [r for r in its if _finite(r)]  # a non-finite value never reaches the rules
-        sane[symbol] = len(rows[symbol]) == len(its) and is_sane(symbol, features, bars, flagged, day)
+        sane[symbol] = len(rows[symbol]) == len(its) and is_sane(
+            symbol, features, bars, flagged, day, policy
+        )
         volume = features.at[symbol, "dollar_volume_20"] if symbol in features.index else math.nan
         cost[symbol] = float(round_trip_cost(market, np.array([volume], dtype=float), usd_fx_fee_pct)[0])
     return StockInputs(day, same_day, rows, sane, cost)
@@ -235,9 +240,11 @@ def recommend_market(
     backtest gate passed gets picks, and never of a stock already held (decision 7).
     """
     day = inputs.day
+    policy = policy_of(model.metrics)
     population = {s: rows for s, rows in inputs.rows.items() if rows}
     choices = {
-        s: c for s, rows in population.items() if (c := choose(rows, inputs.cost[s], inputs.sane[s])) is not None
+        s: c for s, rows in population.items()
+        if (c := choose(rows, inputs.cost[s], inputs.sane[s], policy)) is not None
     }
     # decision 2: the chosen horizon, else the best-ratio one, sets the risk width and event window
     horizon: dict[str, int] = {}
@@ -291,7 +298,7 @@ def recommend_market(
             "horizon_days": c.horizon,
             "exit_by": exits[c.horizon].isoformat(),
             "entry_ref_price": entry,
-            "stop": stop_price(c.style, entry, float(forecast.features.at[s, "atr_14_pct"])),
+            "stop": stop_price(c.style, entry, float(forecast.features.at[s, "atr_14_pct"]), policy),
             "risk_level": str(risk.at[s, "risk_level"]),
             "risk_score": float(risk.at[s, "risk_score"]),
             "max_position_pct": float(risk.at[s, "max_position_pct"]),
@@ -345,25 +352,28 @@ def watch_verdicts(
     details: Mapping[Market, dict[str, dict]],
     enabled: Mapping[Market, bool],
     no_forecast: Mapping[Market, str],
+    policies: Mapping[Market, Policy] | None = None,
 ) -> list[Verdict]:
     """A verdict for every watched symbol (spec §6.5); each stock's says whether its market has picks.
 
     A watched stock that is also held keeps its verdict (never a pick, so no rank) and says `held`.
     """
+    policies = policies or {}
     verdicts = []
     for ref in sorted(watch):
         if ref.asset_type is AssetType.CRYPTO:
             verdicts.append(coin_verdict(ref.symbol))
             continue
         market = market_of(ref.symbol)
+        policy = policies.get(market, DEFAULT_POLICY)
         if market not in inputs:
-            verdict = stock_verdict(ref.symbol, [], 0.0, False, None, no_forecast[market])
+            verdict = stock_verdict(ref.symbol, [], 0.0, False, None, no_forecast[market], policy)
         else:
             given = inputs[market]
             why = why_no_forecast(ref.symbol, forecasts[market].features)
             verdict = stock_verdict(
                 ref.symbol, given.rows.get(ref.symbol, []), given.cost.get(ref.symbol, 0.0),
-                given.sane.get(ref.symbol, False), details.get(market, {}).get(ref.symbol), why,
+                given.sane.get(ref.symbol, False), details.get(market, {}).get(ref.symbol), why, policy,
             )
         flag = {"market_picks_enabled": enabled.get(market, False)}
         if ref.symbol in held:
@@ -405,7 +415,10 @@ def recommend_stage(
         try:
             day, partial = feature_day(market, bars, kind, now_utc)
             fee = repo.fee_settings(conn)[0]
-            inputs[market] = stock_inputs(market, forecasts[market], bars, flagged, day.date(), partial, fee)
+            policy = policy_of(models[market].metrics)
+            inputs[market] = stock_inputs(
+                market, forecasts[market], bars, flagged, day.date(), partial, fee, policy
+            )
             news = repo.news_sentiment(conn, run_id, list(inputs[market].rows))
             picks, found, summary[market.value], risk, explanations = recommend_market(
                 market, models[market], forecasts[market], inputs[market], bars, held, news, results, today
@@ -426,7 +439,10 @@ def recommend_stage(
             no_forecast[market] = RECOMMENDER_FAILED
     enabled = {m: model.metrics.get("picks_enabled") is True for m, model in models.items()}
     try:
-        verdicts = watch_verdicts(watch, held, forecasts, inputs, details, enabled, no_forecast)
+        policies = {market: policy_of(model.metrics) for market, model in models.items()}
+        verdicts = watch_verdicts(
+            watch, held, forecasts, inputs, details, enabled, no_forecast, policies
+        )
         with conn.transaction():
             repo.write_watchlist_verdicts(conn, run_id, verdicts)
     except Exception as exc:

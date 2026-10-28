@@ -7,6 +7,7 @@ import pandas as pd
 
 from advisor.model.features import Wide, _wilder, true_range
 from advisor.models import DailyBar
+from advisor.policy import DEFAULT_POLICY, Policy
 
 TRAIL_ATR = 2.5
 
@@ -38,6 +39,7 @@ def trailing_stop(
     atr_pct: float,
     previous: float | None,
     floor: float | None,
+    policy: Policy = DEFAULT_POLICY,
 ) -> float | None:
     """The highest close since purchase (the last close if there is none) less 2.5 ATR, but never
     below the previous stop or the original stop (floor). None when there is no ATR and nothing to
@@ -45,5 +47,5 @@ def trailing_stop(
     candidates = [v for v in (previous, floor) if v is not None]
     if not math.isnan(atr_pct):
         high = max(closes) if closes else last_close
-        candidates.append(high - TRAIL_ATR * atr_pct * last_close)
+        candidates.append(high - policy.trail_atr * atr_pct * last_close)
     return max(candidates) if candidates else None

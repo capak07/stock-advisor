@@ -29,6 +29,7 @@ from advisor.models import (
     PredictionRow,
     RunKind,
 )
+from advisor.policy import DEFAULT_POLICY, Policy, policy_of
 from advisor.portfolio.actions import TAXABLE, Holding, decide
 from advisor.portfolio.ledger import Loss, Position, build_ledger
 from advisor.portfolio.stops import atr_pct, trailing_stop
@@ -158,7 +159,13 @@ def _review(p: Position, seen: _Priced, view: RunView) -> list[str]:
     return reasons
 
 
-def _stop(p: Position, seen: _Priced, view: RunView, forecast: Forecast | None) -> float | None:
+def _stop(
+    p: Position,
+    seen: _Priced,
+    view: RunView,
+    forecast: Forecast | None,
+    policy: Policy = DEFAULT_POLICY,
+) -> float | None:
     """The trailing stop, native; None without a price to set it from."""
     if seen.price is None:
         return None
@@ -177,7 +184,7 @@ def _stop(p: Position, seen: _Priced, view: RunView, forecast: Forecast | None) 
     pick = view.picks.get(p.pick_id) if p.pick_id is not None else None
     # only an open pick's stop follows a split (`repo.rescale_refs`), so only it is a floor
     floor = pick.stop if pick is not None and pick.status == "open" else None
-    stop = trailing_stop(closes, seen.price, atr, previous, floor)
+    stop = trailing_stop(closes, seen.price, atr, previous, floor, policy)
     return stop if stop is not None and stop > 0 else None  # a stop at or under zero stops nothing
 
 
@@ -191,7 +198,12 @@ def _sold_at_loss_on(p: Position, losses: Sequence[Loss], today: date) -> date |
     return max(days, default=None)
 
 
-def holding_inputs(positions: Sequence[Position], losses: Sequence[Loss], view: RunView) -> list[Holding]:
+def holding_inputs(
+    positions: Sequence[Position],
+    losses: Sequence[Loss],
+    view: RunView,
+    policies: Mapping[Market, Policy] | None = None,
+) -> list[Holding]:
     """Each position's `Holding`, in the positions' order."""
     seen = [_priced(p, view) for p in positions]
     values = [_value_cad(p, s, view) for p, s in zip(positions, seen, strict=True)]
@@ -220,6 +232,7 @@ def holding_inputs(positions: Sequence[Position], losses: Sequence[Loss], view: 
         reversed_ = None
         if pick is not None and market is not None and any(r.horizon_days == pick.horizon_days for r in rows):
             reversed_ = signals_reversed(pick.top_factors, view.explain(market, p.symbol, pick.horizon_days))
+        policy = (policies or {}).get(market, DEFAULT_POLICY) if market is not None else DEFAULT_POLICY
         out.append(Holding(
             account=p.account,
             symbol=p.symbol,
@@ -229,7 +242,7 @@ def holding_inputs(positions: Sequence[Position], losses: Sequence[Loss], view: 
             value_cad=value,
             cost_cad=p.cost_cad,
             portfolio_cad=portfolio,
-            trailing_stop=_stop(p, s, view, forecast),
+            trailing_stop=_stop(p, s, view, forecast, policy),
             rows=rows,
             why_no_forecast=None if rows else why,
             cost=advice.inputs.cost.get(p.symbol, 0.0) if advice else 0.0,
@@ -240,6 +253,7 @@ def holding_inputs(positions: Sequence[Position], losses: Sequence[Loss], view: 
             signals_reversed=reversed_,
             review=_review(p, s, view),
             sold_at_loss_on=_sold_at_loss_on(p, losses, view.today),
+            policy=policy,
         ))
     return out
 
@@ -338,7 +352,8 @@ def advise_stage(
             picks=repo.load_picks(conn, sorted({p.pick_id for p in positions if p.pick_id is not None})),
             explain=explain,
         )
-        rows = action_rows(positions, holding_inputs(positions, ledger.losses, view), view)
+        policies = {market: policy_of(model.metrics) for market, model in models.items()}
+        rows = action_rows(positions, holding_inputs(positions, ledger.losses, view, policies), view)
         with conn.transaction():  # every holding's action lands together or not at all
             repo.write_holding_actions(conn, run_id, rows)
     except Exception as exc:

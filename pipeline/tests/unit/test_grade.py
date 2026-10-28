@@ -1,9 +1,11 @@
+from dataclasses import replace
 from datetime import date
 
 import pytest
 
 from advisor.grade import exit_early, grade
 from advisor.models import PredictionRow
+from advisor.policy import DEFAULT_POLICY
 from advisor.store.repo import OpenPick
 
 
@@ -27,6 +29,12 @@ def test_exit_early_flags_a_pick_whose_p_fell_to_0_42():
         "DDD": [_row("DDD", 63, 0.10)],
     }
     assert exit_early(picks, rows) == [1]
+
+
+def test_a_higher_sell_line_flags_a_pick_the_default_keeps():
+    rows = {"AAA": [_row("AAA", 63, 0.45)]}
+    assert exit_early([_pick(1)], rows) == []
+    assert exit_early([_pick(1)], rows, {"TSX": replace(DEFAULT_POLICY, p_sell=0.46)}) == [1]
 
 
 def test_exit_early_reads_the_row_at_the_picks_own_horizon():

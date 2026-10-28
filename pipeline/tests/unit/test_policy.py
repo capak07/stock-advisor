@@ -14,7 +14,16 @@ STORED = {
 
 
 def test_the_default_policy_is_todays_rules():
+    from advisor.model.backtest import P_MIN
+    from advisor.portfolio.stops import TRAIL_ATR
+    from advisor.recommend.picks import POSITION_ATR, SWING_ATR
+    from advisor.recommend.verdicts import AVOID_P
+
     assert DEFAULT_POLICY.to_json() == STORED
+    assert (DEFAULT_POLICY.p_buy, DEFAULT_POLICY.p_sell) == (P_MIN, AVOID_P)
+    assert (DEFAULT_POLICY.swing_atr, DEFAULT_POLICY.position_atr, DEFAULT_POLICY.trail_atr) == (
+        SWING_ATR, POSITION_ATR, TRAIL_ATR,
+    )
 
 
 def test_a_policy_round_trips_including_a_horizon_set():

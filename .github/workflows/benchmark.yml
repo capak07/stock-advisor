@@ -1,0 +1,60 @@
+name: benchmark
+
+# Monthly, on the month's first Sunday, or on demand: rebuild the training data, then score the
+# built variants and store what weekly training should follow. Weekly training only reads the
+# configuration this job accepts; it never writes one.
+on:
+  schedule:
+    - cron: "0 9 * * 0"  # Sunday 09:00 UTC; the first step skips every Sunday after the 7th
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - id: due
+        name: Run on the first Sunday, or on demand
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(date -u +%-d)" -le 7 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.due.outputs.run == 'true'
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        if: steps.due.outputs.run == 'true'
+      - run: uv sync --locked --no-dev
+        if: steps.due.outputs.run == 'true'
+      - name: Build training data
+        if: steps.due.outputs.run == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: uv run python -m advisor.training.build --out "$RUNNER_TEMP/training"
+      - name: Score every built variant and store the accepted configuration
+        if: steps.due.outputs.run == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: uv run python -m advisor.benchmark.job --data "$RUNNER_TEMP/training" --out "$RUNNER_TEMP/benchmark"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.due.outputs.run == 'true'
+        with:
+          name: benchmark-report
+          path: |
+            ${{ runner.temp }}/benchmark/benchmark-report.md
+            ${{ runner.temp }}/benchmark/benchmark-report.json
+            ${{ runner.temp }}/training/manifest.json
+          retention-days: 90
+          if-no-files-found: ignore

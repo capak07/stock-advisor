@@ -19,6 +19,7 @@
 - **Plan 3c (2026-10-26):** every run forecasts with the active model. The screener ranks by model score, the bulk price window is 400 days (§4.3), the pre-close run treats today's bar as partial (§3), and `runs.model_version` holds the active versions (§8).
 - **Plan 4a (2026-10-26):** every run turns the forecasts into picks and watchlist verdicts (§4.3 stage 8, §6). Owner decisions on the universe: the US leaves out partnership units (including Bermuda partnerships listed in the US), closed-end funds and BDCs, ETNs, structured notes and preferred classes; the TSX leaves out physical-metal trusts and similar vehicles (§2 R2, §3). Plan 4a also settles §6.4's open points and §6.5's held-stock, factor and catalyst rules.
 - **Plan 4b (2026-10-27):** the suggestions dashboard (§9): Today's Picks with its Exit early card and graded-count paper banners, "I bought this", the Watchlist's verdict column, and the Ticker page's forecast cone, top factors, catalysts and graded past picks. Stage 8 now stores an explanation for every forecast stock, not only its picks (§5.2, §6.5).
+- **Prediction upgrade (2026-10-28):** owner-approved design in docs/superpowers/specs/2026-10-28-prediction-upgrade-design.md — an evaluation harness, a crypto model, factor-adjusted targets, GARCH volatility and a tuned policy, each accepted only on held-out evidence (§5.2, §6.6). Plan 6a builds the harness.
 
 ## 1. Purpose
 
@@ -327,6 +328,7 @@ The sector label isn't a feature: today's labels would span 8 years of history. 
 - **Storage:** models are stored in `model_files` (§8), one version per training run. The active model and one other are kept.
 - **Explanations (Plan 4b):** every stock a run forecasts with a hold gets `features_live.features.advice`: its representative horizon (§6.4), the top factors at that horizon, its catalysts and its round-trip cost, in §6.5's terms. The Ticker page explains any forecast stock from it, not only picks. It is written with the market's picks in one transaction, and a disabled market writes it too.
 - **Cost (measured on 2 cores, Plan 3b prototype):** TSX trains in about 1 minute and US (2,000 stocks) in about 4.5 minutes, with about 2 GB peak memory and model files of about 6.5 MB per market. The full US universe is estimated at about 13 minutes. On the 2-core Actions runner LightGBM's default thread count is right. When timing under a CPU cap on a larger host (such as a local `docker run --cpus=2`), set `num_threads` to the cap, or the timings mean little.
+- **Prediction upgrade:** later model changes are accepted only by the harness in `docs/superpowers/specs/2026-10-28-prediction-upgrade-design.md` §1.
 - **Known bias:** free data under-represents delisted companies (survivorship bias), so backtests overstate performance. This is shown on the Track Record page.
 
 ### 5.3 Live overlay (news, social, options)
@@ -431,6 +433,7 @@ The score is a weighted sum of percentile ranks within the symbol's market. Plan
   - A market's picks are shown only when its latest backtest has at least 30 picks, a positive mean return after costs, calibration within 5 points (at the worst horizon), and a mean stated P within 5 points of the picks' beat rate.
   - The 30 picks are separate holdings: a stock still held from an earlier pick (its horizon in business days) isn't picked again.
   - A number that can't be measured fails the gate. The reason is stored in the model's metrics (`picks_enabled`, `picks_reason`).
+- **Prediction upgrade:** a tuned policy is accepted only on held-out evidence; see `docs/superpowers/specs/2026-10-28-prediction-upgrade-design.md` §1.
 
 ## 7. My Portfolio
 

@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from advisor.model import weekly
 from advisor.model.train import PARAMS, TrainConfig, from_files
+from advisor.model.variants import BASELINE
 from advisor.models import Market
 from advisor.store import repo
 from model_data import write_market
@@ -46,3 +47,32 @@ def test_a_market_that_fails_to_train_is_reported_and_the_rest_carry_on(db, tmp_
     assert report["TSX"]["promoted"] is True
     assert weekly.exit_code(report) == 1
     assert repo.active_model(db, "stock_us") is None
+
+
+def _accept(db, market, config):
+    run_id = repo.start_benchmark_run(db, NOW, None)
+    return repo.accept_config(db, market, config, "test", run_id, NOW)
+
+
+def test_weekly_training_uses_the_baseline_until_a_config_is_accepted(db, tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    assert report["TSX"]["config"] == "baseline"
+    assert report["TSX"]["config_reason"] == "no accepted configuration yet: baseline"
+    assert repo.active_model(db, "stock_tsx").metrics["config"] == BASELINE.to_json()
+
+
+def test_weekly_training_follows_the_accepted_config(db, tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    config_id = _accept(db, "TSX", BASELINE.to_json())
+    report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    assert report["TSX"]["config_reason"] == f"accepted configuration #{config_id} (baseline)"
+
+
+def test_a_config_this_code_cannot_run_falls_back_to_the_baseline(db, tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    config_id = _accept(db, "TSX", {"version": 1, "factors": True, "garch": False, "policy": None})
+    report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    assert report["TSX"]["config"] == "baseline" and report["TSX"]["promoted"] is True
+    assert report["TSX"]["config_reason"].startswith(f"accepted configuration #{config_id} can't be used (")
+    assert "Plan 6c" in report["TSX"]["config_reason"]

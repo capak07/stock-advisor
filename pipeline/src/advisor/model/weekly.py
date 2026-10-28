@@ -26,7 +26,8 @@ from advisor.model.backtest import (
     simulate_picks,
 )
 from advisor.model.dataset import load_market
-from advisor.model.train import TrainConfig, fit_final, to_files, walk_forward
+from advisor.model.train import TrainConfig, to_files
+from advisor.model.variants import BASELINE, ModelConfig, fit_variant, run_variant
 from advisor.models import Market, StoredModel
 from advisor.store import repo
 from advisor.store.db import connect
@@ -119,14 +120,27 @@ def json_safe(value: Any) -> Any:
     return value
 
 
+def config_for(conn: psycopg.Connection, market: Market) -> tuple[ModelConfig, str]:
+    """The market's accepted configuration, or the baseline when there is none or this code can't run it."""
+    row = repo.active_config(conn, str(market))
+    if row is None:
+        return BASELINE, "no accepted configuration yet: baseline"
+    try:
+        config = ModelConfig.from_json(row.config)
+    except ValueError as error:
+        return BASELINE, f"accepted configuration #{row.id} can't be used ({error}): baseline"
+    return config, f"accepted configuration #{row.id} ({config.name})"
+
+
 def _train_market(
     data_dir: Path, market: Market, conn: psycopg.Connection, now: datetime, config: TrainConfig
 ) -> dict:
     kind = KIND[market]
     began = time.monotonic()
+    model_config, config_reason = config_for(conn, market)
     data = load_market(data_dir, market)
     loaded = time.monotonic()
-    wf = walk_forward(data, config)
+    wf = run_variant(data, model_config, config)
     walked = time.monotonic()
     usable = usable_horizons(wf.metrics, config.horizons)
     calibrated = wf.predictions[wf.predictions["p"].notna() & wf.predictions["horizon"].isin(usable)]
@@ -138,7 +152,7 @@ def _train_market(
     # with no usable horizon, the worst of all gives the plain-words reason
     calibration_pts = calibration_of(wf.metrics, usable or config.horizons)
     picks_enabled, picks_reason = gate(backtest, calibration_pts)
-    model = fit_final(data, wf, config)
+    model = fit_variant(data, wf, model_config, config)
     files = to_files(model)
     seconds = {
         "load": round(loaded - began, 1),
@@ -156,7 +170,7 @@ def _train_market(
         "picks_enabled": picks_enabled, "picks_reason": picks_reason, "rows": len(data.rows),
         "folds": [[f.start, f.end] for f in wf.folds], "features": model.features,
         "importance": importance, "seconds": seconds,
-        "usable_horizons": list(usable),
+        "usable_horizons": list(usable), "config": model_config.to_json(),
     })
     version = version_for(market, now)
     repo.save_model(conn, version, kind, now, metrics, json_safe(calibration_pts), files)
@@ -169,6 +183,7 @@ def _train_market(
         "picks_reason": picks_reason, "calibration_pts": json_safe(calibration_pts),
         "mean_rank_ic": json_safe(mean_rank_ic), "seconds": seconds,
         "usable_horizons": list(usable), "funnel": metrics["backtest"]["funnel"],
+        "config": model_config.name, "config_reason": config_reason,
     }
 
 

@@ -1,7 +1,7 @@
 /** The Invest page's URL inputs (`/invest?amount=1000&crypto=10&stocks=5`), checked without ever throwing. */
 
 import { addDays } from '../dates'
-import { STOCKS } from './allocate'
+import { HOLDS, STOCKS, type Hold } from './allocate'
 
 export const MIN_AMOUNT = 1
 export const MAX_AMOUNT = 10_000_000
@@ -21,6 +21,10 @@ export interface InvestInputs {
   /** How many stocks to split over, 1 to STOCKS; null when the address asks for something else. */
   stocks: number | null
   stocksError: string | null
+  /** How long to hold (a HOLDS value, 'any' by default), and the horizons it ranks on; null when the address asks for something else. */
+  hold: Hold | null
+  horizons: readonly number[] | null
+  holdError: string | null
 }
 
 const first = (value: Param): string | undefined => (Array.isArray(value) ? value[0] : value)
@@ -33,7 +37,7 @@ function parseAmount(text: string): number | null {
   return DECIMAL.test(bare) ? Number(bare) : null
 }
 
-export function parseInvestInputs(params: { amount?: Param; crypto?: Param; stocks?: Param }): InvestInputs {
+export function parseInvestInputs(params: { amount?: Param; crypto?: Param; stocks?: Param; hold?: Param }): InvestInputs {
   const amountRaw = first(params.amount)
   const cryptoRaw = first(params.crypto)
   const amountText = amountRaw ?? ''
@@ -64,7 +68,13 @@ export function parseInvestInputs(params: { amount?: Param; crypto?: Param; stoc
   const stocks = count !== null && count >= 1 && count <= STOCKS ? count : null
   const stocksError = stocks === null ? `Choose 1 to ${STOCKS} stocks.` : null
 
-  return { amountText, cryptoText, amount, cryptoPct, amountError, cryptoError, stocks, stocksError }
+  const holdRaw = first(params.hold)?.trim() || 'any'
+  const chosen = HOLDS.find((h) => h.value === holdRaw)
+  const hold = chosen?.value ?? null
+  const horizons = chosen?.horizons ?? null
+  const holdError = chosen ? null : 'Choose how long to hold.'
+
+  return { amountText, cryptoText, amount, cryptoPct, amountError, cryptoError, stocks, stocksError, hold, horizons, holdError }
 }
 
 /** The day `count` weekdays after `day`: an approximation of that many trading sessions. */

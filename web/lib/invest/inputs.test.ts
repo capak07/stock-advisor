@@ -45,6 +45,16 @@ describe('parseInvestInputs', () => {
     }
   })
 
+  it('takes how long to hold: any, about a month, 3 months or 6 months', () => {
+    expect(parseInvestInputs({ amount: '500' })).toMatchObject({ hold: 'any', horizons: null, holdError: null })
+    expect(parseInvestInputs({ amount: '500', hold: '21' })).toMatchObject({ hold: '21', horizons: [20, 21] })
+    expect(parseInvestInputs({ amount: '500', hold: '63' })).toMatchObject({ hold: '63', horizons: [63] })
+    expect(parseInvestInputs({ amount: '500', hold: '126' })).toMatchObject({ hold: '126', horizons: [126] })
+    expect(parseInvestInputs({ amount: '500', hold: '' }).hold).toBe('any')
+    const bad = parseInvestInputs({ amount: '500', hold: '7' })
+    expect([bad.hold, bad.holdError]).toEqual([null, 'Choose how long to hold.'])
+  })
+
   it('reads the first value of a repeated parameter', () => {
     expect(parseInvestInputs({ amount: ['500', '900'] }).amount).toBe(500)
   })

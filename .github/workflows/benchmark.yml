@@ -25,6 +25,7 @@ jobs:
     steps:
       - id: due
         name: Run on the first Sunday, or on demand
+        working-directory: ${{ github.workspace }}  # before checkout, `pipeline` does not exist yet
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(date -u +%-d)" -le 7 ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"

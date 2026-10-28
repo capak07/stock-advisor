@@ -18,6 +18,12 @@ export async function lastPublishedRun(supabase: Supabase): Promise<Run | null> 
   return rows[0] ?? null
 }
 
+/** One run by id, or null when it doesn't exist. */
+export async function runById(supabase: Supabase, id: number): Promise<Run | null> {
+  const rows = must(await supabase.from('runs').select(COLUMNS).eq('id', id).limit(1)) as Run[]
+  return rows[0] ?? null
+}
+
 /** The newest run that finished, published or not, for the Source health page. */
 export async function latestFinishedRun(supabase: Supabase): Promise<Run | null> {
   const rows = must(

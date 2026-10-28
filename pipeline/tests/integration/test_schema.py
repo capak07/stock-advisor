@@ -454,3 +454,39 @@ def test_picks_record_their_feature_day_and_benchmark_price(db):
     row = db.execute("select feature_day, bench_ref_price from picks").fetchone()
     assert str(row["feature_day"]) == "2026-10-13"
     assert row["bench_ref_price"] == 500
+
+
+RUN = "insert into benchmark_runs (started_at) values ('2026-11-01T09:00Z') returning id"
+
+
+def test_the_owner_reads_benchmarks_and_only_the_pipeline_writes_them(owned_db):
+    run_id = owned_db.execute(RUN).fetchone()["id"]
+    owned_db.execute("insert into benchmark_results (run_id, market, variant, fold, metrics) values (%s, 'TSX', 'baseline', 'pooled', '{}')", (run_id,))
+    owned_db.execute("insert into accepted_configs (market, config, reason, accepted_at, benchmark_run_id, active) values ('TSX', '{}', 'r', now(), %s, true)", (run_id,))
+    for table in ("benchmark_runs", "benchmark_results", "accepted_configs"):
+        with acting_as(owned_db, "authenticated", OWNER):
+            assert len(owned_db.execute(f"select * from {table}").fetchall()) == 1
+            assert owned_db.execute(f"delete from {table}").rowcount == 0
+        with acting_as(owned_db, "authenticated", STRANGER):
+            assert owned_db.execute(f"select * from {table}").fetchall() == []
+    with acting_as(owned_db, "pipeline_rw"):
+        assert owned_db.execute("update benchmark_runs set status = 'success'").rowcount == 1
+
+
+def test_one_accepted_config_is_active_per_market(db):
+    run_id = db.execute(RUN).fetchone()["id"]
+    insert = "insert into accepted_configs (market, config, reason, accepted_at, benchmark_run_id, active) values (%s, '{}', 'r', now(), %s, true)"
+    db.execute(insert, ("US", run_id))
+    db.execute(insert, ("crypto", run_id))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        db.execute(insert, ("US", run_id))
+
+
+@pytest.mark.parametrize("column, value", [("market", "us"), ("variant", "Baseline"), ("fold", "pool"), ("fold", "10")])
+def test_malformed_benchmark_results_are_rejected(db, column, value):
+    run_id = db.execute(RUN).fetchone()["id"]
+    row = {"market": "TSX", "variant": "baseline", "fold": "0"} | {column: value}
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute("insert into benchmark_results (run_id, market, variant, fold, metrics) values (%s, %s, %s, %s, '{}')",
+                   (run_id, row["market"], row["variant"], row["fold"]))
+

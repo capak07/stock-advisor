@@ -13,6 +13,7 @@ from advisor.config import Settings
 from advisor.models import (
     AssetRef,
     AssetType,
+    BenchmarkResult,
     DailyClose,
     HoldingActionRow,
     Market,
@@ -684,3 +685,37 @@ def test_the_symbols_to_grade_are_open_picks_and_ungraded_actions_with_an_exit_b
         (run_id,),
     )
     assert repo.symbols_to_grade(db) == ["AAPL", "TD.TO"]
+
+
+T0 = datetime(2026, 11, 1, 9, 0, tzinfo=UTC)
+
+
+def test_a_benchmark_run_is_started_and_finished(db):
+    run_id = repo.start_benchmark_run(db, T0, "abc1234")
+    repo.finish_benchmark_run(db, run_id, T0 + timedelta(hours=2), "success", {"markets": {}})
+    row = db.execute("select * from benchmark_runs where id = %s", (run_id,)).fetchone()
+    assert (row["status"], row["git_sha"], row["report"]) == ("success", "abc1234", {"markets": {}})
+
+
+def test_a_killed_benchmark_is_marked_failed_by_the_next_start(db):
+    killed = repo.start_benchmark_run(db, T0, None)
+    repo.start_benchmark_run(db, T0 + timedelta(hours=8), None)
+    row = db.execute("select * from benchmark_runs where id = %s", (killed,)).fetchone()
+    assert row["status"] == "failed" and row["report"]["error"].startswith("abandoned")
+
+
+def test_a_recent_running_benchmark_is_left_alone(db):
+    running = repo.start_benchmark_run(db, T0, None)
+    repo.start_benchmark_run(db, T0 + timedelta(hours=1), None)
+    assert db.execute("select status from benchmark_runs where id = %s", (running,)).fetchone()["status"] == "running"
+
+
+def test_accepting_a_config_retires_the_markets_previous_one(db):
+    run_id = repo.start_benchmark_run(db, T0, None)
+    assert repo.active_config(db, "TSX") is None
+    first = repo.accept_config(db, "TSX", {"version": 1}, "first", run_id, T0)
+    second = repo.accept_config(db, "TSX", {"version": 1, "x": 1}, "better", run_id, T0)
+    active = repo.active_config(db, "TSX")
+    assert active.id == second != first and active.reason == "better" and active.config == {"version": 1, "x": 1}
+    repo.write_benchmark_results(db, run_id, [BenchmarkResult("TSX", "baseline", "pooled", {"a": 1})])
+    assert db.execute("select metrics from benchmark_results").fetchone()["metrics"] == {"a": 1}

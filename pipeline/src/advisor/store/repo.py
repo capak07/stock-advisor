@@ -14,8 +14,10 @@ from advisor.collectors.runner import SourceState
 from advisor.markets import MARKETS, TSX_SUFFIX, market_of
 from advisor.models import (
     ET,
+    AcceptedConfig,
     AssetRef,
     AssetType,
+    BenchmarkResult,
     DailyClose,
     HoldingActionRow,
     LinkedPick,
@@ -828,3 +830,76 @@ def prune_daily_closes(conn: psycopg.Connection, before: date, keep: Iterable[st
         "   where l.symbol = c.symbol and l.asset_type = c.asset_type)",
         (before, list(keep)),
     ).rowcount
+
+
+BENCHMARK_ABANDONED_AFTER = timedelta(hours=7)  # past Actions' 6-hour job limit
+
+
+def start_benchmark_run(conn: psycopg.Connection, now: datetime, git_sha: str | None) -> int:
+    """Open a benchmark run, and mark any still-running one past the job limit as failed."""
+    conn.execute(
+        "update benchmark_runs set status = 'failed', finished_at = %s, report = report || %s"
+        " where status = 'running' and started_at < %s",
+        (
+            now,
+            Jsonb({"error": "abandoned: no finish was recorded (job killed or timed out)"}),
+            now - BENCHMARK_ABANDONED_AFTER,
+        ),
+    )
+    row = conn.execute(
+        "insert into benchmark_runs (started_at, git_sha) values (%s, %s) returning id",
+        (now, git_sha),
+    ).fetchone()
+    return row["id"]
+
+
+def finish_benchmark_run(
+    conn: psycopg.Connection, run_id: int, now: datetime, status: str, report: Mapping
+) -> None:
+    conn.execute(
+        "update benchmark_runs set finished_at = %s, status = %s, report = %s where id = %s",
+        (now, status, Jsonb(dict(report)), run_id),
+    )
+
+
+def write_benchmark_results(
+    conn: psycopg.Connection, run_id: int, rows: Sequence[BenchmarkResult]
+) -> None:
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into benchmark_results (run_id, market, variant, fold, metrics)"
+            " values (%s, %s, %s, %s, %s)",
+            [(run_id, r.market, r.variant, r.fold, Jsonb(dict(r.metrics))) for r in rows],
+        )
+
+
+def active_config(conn: psycopg.Connection, market: str) -> AcceptedConfig | None:
+    row = conn.execute(
+        "select id, market, config, reason, accepted_at, benchmark_run_id"
+        " from accepted_configs where market = %s and active",
+        (market,),
+    ).fetchone()
+    return AcceptedConfig(**row) if row else None
+
+
+def accept_config(
+    conn: psycopg.Connection,
+    market: str,
+    config: Mapping,
+    reason: str,
+    run_id: int,
+    now: datetime,
+) -> int:
+    """Retire the market's active row and insert the new one, atomically."""
+    with conn.transaction():
+        conn.execute(
+            "update accepted_configs set active = false where market = %s and active", (market,)
+        )
+        row = conn.execute(
+            "insert into accepted_configs"
+            " (market, config, reason, accepted_at, benchmark_run_id, active)"
+            " values (%s, %s, %s, %s, %s, true) returning id",
+            (market, Jsonb(dict(config)), reason, now, run_id),
+        ).fetchone()
+        return row["id"]
+

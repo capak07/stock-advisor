@@ -63,6 +63,28 @@ class StoredModel:
 
 
 @dataclass(frozen=True)
+class AcceptedConfig:
+    """The configuration weekly training should follow for one market."""
+
+    id: int
+    market: str
+    config: dict
+    reason: str
+    accepted_at: datetime
+    benchmark_run_id: int
+
+
+@dataclass(frozen=True)
+class BenchmarkResult:
+    """One fold's stored scores for one variant in one market."""
+
+    market: str
+    variant: str
+    fold: str
+    metrics: dict
+
+
+@dataclass(frozen=True)
 class PredictionRow:
     """One stock's forecast at one horizon: the return range and P(beat the benchmark)."""
 

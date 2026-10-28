@@ -8,6 +8,7 @@ import { ThemeToggle } from '../ThemeToggle'
 import { ToastProvider } from '../Toast'
 import { FindTicker } from './FindTicker'
 import { BottomTabs, SidebarLinks } from './Navigation'
+import { RefreshPrices } from './RefreshPrices'
 import { RunsPill, type RunView } from './RunsPill'
 
 const brand = (
@@ -23,10 +24,13 @@ const brand = (
 export function Shell({
   runs,
   lastPublished,
+  liveAt = null,
   children,
 }: {
   runs: Run[]
   lastPublished: Run | null
+  /** When the owner last refreshed live prices, if under an hour ago. */
+  liveAt?: string | null
   children: React.ReactNode
 }) {
   const views: RunView[] = runs.map((r) => ({
@@ -80,6 +84,7 @@ export function Shell({
               TSX Paper
             </span>
             <span className="status-spacer" />
+            <RefreshPrices liveAt={liveAt} />
             <ThemeToggle />
           </header>
           <div className="banners" aria-live="polite">

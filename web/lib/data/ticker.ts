@@ -64,7 +64,7 @@ export interface TickerForecast {
   /** Ascending; empty when the latest run didn't forecast this stock (only past picks to show). */
   horizons: ForecastHorizon[]
   /** Stage 8's explanation at the stock's representative horizon (`features_live.features.advice`). */
-  advice: { horizon: number; topFactors: Factor[]; catalysts: Catalyst[]; cost: number | null } | null
+  advice: { horizon: number; topFactors: Factor[]; catalysts: Catalyst[]; cost: number | null; basis: string | null } | null
   /** The last 10 picks of this stock across published runs, newest first. */
   pastPicks: PastPick[]
 }
@@ -267,6 +267,7 @@ async function loadForecast(
     top_factors?: { feature: string; contribution: number }[]
     catalysts?: Catalyst[]
     round_trip_cost?: number
+    basis?: unknown
   } | null
   const value = (feature: string) => toNumber(features?.[feature]) ?? undefined
 
@@ -290,6 +291,7 @@ async function loadForecast(
             })),
             catalysts: advice.catalysts ?? [],
             cost: toNumber(advice.round_trip_cost),
+            basis: typeof advice.basis === 'string' ? advice.basis : null,
           }
         : null,
     pastPicks: pastRows.map((p) => ({

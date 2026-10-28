@@ -27,6 +27,7 @@ const pick = (over: Partial<PickView> = {}): PickView => ({
   topFactors: [],
   catalysts: [],
   cost: null,
+  basis: null,
   benchmark: 'XIU.TO',
   atrPct: 0.02,
   dollarVolume20: 5e6,

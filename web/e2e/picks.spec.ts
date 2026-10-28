@@ -82,6 +82,32 @@ test('picks page before any run says picks appear once the model runs', async ({
   await expect(page.locator('article.pick')).toHaveCount(0)
 })
 
+const TSX_BASIS = 'Price and sector only: TSX stocks have no company filings in this model, so weigh this call accordingly.'
+
+test('a TSX pick shows the filings note and a US pick does not', async ({ page }) => {
+  const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: hourAgo() })
+  await seedModel('stock_us', { picks_enabled: true })
+  await seedModel('stock_tsx', { picks_enabled: true })
+  await seedPrediction(runId, 'AAPL', 63, { q10: -0.02, q50: 0.04, q90: 0.1, p: 0.62 })
+  await seedPrediction(runId, 'RY.TO', 63, { q10: -0.02, q50: 0.04, q90: 0.1, p: 0.62 })
+  await seedFeatures(runId, 'AAPL', 'stock', { advice: { horizon: 63, top_factors: [], catalysts: [], round_trip_cost: 0.01 } })
+  await seedFeatures(runId, 'RY.TO', 'stock', {
+    advice: { horizon: 63, top_factors: [], catalysts: [], round_trip_cost: 0.003, basis: TSX_BASIS },
+  })
+  await seedPick(runId, {
+    symbol: 'AAPL', market: 'US', style: 'position', horizon: 63, rank: 1,
+    exitBy: '2027-01-19', entry: 200, stop: 180, riskLevel: 'medium', maxPct: 3,
+  })
+  await seedPick(runId, {
+    symbol: 'RY.TO', market: 'TSX', style: 'position', horizon: 63, rank: 1,
+    exitBy: '2027-01-19', entry: 140, stop: 120, riskLevel: 'medium', maxPct: 3,
+  })
+  await page.goto('/picks')
+  await expect(usCard(page, 'AAPL')).not.toContainText(TSX_BASIS)
+  await page.getByRole('tab', { name: 'TSX' }).click()
+  await expect(page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })).toContainText(TSX_BASIS)
+})
+
 test('a US pick card shows its range, odds, hold, stop, size and cost', async ({ page }) => {
   await seedPicksRun()
   await page.goto('/picks')

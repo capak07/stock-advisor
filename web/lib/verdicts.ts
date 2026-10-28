@@ -37,7 +37,8 @@ export function verdictWhy(v: VerdictLike, form: 'long' | 'short'): string {
     if (form === 'short') return `${style} · ${holdText(horizon, exitBy)} · ${p}`
     const rank = int(d.rank)
     const extra = rank !== null && v.market ? ` · also today's #${rank} ${v.market} pick` : d.held === true ? ' · you hold it' : ''
-    return `${style} · hold ${holdText(horizon, exitBy)} · ${p} to beat ${odds[1]}${extra}`
+    const note = form === 'long' && v.reasons.length > 2 ? ` · ${v.reasons.slice(2).join('; ')}` : ''
+    return `${style} · hold ${holdText(horizon, exitBy)} · ${p} to beat ${odds[1]}${extra}${note}`
   }
   const off = v.market && d.market_picks_enabled === false ? ` · picks off for ${v.market} this run` : ''
   return `${v.reasons.join('; ')}${off}`

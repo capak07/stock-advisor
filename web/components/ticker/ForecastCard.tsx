@@ -66,6 +66,7 @@ export function ForecastKpis() {
         <span className="label">Beats {bench}</span>
         <b>{Math.round(row.pBeat * 100)}%</b>
         <span className="sub">over {row.horizon} trading days</span>
+        {f.forecast.advice?.basis && <span className="sub">{f.forecast.advice.basis}</span>}
       </div>
       <div className="kpi">
         <span className="label">Median</span>

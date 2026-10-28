@@ -23,6 +23,7 @@ from advisor.recommend.stage import (
     scheduled_events,
     watch_verdicts,
 )
+from advisor.recommend.verdicts import TSX_BASIS
 from fakes import bar
 
 NAN = float("nan")
@@ -153,6 +154,34 @@ def _stage(metrics):
         {Market.TSX: details}, {Market.TSX: True}, {}, policies={Market.TSX: policy_of(metrics)},
     )
     return picks, verdicts
+
+
+def test_a_tsx_pick_carries_the_filings_note_and_a_us_pick_does_not():
+    loose = {"picks_enabled": True, "config": {"policy": replace(DEFAULT_POLICY, p_buy=0.54).to_json()}}
+    _picks, verdicts = _stage(loose)
+    assert verdicts[0].reasons[-1] == TSX_BASIS
+    symbol = "AAPL"
+    row = PredictionRow(symbol, 5, -0.02, 0.04, 0.10, 0.70, "SPY", "v1")
+    names = [*US_NAMES, "eligible"]
+    frame = features({symbol: {"atr_14_pct": 0.04, "jump_5d": 0.0, "eligible": 1.0}}, names)
+    model = MarketModel(ActiveModel("v", _Model(), (5,)), pd.DataFrame({"symbol": [symbol], "sector": ["Tech"]}), loose)
+    inputs = StockInputs(DAY, False, {symbol: [row]}, {symbol: True}, {symbol: 0.001})
+    bars = {symbol: [bar(symbol, DAY, 10.0)], "SPY": [bar("SPY", DAY, 500.0)]}
+    picks, details, *_ = recommend_market(Market.US, model, Forecast(frame, [row]), inputs, bars, set(), {}, {}, DAY)
+    assert picks and "basis" not in details[symbol]
+    tsx_picks, tsx_details, *_ = recommend_market(
+        Market.TSX, *_stage_parts("RY.TO", loose),
+    )
+    assert tsx_picks and tsx_details["RY.TO"]["basis"] == TSX_BASIS
+
+
+def _stage_parts(symbol, metrics):
+    row = PredictionRow(symbol, 5, -0.02, 0.04, 0.10, 0.70, "XIU.TO", "v1")
+    frame = features({symbol: {"atr_14_pct": 0.04, "jump_5d": 0.0, "eligible": 1.0}}, [*TSX_NAMES, "eligible"])
+    model = MarketModel(ActiveModel("v", _Model(), (5,)), pd.DataFrame({"symbol": [symbol], "sector": ["Banks"]}), metrics)
+    inputs = StockInputs(DAY, False, {symbol: [row]}, {symbol: True}, {symbol: 0.001})
+    bars = {symbol: [bar(symbol, DAY, 10.0)], "XIU.TO": [bar("XIU.TO", DAY, 30.0)]}
+    return model, Forecast(frame, [row]), inputs, bars, set(), {}, {}, DAY
 
 
 def test_a_watched_coin_buy_is_not_a_pick():

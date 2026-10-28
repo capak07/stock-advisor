@@ -2,7 +2,7 @@ from dataclasses import replace
 
 from advisor.models import PredictionRow
 from advisor.policy import DEFAULT_POLICY
-from advisor.recommend.verdicts import coin_verdict, stock_verdict
+from advisor.recommend.verdicts import TSX_BASIS, coin_verdict, stock_verdict
 
 
 def row(h, p, q50=0.04):
@@ -15,6 +15,13 @@ def test_a_higher_sell_line_avoids_a_stock_the_default_holds():
         "AAA", [row(63, 0.45)], 0.001, True, None, None, policy=replace(DEFAULT_POLICY, p_sell=0.46)
     )
     assert held.verdict == "hold" and avoided.verdict == "avoid"
+
+
+def test_a_tsx_buy_ends_with_the_filings_note_and_a_us_buy_does_not():
+    tsx = stock_verdict("RY.TO", [row(63, 0.62)], 0.001, True, {"stop": 40.0}, None)
+    us = stock_verdict("AAA", [row(63, 0.62)], 0.001, True, {"stop": 94.0}, None)
+    assert tsx.reasons[-1] == TSX_BASIS and tsx.details["basis"] == TSX_BASIS
+    assert TSX_BASIS not in us.reasons and "basis" not in us.details
 
 
 def test_a_qualifying_watched_stock_is_a_buy_with_the_picks_fields():

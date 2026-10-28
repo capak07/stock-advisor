@@ -72,6 +72,11 @@ export function PickCard({
             <dd className="num" style={{ fontWeight: 600 }}>
               {Math.round(p.pBeat * 100)}%
             </dd>
+            {p.basis && (
+              <dd className="sub" data-basis style={{ fontWeight: 400 }}>
+                {p.basis}
+              </dd>
+            )}
           </div>
         )}
         <div>

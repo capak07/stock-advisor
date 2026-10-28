@@ -35,7 +35,7 @@ from advisor.models import (
 from advisor.policy import DEFAULT_POLICY, Policy, policy_of
 from advisor.recommend.picks import best_horizon, choose, rank_picks, stop_price
 from advisor.recommend.risk import disagreement, risk_levels
-from advisor.recommend.verdicts import Verdict, coin_verdict, stock_verdict
+from advisor.recommend.verdicts import TSX_BASIS, Verdict, coin_verdict, stock_verdict
 from advisor.schedule import sessions_after
 from advisor.store import repo
 
@@ -287,6 +287,7 @@ def recommend_market(
             "top_factors": factors.get(s, []),
             "catalysts": catalysts_of(s),
             "round_trip_cost": float(inputs.cost[s]),
+            **({"basis": TSX_BASIS} if market is Market.TSX else {}),
         }
         for s, h in horizon.items()
     }
@@ -304,6 +305,7 @@ def recommend_market(
             "max_position_pct": float(risk.at[s, "max_position_pct"]),
             "top_factors": factors.get(s, []),
             "catalysts": catalysts_of(s),
+            **({"basis": TSX_BASIS} if market is Market.TSX else {}),
         }
     if not enabled:
         return [], details, {"disabled": picks_reason(model)}, risk, explanations

@@ -16,6 +16,18 @@ describe('verdictWhy', () => {
     expect(verdictWhy(buy, 'short')).toBe('Swing · ~10 trading days · exit by Oct 30 · 64%')
   })
 
+  it("keeps a TSX Buy's filings note with its reasons", () => {
+    const note = 'Price and sector only: TSX stocks have no company filings in this model, so weigh this call accordingly.'
+    const tsx = {
+      ...buy,
+      market: 'TSX' as const,
+      reasons: [...buy.reasons, note],
+      details: { ...buy.details, rank: undefined, basis: note },
+    }
+    expect(verdictWhy(tsx, 'long')).toContain(note)
+    expect(verdictWhy(tsx, 'short')).not.toContain(note)
+  })
+
   it('says a held Buy is held instead of a rank', () => {
     const held = { ...buy, details: { style: 'position', horizon_days: 63, exit_by: '2027-01-19', held: true } }
     expect(verdictWhy(held, 'long')).toBe('Position · hold ~3 months · exit by Jan 19 · 64% to beat SPY · you hold it')

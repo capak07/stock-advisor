@@ -6,9 +6,14 @@ A buy qualifies by exactly the pick rule (`choose`), so the watchlist never disa
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from advisor.models import PredictionRow
+from advisor.markets import market_of
+from advisor.models import Market, PredictionRow
 from advisor.policy import DEFAULT_POLICY, Policy
 from advisor.recommend.picks import best_horizon, choose
+
+TSX_BASIS = (
+    "Price and sector only: TSX stocks have no company filings in this model, so weigh this call accordingly."
+)
 
 AVOID_P = 0.42
 NO_COIN_MODEL = "no crypto model yet"  # spec §5.4: coins get the fallback rules
@@ -58,7 +63,11 @@ def stock_verdict(
             f"P(beat {benchmark}) {choice.p_beat:.2f} over {choice.horizon} trading days",
             f"expected {choice.q50:.1%} against {cost:.1%} round-trip costs",
         ]
-        return Verdict(symbol, "stock", "buy", reasons, dict(pick_details or {}))
+        details = dict(pick_details or {})
+        if market_of(symbol) is Market.TSX:
+            reasons.append(TSX_BASIS)
+            details["basis"] = TSX_BASIS
+        return Verdict(symbol, "stock", "buy", reasons, details)
     max_p = max(r.p_beat for r in rows)
     if all(r.p_beat <= policy.p_sell for r in rows):
         return Verdict(symbol, "stock", "avoid", [f"P(beat {benchmark}) at most {max_p:.2f} at every horizon"])

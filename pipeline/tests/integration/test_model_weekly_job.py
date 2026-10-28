@@ -96,3 +96,25 @@ def test_a_config_this_code_cannot_run_falls_back_to_the_baseline(db, tmp_path):
     assert report["TSX"]["config"] == "baseline" and report["TSX"]["promoted"] is True
     assert report["TSX"]["config_reason"].startswith(f"accepted configuration #{config_id} can't be used (")
     assert "Plan 6c" in report["TSX"]["config_reason"]
+
+
+def test_the_weekly_job_trains_the_crypto_model(db, tmp_path):
+    from model_data import write_crypto
+    write_market(tmp_path, Market.TSX, stocks=40)
+    write_crypto(tmp_path, coins=30, days=1300)
+    report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    crypto = report["crypto"]
+    assert crypto["version"] == "crypto-202610241000" and crypto["reason"]  # promotion: the stock rule
+    assert crypto["picks_enabled"] is False and crypto["picks_reason"] == "coins are never picks (spec §5.4)"
+    stored = db.execute("select metrics from models where kind = 'crypto'").fetchone()["metrics"]
+    assert set(stored["horizons"]) <= {"7", "14", "30", "90", "180"} and stored["horizons"]
+    model = from_files(repo.load_model_files(db, crypto["version"]))
+    assert model.horizons == (7, 14, 30, 90, 180)
+    assert weekly.exit_code(report) == 0
+
+
+def test_the_weekly_job_skips_crypto_when_the_build_had_none(db, tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    assert report["crypto"] == {"skipped": "no crypto history in this build"}
+    assert weekly.exit_code(report) == 0 and repo.active_model(db, "crypto") is None

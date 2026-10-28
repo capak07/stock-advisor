@@ -35,10 +35,11 @@ from advisor.benchmark.report import render_markdown, write_reports
 from advisor.benchmark.simulate import DailyPanel, daily_panel
 from advisor.config import Settings
 from advisor.model.backtest import MAX_CALIBRATION_PTS
+from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS, load_crypto
 from advisor.model.dataset import SAMPLE_EVERY, MarketData, load_market
 from advisor.model.train import Fold, TrainConfig, WalkForward
 from advisor.model.variants import BASELINE, ModelConfig, run_variant, unbuilt
-from advisor.model.weekly import json_safe
+from advisor.model.weekly import crypto_skipped, json_safe
 from advisor.models import BenchmarkResult, Market
 from advisor.policy import DEFAULT_POLICY, Policy
 from advisor.store import repo
@@ -54,7 +55,7 @@ ABLATIONS: dict[str, ModelConfig | None] = {
 }
 POLICY_ROW = "full+policy"
 FIRST = "first benchmark: today's model"
-MARKET_ORDER = [Market.TSX, Market.US]  # the smaller load first, as in the weekly job
+MARKET_ORDER = [Market.TSX, Market.US, CRYPTO]  # the smaller load first, as in the weekly job
 
 
 def _keys(predictions: pd.DataFrame) -> pd.DataFrame:
@@ -108,10 +109,13 @@ def _policy_row(
 
 
 def _benchmark_market(
-    data_dir: Path, market: Market, conn: psycopg.Connection, run_id: int, now: datetime, config: TrainConfig
+    data_dir: Path, market: Market | str, conn: psycopg.Connection, run_id: int, now: datetime, config: TrainConfig
 ) -> dict:
-    data = load_market(data_dir, market)
-    usd_fx_fee_pct = repo.fee_settings(conn)[0]
+    coins = market == CRYPTO
+    data = load_crypto(data_dir) if coins else load_market(data_dir, market)
+    if coins:
+        config = replace(config, horizons=CRYPTO_HORIZONS)
+    usd_fx_fee_pct = repo.fee_settings(conn)[1 if coins else 0]  # coins pay the crypto fee instead
     variants: dict[str, dict] = {}
     runs: dict[str, tuple[WalkForward, tuple[int, ...]]] = {}
     scores: dict[str, Scores] = {}
@@ -228,6 +232,9 @@ def run(
     }
     try:
         for market in markets:
+            if market == CRYPTO and (skipped := crypto_skipped(data_dir)):
+                report["markets"][CRYPTO] = {"skipped": skipped}
+                continue
             try:
                 report["markets"][str(market)] = _benchmark_market(data_dir, market, conn, run_id, now, train_config)
             except Exception as e:  # one market's failure must not stop the other
@@ -249,7 +256,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--data", required=True, type=Path, help="the training data directory")
     parser.add_argument("--out", required=True, type=Path, help="where to write the report files")
     parser.add_argument(
-        "--market", action="append", choices=[m.value for m in Market],
+        "--market", action="append", choices=[*(m.value for m in Market), CRYPTO],
         help="a market to benchmark (repeatable; default all)",
     )
     return parser.parse_args(argv)
@@ -257,7 +264,7 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    markets = [Market(m) for m in args.market] if args.market else MARKET_ORDER
+    markets = [CRYPTO if m == CRYPTO else Market(m) for m in args.market] if args.market else MARKET_ORDER
     with connect(Settings.from_env().database_url) as conn:
         report = run(args.data, markets, conn, datetime.now(UTC), os.environ.get("GITHUB_SHA"))
     write_reports(report, args.out)

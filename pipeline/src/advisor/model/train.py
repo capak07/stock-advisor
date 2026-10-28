@@ -265,8 +265,14 @@ def fit_final(data: MarketData, wf: WalkForward, config: TrainConfig = TrainConf
         train = rows[rows[f"y_{h}"].notna()]
         boosters[h] = _fit_horizon(train[data.features], train[f"y_{h}"], config)
     screener_features = PRICE_FEATURES + RS_FEATURES
-    train = rows[rows[f"y_{SCREENER_HORIZON}"].notna()]
-    beat = (train[f"y_{SCREENER_HORIZON}"] > 0).astype(int).to_numpy()
+    if not set(screener_features) <= set(data.features):  # coins have no sector features
+        screener_features = list(data.features)
+    # the 21-session target, or (for coins, whose horizons are days) the horizon nearest it
+    horizon = SCREENER_HORIZON
+    if f"y_{horizon}" not in rows:
+        horizon = min(config.horizons, key=lambda h: (abs(h - SCREENER_HORIZON), h))
+    train = rows[rows[f"y_{horizon}"].notna()]
+    beat = (train[f"y_{horizon}"] > 0).astype(int).to_numpy()
     screener = _fit(train[screener_features], beat, config, objective="binary")
     return FinalModel(
         list(data.features), tuple(config.horizons), boosters, calibrators, screener, screener_features,

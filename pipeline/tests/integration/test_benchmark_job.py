@@ -104,3 +104,14 @@ def test_an_accepted_policy_is_stored_with_the_model(db, tmp_path, monkeypatch):
     assert active.reason.startswith("net Sharpe 1.00")
     again = job.run(tmp_path, [Market.TSX], db, NOW + timedelta(days=28), None, FAST)
     assert again["markets"]["TSX"]["accepted"]["changed"] is False
+
+
+def test_the_benchmark_scores_crypto(db, tmp_path):
+    from advisor.model.crypto import CRYPTO
+    from model_data import write_crypto
+    write_crypto(tmp_path, coins=30, days=1300)
+    report = job.run(tmp_path, [CRYPTO], db, NOW, None, FAST)
+    assert report["markets"]["crypto"]["chosen"] == "baseline"
+    folds = {r["fold"] for r in db.execute("select fold from benchmark_results where market = 'crypto' and variant = 'baseline'").fetchall()}
+    assert folds == {"0", "1", "2", "3", "pooled"}
+    assert repo.active_config(db, "crypto").reason == "first benchmark: today's model"

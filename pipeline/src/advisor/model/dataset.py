@@ -36,7 +36,7 @@ WARMUP = 252  # sessions a stock needs before its first row (the 12-month moment
 
 @dataclass(frozen=True)
 class MarketData:
-    market: Market
+    market: Market | str  # "crypto" for the coin model
     rows: pd.DataFrame
     features: list[str]
     calendar: pd.DatetimeIndex

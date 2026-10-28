@@ -11,11 +11,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from advisor.model.crypto import CRYPTO
 from advisor.models import Market
 from advisor.policy import DEFAULT_POLICY, Policy
 
 P_MIN = 0.58
 SWING_HORIZONS = frozenset({5, 10, 20})
+CRYPTO_SWING_HORIZONS = frozenset({7, 14})
 PICKS_PER_STYLE = 10
 PER_SECTOR = 3
 MIN_PICKS = 30
@@ -27,12 +29,18 @@ SPREAD_SMALL = 0.003
 PICK_COLUMNS = ["day", "symbol", "sector", "horizon", "style", "p", "q50", "ratio", "y", "cost", "net"]
 
 
-def round_trip_cost(market: Market, dollar_volume_20: np.ndarray, usd_fx_fee_pct: float) -> np.ndarray:
-    """Buy-and-sell cost as a fraction: the spread, plus the currency fee both ways for US stocks."""
+def round_trip_cost(market: Market | str, dollar_volume_20: np.ndarray, usd_fx_fee_pct: float) -> np.ndarray:
+    """Buy-and-sell cost as a fraction: the spread, plus a fee both ways: the currency fee for US
+    stocks, or (passed in its place) the crypto fee for coins."""
     spread = np.where(np.asarray(dollar_volume_20) >= LARGE_DOLLAR_VOLUME, SPREAD_LARGE, SPREAD_SMALL)
-    if market is Market.US:
+    if market is Market.US or market == CRYPTO:
         return spread + 2 * usd_fx_fee_pct / 100
     return spread
+
+
+def swing_horizons(market: Market | str) -> frozenset[int]:
+    """The horizons whose picks are swing trades; the rest are position trades."""
+    return CRYPTO_SWING_HORIZONS if market == CRYPTO else SWING_HORIZONS
 
 
 def _priced(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> pd.DataFrame:
@@ -88,7 +96,7 @@ def simulate_picks(
     rank = "p" if policy.rule == "p" else "ratio"
     df = df.sort_values(["day", "symbol", rank, "horizon"], ascending=[True, True, False, True])
     df = df.drop_duplicates(["day", "symbol"], keep="first")
-    df["style"] = np.where(df["horizon"].isin(SWING_HORIZONS), "swing", "position")
+    df["style"] = np.where(df["horizon"].isin(swing_horizons(market)), "swing", "position")
     # a stock without a sector label counts alone, not as one shared group
     df["_group"] = df["sector"].where(df["sector"].notna(), "unlabelled:" + df["symbol"].astype(str))
 

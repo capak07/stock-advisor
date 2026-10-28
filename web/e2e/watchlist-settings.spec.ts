@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { daysAgo, resetData, seedCloses, seedCoins, seedFx, seedSymbols, sql } from './db'
+import { daysAgo, resetData, seedCloses, seedCoins, seedFx, seedRun, seedSymbols, seedVerdict, sql } from './db'
 
 test.beforeEach(resetData)
 
@@ -73,6 +73,63 @@ test.describe('watchlist', () => {
       { symbol: 'LINK', asset_type: 'crypto' },
       { symbol: 'SOL', asset_type: 'crypto' },
     ])
+  })
+
+  test('watchlist rows show each verdict and why', async ({ page }) => {
+    await seedSymbols([
+      { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
+      { symbol: 'TD.TO', market: 'TSX', name: 'Toronto-Dominion Bank' },
+    ])
+    await sql`insert into watchlist (symbol, asset_type) values ('AAPL', 'stock'), ('TD.TO', 'stock'), ('SOL', 'crypto')`
+    const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    await seedVerdict(runId, {
+      symbol: 'AAPL',
+      assetType: 'stock',
+      verdict: 'buy',
+      reasons: ['P(beat SPY) 0.64 over 10 trading days', 'expected 2.4% against 3.1% round-trip costs'],
+      details: { style: 'swing', horizon: 10, exit_by: '2026-10-30', rank: 2, market_picks_enabled: true },
+    })
+    await seedVerdict(runId, {
+      symbol: 'TD.TO',
+      assetType: 'stock',
+      verdict: 'avoid',
+      reasons: ['P(beat XIU.TO) at most 0.40 at every horizon'],
+      details: { market_picks_enabled: true },
+    })
+    await page.goto('/watchlist')
+    await expect(page.getByText(/^verdicts from the \d\d:\d\d run$/)).toBeVisible()
+    await expect(page.getByText('Verdicts appear once the model runs')).toHaveCount(0)
+    await expect(page.locator('.watch-head')).toContainText('Verdict')
+
+    const aapl = page.locator('.watch-row', { hasText: 'AAPL' })
+    await expect(aapl.locator('.chip')).toHaveText('Buy')
+    await expect(aapl.locator('.w-detail')).toHaveText(
+      "Swing · hold ~10 trading days · exit by Oct 30 · 64% to beat SPY · also today's #2 US pick",
+    )
+    const td = page.locator('.watch-row', { hasText: 'TD.TO' })
+    await expect(td.locator('.chip')).toHaveText('Avoid')
+    await expect(td.locator('.w-detail')).toHaveText('P(beat XIU.TO) at most 0.40 at every horizon')
+    // added after the run: no verdict yet
+    const sol = page.locator('.watch-row', { hasText: 'SOL' })
+    await expect(sol.locator('.chip')).toHaveText('New')
+    await expect(sol.locator('.w-detail')).toHaveText('Gets its first verdict at the next run')
+  })
+
+  test("a held watched stock's verdict says it is held", async ({ page }) => {
+    await seedSymbols([{ symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' }])
+    await sql`insert into watchlist (symbol, asset_type) values ('RY.TO', 'stock')`
+    const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    await seedVerdict(runId, {
+      symbol: 'RY.TO',
+      assetType: 'stock',
+      verdict: 'buy',
+      reasons: ['P(beat XIU.TO) 0.61 over 63 trading days', 'expected 3.0% against 0.3% round-trip costs'],
+      details: { style: 'position', horizon_days: 63, exit_by: '2027-01-19', held: true, market_picks_enabled: true },
+    })
+    await page.goto('/watchlist')
+    const row = page.locator('.watch-row', { hasText: 'RY.TO' })
+    await expect(row.locator('.chip')).toHaveText('Buy')
+    await expect(row.locator('.w-detail')).toHaveText('Position · hold ~3 months · exit by Jan 19 · 61% to beat XIU.TO · you hold it')
   })
 })
 

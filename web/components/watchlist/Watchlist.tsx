@@ -9,6 +9,7 @@ import { useToast } from '@/components/Toast'
 import { assetKey, type AssetType } from '@/lib/portfolio/types'
 import type { SearchItem } from '@/lib/symbol-search'
 import { tickerHref } from '@/lib/ticker'
+import { VERDICT_LABEL, type Verdict } from '@/lib/verdicts'
 import { PICK_FROM_LIST } from '@/lib/watch-form'
 
 export interface WatchRow {
@@ -17,6 +18,9 @@ export interface WatchRow {
   name: string | null
   type: 'US' | 'TSX' | 'Crypto'
   price: string | null
+  /** The latest published run's verdict; null when the symbol was added after it. */
+  verdict: Verdict | null
+  why: string | null
 }
 
 /** Search the stock and coin lists; picking a match watches it. `watched` holds asset keys. */
@@ -54,7 +58,9 @@ export function AddWatch({ watched }: { watched: string[] }) {
   )
 }
 
-export function WatchList({ rows }: { rows: WatchRow[] }) {
+/** Before the model: symbol, type, price. With verdicts: also the verdict and why (watchlist_1.html). */
+export function WatchList({ rows, withVerdicts = false }: { rows: WatchRow[]; withVerdicts?: boolean }) {
+  const plain = withVerdicts ? '' : 'plain'
   const toast = useToast()
   const [removing, setRemoving] = useState<string | null>(null)
   const [, startTransition] = useTransition()
@@ -77,9 +83,15 @@ export function WatchList({ rows }: { rows: WatchRow[] }) {
   }
   return (
     <>
-      <div className="watch-head plain label">
+      <div className={`watch-head ${plain} label`}>
         <span>Symbol</span>
         <span>Type</span>
+        {withVerdicts && (
+          <>
+            <span>Verdict</span>
+            <span>Why</span>
+          </>
+        )}
         <span style={{ textAlign: 'right' }}>Price</span>
         <span />
       </div>
@@ -87,7 +99,7 @@ export function WatchList({ rows }: { rows: WatchRow[] }) {
         {rows.map((row) => (
           <div
             key={`${row.assetType}:${row.symbol}`}
-            className={`watch-row plain ${removing === row.symbol ? 'removing' : ''}`}
+            className={`watch-row ${plain} ${removing === row.symbol ? 'removing' : ''}`}
           >
             <span className="w-sym">
               <Link className="sym" href={tickerHref(row.symbol, row.assetType)}>
@@ -101,6 +113,18 @@ export function WatchList({ rows }: { rows: WatchRow[] }) {
               )}
             </span>
             <span className="w-type sub">{row.type}</span>
+            {withVerdicts && (
+              <>
+                <span className="w-verdict">
+                  {row.verdict ? (
+                    <span className={`chip ${row.verdict}`}>{VERDICT_LABEL[row.verdict]}</span>
+                  ) : (
+                    <span className="chip hold">New</span>
+                  )}
+                </span>
+                <span className="w-detail sub">{row.why ?? 'Gets its first verdict at the next run'}</span>
+              </>
+            )}
             <span className="w-price num" style={{ textAlign: 'right' }}>
               {row.price ?? <span className="sub">next run</span>}
             </span>

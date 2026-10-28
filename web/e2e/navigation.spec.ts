@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { resetData, seedHealth, seedNews, seedPortfolio, seedRun, seedSources, sql } from './db'
+import { resetData, seedHealth, seedNews, seedPortfolio, seedRun, seedSources, seedVerdict, sql } from './db'
 
 test.beforeEach(resetData)
 
@@ -38,6 +38,13 @@ test.describe('on a phone', () => {
     await sql`update symbols set name = 'Apple Inc. Consumer Electronics and Services Worldwide Corporation' where symbol = 'AAPL'`
     await sql`insert into watchlist (symbol, asset_type) values ('SHOP.TO', 'stock'), ('SOL', 'crypto')`
     const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    await seedVerdict(runId, {
+      symbol: 'SHOP.TO',
+      assetType: 'stock',
+      verdict: 'hold',
+      reasons: ["doesn't qualify as a buy", 'P(beat XIU.TO) 0.54 is under 0.58 at every horizon'],
+      details: { market_picks_enabled: false },
+    })
     await seedSources()
     await seedHealth(runId, new Date().toISOString(), [
       { source: 'sec_form4', status: 'partial', error: `PartialFetch: ${'DocumentBudgetExhausted; '.repeat(12)}` },
@@ -47,6 +54,7 @@ test.describe('on a phone', () => {
     ])
     const pages = [
       ['/', 'My Portfolio'],
+      ['/picks', "Today's Picks"],
       ['/watchlist', 'Watchlist'],
       ['/ticker/RY.TO', 'RY.TO'],
       ['/sources', 'Source health'],

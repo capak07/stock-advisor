@@ -4,26 +4,30 @@ import { AddWatch, WatchList, type WatchRow } from '@/components/watchlist/Watch
 import { ownerClient } from '@/lib/auth'
 import { loadCloses, loadFx } from '@/lib/data/portfolio'
 import { loadNames } from '@/lib/data/symbols'
-import { loadWatchlist } from '@/lib/data/watchlist'
+import { loadVerdicts, loadWatchlist } from '@/lib/data/watchlist'
 import { addDays, todayInToronto } from '@/lib/dates'
 import { fmtPrice } from '@/lib/format'
 import { assetKey } from '@/lib/portfolio/types'
+import { runTime } from '@/lib/runs'
 import { marketOf } from '@/lib/symbols'
+import { verdictWhy } from '@/lib/verdicts'
 
 export const metadata: Metadata = { title: 'Watchlist' }
 
-/** Watchlist (spec §9): add listed US and TSX stocks and coins from the search, or remove them. Verdicts come with the model. */
+/** Watchlist (spec §9): add listed US and TSX stocks and coins from the search, or remove them, each with the latest run's verdict. */
 export default async function WatchlistPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
   const items = await loadWatchlist(supabase)
-  const [names, prices, fx] = await Promise.all([
+  const [names, prices, fx, latest] = await Promise.all([
     loadNames(supabase, items.filter((i) => i.assetType === 'stock').map((i) => i.symbol)),
     // Watched symbols get a close every run, so two weeks back always reaches the latest one.
     loadCloses(supabase, items, addDays(todayInToronto(), -14)),
     loadFx(supabase),
+    loadVerdicts(supabase),
   ])
   const rate = fx.latest()?.usdCad ?? null
+  const withVerdicts = latest !== null && latest.verdicts.size > 0
 
   const rows: WatchRow[] = items.map((item) => {
     const close = prices.latest(assetKey(item.assetType, item.symbol))
@@ -31,12 +35,16 @@ export default async function WatchlistPage() {
     if (close && item.assetType === 'stock') price = fmtPrice(close.close, close.currency)
     // Coinbase closes are in USD; coins are shown in CAD like their holdings.
     else if (close && rate !== null) price = fmtPrice(close.currency === 'USD' ? close.close * rate : close.close, 'CAD')
+    const market = item.assetType === 'crypto' ? null : marketOf(item.symbol)
+    const v = latest?.verdicts.get(assetKey(item.assetType, item.symbol)) ?? null
     return {
       symbol: item.symbol,
       assetType: item.assetType,
       name: names.get(item.symbol) ?? null,
-      type: item.assetType === 'crypto' ? 'Crypto' : marketOf(item.symbol),
+      type: market ?? 'Crypto',
       price,
+      verdict: v?.verdict ?? null,
+      why: v ? verdictWhy({ ...v, market }, 'long') : null,
     }
   })
 
@@ -55,12 +63,15 @@ export default async function WatchlistPage() {
       <section className="card card-pad enter" aria-labelledby="list-h">
         <div className="section-head">
           <h2 id="list-h">Watching {rows.length}</h2>
+          {withVerdicts && <span className="sub">verdicts from the {runTime(latest.run)} run</span>}
         </div>
-        <div className="banner info" style={{ marginBottom: 12 }}>
-          <Info />
-          <div>Verdicts appear once the model runs. Until then, watched symbols are still priced first and collected.</div>
-        </div>
-        <WatchList rows={rows} />
+        {!withVerdicts && (
+          <div className="banner info" style={{ marginBottom: 12 }}>
+            <Info />
+            <div>Verdicts appear once the model runs. Until then, watched symbols are still priced first and collected.</div>
+          </div>
+        )}
+        <WatchList rows={rows} withVerdicts={withVerdicts} />
       </section>
     </main>
   )

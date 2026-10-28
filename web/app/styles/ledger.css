@@ -31,7 +31,7 @@ button, input, select, textarea { font-family: inherit !important; color: inheri
 .shell { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); }
 .sidebar { display: none; }
 .content { min-width: 0; display: flex; flex-direction: column; }
-main.page { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 16px 16px 112px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+main.page { flex: 1; width: 100%; max-width: 1520px; margin: 0 auto; padding: 16px 16px 112px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
 main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0; }
 @media (min-width: 1024px) {
   .shell { grid-template-columns: 232px minmax(0, 1fr); }

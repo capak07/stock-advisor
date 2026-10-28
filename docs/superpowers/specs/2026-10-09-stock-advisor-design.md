@@ -20,6 +20,7 @@
 - **Plan 4a (2026-10-26):** every run turns the forecasts into picks and watchlist verdicts (§4.3 stage 8, §6). Owner decisions on the universe: the US leaves out partnership units (including Bermuda partnerships listed in the US), closed-end funds and BDCs, ETNs, structured notes and preferred classes; the TSX leaves out physical-metal trusts and similar vehicles (§2 R2, §3). Plan 4a also settles §6.4's open points and §6.5's held-stock, factor and catalyst rules.
 - **Plan 4b (2026-10-27):** the suggestions dashboard (§9): Today's Picks with its Exit early card and graded-count paper banners, "I bought this", the Watchlist's verdict column, and the Ticker page's forecast cone, top factors, catalysts and graded past picks. Stage 8 now stores an explanation for every forecast stock, not only its picks (§5.2, §6.5).
 - **Prediction upgrade (2026-10-28):** owner-approved design in docs/superpowers/specs/2026-10-28-prediction-upgrade-design.md — an evaluation harness, a crypto model, factor-adjusted targets, GARCH volatility and a tuned policy, each accepted only on held-out evidence (§5.2, §6.6). Plan 6a builds the harness.
+- **Plan 6e (2026-10-29):** the policy is tuned on inner folds and goes live only on held-out evidence (§6).
 
 ## 1. Purpose
 

@@ -23,6 +23,7 @@ import pandas as pd
 import psycopg
 
 from advisor.collectors.base import RateLimiter, make_client
+from advisor.collectors.coinbase_candles import COINBASE_PER_MINUTE
 from advisor.collectors.nasdaq_symbols import NasdaqSymbols
 from advisor.collectors.sec import COMPANYFACTS_ZIP_URL, SEC_PER_MINUTE, TICKERS_URL, SecEdgar
 from advisor.collectors.tmx_symbols import TmxSymbols
@@ -33,6 +34,7 @@ from advisor.models import ET, Market
 from advisor.store import repo
 from advisor.store.db import connect
 from advisor.training import prices
+from advisor.training.crypto import download_crypto
 from advisor.training.fundamentals import reduce_companyfacts, universe_ciks
 from advisor.training.macro import MacroRefused, MacroUnavailable, macro_history
 from advisor.training.prices import YahooThrottled, download_history, history_start
@@ -194,6 +196,14 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None) -
         manifest["failed"] = {"step": step, "error": message}
         (out / "manifest.json").write_text(json.dumps(manifest, indent=2))
         raise BuildFailed(message) from exc
+
+    try:
+        limiter = RateLimiter(per_minute=COINBASE_PER_MINUTE, burst=3, sleep=deps.sleep)
+        frame, counts = download_crypto(deps.http, today, limiter)
+        _write(frame, out, "prices_crypto.parquet", manifest)
+        manifest["crypto"] = counts
+    except Exception as exc:
+        manifest["crypto_error"] = f"{type(exc).__name__}: {exc}"
 
     try:
         import resource  # Unix only; ru_maxrss is KiB on Linux

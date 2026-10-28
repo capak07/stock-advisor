@@ -230,6 +230,38 @@ class NoSymbols:
         return []
 
 
+def test_the_crypto_history_is_written_and_counted(fixtures_dir, tmp_path, monkeypatch):
+    frame = pd.DataFrame({
+        "symbol": ["BTC", "BTC"], "day": [date(2026, 10, 22), date(2026, 10, 23)],
+        "open": [1.0, 1.0], "high": [1.0, 1.0], "low": [1.0, 1.0], "close": [1.0, 2.0], "volume": [3.0, 4.0],
+    })
+
+    def fake(client, end, limiter):
+        assert end == date(2026, 10, 24)
+        return frame, {"coins": 1, "rows": 2, "failures": 0}
+
+    monkeypatch.setattr(build_module, "download_crypto", fake)
+    with web(fixtures_dir) as client:
+        manifest = build(tmp_path, NOW, deps(client, []), limit=10)
+    saved = pd.read_parquet(tmp_path / "prices_crypto.parquet")
+    assert saved["symbol"].tolist() == ["BTC", "BTC"]
+    assert manifest["crypto"] == {"coins": 1, "rows": 2, "failures": 0}
+    assert "crypto_error" not in manifest
+
+
+def test_a_crypto_step_that_raises_leaves_the_stock_files(fixtures_dir, tmp_path, monkeypatch):
+    def boom(client, end, limiter):
+        raise RuntimeError("coinbase down")
+
+    monkeypatch.setattr(build_module, "download_crypto", boom)
+    with web(fixtures_dir) as client:
+        manifest = build(tmp_path, NOW, deps(client, []), limit=10)
+    assert "prices_US.parquet" in manifest["files"] and "prices_TSX.parquet" in manifest["files"]
+    assert not (tmp_path / "prices_crypto.parquet").exists()
+    assert "failed" not in manifest
+    assert "coinbase down" in manifest["crypto_error"]
+
+
 def test_main_logs_the_cause_with_its_traceback_and_quiets_httpx(monkeypatch, tmp_path, caplog):
     def broken_build(out, now, deps, limit=None):
         try:

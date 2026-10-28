@@ -21,7 +21,9 @@ The owner wants to type an amount (say C$1,000) and get a concrete split. In the
 
 ## Goals
 
-- **One page, "Invest", in the left navigation.** It has an amount box (CAD) and a crypto-share box (%, default 10).
+- **One page, "Invest", in the left navigation.** It has an amount box (CAD), a crypto-share box (%, default 10) and a number-of-stocks picker (1 to 5, default 5).
+  - 1 puts all of the stock money in the top-ranked stock, with the note "All in one stock: no spread of risk." (owner decision 2026-10-27).
+  - With 2 the money is split evenly, because the 40% cap can't hold.
 - **The result:**
   - up to 5 stocks and one BTC line;
   - each line has a dollar amount, an approximate number of shares, and why;

@@ -1,6 +1,7 @@
-/** The Invest page's URL inputs (`/invest?amount=1000&crypto=10`), checked without ever throwing. */
+/** The Invest page's URL inputs (`/invest?amount=1000&crypto=10&stocks=5`), checked without ever throwing. */
 
 import { addDays } from '../dates'
+import { STOCKS } from './allocate'
 
 export const MIN_AMOUNT = 1
 export const MAX_AMOUNT = 10_000_000
@@ -17,6 +18,9 @@ export interface InvestInputs {
   cryptoPct: number | null
   amountError: string | null
   cryptoError: string | null
+  /** How many stocks to split over, 1 to STOCKS; null when the address asks for something else. */
+  stocks: number | null
+  stocksError: string | null
 }
 
 const first = (value: Param): string | undefined => (Array.isArray(value) ? value[0] : value)
@@ -29,7 +33,7 @@ function parseAmount(text: string): number | null {
   return DECIMAL.test(bare) ? Number(bare) : null
 }
 
-export function parseInvestInputs(params: { amount?: Param; crypto?: Param }): InvestInputs {
+export function parseInvestInputs(params: { amount?: Param; crypto?: Param; stocks?: Param }): InvestInputs {
   const amountRaw = first(params.amount)
   const cryptoRaw = first(params.crypto)
   const amountText = amountRaw ?? ''
@@ -55,7 +59,12 @@ export function parseInvestInputs(params: { amount?: Param; crypto?: Param }): I
     else amount = n
   }
 
-  return { amountText, cryptoText, amount, cryptoPct, amountError, cryptoError }
+  const stocksRaw = first(params.stocks)?.trim()
+  const count = !stocksRaw ? STOCKS : /^\d+$/.test(stocksRaw) ? Number(stocksRaw) : null
+  const stocks = count !== null && count >= 1 && count <= STOCKS ? count : null
+  const stocksError = stocks === null ? `Choose 1 to ${STOCKS} stocks.` : null
+
+  return { amountText, cryptoText, amount, cryptoPct, amountError, cryptoError, stocks, stocksError }
 }
 
 /** The day `count` weekdays after `day`: an approximation of that many trading sessions. */

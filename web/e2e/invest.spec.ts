@@ -56,7 +56,7 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   await page.goto('/invest')
   await page.getByLabel('Amount (C$)').fill('1,000')
   await page.getByRole('button', { name: 'Split it' }).click()
-  await expect(page).toHaveURL(/\/invest\?amount=1%2C000&crypto=10$/)
+  await expect(page).toHaveURL(/\/invest\?amount=1%2C000&crypto=10&stocks=5$/)
 
   await expect(page.getByText(/^From the Pre-open run of .+ · returns are vs SPY \(US\) or XIU\.TO \(TSX\), not plain gains$/)).toBeVisible()
   // two of the five pass, so the warning points at their chips
@@ -85,6 +85,23 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   const foot = page.locator('.invest-foot')
   await expect(foot).toContainText('Total C$1,000')
   await expect(foot).toContainText('Not financial or tax advice. Forecasts are probabilistic and can be wrong.')
+})
+
+test('one stock puts all of the money in the top-ranked one', async ({ page }) => {
+  await seedForecasts()
+  await page.goto('/invest')
+  await expect(page.getByLabel('Number of stocks')).toHaveValue('5')
+  await page.getByLabel('Amount (C$)').fill('500')
+  await page.getByLabel('Crypto share').fill('0')
+  await page.getByLabel('Number of stocks').selectOption('1')
+  await page.getByRole('button', { name: 'Split it' }).click()
+  await expect(page).toHaveURL(/\/invest\?amount=500&crypto=0&stocks=1$/)
+
+  await expect(stockRows(page)).toHaveCount(1)
+  await expect(stockRows(page).first()).toContainText('RY.TO') // the best expected return per unit of range
+  await expect(stockRows(page).first().locator('.i-amount b')).toHaveText('C$500')
+  await expect(page.locator('#invest-concentrated')).toHaveText('All in one stock: no spread of risk.')
+  await expect(page.locator('#invest-lines .invest-row.crypto')).toHaveCount(0)
 })
 
 test('a bad amount shows a field error', async ({ page }) => {

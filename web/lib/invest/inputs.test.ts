@@ -34,6 +34,17 @@ describe('parseInvestInputs', () => {
     }
   })
 
+  it('takes how many stocks, from 1 to 5, with 5 by default', () => {
+    expect(parseInvestInputs({ amount: '500' }).stocks).toBe(5)
+    expect(parseInvestInputs({ amount: '500', stocks: '1' }).stocks).toBe(1)
+    expect(parseInvestInputs({ amount: '500', stocks: '' }).stocks).toBe(5)
+    for (const stocks of ['0', '6', '2.5', 'x']) {
+      const r = parseInvestInputs({ amount: '500', stocks })
+      expect(r.stocks, stocks).toBeNull()
+      expect(r.stocksError, stocks).toBe('Choose 1 to 5 stocks.')
+    }
+  })
+
   it('reads the first value of a repeated parameter', () => {
     expect(parseInvestInputs({ amount: ['500', '900'] }).amount).toBe(500)
   })

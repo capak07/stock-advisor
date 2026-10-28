@@ -135,6 +135,20 @@ describe('allocate: splitting the money', () => {
     expect(out.stocks.map((l) => l.amount)).toEqual([500, 500])
   })
 
+  it('puts everything in the top-ranked stock when one is asked for', () => {
+    const candidates = ['A', 'B', 'C'].map((s, i) => stock(`${s}.TO`, { rows: [row(21, 0.06 - i / 100, 0.6)] }))
+    const out = allocate(input(candidates, { amount: 500, stocks: 1 }))
+    expect(out.stocks.map((l) => [l.symbol, l.amount])).toEqual([['A.TO', 500]])
+    expect(out.evenSplit).toBe(false) // one stock is all of it, not an even split
+  })
+
+  it('takes as many from the top of the ranking as asked, still at most two per sector', () => {
+    const banks = ['A', 'B', 'C'].map((s, i) => stock(`${s}.TO`, { sector: 'Banks', rows: [row(21, 0.09 - i / 100, 0.6)] }))
+    const loners = ['X', 'Y', 'Z'].map((s, i) => stock(`${s}.TO`, { rows: [row(21, 0.03 - i / 100, 0.6)] }))
+    const out = allocate(input([...banks, ...loners], { stocks: 3 }))
+    expect(out.stocks.map((l) => l.symbol)).toEqual(['A.TO', 'B.TO', 'X.TO'])
+  })
+
   it('treats a missing volatility as the median of the stocks shown', () => {
     const out = allocate(
       input([

@@ -46,6 +46,8 @@ export interface InvestInput {
   amount: number
   /** Percent of the amount for BTC, 0 to 100. */
   cryptoPct: number
+  /** How many stocks to split over, 1 to STOCKS (default STOCKS); 1 puts it all in the top-ranked one. */
+  stocks?: number
   usdFxFeePct: number
   candidates: Candidate[]
   /** Stocks already held: they get holding actions on My Portfolio instead. */
@@ -79,7 +81,7 @@ export interface Allocation {
   uninvested: number
   /** At least one stock shown doesn't pass the bar. */
   notValidated: boolean
-  /** Fewer than three stocks, so the 40% cap couldn't hold and the money is split evenly. */
+  /** Two stocks, so the 40% cap couldn't hold and the money is split evenly. */
   evenSplit: boolean
 }
 
@@ -151,10 +153,11 @@ function choose(input: InvestInput) {
   ranked.sort(
     (a, b) => Number(b.qualifies) - Number(a.qualifies) || b.ratio - a.ratio || a.candidate.symbol.localeCompare(b.candidate.symbol),
   )
+  const limit = Math.min(STOCKS, Math.max(1, Math.trunc(input.stocks ?? STOCKS)))
   const perSector = new Map<string, number>()
   const chosen: typeof ranked = []
   for (const r of ranked) {
-    if (chosen.length === STOCKS) break
+    if (chosen.length === limit) break
     const group = r.candidate.sector ?? `unlabelled:${r.candidate.symbol}`
     if ((perSector.get(group) ?? 0) >= PER_SECTOR) continue
     perSector.set(group, (perSector.get(group) ?? 0) + 1)
@@ -178,14 +181,14 @@ export function allocate(input: InvestInput): Allocation {
   const cryptoRaw = (input.amount * input.cryptoPct) / 100
   const stockMoney = input.amount - cryptoRaw
   const chosen = stockMoney > 0 ? choose(input) : []
-  const evenSplit = chosen.length > 0 && chosen.length < 3
+  const evenSplit = chosen.length === 2 // one stock takes it all; three or more can hold the cap
 
   const fallbackVol = median(chosen.map((r) => r.candidate.vol60).filter((v): v is number => v !== null && v > 0))
   const weights = chosen.map((r) => {
     const v = r.candidate.vol60 !== null && r.candidate.vol60 > 0 ? r.candidate.vol60 : fallbackVol
     return v ? 1 / v : 1
   })
-  const shares = evenSplit
+  const shares = chosen.length < 3
     ? chosen.map(() => 1 / chosen.length)
     : capped(
         weights.map((w) => w / weights.reduce((s, x) => s + x, 0)),

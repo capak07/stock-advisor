@@ -6,7 +6,7 @@ import { ownerClient } from '@/lib/auth'
 import { loadInvestData } from '@/lib/data/invest'
 import { shortDay } from '@/lib/dates'
 import { fmtMoney, fmtPct } from '@/lib/format'
-import { allocate, type StockLine } from '@/lib/invest/allocate'
+import { STOCKS, allocate, type StockLine } from '@/lib/invest/allocate'
 import { addWeekdays, parseInvestInputs, type InvestInputs } from '@/lib/invest/inputs'
 import { KIND_LABEL, type Run } from '@/lib/runs'
 import { tickerHref } from '@/lib/ticker'
@@ -14,7 +14,7 @@ import { tickerHref } from '@/lib/ticker'
 export const metadata: Metadata = { title: 'Invest' }
 
 interface Props {
-  searchParams: Promise<{ amount?: string | string[]; crypto?: string | string[] }>
+  searchParams: Promise<{ amount?: string | string[]; crypto?: string | string[]; stocks?: string | string[] }>
 }
 
 const NOT_VALIDATED =
@@ -53,13 +53,15 @@ export default async function InvestPage({ searchParams }: Props) {
         </section>
       ) : (
         inputs.amount !== null &&
-        inputs.cryptoPct !== null && (
+        inputs.cryptoPct !== null &&
+        inputs.stocks !== null && (
           <Result
             run={data.run}
             amount={inputs.amount}
             allocation={allocate({
               amount: inputs.amount,
               cryptoPct: inputs.cryptoPct,
+              stocks: inputs.stocks,
               usdFxFeePct: data.usdFxFeePct,
               candidates: data.candidates,
               held: data.held,
@@ -103,6 +105,17 @@ function SplitForm({ inputs }: { inputs: InvestInputs }) {
         </span>
         <span className="hint">Goes to BTC</span>
         <span className="error">{inputs.cryptoError}</span>
+      </label>
+      <label className={`field ${inputs.stocksError ? 'invalid' : ''}`}>
+        <span>Number of stocks</span>
+        <select className="select" name="stocks" defaultValue={String(inputs.stocks ?? STOCKS)}>
+          {Array.from({ length: STOCKS }, (_, i) => i + 1).map((n) => (
+            <option key={n} value={n}>
+              {n === 1 ? '1 (all in the top stock)' : n}
+            </option>
+          ))}
+        </select>
+        <span className="error">{inputs.stocksError}</span>
       </label>
       <button type="submit" className="btn btn-primary">
         Split it
@@ -150,9 +163,14 @@ function Result({ run, amount, allocation }: { run: Run; amount: number; allocat
           </li>
         )}
       </ul>
+      {stocks.length === 1 && (
+        <p className="sub" style={{ margin: '10px 0 0' }} id="invest-concentrated">
+          All in one stock: no spread of risk.
+        </p>
+      )}
       {evenSplit && (
         <p className="sub" style={{ margin: '10px 0 0' }}>
-          Too few stocks for the 40% cap, so the money is split evenly.
+          With two stocks the 40% cap can&apos;t hold, so the money is split evenly.
         </p>
       )}
       {uninvested > 0 && (

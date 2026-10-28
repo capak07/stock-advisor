@@ -47,6 +47,7 @@ test('Invest is in the navigation and starts with the form only', async ({ page 
   await expect(page.getByRole('heading', { name: 'Invest', level: 1 })).toBeVisible()
   await expect(page.getByLabel('Amount (C$)')).toBeVisible()
   await expect(page.getByLabel('Crypto share')).toHaveValue('10')
+  await expect(page.getByLabel('How long to hold')).toHaveValue('any')
   await expect(page.getByRole('button', { name: 'Split it' })).toBeVisible()
   await expect(page.locator('#invest-lines')).toHaveCount(0)
 })
@@ -56,7 +57,7 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   await page.goto('/invest')
   await page.getByLabel('Amount (C$)').fill('1,000')
   await page.getByRole('button', { name: 'Split it' }).click()
-  await expect(page).toHaveURL(/\/invest\?amount=1%2C000&crypto=10&stocks=5$/)
+  await expect(page).toHaveURL(/\/invest\?amount=1%2C000&crypto=10&stocks=5&hold=any$/)
 
   await expect(page.getByText(/^From the Pre-open run of .+ · returns are vs SPY \(US\) or XIU\.TO \(TSX\), not plain gains$/)).toBeVisible()
   // two of the five pass, so the warning points at their chips
@@ -109,13 +110,58 @@ test('one stock puts all of the money in the top-ranked one', async ({ page }) =
   await page.getByLabel('Crypto share').fill('0')
   await page.getByLabel('Number of stocks').selectOption('1')
   await page.getByRole('button', { name: 'Split it' }).click()
-  await expect(page).toHaveURL(/\/invest\?amount=500&crypto=0&stocks=1$/)
+  await expect(page).toHaveURL(/\/invest\?amount=500&crypto=0&stocks=1&hold=any$/)
 
   await expect(stockRows(page)).toHaveCount(1)
   await expect(stockRows(page).first()).toContainText('RY.TO') // the best expected return per unit of range
   await expect(stockRows(page).first().locator('.i-amount b')).toHaveText('C$500')
   await expect(page.locator('#invest-concentrated')).toHaveText('All in one stock: no spread of risk.')
   await expect(page.locator('#invest-lines .invest-row.crypto')).toHaveCount(0)
+})
+
+/** AAPL is best over 10 days; MSFT is best over 63. */
+async function seedHoldForecasts() {
+  await seedSymbols([
+    { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
+    { symbol: 'MSFT', market: 'US', name: 'Microsoft Corporation' },
+  ])
+  await sql`update symbols set sector = 'Technology' where symbol in ('AAPL', 'MSFT')`
+  const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+  const rows = [
+    { symbol: 'AAPL', horizon_days: 10, q10: -0.02, q50: 0.09, q90: 0.16, p_beat: 0.7, benchmark: 'SPY' },
+    { symbol: 'AAPL', horizon_days: 63, q10: -0.04, q50: 0.02, q90: 0.08, p_beat: 0.6, benchmark: 'SPY' },
+    { symbol: 'MSFT', horizon_days: 10, q10: -0.03, q50: 0.01, q90: 0.05, p_beat: 0.6, benchmark: 'SPY' },
+    { symbol: 'MSFT', horizon_days: 63, q10: -0.03, q50: 0.07, q90: 0.13, p_beat: 0.62, benchmark: 'SPY' },
+  ].map((r) => ({ ...r, run_id: runId, asset_type: 'stock', model_version: 'e2e' }))
+  await sql`insert into predictions ${sql(rows)}`
+  for (const symbol of ['AAPL', 'MSFT']) await seedFeatures(runId, symbol, 'stock', { vol_60: 0.3, log_adv20: 17, jump_5d: 0 })
+}
+
+test('holding for 3 months ranks on the 3-month forecast', async ({ page }) => {
+  await seedHoldForecasts()
+  await page.goto('/invest?amount=1000&crypto=0&stocks=5&hold=63')
+  await expect(stockRows(page).first()).toContainText('MSFT')
+  await expect(stockRows(page).first()).toContainText('over 63 trading days')
+  await expect(stockRows(page).nth(1)).toContainText('AAPL')
+  await expect(stockRows(page).nth(1)).toContainText('over 63 trading days')
+})
+
+test('a bad hold value shows its error', async ({ page }) => {
+  await seedForecasts()
+  await page.goto('/invest?amount=1000&hold=forever')
+  await expect(page.getByText('Choose how long to hold.')).toBeVisible()
+  await expect(page.locator('#invest-lines')).toHaveCount(0)
+})
+
+test('the TFSA note shows for a short hold and not for 3 months', async ({ page }) => {
+  await seedForecasts()
+  const note =
+    'Frequent short-term trades in a TFSA can be treated as a business, which makes the gains taxable; a longer hold avoids that (not tax advice).'
+  await page.goto('/invest?amount=1000&crypto=10&stocks=5&hold=21')
+  await expect(page.getByRole('heading', { name: /Where C\$1,000 would go/ })).toBeVisible()
+  await expect(page.getByText(note)).toBeVisible()
+  await page.goto('/invest?amount=1000&crypto=10&stocks=5&hold=63')
+  await expect(page.getByText(note)).toHaveCount(0)
 })
 
 test('a bad amount shows a field error', async ({ page }) => {

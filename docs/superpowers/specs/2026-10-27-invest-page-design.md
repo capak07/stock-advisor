@@ -11,6 +11,7 @@ The owner wants to type an amount (say C$1,000) and get a concrete split. In the
 ## What the owner decided (2026-10-27)
 
 - **Five stocks plus crypto,** with an amount and the details for each.
+- **How long to hold** (owner decision 2026-10-28): the owner picks Any, ~1 month, ~3 months or ~6 months. Ranking uses exactly that horizon (20/21, 63 or 126 trading days), not "or longer". Any still picks the best qualifying horizon.
 - **Ranking and sizing follow the approach proposed in chat:**
   - rank with the picks' own rule;
   - weight by risk, giving less to volatile stocks;

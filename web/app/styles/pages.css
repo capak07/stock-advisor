@@ -115,10 +115,12 @@
 #import-rows td { white-space: normal; }
 
 /* ---------- Invest (2026-10-27 design's Layout; Ledger classes, no mockup file) ---------- */
-.invest-form { display: grid; grid-template-columns: minmax(0, 1fr) 170px 210px auto; gap: 12px 16px; align-items: start; }
-.invest-form .btn { margin-top: 24px; }
+.invest-form { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: start; }
+.invest-form .field { flex: 1 1 150px; min-width: 0; }
+.invest-form .btn { margin-top: 24px; flex: 0 0 auto; }
 @media (max-width: 639px) {
-  .invest-form { grid-template-columns: minmax(0, 1fr); }
+  .invest-form { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .invest-form .field { flex: none; }
   .invest-form .btn { margin-top: 0; justify-self: start; }
 }
 .invest-list { margin: 0; padding: 0; list-style: none; }

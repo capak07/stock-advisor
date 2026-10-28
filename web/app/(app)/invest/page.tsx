@@ -9,7 +9,7 @@ import { loadFx } from '@/lib/data/portfolio'
 import { shortDay } from '@/lib/dates'
 import { fmtMoney, fmtPct } from '@/lib/format'
 import { btcGuide, investGuide, type OrderContext } from '@/lib/guidance'
-import { STOCKS, allocate, type StockLine } from '@/lib/invest/allocate'
+import { HOLDS, STOCKS, allocate, type Hold, type StockLine } from '@/lib/invest/allocate'
 import { addWeekdays, parseInvestInputs, type InvestInputs } from '@/lib/invest/inputs'
 import type { OrderPlan } from '@/lib/orders'
 import { KIND_LABEL, type Run } from '@/lib/runs'
@@ -18,7 +18,7 @@ import { tickerHref } from '@/lib/ticker'
 export const metadata: Metadata = { title: 'Invest' }
 
 interface Props {
-  searchParams: Promise<{ amount?: string | string[]; crypto?: string | string[]; stocks?: string | string[] }>
+  searchParams: Promise<{ amount?: string | string[]; crypto?: string | string[]; stocks?: string | string[]; hold?: string | string[] }>
 }
 
 const NOT_VALIDATED =
@@ -59,15 +59,19 @@ export default async function InvestPage({ searchParams }: Props) {
       ) : (
         inputs.amount !== null &&
         inputs.cryptoPct !== null &&
-        inputs.stocks !== null && (
+        inputs.stocks !== null &&
+        inputs.hold !== null && (
           <Result
             run={data.run}
             amount={inputs.amount}
+            hold={inputs.hold}
+            noTsx126={!data.candidates.some((c) => c.market === 'TSX' && c.rows.some((r) => r.horizonDays === 126))}
             orders={orders}
             allocation={allocate({
               amount: inputs.amount,
               cryptoPct: inputs.cryptoPct,
               stocks: inputs.stocks,
+              horizons: inputs.horizons,
               usdFxFeePct: data.usdFxFeePct,
               candidates: data.candidates,
               held: data.held,
@@ -123,6 +127,17 @@ function SplitForm({ inputs }: { inputs: InvestInputs }) {
         </select>
         <span className="error">{inputs.stocksError}</span>
       </label>
+      <label className={`field ${inputs.holdError ? 'invalid' : ''}`}>
+        <span>How long to hold</span>
+        <select className="select" name="hold" defaultValue={inputs.hold ?? 'any'}>
+          {HOLDS.map((h) => (
+            <option key={h.value} value={h.value}>
+              {h.label}
+            </option>
+          ))}
+        </select>
+        <span className="error">{inputs.holdError}</span>
+      </label>
       <button type="submit" className="btn btn-primary">
         Split it
       </button>
@@ -133,11 +148,15 @@ function SplitForm({ inputs }: { inputs: InvestInputs }) {
 function Result({
   run,
   amount,
+  hold,
+  noTsx126,
   orders,
   allocation,
 }: {
   run: Run
   amount: number
+  hold: Hold
+  noTsx126: boolean
   orders: OrderContext
   allocation: ReturnType<typeof allocate>
 }) {
@@ -190,6 +209,17 @@ function Result({
       {evenSplit && (
         <p className="sub" style={{ margin: '10px 0 0' }}>
           With two stocks the 40% cap can&apos;t hold, so the money is split evenly.
+        </p>
+      )}
+      {hold === '126' && noTsx126 && (
+        <p className="sub" style={{ margin: '10px 0 0' }}>
+          No TSX stock has a 6-month forecast this run, so only US stocks are ranked.
+        </p>
+      )}
+      {(hold === 'any' || hold === '21') && (
+        <p className="sub" style={{ margin: '10px 0 0' }}>
+          Frequent short-term trades in a TFSA can be treated as a business, which makes the gains taxable; a longer hold
+          avoids that (not tax advice).
         </p>
       )}
       {uninvested > 0 && (

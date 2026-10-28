@@ -42,7 +42,7 @@ def _metrics(frame: pd.DataFrame) -> dict[str, float]:
         "pinball_q10": p10,
         "pinball_q50": p50,
         "pinball_q90": p90,
-        "pinball": _mean_or_nan([p10, p50, p90]),
+        "pinball": (p10 + p50 + p90) / 3,
         "coverage_10_90": float(np.mean((y >= q10) & (y <= q90))),
         "calibration_pts": cal_pts,
         "max_bin_gap_pts": max_gap,

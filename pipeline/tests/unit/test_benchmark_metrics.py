@@ -42,6 +42,12 @@ def test_each_outer_fold_and_the_pool_are_scored_and_fold_0_has_no_calibration()
     assert summary(m, (5,))["1"] == {"rank_ic": pytest.approx(-1.0), "pinball": m["1"][5]["pinball"]}
 
 
+def test_combined_pinball_is_nan_if_any_quantile_cannot_be_scored():
+    pred = rows(1, "2024-02-01", [.01, .02, .03], [.01, .02, .03], p=[.4, .5, .6])
+    pred.loc[0, "q10"] = np.nan
+    assert math.isnan(model_metrics(pred)["1"][5]["pinball"])
+
+
 def test_the_default_policy_is_scored_per_calibrated_fold():
     pred = pd.concat([
         rows(0, "2024-02-01", [.03], [.05]),  # no p: never picked

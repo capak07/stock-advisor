@@ -1,9 +1,9 @@
 """A model configuration (a variant), and the one seam every variant trains through.
 
 The benchmark compares variants on identical folds; weekly training runs the market's accepted
-one. Plan 6a builds only the baseline: factors (Plan 6c), GARCH (Plan 6d) and a tuned policy
-(Plan 6e) are named here so stored configurations and reports can refer to them, but running
-one before its plan lands is refused, never silently treated as the baseline.
+one. Plan 6a builds only the baseline: factors (Plan 6c) and GARCH (Plan 6d) are named here
+so stored configurations and reports can refer to them, but running one before its plan lands
+is refused, never silently treated as the baseline. A tuned policy is a `Policy` value.
 """
 
 from collections.abc import Mapping, Sequence
@@ -14,6 +14,7 @@ import pandas as pd
 
 from advisor.model.dataset import MarketData
 from advisor.model.train import FinalModel, Fold, TrainConfig, WalkForward, fit_final, walk_forward
+from advisor.policy import Policy
 
 CONFIG_VERSION = 1
 _KEYS = {"version", "factors", "garch", "policy"}
@@ -23,7 +24,7 @@ _KEYS = {"version", "factors", "garch", "policy"}
 class ModelConfig:
     factors: bool = False
     garch: bool = False
-    policy: Mapping[str, float] | None = None  # tuned policy values; None = today's constants
+    policy: Policy | None = None  # tuned rules; None = today's constants
 
     @property
     def name(self) -> str:
@@ -31,7 +32,7 @@ class ModelConfig:
         return (model or "baseline") + ("+policy" if self.policy is not None else "")
 
     def to_json(self) -> dict[str, Any]:
-        policy = dict(self.policy) if self.policy is not None else None
+        policy = None if self.policy is None else self.policy.to_json()
         return {"version": CONFIG_VERSION, "factors": self.factors, "garch": self.garch, "policy": policy}
 
     @classmethod
@@ -44,7 +45,9 @@ class ModelConfig:
             raise ValueError(f"a stored config has unexpected or missing keys: {', '.join(odd)}")
         if d["version"] != CONFIG_VERSION:
             raise ValueError(f"unknown config version {d['version']!r}")
-        config = cls(bool(d["factors"]), bool(d["garch"]), d["policy"])
+        raw = d["policy"]
+        policy = None if raw is None else Policy.from_json(raw)
+        config = cls(bool(d["factors"]), bool(d["garch"]), policy)
         if (plan := unbuilt(config)) is not None:
             raise ValueError(f"{config.name} arrives with {plan}")
         return config
@@ -59,8 +62,6 @@ def unbuilt(config: ModelConfig) -> str | None:
         return "Plan 6c"
     if config.garch:
         return "Plan 6d"
-    if config.policy is not None:
-        return "Plan 6e"
     return None
 
 

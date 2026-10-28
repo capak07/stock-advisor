@@ -37,7 +37,7 @@ The owner wants to type an amount (say C$1,000) and get a concrete split. In the
   - a link to its Ticker page.
 - **An honest frame:**
   - the page always states that returns are **relative to the benchmark** (SPY or XIU.TO), not absolute gains;
-  - it shows the "Not validated" warning whenever fewer than 5 of the stocks shown pass the bar;
+  - it shows the "Not validated" warning whenever any stock shown doesn't pass the bar (each line also says whether it passes);
   - it carries the app's standing disclaimer.
 
 ## Non-goals

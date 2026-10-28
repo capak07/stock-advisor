@@ -217,6 +217,9 @@ def render_markdown(report: Mapping) -> str:
         if "error" in market:
             lines += [f"Failed: {market['error']}", ""]
             continue
+        if "skipped" in market:
+            lines += [f"Skipped: {market['skipped']}", ""]
+            continue
         lines += [_choice_line(market), "", "### Ablations", ""]
         lines += [
             "| Variant | Status | Rank IC (pooled) | Pinball (pooled) | Worst calibration | Decision |",

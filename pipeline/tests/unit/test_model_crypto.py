@@ -1,35 +1,10 @@
-import json
-
-import numpy as np
 import pandas as pd
 import pytest
 
 from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS, CRYPTO_WARMUP, UNIVERSE, load_crypto
 from advisor.model.train import PARAMS, TrainConfig, training_rows, walk_forward
-
-START = pd.Timestamp("2020-01-04")  # a Saturday: every row falls on one
-
-
-def _bars(symbol, days, close, volume):
-    close = np.asarray(close, float)
-    return pd.DataFrame({"symbol": symbol, "day": [d.date() for d in days], "open": close, "high": close * 1.01,
-                         "low": close * 0.99, "close": close, "volume": volume})
-
-
-def write(tmp, coins=6, days=600, seed=1):
-    rng = np.random.default_rng(seed)
-    cal = pd.date_range(START, periods=days)
-    walk = lambda sd: np.exp(np.cumsum(rng.normal(0, sd, days)))  # noqa: E731
-    frames = [_bars("BTC", cal, 100 * walk(0.03), 1e6)]
-    frames += [_bars(f"C{i:03d}", cal, 10 * walk(0.04), 1e5 * (i + 1)) for i in range(coins)]
-    frames += [_bars("USDT", cal, np.ones(days), 1e9), _bars("FLAT", cal, np.full(days, 5.0), 1e9)]
-    frames.append(_bars("YOUNG", cal[-200:], 3 * walk(0.04)[-200:], 1e9))
-    pd.concat(frames).to_parquet(tmp / "prices_crypto.parquet", index=False)
-    weekdays = cal[cal.dayofweek < 5]
-    spy = 400 * np.exp(np.cumsum(rng.normal(0, 0.01, len(weekdays))))
-    _bars("SPY", weekdays, spy, 1e7).to_parquet(tmp / "prices_US.parquet", index=False)
-    (tmp / "manifest.json").write_text(json.dumps({"end": (cal[-1] + pd.Timedelta(days=1)).date().isoformat()}))
-    return pd.concat(frames), _bars("SPY", weekdays, spy, 1e7)
+from model_data import CRYPTO_START as START
+from model_data import write_crypto as write
 
 
 def test_rows_are_weekly_and_in_the_universe(tmp_path):

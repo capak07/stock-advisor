@@ -56,3 +56,28 @@ def write_market(out: Path, market: Market, stocks: int = 40, days: int = 2340, 
     # built during the last day's session: its bar is partial and must be left out
     (out / "manifest.json").write_text(json.dumps({"end": calendar[-1].date().isoformat()}))
     return symbols
+
+
+CRYPTO_START = pd.Timestamp("2020-01-04")  # a Saturday: every crypto row falls on one
+
+
+def _coin_bars(symbol, days, close, volume):
+    close = np.asarray(close, float)
+    return pd.DataFrame({"symbol": symbol, "day": [d.date() for d in days], "open": close, "high": close * 1.01,
+                         "low": close * 0.99, "close": close, "volume": volume})
+
+
+def write_crypto(tmp, coins=6, days=600, seed=1):
+    rng = np.random.default_rng(seed)
+    cal = pd.date_range(CRYPTO_START, periods=days)
+    walk = lambda sd: np.exp(np.cumsum(rng.normal(0, sd, days)))  # noqa: E731
+    frames = [_coin_bars("BTC", cal, 100 * walk(0.03), 1e6)]
+    frames += [_coin_bars(f"C{i:03d}", cal, 10 * walk(0.04), 1e5 * (i + 1)) for i in range(coins)]
+    frames += [_coin_bars("USDT", cal, np.ones(days), 1e9), _coin_bars("FLAT", cal, np.full(days, 5.0), 1e9)]
+    frames.append(_coin_bars("YOUNG", cal[-200:], 3 * walk(0.04)[-200:], 1e9))
+    pd.concat(frames).to_parquet(tmp / "prices_crypto.parquet", index=False)
+    weekdays = cal[cal.dayofweek < 5]
+    spy = 400 * np.exp(np.cumsum(rng.normal(0, 0.01, len(weekdays))))
+    _coin_bars("SPY", weekdays, spy, 1e7).to_parquet(tmp / "prices_US.parquet", index=False)
+    (tmp / "manifest.json").write_text(json.dumps({"end": (cal[-1] + pd.Timedelta(days=1)).date().isoformat()}))
+    return pd.concat(frames), _coin_bars("SPY", weekdays, spy, 1e7)

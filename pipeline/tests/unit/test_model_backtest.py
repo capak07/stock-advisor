@@ -159,3 +159,11 @@ def test_a_short_hold_ends_before_the_next_sample_day():
         for d in ("2025-03-03", "2025-03-17")
     ])
     assert len(simulate_picks(preds, Market.TSX, 1.5)) == 2
+
+
+def test_coins_pay_the_crypto_fee_both_ways_and_swing_over_a_week_or_two():
+    from advisor.model.backtest import swing_horizons
+    from advisor.model.crypto import CRYPTO
+    assert round_trip_cost(CRYPTO, np.array([2e7, 1e6]), 0.5).tolist() == pytest.approx([0.011, 0.013])
+    assert swing_horizons(CRYPTO) == frozenset({7, 14})
+    assert swing_horizons(Market.US) == frozenset({5, 10, 20})

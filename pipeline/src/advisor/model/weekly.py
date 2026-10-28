@@ -11,6 +11,7 @@ import math
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from advisor.model.backtest import (
     pick_metrics,
     simulate_picks,
 )
+from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS, load_crypto
 from advisor.model.dataset import load_market
 from advisor.model.train import TrainConfig, to_files
 from advisor.model.variants import BASELINE, ModelConfig, fit_variant, run_variant
@@ -34,7 +36,8 @@ from advisor.store import repo
 from advisor.store.db import connect
 
 IC_TOLERANCE = 0.005  # week-to-week noise: one more week of data must not block a good replacement
-KIND = {Market.US: "stock_us", Market.TSX: "stock_tsx"}
+KIND = {Market.US: "stock_us", Market.TSX: "stock_tsx", CRYPTO: "crypto"}
+COINS_NEVER_PICKS = "coins are never picks (spec §5.4)"
 # TSX first: it is the smaller load, so an out-of-memory kill during US (which no `try` can catch)
 # still leaves TSX trained and reported
 TRAIN_ORDER = [Market.TSX, Market.US]
@@ -121,7 +124,7 @@ def json_safe(value: Any) -> Any:
     return value
 
 
-def config_for(conn: psycopg.Connection, market: Market) -> tuple[ModelConfig, str]:
+def config_for(conn: psycopg.Connection, market: Market | str) -> tuple[ModelConfig, str]:
     """The market's accepted configuration, or the baseline when there is none or this code can't run it."""
     row = repo.active_config(conn, str(market))
     if row is None:
@@ -134,12 +137,15 @@ def config_for(conn: psycopg.Connection, market: Market) -> tuple[ModelConfig, s
 
 
 def _train_market(
-    data_dir: Path, market: Market, conn: psycopg.Connection, now: datetime, config: TrainConfig
+    data_dir: Path, market: Market | str, conn: psycopg.Connection, now: datetime, config: TrainConfig
 ) -> dict:
     kind = KIND[market]
+    coins = market == CRYPTO
     began = time.monotonic()
     model_config, config_reason = config_for(conn, market)
-    data = load_market(data_dir, market)
+    if coins:
+        config = replace(config, horizons=CRYPTO_HORIZONS)
+    data = load_crypto(data_dir) if coins else load_market(data_dir, market)
     loaded = time.monotonic()
     wf = run_variant(data, model_config, config)
     walked = time.monotonic()
@@ -147,13 +153,17 @@ def _train_market(
     calibrated = wf.predictions[wf.predictions["p"].notna() & wf.predictions["horizon"].isin(usable)]
     usd_fx_fee_pct = repo.fee_settings(conn)[0]
     policy = model_config.policy or DEFAULT_POLICY
-    backtest = {
-        **pick_metrics(simulate_picks(calibrated, market, usd_fx_fee_pct, policy)),
-        "funnel": pick_funnel(calibrated, market, usd_fx_fee_pct, policy),
-    }
     # with no usable horizon, the worst of all gives the plain-words reason
     calibration_pts = calibration_of(wf.metrics, usable or config.horizons)
-    picks_enabled, picks_reason = gate(backtest, calibration_pts)
+    if coins:  # coins never enter the pick lists, so there is no picks gate to backtest
+        backtest: dict = {"funnel": None}
+        picks_enabled, picks_reason = False, COINS_NEVER_PICKS
+    else:
+        backtest = {
+            **pick_metrics(simulate_picks(calibrated, market, usd_fx_fee_pct, policy)),
+            "funnel": pick_funnel(calibrated, market, usd_fx_fee_pct, policy),
+        }
+        picks_enabled, picks_reason = gate(backtest, calibration_pts)
     model = fit_variant(data, wf, model_config, config)
     files = to_files(model)
     seconds = {
@@ -195,6 +205,7 @@ def run(
     conn: psycopg.Connection,
     now: datetime,
     config: TrainConfig = TrainConfig(),  # noqa: B008
+    crypto: bool = True,
 ) -> dict[str, dict]:
     report: dict[str, dict] = {}
     for market in markets:
@@ -202,7 +213,26 @@ def run(
             report[str(market)] = _train_market(data_dir, market, conn, now, config)
         except Exception as e:  # one market's failure must not stop the other
             report[str(market)] = {"error": f"{type(e).__name__}: {e}"}
+    if crypto:
+        skipped = crypto_skipped(data_dir)
+        if skipped:
+            report[CRYPTO] = {"skipped": skipped}
+        else:
+            try:
+                report[CRYPTO] = _train_market(data_dir, CRYPTO, conn, now, config)
+            except Exception as e:
+                report[CRYPTO] = {"error": f"{type(e).__name__}: {e}"}
     return report
+
+
+def crypto_skipped(data_dir: Path) -> str | None:
+    """Why this build can't train the coin model, or None when it can."""
+    manifest = json.loads((data_dir / "manifest.json").read_text())
+    if "crypto_error" in manifest:
+        return f"the crypto history failed to build: {manifest['crypto_error']}"
+    if not (data_dir / "prices_crypto.parquet").exists():
+        return "no crypto history in this build"
+    return None
 
 
 def exit_code(report: Mapping[str, Mapping]) -> int:
@@ -223,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     markets = [Market(m) for m in args.market] if args.market else TRAIN_ORDER
     with connect(Settings.from_env().database_url) as conn:
-        report = run(args.data, markets, conn, datetime.now(UTC))
+        report = run(args.data, markets, conn, datetime.now(UTC), crypto=not args.market)
     text = json.dumps(report, indent=2)
     (args.data / REPORT).write_text(text)
     print(text)

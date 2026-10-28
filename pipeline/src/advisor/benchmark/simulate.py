@@ -15,7 +15,8 @@ import numpy as np
 import pandas as pd
 
 from advisor.markets import MARKETS
-from advisor.model.backtest import PER_SECTOR, PICKS_PER_STYLE, SWING_HORIZONS, round_trip_cost
+from advisor.model.backtest import PER_SECTOR, PICKS_PER_STYLE, round_trip_cost, swing_horizons
+from advisor.model.crypto import BTC, CRYPTO
 from advisor.model.features import _wilder, to_wide, true_range
 from advisor.models import Market
 from advisor.policy import Policy
@@ -39,11 +40,12 @@ class Book:
     daily: pd.Series  # the equal-weight book's return on every session of the period
 
 
-def daily_panel(data_dir: Path, market: Market) -> DailyPanel:
-    """The market's daily closes and ATR, on the benchmark's sessions, as `load_market` sees them."""
-    benchmark = MARKETS[market].benchmark
+def daily_panel(data_dir: Path, market: Market | str) -> DailyPanel:
+    """The market's daily closes and ATR, on the benchmark's sessions, as `load_market` sees them
+    (for coins: every day with a BTC close, as `load_crypto` sees them)."""
+    benchmark = BTC if market == CRYPTO else MARKETS[market].benchmark
     end = pd.Timestamp(json.loads((data_dir / "manifest.json").read_text())["end"])
-    prices = pd.read_parquet(data_dir / f"prices_{market}.parquet")
+    prices = pd.read_parquet(data_dir / f"prices_{market}.parquet")  # prices_crypto for coins
     prices = prices[pd.to_datetime(prices["day"]) < end]  # the build's last bar is partial
     wide = to_wide(prices)
     calendar = wide.close.index[wide.close[benchmark].notna()]
@@ -79,7 +81,7 @@ def _candidates(rows: pd.DataFrame, policy: Policy, market: Market, fee: float) 
     df["key"] = df["p"] if policy.rule == "p" else df["q50"] / (df["q90"] - df["q10"])
     # each symbol's best row; a tie goes to the shorter horizon
     df = df.sort_values(["symbol", "key", "horizon"], ascending=[True, False, True]).drop_duplicates("symbol")
-    df["style"] = np.where(df["horizon"].isin(SWING_HORIZONS), "swing", "position")
+    df["style"] = np.where(df["horizon"].isin(swing_horizons(market)), "swing", "position")
     return df.sort_values(["style", "key", "symbol"], ascending=[True, False, True])
 
 

@@ -12,7 +12,14 @@ from pathlib import Path
 import pandas as pd
 
 from advisor.model.dataset import MarketData
-from advisor.model.features import PRICE_FEATURES, Wide, forward_excess, jump_days, price_features, to_wide
+from advisor.model.features import (
+    PRICE_FEATURES,
+    Wide,
+    forward_excess,
+    jump_days,
+    price_features,
+    to_wide,
+)
 from advisor.screener import ADV_WINDOW
 
 CRYPTO = "crypto"

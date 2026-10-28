@@ -51,6 +51,9 @@ export interface PickView {
   /** The round-trip cost the gate used (`features_live.features.advice.round_trip_cost`); null if not stored. */
   cost: number | null
   benchmark: string
+  /** For order guidance (lib/orders.ts): the 14-day daily range as a fraction, and 20-day dollar volume. */
+  atrPct: number | null
+  dollarVolume20: number | null
 }
 
 /** A pick the run told the owner to exit early (Plan 4c), with its graded outcome. */
@@ -159,6 +162,7 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
     const f = featuresOf.get(p.symbol) ?? {}
     const advice = (f.advice ?? {}) as { round_trip_cost?: unknown }
     const q = prediction.get(`${p.symbol}:${p.horizon_days}`)
+    const adv = num(f.log_adv20)
     return {
       id: p.id,
       symbol: p.symbol,
@@ -181,6 +185,8 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
       catalysts: p.catalysts ?? [],
       cost: num(advice.round_trip_cost) ?? null,
       benchmark: q?.benchmark ?? (p.market === 'TSX' ? 'XIU.TO' : 'SPY'),
+      atrPct: num(f.atr_14_pct) ?? null,
+      dollarVolume20: adv === undefined ? null : Math.expm1(adv), // the pipeline stores log1p(ADV)
     }
   }
 

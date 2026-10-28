@@ -20,6 +20,9 @@ const stock = (symbol: string, over: Partial<Candidate> = {}): Candidate => ({
   dollarVolume20: 2e7,
   jump5d: 0,
   priceCad: 10,
+  price: 10,
+  currency: symbol.endsWith('.TO') ? 'CAD' : 'USD',
+  atrPct: 0.02,
   ...over,
 })
 

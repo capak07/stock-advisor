@@ -27,6 +27,13 @@ export interface HoldingAction {
   horizonDays: number | null
   exitBy: string | null
   riskLevel: RiskLevel | null
+  /** The close the action was decided on, in the asset's own currency (coins: Coinbase USD). */
+  refPrice: number | null
+  /** For order guidance (lib/orders.ts): the 14-day daily range as a fraction, and 20-day dollar volume. */
+  atrPct: number | null
+  dollarVolume20: number | null
+  /** The trailing stop of the previous published run with actions, to say when to raise the stop order. */
+  previousStop: number | null
 }
 
 /** The Actions card's groups, in the order they show. */

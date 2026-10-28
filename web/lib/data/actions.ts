@@ -19,12 +19,24 @@ interface ActionRow {
   horizon_days: number | null
   exit_by: string | null
   risk_level: RiskLevel | null
+  ref_price: string | number | null
 }
 
 const COLUMNS =
-  'account, symbol, asset_type, action, review, reasons, warnings, trailing_stop, q10, q50, q90, horizon_days, exit_by, risk_level'
+  'account, symbol, asset_type, action, review, reasons, warnings, trailing_stop, q10, q50, q90, horizon_days, exit_by, risk_level, ref_price'
 
-const toAction = (r: ActionRow): HoldingAction => ({
+const num = (value: unknown): number | null => {
+  const n = typeof value === 'string' ? Number(value) : value
+  return typeof n === 'number' && Number.isFinite(n) ? n : null
+}
+const keyOf = (r: { account: string; symbol: string; asset_type: string }) => `${r.account}:${r.asset_type}:${r.symbol}`
+
+interface OrderData {
+  features: Map<string, { atrPct: number | null; dollarVolume20: number | null }>
+  previousStops: Map<string, number>
+}
+
+const toAction = (r: ActionRow, extra: OrderData): HoldingAction => ({
   account: r.account,
   symbol: r.symbol,
   assetType: r.asset_type,
@@ -39,6 +51,10 @@ const toAction = (r: ActionRow): HoldingAction => ({
   horizonDays: r.horizon_days,
   exitBy: r.exit_by,
   riskLevel: r.risk_level,
+  refPrice: num(r.ref_price),
+  atrPct: r.asset_type === 'stock' ? (extra.features.get(r.symbol)?.atrPct ?? null) : null,
+  dollarVolume20: r.asset_type === 'stock' ? (extra.features.get(r.symbol)?.dollarVolume20 ?? null) : null,
+  previousStop: extra.previousStops.get(keyOf(r)) ?? null,
 })
 
 /** The holding actions of the newest published run that has any, with that run's day; null before the first. */
@@ -66,5 +82,45 @@ export async function loadHoldingActions(
       .order('asset_type')
       .range(from, to),
   )) as ActionRow[]
-  return { runId, day, actions: rows.map(toAction) }
+  const extra = await orderData(supabase, runId, rows)
+  return { runId, day, actions: rows.map((r) => toAction(r, extra)) }
+}
+
+/** The run's stored range and volume of each held stock, and the previous published run's trailing stops. */
+async function orderData(supabase: Supabase, runId: number, rows: readonly ActionRow[]): Promise<OrderData> {
+  const stocks = [...new Set(rows.filter((r) => r.asset_type === 'stock').map((r) => r.symbol))]
+  const [features, previous] = await Promise.all([
+    stocks.length === 0
+      ? []
+      : (must(
+          await supabase
+            .from('features_live')
+            .select('symbol, atr:features->atr_14_pct, adv:features->log_adv20')
+            .eq('run_id', runId)
+            .eq('asset_type', 'stock')
+            .in('symbol', stocks),
+        ) as { symbol: string; atr: unknown; adv: unknown }[]),
+    supabase
+      .from('holding_actions')
+      .select('run_id, runs!inner(published)')
+      .eq('runs.published', true)
+      .lt('run_id', runId)
+      .order('run_id', { ascending: false })
+      .limit(1),
+  ])
+  const previousRun = (must(previous) as { run_id: number }[])[0]?.run_id
+  const stops = previousRun
+    ? (must(
+        await supabase.from('holding_actions').select('account, symbol, asset_type, trailing_stop').eq('run_id', previousRun),
+      ) as { account: string; symbol: string; asset_type: string; trailing_stop: string | number | null }[])
+    : []
+  return {
+    features: new Map(
+      features.map((f) => {
+        const adv = num(f.adv)
+        return [f.symbol, { atrPct: num(f.atr), dollarVolume20: adv === null ? null : Math.expm1(adv) }] // the pipeline stores log1p(ADV)
+      }),
+    ),
+    previousStops: new Map(stops.flatMap((s) => (num(s.trailing_stop) === null ? [] : [[keyOf(s), num(s.trailing_stop)!]]))),
+  }
 }

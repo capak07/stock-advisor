@@ -40,6 +40,11 @@ export interface Candidate {
   jump5d: number | null
   /** The latest close in CAD. */
   priceCad: number | null
+  /** The latest close in the stock's own currency, and that currency, for order guidance. */
+  price: number | null
+  currency: 'CAD' | 'USD'
+  /** The 14-day daily range as a fraction, for order guidance. */
+  atrPct: number | null
 }
 
 export interface InvestInput {
@@ -72,6 +77,11 @@ export interface StockLine extends ForecastRow {
   cost: number
   vol60: number | null
   volatility: Volatility | null
+  /** For order guidance (lib/orders.ts). */
+  price: number | null
+  currency: 'CAD' | 'USD'
+  atrPct: number | null
+  dollarVolume20: number | null
 }
 
 export interface Allocation {
@@ -215,6 +225,10 @@ export function allocate(input: InvestInput): Allocation {
       qualifies: r.qualifies,
       cost: r.cost,
       vol60: c.vol60,
+      price: c.price,
+      currency: c.currency,
+      atrPct: c.atrPct,
+      dollarVolume20: c.dollarVolume20,
       volatility: c.vol60 !== null && allVols.length > 0 ? volatilityWord(percentileOf(c.vol60, allVols)) : null,
     }
   })

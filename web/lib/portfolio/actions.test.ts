@@ -16,6 +16,10 @@ const action = (over: Partial<HoldingAction>): HoldingAction => ({
   horizonDays: null,
   exitBy: null,
   riskLevel: null,
+  refPrice: null,
+  atrPct: null,
+  dollarVolume20: null,
+  previousStop: null,
   ...over,
 })
 

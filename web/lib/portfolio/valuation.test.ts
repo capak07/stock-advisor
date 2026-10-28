@@ -114,6 +114,10 @@ const rated = (symbol: string, riskLevel: HoldingAction['riskLevel'], over: Part
   horizonDays: null,
   exitBy: null,
   riskLevel,
+  refPrice: null,
+  atrPct: null,
+  dollarVolume20: null,
+  previousStop: null,
   ...over,
 })
 const shares = (slices: { label: string; share: number }[]) => slices.map((s) => [s.label, Math.round(s.share * 10) / 10])

@@ -61,12 +61,12 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     fetchAll((from, to) =>
       supabase
         .from('features_live')
-        .select('symbol, vol_60:features->vol_60, log_adv20:features->log_adv20, jump_5d:features->jump_5d')
+        .select('symbol, vol_60:features->vol_60, log_adv20:features->log_adv20, jump_5d:features->jump_5d, atr_14_pct:features->atr_14_pct')
         .eq('run_id', run.id)
         .eq('asset_type', 'stock')
         .order('symbol')
         .range(from, to),
-    ) as Promise<{ symbol: string; vol_60: unknown; log_adv20: unknown; jump_5d: unknown }[]>,
+    ) as Promise<{ symbol: string; vol_60: unknown; log_adv20: unknown; jump_5d: unknown; atr_14_pct: unknown }[]>,
     supabase
       .from('features_live')
       .select('price_cad:features->price_cad')
@@ -115,6 +115,9 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
       dollarVolume20: logAdv === null ? null : Math.expm1(logAdv), // the pipeline stores log1p(ADV)
       jump5d: num(f?.jump_5d),
       priceCad: close ? fx.toCad(close) : null,
+      price: close ? close.close : null,
+      currency: close ? close.currency : marketOf(symbol) === 'US' ? 'USD' : 'CAD',
+      atrPct: num(f?.atr_14_pct),
     }
   })
 

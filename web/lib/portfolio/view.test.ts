@@ -50,6 +50,10 @@ const AAPL_ACTION: HoldingAction = {
   horizonDays: 21,
   exitBy: '2026-11-16',
   riskLevel: 'medium',
+  refPrice: null,
+  atrPct: null,
+  dollarVolume20: null,
+  previousStop: null,
 }
 const GUIDE = { roundTrips: 24, shortHoldShare: 0.5 }
 const INPUTS = {

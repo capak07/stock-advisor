@@ -7,8 +7,11 @@ watchlist, buys, sells and the settings row.
 Plan 5b built the frame, sign-in, My Portfolio (values, returns against XIU.TO and SPY in CAD,
 warnings, buys and sells), the watchlist and settings. Plan 5c added the trade list with Delete,
 file import, a Ticker page for any symbol (price, the owner's position, two days of news and the
-sources that cover it) and Source health. Picks, Track record, verdicts, actions and the
-forecast come with the model (Plans 3 and 4).
+sources that cover it) and Source health. Plan 4b added Today's Picks (US and TSX tabs, Swing
+and Position cards, the Exit early card and the watchlist's verdicts, with an "I bought this"
+button that pre-fills a buy linked to its pick), the Watchlist's verdict column and the Ticker
+page's forecast: the cone on the price chart, horizon tabs, top factors, catalysts and past picks
+with their results. Only Track record is still to come.
 
 ## Run it locally
 
@@ -34,7 +37,7 @@ local stack is only for development and tests: the hosted database is migrated w
 ```bash
 npm run lint
 npm run typecheck
-npm test              # unit tests (Vitest): lib/**/*.test.ts, the portfolio maths and form checks
+npm test              # unit tests (Vitest): lib/**/*.test.ts, the portfolio maths, form checks and advice wording
 npm run e2e           # browser tests (Playwright) against the local stack and a production build
 ```
 

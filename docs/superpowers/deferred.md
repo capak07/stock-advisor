@@ -100,17 +100,19 @@ These are items that the Plan 1, Plan 2a, Plan 2b, Plan 2c, Plan 2d, Plan 2e, Pl
 - **Missing versus zero:** when no news item came in at all (every news source failed), the run leaves the `news_*` features missing. When items came in but none for an asset, its counts are 0 and its sentiment is empty. Treat missing as unknown.
 - **`features_live` rows:** `merge_features_live` creates a row with only `news_*` keys for a shortlisted stock that had no row. A later plain `write_features_live` for the same run and asset would hit the unique key, so merge there too, or write before the news stage.
 
-## Plan 4: what is left after 4a (4c is built)
+## Plan 4: what is left after 4a, 4b and 4c
 
-Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchlist_verdicts`) is built. The rest:
+Plans 4a (picks and watchlist verdicts), 4b (the suggestions dashboard: Today's Picks with its Exit early card and graded-count paper banners, "I bought this", the Watchlist's verdicts, and the Ticker page's forecast, factors, catalysts and graded past picks) and 4c (holding actions and grading) are built. The rest:
 
-- **Plan 4b, the dashboard:**
-  - Today's Picks;
-  - the watchlist's verdict columns;
-  - the Ticker page's forecast range and top factors (catalysts and past picks as well);
-  - the status bar's Paper badges.
+- **The Track Record page** (spec §9): per market, live and backtest shown apart, hit rate, average excess return gross and net of costs, calibration by horizon and risk level, every past pick, and the survivorship-bias note. The nav doesn't link it yet.
+- **The status bar's Paper badges** are still static "US Paper" and "TSX Paper". Today's Picks' banners already count graded picks per market; the badges should use the same counts and read Validated once a market passes §6.6.
 
-  Show P(beat) only for the horizons a stock's `predictions` rows carry: a market with no usable horizons has none. A verdict's `details` has `market_picks_enabled`; a Buy in a disabled market shows the pick's fields but isn't on a list.
+## Plan 4b known limits
+
+- **A Hold's or Avoid's "why" joins all its reasons** with "; ", not only the first, so a verdict whose first reason is "doesn't qualify as a buy" still says why.
+- **"I bought this" links only while the symbol is unchanged.** Editing the drawer's symbol drops `pick_id`, so the buy is saved unlinked.
+- **The cone's axis label** shortens to "+63d" when the full "+63 trading days · if XIU.TO is flat" doesn't fit, which it doesn't at the dashboard's widths. The full label stays in the chart's accessible name, and the odds and range under the chart say "relative to XIU.TO".
+- **Past picks show the last 10** for the symbol; older ones wait for Track Record.
 
 ## Plan 4c known limits
 
@@ -175,8 +177,8 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
 - **Dashboard before the model (Plan 5b):** the portfolio shows values, P/L, returns, warnings and a breakdown by market and account.
   - Waiting for `holding_actions` and picks (Plan 4): action cards, likely ranges, trailing stops, exit dates, risk levels, the breakdown by risk and the max-size warning. The holdings table places its cells by class, so these columns can be added.
   - Waiting for data no plan collects yet: the note on US dividend payers in a TFSA. The sector warning can now be built: `train.yml` fills `symbols.sector` and `industry` weekly (Plan 3a).
-  - The status bar's Paper badges are static until picks are graded live (Plan 4). The missed-slot notice and the next run's time need the schedule in TypeScript; Plan 5c left them for the dashboard plan after the model.
-  - Waiting for the model (Plans 3 and 4): Today's Picks, Track record, the watchlist's verdict columns, and the Ticker page's forecast cone, top factors, catalysts and past picks (Plan 5c shows an empty card in their place).
+  - The status bar's Paper badges are still static (see Plan 4 above). The missed-slot notice and the next run's time need the schedule in TypeScript; Plan 5c left them for the dashboard plan after the model.
+  - Waiting for the model: Track record. Plan 4b built Today's Picks, the watchlist's verdict columns, and the Ticker page's forecast cone, top factors, catalysts and past picks.
   - Trades are corrected by deleting them in the trade list and adding them again (Plan 5c); there is no edit. Deleting also sidesteps the NOT VALID `*_usd_needs_fx_rate` check that blocks updating old USD rows.
 - **Portfolio returns (Plan 5b):** time-weighted. A day's buys count from the start of that day and its sells at the close, so a buy at the close dilutes that day's return slightly; counting buys at the close instead would let a large buy into a small position show a huge return. Trades on days without a close count on the next trading day, an asset with no closes at all is valued at cost, and before its first close (a coin bought before Coinbase listed it) at that first close, so its early gain lands on the buy day.
 - **Coin values (Plan 5b):** from Coinbase's USD closes at the Bank of Canada rate, the same source as the chart, not CoinGecko's CAD quote in `features_live`.
@@ -195,7 +197,7 @@ Plan 4a (picks and watchlist verdicts, written every run to `picks` and `watchli
 - Decide spec §7.2 ("holdings analysis survives a later failure") against "failed runs are never published".
 - A `published_runs` view, so the dashboard never reads unpublished rows.
 - Show missed or dropped schedule slots on the dashboard.
-- An index on `picks.run_id`, added with its first reader (`source_health.run_id` got one in Plan 5c).
+- An index on `picks.run_id`. Plan 4b's Today's Picks and Ticker pages read picks by run and by symbol without one; add it before the table grows (`source_health.run_id` got one in Plan 5c).
 - **Old USD lots and sells:** pre-rev-2 USD lots and sells have no `fx_rate_cad`, and the `*_usd_needs_fx_rate` check (NOT VALID) still applies on UPDATE. Editing such a row fails until a rate is backfilled. Backfill from Bank of Canada rates first.
 - **Failed-run counts:** a failed run's per-market `priced` and `fresh` count only priority symbols.
 - **`runs.summary` shape:** it changed in Plan 2b, from flat keys to `{"markets": {"US": …, "TSX": …}, …}`. The dashboard must read both shapes, or ignore runs from before the change.

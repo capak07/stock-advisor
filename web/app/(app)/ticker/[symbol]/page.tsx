@@ -2,10 +2,12 @@ import { ArrowLeft, Info } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { ForecastCard, ForecastProvider } from '@/components/ticker/ForecastCard'
 import { NewsCard, type HeadlineView, type NewsKpi } from '@/components/ticker/NewsCard'
 import { PriceCard } from '@/components/ticker/PriceCard'
 import { WatchToggle } from '@/components/ticker/WatchToggle'
 import { ownerClient } from '@/lib/auth'
+import { loadSettings } from '@/lib/data/settings'
 import { loadSourceHealth } from '@/lib/data/sources'
 import { loadTicker, resolveAssetType } from '@/lib/data/ticker'
 import { shortDay, timeOrDate } from '@/lib/dates'
@@ -38,9 +40,9 @@ const signedScore = (value: number | null): NewsKpi['value'] => (value === null 
 const scoreTone = (value: number | null): NewsKpi['tone'] => (value === null || value === 0 ? '' : value > 0 ? 'gain' : 'loss')
 
 /**
- * Ticker detail (spec §9) before the model: the price history, the owner's position, the last two
- * days of news, and which sources cover the asset. The forecast, factors, catalysts and past
- * picks join with the model.
+ * Ticker detail (spec §9): the price history with the latest run's forecast cone, the owner's
+ * position, the forecast's factors, catalysts and past picks, the last two days of news, and which
+ * sources cover the asset.
  */
 export default async function TickerPage({ params, searchParams }: Props) {
   const supabase = await ownerClient()
@@ -52,7 +54,11 @@ export default async function TickerPage({ params, searchParams }: Props) {
     asked === 'crypto' || asked === 'stock' ? asked : await resolveAssetType(supabase, symbol)
   if (!assetType || !isValidSymbol(symbol, assetType)) notFound()
 
-  const [data, health] = await Promise.all([loadTicker(supabase, { symbol, assetType }), loadSourceHealth(supabase)])
+  const [data, health, settings] = await Promise.all([
+    loadTicker(supabase, { symbol, assetType }),
+    loadSourceHealth(supabase),
+    loadSettings(supabase),
+  ])
   const coin = assetType === 'crypto'
   const series = priceSeries(data.closes, assetType, data.fx)
   const move = lastMove(series)
@@ -123,59 +129,62 @@ export default async function TickerPage({ params, searchParams }: Props) {
         </div>
       </div>
 
-      <PriceCard symbol={symbol} series={series} coin={coin} />
+      <ForecastProvider forecast={data.forecast}>
+        <PriceCard symbol={symbol} series={series} coin={coin} />
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: 'start' }}>
-        <div className="grid gap-4">
-          <section className="card card-pad enter" aria-labelledby="forecast-h">
-            <h2 id="forecast-h" style={{ marginBottom: 10 }}>
-              Forecast
-            </h2>
-            <div className="banner info">
-              <Info />
-              <div>
-                The forecast cone, its top factors, catalysts and past picks for {symbol} appear here once the model runs.
-              </div>
-            </div>
-          </section>
-          <section className="card card-pad enter" aria-labelledby="sources-h">
-            <div className="section-head" style={{ marginBottom: 10 }}>
-              <h2 id="sources-h">Sources</h2>
-              <span className="sub">
-                {covering.length === 0
-                  ? 'No sources are listed yet; the next run lists them.'
-                  : health.run
-                    ? `${answeredCount} of the ${covering.length} sources that cover ${coverageName(coverage)} answered in the ${runWhen(health.run)} run`
-                    : 'No run has finished yet'}
-              </span>
-            </div>
-            <div className="source-grid" id="ticker-sources">
-              {covering.map((r) => (
-                <span key={r.name}>
-                  <span className={`dot ${r.run?.status ?? 'skipped'}`} />
-                  <span className="num">{r.name}</span>
-                  {r.run?.status !== 'ok' && <span className="sub">{r.run?.status ?? 'not run'}</span>}
-                </span>
-              ))}
-            </div>
-            {elsewhere.length > 0 && (
-              <p className="sub" style={{ margin: '10px 0 0' }}>
-                Not available for {coverageName(coverage)}: {elsewhere.join(', ')}.
-              </p>
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: 'start' }}>
+          <div className="grid gap-4">
+            {data.forecast && data.market ? (
+              <ForecastCard usdFxFeePct={settings.usd_fx_fee_pct} market={data.market} />
+            ) : (
+              <section className="card card-pad enter" aria-labelledby="forecast-h">
+                <h2 id="forecast-h" style={{ marginBottom: 10 }}>
+                  Forecast
+                </h2>
+                <div className="banner info">
+                  <Info />
+                  <div>
+                    The forecast cone, its top factors, catalysts and past picks for {symbol} appear here once the model
+                    runs.
+                  </div>
+                </div>
+              </section>
             )}
-            <p className="sub" style={{ margin: '10px 0 0' }}>
-              <Link className="text-link" href="/sources">
-                Source health
-              </Link> has every source&apos;s errors and daily checks.
-            </p>
-          </section>
-        </div>
-        <NewsCard
-          headlines={headlines}
-          kpis={kpis}
-          source={data.news ? runWhen(data.news.run) : null}
-        />
-      </section>
+            <section className="card card-pad enter" aria-labelledby="sources-h">
+              <div className="section-head" style={{ marginBottom: 10 }}>
+                <h2 id="sources-h">Sources</h2>
+                <span className="sub">
+                  {covering.length === 0
+                    ? 'No sources are listed yet; the next run lists them.'
+                    : health.run
+                      ? `${answeredCount} of the ${covering.length} sources that cover ${coverageName(coverage)} answered in the ${runWhen(health.run)} run`
+                      : 'No run has finished yet'}
+                </span>
+              </div>
+              <div className="source-grid" id="ticker-sources">
+                {covering.map((r) => (
+                  <span key={r.name}>
+                    <span className={`dot ${r.run?.status ?? 'skipped'}`} />
+                    <span className="num">{r.name}</span>
+                    {r.run?.status !== 'ok' && <span className="sub">{r.run?.status ?? 'not run'}</span>}
+                  </span>
+                ))}
+              </div>
+              {elsewhere.length > 0 && (
+                <p className="sub" style={{ margin: '10px 0 0' }}>
+                  Not available for {coverageName(coverage)}: {elsewhere.join(', ')}.
+                </p>
+              )}
+              <p className="sub" style={{ margin: '10px 0 0' }}>
+                <Link className="text-link" href="/sources">
+                  Source health
+                </Link> has every source&apos;s errors and daily checks.
+              </p>
+            </section>
+          </div>
+          <NewsCard headlines={headlines} kpis={kpis} source={data.news ? runWhen(data.news.run) : null} />
+        </section>
+      </ForecastProvider>
     </main>
   )
 }

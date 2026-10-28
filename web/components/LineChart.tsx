@@ -16,6 +16,9 @@ export interface Cone extends ConeQuantiles {
   short?: string
 }
 
+/** Whether an axis label (10px mono, ~6 units a character) fits beside the centred "today" tick. */
+const fitsAxis = (text: string, room: number) => text.length * 6 + 24 <= room
+
 interface Drawn {
   series: number[]
   benchmarks: Benchmark[]
@@ -230,7 +233,7 @@ export function LineChart({
                   {fmtPct(shownCone.q10 * 100)}
                 </text>
                 <text x={c.x1} y={height - 6} textAnchor="end">
-                  {(g.width < 560 ? shownCone.short : undefined) ?? shownCone.label}
+                  {(fitsAxis(shownCone.label, c.x1 - c.x0) ? undefined : shownCone.short) ?? shownCone.label}
                 </text>
               </g>
             </g>

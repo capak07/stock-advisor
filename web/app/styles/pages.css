@@ -180,7 +180,13 @@
   .sources-card .table-scroll { overflow: visible; margin: 0; padding: 0; }
 }
 
-/* ---------- ticker_1.html (no factor bars until the model, Plan 3) ---------- */
+/* ---------- ticker_1.html ---------- */
+.factor { display: grid; grid-template-columns: 1fr 120px; gap: 4px 14px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.factor:last-of-type { border-bottom: 0; }
+.factor .bar { position: relative; height: 6px; border-radius: 3px; background: var(--muted); }
+.factor .bar span { position: absolute; top: 0; height: 100%; border-radius: 3px; transform-origin: left; animation: band-grow 300ms ease-out both; }
+.factor .bar::after { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 12px; background: var(--muted-foreground); opacity: 0.6; }
+@media (max-width: 639px) { .factor { grid-template-columns: minmax(0, 1fr) 80px; } }
 .ticker-symbol { font-size: 26px !important; } /* inline in the mockup, which React can't mark !important */
 .price-big { font: 600 30px/1 var(--font-mono) !important; letter-spacing: -0.02em; }
 .news-item { display: grid; grid-template-columns: 52px 1fr; gap: 3px 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }

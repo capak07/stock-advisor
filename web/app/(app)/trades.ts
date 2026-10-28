@@ -47,6 +47,7 @@ export async function addBuy(_: FormState, form: FormData): Promise<FormState> {
     fx_rate_cad: buy.currency === 'USD' ? rate : null,
     bought_at: buy.day,
     notes: buy.notes,
+    pick_id: buy.pickId,
   })
   if (error) return failed(`The buy wasn't saved: ${error.message}`)
   revalidatePath('/')

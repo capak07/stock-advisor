@@ -1,6 +1,6 @@
 'use client'
 
-import { FileUp, Minus, Plus, TriangleAlert } from 'lucide-react'
+import { FileUp, Link2, Minus, Plus, TriangleAlert } from 'lucide-react'
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
 import { addBuy, addSell } from '@/app/(app)/trades'
 import { Drawer } from '@/components/Drawer'
@@ -83,14 +83,22 @@ interface FormProps {
   onCancel: () => void
 }
 
-function BuyForm({ rates, today, onDone, onCancel }: FormProps) {
+/** A buy pre-filled from a pick ("I bought this"). */
+export interface BuyInitial {
+  symbol: string
+  account: Account
+  price: string
+  pickId: number
+}
+
+export function BuyForm({ rates, today, onDone, onCancel, initial }: FormProps & { initial?: BuyInitial }) {
   const [state, action, pending] = useActionState<FormState, FormData>(addBuy, {})
   const { error, touch, editedSince } = useFieldErrors(state)
   useDone(state, onDone)
-  const [account, setAccount] = useState<Account>('tfsa')
-  const [symbol, setSymbol] = useState('')
+  const [account, setAccount] = useState<Account>(initial?.account ?? 'tfsa')
+  const [symbol, setSymbol] = useState(initial?.symbol ?? '')
   const [qty, setQty] = useState('')
-  const [price, setPrice] = useState('')
+  const [price, setPrice] = useState(initial?.price ?? '')
   const [day, setDay] = useState(today)
   const [rate, setRate] = useState<string | null>(null)
   const [notes, setNotes] = useState('')
@@ -99,11 +107,21 @@ function BuyForm({ rates, today, onDone, onCancel }: FormProps) {
   const boc = useBocRate(rates, day)
   // The unlisted-symbol question stands until the symbol changes.
   const askConfirm = state.confirm && !editedSince('symbol') ? state.confirm : null
+  // Changing the symbol makes it another buy, no longer the pick's.
+  const linked = initial && normalizeSymbol(symbol) === initial.symbol ? initial : null
 
   return (
     <form action={action} style={{ display: 'contents' }} noValidate>
       <div className="drawer-body">
         <FormMessage state={state} />
+        {linked && (
+          <div className="banner info">
+            <Link2 />
+            <div>
+              Linked to the <strong>{linked.symbol}</strong> pick, so it&apos;s graded as yours.
+            </div>
+          </div>
+        )}
         <Field label="Account" error={error('account')}>
           <select
             className="select"
@@ -234,6 +252,8 @@ function BuyForm({ rates, today, onDone, onCancel }: FormProps) {
         )}
       </div>
       <Foot pending={pending} label="Save buy" icon={<Plus />} onCancel={onCancel} />
+      {/* last, so the drawer's focus goes to the first visible field */}
+      {linked && <input type="hidden" name="pick_id" value={linked.pickId} />}
     </form>
   )
 }

@@ -1,6 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { parseSettings } from './settings-form'
+import { parseBuy } from './trade-form'
 import { parseWatch } from './watch-form'
+
+describe('parseBuy pick_id', () => {
+  const form = { account: 'tfsa', symbol: 'AAPL', qty: '2', price: '229.50', day: '2026-10-15', fxRate: '1.37', notes: '' }
+  const pickId = (raw: string) => {
+    const parsed = parseBuy({ ...form, pick_id: raw }, '2026-10-16')
+    return 'input' in parsed ? parsed.input.pickId : 'errors'
+  }
+
+  it('links the buy to the pick it came from', () => {
+    expect(pickId('42')).toBe(42)
+  })
+
+  it('drops a missing or malformed pick id without an error', () => {
+    expect(pickId('')).toBeNull()
+    expect(pickId('abc')).toBeNull()
+    expect(pickId('-3')).toBeNull()
+  })
+})
 
 describe('parseWatch', () => {
   it('takes a stock or coin symbol in the form the lists store it', () => {

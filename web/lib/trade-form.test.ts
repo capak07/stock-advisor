@@ -18,7 +18,7 @@ describe('parseBuy', () => {
     expect(parseBuy(buy(), TODAY)).toEqual({
       input: {
         account: 'tfsa', symbol: 'AAPL', assetType: 'stock', currency: 'USD',
-        qty: 10, price: 182.5, day: '2026-10-15', fxRateCad: 1.3712, notes: null,
+        qty: 10, price: 182.5, day: '2026-10-15', fxRateCad: 1.3712, notes: null, pickId: null,
       },
     })
   })

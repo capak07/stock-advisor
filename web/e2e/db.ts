@@ -246,7 +246,7 @@ export async function seedPick(
     catalysts: sql.json(pick.catalysts ?? []),
     status: pick.status ?? 'open',
   })} returning id`
-  return row.id as number
+  return Number(row.id) // a bigint arrives as a string
 }
 
 /** A pick's graded outcome; `gradedAt` decides which run's grading wrote it. */

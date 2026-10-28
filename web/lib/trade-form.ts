@@ -67,6 +67,16 @@ export interface BuyInput extends Common {
   assetType: AssetType
   currency: Currency
   notes: string | null
+  /** The pick this buy came from ("I bought this"), so it's graded as the owner's. */
+  pickId: number | null
+}
+
+/** A positive integer id, else null: a malformed link is dropped, never an error. */
+const parseId = (raw: string | undefined): number | null => {
+  const text = (raw ?? '').trim()
+  if (!/^\d+$/.test(text)) return null
+  const id = Number(text)
+  return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
 export function parseBuy(form: Record<string, string>, today: string): { input: BuyInput } | { errors: FieldErrors } {
@@ -83,7 +93,7 @@ export function parseBuy(form: Record<string, string>, today: string): { input: 
   if (notes.length > 500) errors.notes = 'Keep notes under 500 characters.'
   const rest = common(form, today, currency, errors)
   if (!rest || Object.keys(errors).length > 0) return { errors }
-  return { input: { ...rest, account, symbol, assetType, currency, notes: notes || null } }
+  return { input: { ...rest, account, symbol, assetType, currency, notes: notes || null, pickId: parseId(form.pick_id) } }
 }
 
 /** An open position the sell form can sell from. */

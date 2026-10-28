@@ -1,6 +1,7 @@
 import { Sparkles } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { BoughtButton, PickBuyDrawer } from '@/components/picks/BoughtButton'
 import { MarketPicks } from '@/components/picks/MarketPicks'
 import { PicksTabs } from '@/components/picks/PicksTabs'
 import { ownerClient } from '@/lib/auth'
@@ -60,23 +61,33 @@ export default async function PicksPage() {
   const portfolioCad = totals.valueCad > 0 ? totals.valueCad : null
   const panel = (market: 'US' | 'TSX') => {
     const picks = markets.find((m) => m.market === market)!
-    return <MarketPicks market={picks} verdicts={verdicts} portfolioCad={portfolioCad} usdFxFeePct={data.settings.usd_fx_fee_pct} />
+    return (
+      <MarketPicks
+        market={picks}
+        verdicts={verdicts}
+        portfolioCad={portfolioCad}
+        usdFxFeePct={data.settings.usd_fx_fee_pct}
+        actionFor={(p) => <BoughtButton pick={{ id: p.id, symbol: p.symbol, entry: p.entry }} />}
+      />
+    )
   }
 
   return (
     <main className="page">
-      <PicksTabs
-        head={
-          <div>
-            <h1>Today&apos;s Picks</h1>
-            <p className="sub">
-              From the {runTime(run)} {KIND_LABEL[run.kind].toLowerCase()} run · at most 10 Swing and 10 Position picks per
-              market, 3 per sector
-            </p>
-          </div>
-        }
-        panels={{ US: panel('US'), TSX: panel('TSX') }}
-      />
+      <PickBuyDrawer rates={[...data.fx.rates]} today={todayInToronto()}>
+        <PicksTabs
+          head={
+            <div>
+              <h1>Today&apos;s Picks</h1>
+              <p className="sub">
+                From the {runTime(run)} {KIND_LABEL[run.kind].toLowerCase()} run · at most 10 Swing and 10 Position picks
+                per market, 3 per sector
+              </p>
+            </div>
+          }
+          panels={{ US: panel('US'), TSX: panel('TSX') }}
+        />
+      </PickBuyDrawer>
     </main>
   )
 }

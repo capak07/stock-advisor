@@ -9,6 +9,7 @@ import {
   seedPrediction,
   seedRun,
   seedVerdict,
+  sql,
 } from './db'
 
 test.beforeEach(async () => {
@@ -180,6 +181,36 @@ test('an exited pick shows in the Exit early card', async ({ page }) => {
   // none for TSX, so its card is hidden
   await page.getByRole('tab', { name: 'TSX' }).click()
   await expect(page.locator('#exit-early-tsx')).toHaveCount(0)
+})
+
+test('I bought this saves a buy linked to the pick', async ({ page }) => {
+  const { pickId } = await seedPicksRun()
+  await page.goto('/picks')
+  await usCard(page, 'AAPL').getByRole('button', { name: 'I bought this' }).click()
+  const drawer = page.getByRole('dialog', { name: 'Add a buy' })
+  await expect(drawer.getByText('Linked to the AAPL pick')).toBeVisible()
+  await expect(drawer.getByLabel('Symbol')).toHaveValue('AAPL')
+  await expect(drawer.getByLabel('Account')).toHaveValue('tfsa')
+  await expect(drawer.getByLabel('Price (USD)')).toHaveValue('229.5')
+  await drawer.getByLabel('Quantity').fill('2')
+  await drawer.getByRole('button', { name: 'Save buy' }).click()
+  await expect(page.getByText('Buy saved: 2 AAPL in TFSA')).toBeVisible()
+  const [lot] = await sql`select pick_id from lots where symbol = 'AAPL' order by id desc limit 1`
+  expect(Number(lot.pick_id)).toBe(pickId)
+})
+
+test('a buy whose symbol was changed is not linked to the pick', async ({ page }) => {
+  await seedPicksRun()
+  await page.goto('/picks')
+  await usCard(page, 'MSFT').getByRole('button', { name: 'I bought this' }).click()
+  const drawer = page.getByRole('dialog', { name: 'Add a buy' })
+  await drawer.getByLabel('Symbol').fill('AAPL')
+  await expect(drawer.getByText('Linked to the MSFT pick')).toHaveCount(0)
+  await drawer.getByLabel('Quantity').fill('1')
+  await drawer.getByRole('button', { name: 'Save buy' }).click()
+  await expect(page.getByText('Buy saved: 1 AAPL in TFSA')).toBeVisible()
+  const [lot] = await sql`select pick_id from lots where symbol = 'AAPL' order by id desc limit 1`
+  expect(lot.pick_id).toBeNull()
 })
 
 test('the nav links to Picks', async ({ page }) => {

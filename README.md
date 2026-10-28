@@ -14,7 +14,8 @@ Plans: `docs/superpowers/plans/`
 - `supabase/migrations/` — Postgres schema, row-level security, and roles (append-only)
 - `supabase/config.toml` — the local Supabase stack the dashboard's tests run against
 - `.github/workflows/` — `ci.yml` (tests on push), `run.yml` (scheduled pipeline runs),
-  `health.yml` (daily live check of every data source)
+  `health.yml` (daily live check of every data source), `train.yml` (weekly training),
+  `benchmark.yml` (monthly benchmark)
 
 ## Local development
 
@@ -75,6 +76,7 @@ damaged. Until `0007` is applied, the dashboard's Ticker and Source health pages
 Holdings links to Ticker pages; runs still publish, with a `sources_error` in their summary.
 `0007` adds a table and a view, so run the grants in `web/README.md` (Deploy, step 3) again
 after applying it. Before deploying Plan 2d's code, add the `SEC_USER_AGENT` secret (step 5); without it every run is degraded and the health job emails you daily.
+`0010` for Plan 6a; apply it before the next `train.yml` or `benchmark.yml` run.
 
 ## Manual run
 

@@ -74,3 +74,9 @@ def test_a_watched_coin_with_a_forecast_is_bought_or_avoided_and_is_not_a_pick()
     avoid = coin_verdict("ETH", [row(7, 0.40)], 0.001, DEFAULT_POLICY)
     assert buy.verdict == "buy" and buy.asset_type == "crypto" and "rank" not in buy.details
     assert avoid.verdict == "avoid"
+
+
+def test_a_coin_the_model_could_not_forecast_says_why():
+    from advisor.recommend.verdicts import NO_COIN_MODEL, coin_verdict
+    assert coin_verdict("NEW").reasons == [NO_COIN_MODEL]
+    assert coin_verdict("NEW", why="only 120 days of history (needs 252)").reasons == ["only 120 days of history (needs 252)"]

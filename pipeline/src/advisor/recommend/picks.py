@@ -6,7 +6,12 @@ The qualify, ratio and sector rules mirror `simulate_picks`, so the backtest gat
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from advisor.model.backtest import PER_SECTOR, PICKS_PER_STYLE, SWING_HORIZONS
+from advisor.model.backtest import (
+    CRYPTO_SWING_HORIZONS,
+    PER_SECTOR,
+    PICKS_PER_STYLE,
+    SWING_HORIZONS,
+)
 from advisor.models import PredictionRow
 from advisor.policy import DEFAULT_POLICY, Policy
 
@@ -35,7 +40,8 @@ def _ratio(row: PredictionRow) -> float | None:
 
 
 def _style(horizon: int) -> str:
-    return "swing" if horizon in SWING_HORIZONS else "position"
+    # stock horizons are sessions and coin horizons days; the two sets never overlap
+    return "swing" if horizon in SWING_HORIZONS | CRYPTO_SWING_HORIZONS else "position"
 
 
 def choose(

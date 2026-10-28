@@ -656,7 +656,7 @@ def execute_run(
             try:
                 picks_summary, verdicts_failure, advice = recommend_stage(
                     conn, run_id, models, forecasts, model_summary, bars, flagged, held_stocks, watch,
-                    results, kind, now_utc, coin_rows, coin_cost, coin_policy,
+                    results, kind, now_utc, coin_rows, coin_cost, coin_policy, coin_why,
                 )
             except Exception as exc:
                 picks_summary = {m.value: model_failure(exc) for m in Market}

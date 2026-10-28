@@ -356,6 +356,7 @@ def watch_verdicts(
     coin_rows: Mapping[str, Sequence[PredictionRow]] | None = None,
     coin_cost: Mapping[str, float] | None = None,
     coin_policy: Policy | None = None,
+    coin_why: Mapping[str, str] | None = None,
 ) -> list[Verdict]:
     """A verdict for every watched symbol (spec §6.5); each stock's says whether its market has picks.
 
@@ -371,7 +372,7 @@ def watch_verdicts(
                     ref.symbol, its, (coin_cost or {}).get(ref.symbol, 0.0), coin_policy or DEFAULT_POLICY,
                 ))
             else:
-                verdicts.append(coin_verdict(ref.symbol))
+                verdicts.append(coin_verdict(ref.symbol, why=(coin_why or {}).get(ref.symbol)))
             continue
         market = market_of(ref.symbol)
         policy = policies.get(market, DEFAULT_POLICY)
@@ -407,6 +408,7 @@ def recommend_stage(
     coin_rows: Mapping[str, Sequence[PredictionRow]] | None = None,
     coin_cost: Mapping[str, float] | None = None,
     coin_policy: Policy | None = None,
+    coin_why: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, dict], dict | None, dict[Market, MarketAdvice]]:
     """Stage 8: each market's picks, then the watchlist's verdicts. Returns `summary["picks"]`, the
     verdicts' failure, if any, and each market's `MarketAdvice` (none for a market that failed here).
@@ -454,7 +456,7 @@ def recommend_stage(
         policies = {market: policy_of(model.metrics) for market, model in models.items()}
         verdicts = watch_verdicts(
             watch, held, forecasts, inputs, details, enabled, no_forecast, policies,
-            coin_rows, coin_cost, coin_policy,
+            coin_rows, coin_cost, coin_policy, coin_why,
         )
         with conn.transaction():
             repo.write_watchlist_verdicts(conn, run_id, verdicts)

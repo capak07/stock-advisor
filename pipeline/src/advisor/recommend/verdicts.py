@@ -77,9 +77,11 @@ def coin_verdict(
     rows: Sequence[PredictionRow] | None = None,
     cost: float = 0.0,
     policy: Policy = DEFAULT_POLICY,
+    why: str | None = None,
 ) -> Verdict:
-    """A coin's verdict. With no forecast it stays the fallback; with one it uses the stock rule."""
+    """A coin's verdict. With no forecast it's a Hold, saying why (by default, no model yet); with
+    one it uses the stock rule."""
     if not rows:
-        return Verdict(symbol, "crypto", "hold", [NO_COIN_MODEL])
+        return Verdict(symbol, "crypto", "hold", [why or NO_COIN_MODEL])
     verdict = stock_verdict(symbol, rows, cost, True, None, None, policy)
     return Verdict(symbol, "crypto", verdict.verdict, verdict.reasons, verdict.details)

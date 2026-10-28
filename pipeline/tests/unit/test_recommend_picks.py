@@ -89,3 +89,9 @@ def test_each_style_has_its_own_ranks_limits_and_sector_caps():
 def test_held_stocks_and_jump_days_are_never_picked():
     rows = [row(20, 0.70, -0.02, 0.03, 0.06)]
     assert choose(rows, cost=0.001, sane=False) is None
+
+
+def test_coin_horizons_of_a_week_or_two_are_swing_trades():
+    from advisor.recommend.picks import _style
+    assert [_style(h) for h in (7, 14, 30, 90, 180)] == ["swing", "swing", "position", "position", "position"]
+    assert [_style(h) for h in (5, 10, 20, 21, 63)] == ["swing", "swing", "swing", "position", "position"]

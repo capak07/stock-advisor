@@ -353,6 +353,9 @@ def watch_verdicts(
     enabled: Mapping[Market, bool],
     no_forecast: Mapping[Market, str],
     policies: Mapping[Market, Policy] | None = None,
+    coin_rows: Mapping[str, Sequence[PredictionRow]] | None = None,
+    coin_cost: Mapping[str, float] | None = None,
+    coin_policy: Policy | None = None,
 ) -> list[Verdict]:
     """A verdict for every watched symbol (spec §6.5); each stock's says whether its market has picks.
 
@@ -362,7 +365,13 @@ def watch_verdicts(
     verdicts = []
     for ref in sorted(watch):
         if ref.asset_type is AssetType.CRYPTO:
-            verdicts.append(coin_verdict(ref.symbol))
+            its = (coin_rows or {}).get(ref.symbol) or []
+            if its:
+                verdicts.append(coin_verdict(
+                    ref.symbol, its, (coin_cost or {}).get(ref.symbol, 0.0), coin_policy or DEFAULT_POLICY,
+                ))
+            else:
+                verdicts.append(coin_verdict(ref.symbol))
             continue
         market = market_of(ref.symbol)
         policy = policies.get(market, DEFAULT_POLICY)
@@ -395,6 +404,9 @@ def recommend_stage(
     results: Mapping[str, CollectorResult],
     kind: RunKind,
     now_utc: datetime,
+    coin_rows: Mapping[str, Sequence[PredictionRow]] | None = None,
+    coin_cost: Mapping[str, float] | None = None,
+    coin_policy: Policy | None = None,
 ) -> tuple[dict[str, dict], dict | None, dict[Market, MarketAdvice]]:
     """Stage 8: each market's picks, then the watchlist's verdicts. Returns `summary["picks"]`, the
     verdicts' failure, if any, and each market's `MarketAdvice` (none for a market that failed here).
@@ -441,7 +453,8 @@ def recommend_stage(
     try:
         policies = {market: policy_of(model.metrics) for market, model in models.items()}
         verdicts = watch_verdicts(
-            watch, held, forecasts, inputs, details, enabled, no_forecast, policies
+            watch, held, forecasts, inputs, details, enabled, no_forecast, policies,
+            coin_rows, coin_cost, coin_policy,
         )
         with conn.transaction():
             repo.write_watchlist_verdicts(conn, run_id, verdicts)

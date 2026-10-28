@@ -155,6 +155,16 @@ def _stage(metrics):
     return picks, verdicts
 
 
+def test_a_watched_coin_buy_is_not_a_pick():
+    row = PredictionRow("ETH", 7, -0.02, 0.04, 0.10, 0.70, "BTC", "v")
+    verdicts = watch_verdicts(
+        {AssetRef("ETH", AssetType.CRYPTO)}, set(), {}, {}, {}, {}, {},
+        coin_rows={"ETH": [row]}, coin_cost={"ETH": 0.001}, coin_policy=DEFAULT_POLICY,
+    )
+    assert verdicts[0].verdict == "buy" and verdicts[0].asset_type == "crypto"
+    assert "rank" not in verdicts[0].details
+
+
 def test_the_models_stored_policy_makes_the_pick_and_the_watched_buy():
     loose = replace(DEFAULT_POLICY, p_buy=0.54)
     picks, verdicts = _stage({"picks_enabled": True, "config": {"policy": loose.to_json()}})

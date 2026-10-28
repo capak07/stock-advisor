@@ -10,6 +10,7 @@ from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.yfinance_earnings import EarningsReport
 from advisor.model.market_run import Forecast
 from advisor.models import ET, AssetType, DailyBar, LinkedPick, Market, PredictionRow
+from advisor.policy import DEFAULT_POLICY
 from advisor.portfolio.ledger import Loss, Position
 from advisor.portfolio.stage import RunView, action_rows, holding_inputs, signals_reversed
 from advisor.portfolio.stops import atr_pct, trailing_stop
@@ -154,6 +155,24 @@ def test_a_coin_is_valued_from_its_quote_and_stopped_on_its_candles():
     # without a CAD quote the USD candle is converted at the latest rate
     (unquoted,) = holding_inputs(positions, [], replace(view, quotes={}))
     assert unquoted.value_cad == pytest.approx(candles[-1].close * 1000 * 1.4)
+
+
+def test_a_held_coin_under_the_sell_line_is_sold_and_its_stop_uses_the_policy():
+    row = PredictionRow("BONK", 7, -0.02, 0.01, 0.08, 0.40, "BTC", "v")
+    candles = _candles("BONK")
+    quote = CryptoQuote(symbol="BONK", coin_id="bonk", price_cad=1.8, updated_at=datetime(2026, 10, 14, tzinfo=UTC))
+    view = _view(candles={"BONK": candles}, quotes={"BONK": quote}, coin_rows={"BONK": [row]}, coin_cost={"BONK": 0.001})
+    positions = [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)]
+    (coin,) = holding_inputs(positions, [], view)
+    assert coin.rows == [row] and coin.sane and coin.benchmark == "BTC" and coin.policy == DEFAULT_POLICY
+    (action,) = action_rows(positions, [coin], view)
+    assert action.action == "sell"
+    wide = replace(DEFAULT_POLICY, trail_atr=5.0)
+    looser = holding_inputs(positions, [], replace(view, coin_policy=wide))[0]
+    assert looser.trailing_stop == pytest.approx(
+        trailing_stop([c.close for c in candles if c.day >= OPENED], candles[-1].close, atr_pct(candles), None, None, wide)
+    )
+    assert looser.trailing_stop < coin.trailing_stop
 
 
 def test_a_coin_without_candles_holds_without_a_stop():

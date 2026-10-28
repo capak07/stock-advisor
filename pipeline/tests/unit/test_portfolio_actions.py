@@ -39,6 +39,14 @@ def _holding(**kw) -> Holding:
 _BUY_ROW = _row(p=0.58, q50=0.0051)
 
 
+def test_a_held_coin_under_the_sell_line_is_sold():
+    coin = _holding(
+        symbol="ETH", asset_type=AssetType.CRYPTO, benchmark="BTC",
+        rows=[_row(h=7, p=0.40)], sane=True,
+    )
+    assert decide(coin).action == "sell"
+
+
 def test_a_higher_sell_line_sells_a_forecast_the_default_holds():
     held = decide(_holding(rows=[_row(p=0.45)]))
     sold = decide(_holding(rows=[_row(p=0.45)], policy=replace(DEFAULT_POLICY, p_sell=0.46)))

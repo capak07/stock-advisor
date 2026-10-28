@@ -317,14 +317,19 @@ def prune_models(conn: psycopg.Connection, kind: str, keep: int = 2) -> int:
         ).rowcount
 
 
-def write_predictions(conn: psycopg.Connection, run_id: int, rows: Sequence[PredictionRow]) -> None:
-    """Store a run's stock forecasts."""
+def write_predictions(
+    conn: psycopg.Connection, run_id: int, rows: Sequence[PredictionRow], asset_type: str = "stock"
+) -> None:
+    """Store a run's forecasts. Stocks stay `stock`; a coin run passes `crypto`."""
     with conn.cursor() as cur:
         cur.executemany(
             "insert into predictions (run_id, symbol, asset_type, horizon_days, q10, q50, q90, p_beat,"
-            " benchmark, model_version) values (%s, %s, 'stock', %s, %s, %s, %s, %s, %s, %s)",
+            " benchmark, model_version) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
-                (run_id, r.symbol, r.horizon_days, r.q10, r.q50, r.q90, r.p_beat, r.benchmark, r.model_version)
+                (
+                    run_id, r.symbol, asset_type, r.horizon_days, r.q10, r.q50, r.q90, r.p_beat,
+                    r.benchmark, r.model_version,
+                )
                 for r in rows
             ],
         )

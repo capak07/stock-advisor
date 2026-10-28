@@ -9,7 +9,7 @@ forecast, gets the fallback rules: the stop and the size warning only.
 
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -78,6 +78,10 @@ class RunView:
     previous: Mapping[tuple[str, str, str], tuple[date, float]]  # the last run's stops
     picks: Mapping[int, LinkedPick]
     explain: Explain  # today's contribution of every feature to a stock's forecast at a horizon
+    coin_rows: Mapping[str, Sequence[PredictionRow]] = field(default_factory=dict)
+    coin_cost: Mapping[str, float] = field(default_factory=dict)
+    coin_why: Mapping[str, str] = field(default_factory=dict)
+    coin_policy: Policy = DEFAULT_POLICY
 
 
 @dataclass(frozen=True)
@@ -214,11 +218,25 @@ def holding_inputs(
         market = s.market
         advice = view.advice.get(market) if market is not None else None
         forecast = view.forecasts.get(market) if market is not None else None
-        rows: list[PredictionRow] = advice.inputs.rows.get(p.symbol, []) if advice else []
+        if market is None:
+            rows = list(view.coin_rows.get(p.symbol, []))
+            policy = view.coin_policy
+            benchmark = rows[0].benchmark if rows else None
+            cost = float(view.coin_cost.get(p.symbol, 0.0)) if rows else 0.0
+            sane = bool(rows)
+        else:
+            rows = advice.inputs.rows.get(p.symbol, []) if advice else []
+            policy = (policies or {}).get(market, DEFAULT_POLICY)
+            benchmark = MARKETS[market].benchmark
+            cost = advice.inputs.cost.get(p.symbol, 0.0) if advice else 0.0
+            sane = advice.inputs.sane.get(p.symbol, False) if advice else False
         if s.price is None and (market is not None or p.symbol not in view.quotes):
             why = NOT_PRICED
+            rows, sane = [], False
+        elif market is None and rows:
+            why = None
         elif market is None:
-            why = NO_COIN_MODEL if s.history else NO_CANDLES
+            why = view.coin_why.get(p.symbol) or (NO_COIN_MODEL if s.history else NO_CANDLES)
         elif advice is None:
             why = view.no_forecast[market]
         else:
@@ -232,12 +250,11 @@ def holding_inputs(
         reversed_ = None
         if pick is not None and market is not None and any(r.horizon_days == pick.horizon_days for r in rows):
             reversed_ = signals_reversed(pick.top_factors, view.explain(market, p.symbol, pick.horizon_days))
-        policy = (policies or {}).get(market, DEFAULT_POLICY) if market is not None else DEFAULT_POLICY
         out.append(Holding(
             account=p.account,
             symbol=p.symbol,
             asset_type=p.asset_type,
-            benchmark=MARKETS[market].benchmark if market is not None else None,
+            benchmark=benchmark,
             price=s.price if s.price is not None else math.nan,
             value_cad=value,
             cost_cad=p.cost_cad,
@@ -245,8 +262,8 @@ def holding_inputs(
             trailing_stop=_stop(p, s, view, forecast, policy),
             rows=rows,
             why_no_forecast=None if rows else why,
-            cost=advice.inputs.cost.get(p.symbol, 0.0) if advice else 0.0,
-            sane=advice.inputs.sane.get(p.symbol, False) if advice else False,
+            cost=cost,
+            sane=sane,
             risk_level=risk_level,
             max_position_pct=max_pct,
             momentum_pct=float(pct) if math.isfinite(pct) else None,
@@ -315,6 +332,10 @@ def advise_stage(
     results: Mapping[str, CollectorResult],
     kind: RunKind,
     now_utc: datetime,
+    coin_rows: Mapping[str, Sequence[PredictionRow]] | None = None,
+    coin_cost: Mapping[str, float] | None = None,
+    coin_why: Mapping[str, str] | None = None,
+    coin_policy: Policy | None = None,
 ) -> dict:
     """The holdings stage: writes every holding's action, all in one transaction. Returns
     `summary["actions"]`; a failure is caught and returned as `model_failure`, never raised."""
@@ -351,6 +372,10 @@ def advise_stage(
             previous=repo.previous_trailing_stops(conn),
             picks=repo.load_picks(conn, sorted({p.pick_id for p in positions if p.pick_id is not None})),
             explain=explain,
+            coin_rows=coin_rows or {},
+            coin_cost=coin_cost or {},
+            coin_why=coin_why or {},
+            coin_policy=coin_policy or DEFAULT_POLICY,
         )
         policies = {market: policy_of(model.metrics) for market, model in models.items()}
         rows = action_rows(positions, holding_inputs(positions, ledger.losses, view, policies), view)

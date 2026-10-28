@@ -10,7 +10,7 @@ import math
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
@@ -39,6 +39,8 @@ from advisor.enrich import EnrichTargets, interleave, ranked_shortlist, run_enri
 from advisor.grade import grade_stage
 from advisor.history import record as record_price_history
 from advisor.markets import BENCHMARKS, MARKETS, market_of
+from advisor.model.crypto import BTC, CRYPTO
+from advisor.model.crypto_live import coin_costs, forecast_coins
 from advisor.model.live import bars_frame, facts_frame, live_features, split_events
 from advisor.model.market_run import Forecast, MarketModel, feature_day, model_failure
 from advisor.model.predict import load_active, predict_rows, screen_scores
@@ -47,7 +49,7 @@ from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, R
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
 from advisor.news.stage import RECENT, WINDOW, process_news
-from advisor.policy import policy_of
+from advisor.policy import DEFAULT_POLICY, policy_of
 from advisor.portfolio.stage import advise_stage
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.recommend.stage import recommend_stage
@@ -313,6 +315,23 @@ def load_models(conn: psycopg.Connection) -> tuple[dict[Market, MarketModel], di
     return models, summary
 
 
+def load_crypto_model(conn: psycopg.Connection) -> tuple[MarketModel | None, dict]:
+    """The active crypto model, or None when there is none. A broken file never fails the run."""
+    try:
+        active = load_active(conn, CRYPTO)
+        if active is None:
+            none = repo.active_model(conn, KIND[CRYPTO]) is None
+            return None, {"skipped": "no active model" if none else "no usable horizons"}
+        stored = repo.active_model(conn, KIND[CRYPTO])
+    except Exception as exc:
+        return None, model_failure(exc)
+    metrics = stored.metrics if stored is not None and stored.version == active.version else {}
+    sectors = pd.DataFrame(columns=["symbol", "sector", "industry"])
+    return MarketModel(active, sectors, metrics), {
+        "version": active.version, "predicted": 0, "horizons": list(active.usable),
+    }
+
+
 def model_features(
     market: Market,
     model: MarketModel,
@@ -481,11 +500,14 @@ def execute_run(
         crypto_features: dict[str, dict] = {}  # the holdings stage reads a coin's price check here
         if crypto:
 
-            def crypto_records(name: str) -> list:
-                return list(tracker.run(name, crypto).records) if name in deps.collectors else []
+            def crypto_records(name: str, symbols: Sequence[str] | None = None) -> list:
+                asked = list(crypto if symbols is None else symbols)
+                return list(tracker.run(name, asked).records) if name in deps.collectors else []
 
             quotes = {quote.symbol: quote for quote in crypto_records(QUOTES)}
-            candles, checks = group_bars(crypto_records(BARS)), group_bars(crypto_records(CHECK))
+            # BTC's candles come along even when it isn't held: altcoin features are excess over BTC.
+            candle_symbols = list(dict.fromkeys([*crypto, BTC]))
+            candles, checks = group_bars(crypto_records(BARS, candle_symbols)), group_bars(crypto_records(CHECK))
             coin_rows = crypto_feature_rows(crypto, quotes, candles, checks, now_utc)
             repo.write_features_live(conn, run_id, coin_rows, now_utc)
             crypto_features = {ref.symbol: features for ref, features in coin_rows}
@@ -577,6 +599,46 @@ def execute_run(
             # Phase 3.5: forecasts for each market's holdings, watchlist and ranked shortlist, once
             # enrichment has brought the US filings. Each symbol is forecast once.
             forecasts: dict[Market, Forecast] = {}
+            coin_rows: dict[str, list] = {}
+            coin_why: dict[str, str] = {}
+            coin_cost: dict[str, float] = {}
+            coin_policy = DEFAULT_POLICY
+            crypto_model, crypto_note = load_crypto_model(conn)
+            if crypto_model is not None or "failed" in crypto_note:
+                model_summary["crypto"] = crypto_note
+            if crypto_model is not None and crypto:
+                try:
+                    history = {symbol: candles.get(symbol) or [] for symbol in dict.fromkeys([*crypto, BTC])}
+                    spy = bars.get("SPY")
+                    found, coin_why = forecast_coins(
+                        crypto_model.active.model, history, spy[-1].close if spy else None, now_utc,
+                    )
+                    usable = set(crypto_model.active.usable)
+                    version = crypto_model.active.version
+                    held_or_watched = set(crypto)
+                    coin_rows = {
+                        symbol: [replace(row, model_version=version) for row in its if row.horizon_days in usable]
+                        for symbol, its in found.items()
+                        if symbol in held_or_watched
+                    }
+                    coin_rows = {symbol: its for symbol, its in coin_rows.items() if its}
+                    coin_why = {
+                        symbol: reason for symbol, reason in coin_why.items()
+                        if symbol in held_or_watched and symbol not in coin_rows
+                    }
+                    fee = repo.fee_settings(conn)[1]
+                    priced = coin_costs(history, fee, now_utc)
+                    coin_cost = {symbol: priced[symbol] for symbol in coin_rows if symbol in priced}
+                    coin_policy = policy_of(crypto_model.metrics)
+                    flat = [row for its in coin_rows.values() for row in its]
+                    if flat:
+                        with conn.transaction():
+                            repo.write_predictions(conn, run_id, flat, asset_type="crypto")
+                    model_summary["crypto"]["predicted"] = len(coin_rows)
+                except Exception as exc:
+                    model_summary["crypto"] = model_failure(exc)
+                    coin_rows, coin_why, coin_cost = {}, {}, {}
+                    coin_policy = DEFAULT_POLICY
             for market, model in models.items():
                 own = [s for s in priority if market_of(s) is market]
                 symbols = list(dict.fromkeys([*own, *ranked[market]]))
@@ -594,7 +656,7 @@ def execute_run(
             try:
                 picks_summary, verdicts_failure, advice = recommend_stage(
                     conn, run_id, models, forecasts, model_summary, bars, flagged, held_stocks, watch,
-                    results, kind, now_utc,
+                    results, kind, now_utc, coin_rows, coin_cost, coin_policy,
                 )
             except Exception as exc:
                 picks_summary = {m.value: model_failure(exc) for m in Market}
@@ -608,7 +670,8 @@ def execute_run(
                     conn, run_id, models=models, forecasts=forecasts, advice=advice,
                     model_summary=model_summary, bars=bars, flagged=flagged, quotes=quotes,
                     candles=candles, crypto_features=crypto_features, results=results, kind=kind,
-                    now_utc=now_utc,
+                    now_utc=now_utc, coin_rows=coin_rows, coin_cost=coin_cost, coin_why=coin_why,
+                    coin_policy=coin_policy,
                 )
             except Exception as exc:
                 actions_summary = model_failure(exc)

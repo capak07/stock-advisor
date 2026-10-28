@@ -18,7 +18,7 @@ class ActiveModel:
     usable: tuple[int, ...]
 
 
-def load_active(conn: psycopg.Connection, market: Market) -> ActiveModel | None:
+def load_active(conn: psycopg.Connection, market: Market | str) -> ActiveModel | None:
     """The market's active model, or None when there is none or no horizon of it is honest.
 
     A model stored before `usable_horizons` existed has none, so it gives no forecasts.

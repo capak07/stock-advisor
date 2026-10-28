@@ -67,3 +67,10 @@ def test_a_watched_stock_without_a_forecast_is_hold_with_the_reason():
 def test_a_watched_coin_waits_for_the_crypto_model():
     v = coin_verdict("ETH")
     assert v.reasons == ["no crypto model yet"] and v.verdict == "hold" and v.asset_type == "crypto"
+
+
+def test_a_watched_coin_with_a_forecast_is_bought_or_avoided_and_is_not_a_pick():
+    buy = coin_verdict("ETH", [row(7, 0.70)], 0.001, DEFAULT_POLICY)
+    avoid = coin_verdict("ETH", [row(7, 0.40)], 0.001, DEFAULT_POLICY)
+    assert buy.verdict == "buy" and buy.asset_type == "crypto" and "rank" not in buy.details
+    assert avoid.verdict == "avoid"

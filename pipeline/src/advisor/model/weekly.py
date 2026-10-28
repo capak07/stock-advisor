@@ -29,6 +29,7 @@ from advisor.model.dataset import load_market
 from advisor.model.train import TrainConfig, to_files
 from advisor.model.variants import BASELINE, ModelConfig, fit_variant, run_variant
 from advisor.models import Market, StoredModel
+from advisor.policy import DEFAULT_POLICY
 from advisor.store import repo
 from advisor.store.db import connect
 
@@ -145,9 +146,10 @@ def _train_market(
     usable = usable_horizons(wf.metrics, config.horizons)
     calibrated = wf.predictions[wf.predictions["p"].notna() & wf.predictions["horizon"].isin(usable)]
     usd_fx_fee_pct = repo.fee_settings(conn)[0]
+    policy = model_config.policy or DEFAULT_POLICY
     backtest = {
-        **pick_metrics(simulate_picks(calibrated, market, usd_fx_fee_pct)),
-        "funnel": pick_funnel(calibrated, market, usd_fx_fee_pct),
+        **pick_metrics(simulate_picks(calibrated, market, usd_fx_fee_pct, policy)),
+        "funnel": pick_funnel(calibrated, market, usd_fx_fee_pct, policy),
     }
     # with no usable horizon, the worst of all gives the plain-words reason
     calibration_pts = calibration_of(wf.metrics, usable or config.horizons)

@@ -1,9 +1,12 @@
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from advisor.model.backtest import gate, pick_funnel, pick_metrics, round_trip_cost, simulate_picks
 from advisor.models import Market
+from advisor.policy import DEFAULT_POLICY
 
 DAY = pd.Timestamp("2025-03-03")
 
@@ -127,6 +130,26 @@ def test_a_stock_still_held_is_not_picked_again():
     picks = simulate_picks(preds, Market.TSX, 1.5)
     # 03-17 is inside the first 63-session hold; 06-02 is 65 business days on, so it's a new bet
     assert [str(d.date()) for d in picks["day"]] == ["2025-03-03", "2025-06-02"]
+
+
+def test_a_lower_buy_line_picks_a_row_the_default_skips():
+    rows = frame([("AAA.TO", "Energy", 10, 0.55, -0.02, 0.04, 0.10, 0.02)])
+    assert simulate_picks(rows, Market.TSX, 1.5).empty
+    loose = replace(DEFAULT_POLICY, p_buy=0.54)
+    assert simulate_picks(rows, Market.TSX, 1.5, policy=loose)["symbol"].tolist() == ["AAA.TO"]
+    assert pick_funnel(rows, Market.TSX, 1.5)["p_at_least_floor"] == 0
+    assert pick_funnel(rows, Market.TSX, 1.5, policy=loose)["p_at_least_floor"] == 1
+
+
+def test_the_pick_rule_and_the_horizon_set_follow_the_policy():
+    rows = frame([
+        ("AAA.TO", "Energy", 10, 0.70, -0.02, 0.01, 0.08, 0.02),  # ratio 0.10
+        ("AAA.TO", "Energy", 63, 0.60, -0.05, 0.04, 0.05, 0.03),  # ratio 0.40, so the default hold
+    ])
+    by_p = simulate_picks(rows, Market.TSX, 1.5, policy=replace(DEFAULT_POLICY, rule="p"))
+    swing = simulate_picks(rows, Market.TSX, 1.5, policy=replace(DEFAULT_POLICY, horizons=(5, 10, 20)))
+    assert by_p["horizon"].tolist() == [10]
+    assert swing["horizon"].tolist() == [10]
 
 
 def test_a_short_hold_ends_before_the_next_sample_day():

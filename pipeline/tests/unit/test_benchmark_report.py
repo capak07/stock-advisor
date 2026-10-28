@@ -81,6 +81,58 @@ def test_the_report_names_the_choice_the_survivorship_bias_and_the_rules(tmp_pat
     assert (tmp_path / "benchmark-report.md").read_text() == md
 
 
+def test_ablation_rows_print_in_a_fixed_order_whatever_order_the_dict_arrives_in():
+    messy = json.loads(json.dumps(REPORT))
+    baseline = messy["markets"]["TSX"]["variants"]["baseline"]
+    not_built = {"status": "not built", "plan": "later"}
+    messy["markets"]["TSX"]["variants"] = {
+        "garch": not_built,
+        "factors": not_built,
+        "baseline": baseline,
+        "full+policy": not_built,
+        "factors+garch": not_built,
+    }
+    ablation = render_markdown(messy).split("### Ablations", 1)[1].split("### Outer", 1)[0]
+    names = [
+        line.split("|")[1].strip()
+        for line in ablation.splitlines()
+        if line.startswith("| ") and "Variant" not in line and "---" not in line
+    ]
+    assert names == ["baseline", "factors", "garch", "factors+garch", "full+policy"]
+
+
+def test_the_policy_table_shows_both_books_and_dashes_an_empty_default():
+    messy = json.loads(json.dumps(REPORT))
+    baseline = messy["markets"]["TSX"]["variants"]["baseline"]
+    empty = {
+        "trades": 0, "trades_per_month": None, "mean_net_pct": None, "hit_rate_net": None,
+        "beat_rate": None, "mean_p": None, "sharpe": None, "max_drawdown": 0.0,
+    }
+    tuned = {
+        "trades": 40, "trades_per_month": 4.0, "mean_net_pct": 1.2, "hit_rate_net": 0.55,
+        "beat_rate": 0.52, "mean_p": 0.60, "sharpe": 0.8, "max_drawdown": 0.12,
+    }
+    one = {"p_buy": 0.6, "p_sell": 0.42, "swing_atr": 2.0, "position_atr": 3.0, "trail_atr": 2.5,
+           "rule": "ratio", "horizons": None}
+    messy["markets"]["TSX"]["variants"]["full+policy"] = {
+        "status": "run",
+        "model": baseline["model"],
+        "summary": baseline["summary"],
+        "policy": {"default": empty, "candidate": tuned, "per_fold": [one, None, one], "final": None},
+    }
+    messy["markets"]["TSX"]["decisions"]["full+policy"] = {
+        "accepted": False, "reasons": ["no stage-1 combination met the limits: best failed on only 4 trades (needs 30)"],
+    }
+    md = render_markdown(messy)
+    table = md.split("### Policy (folds 1–3)", 1)[1]
+    today = next(line for line in table.splitlines() if line.startswith("| today's rules"))
+    tuned_row = next(line for line in table.splitlines() if line.startswith("| tuned"))
+    assert "—" in today and "nan" not in today.lower() and "None" not in today
+    assert "| tuned | 40 | 4.0 | 1.20% | 55% | 0.80 | 12% | 60% vs 52% |" == tuned_row
+    assert "Fold 1: p_buy 0.60" in table and "Fold 2: no policy" in table
+    assert "No final policy: no stage-1 combination met the limits" in table
+
+
 def test_nan_and_none_render_as_dashes_not_the_words():
     messy = json.loads(json.dumps(REPORT))
     messy["markets"]["TSX"]["variants"]["baseline"]["summary"]["pooled"]["rank_ic"] = None

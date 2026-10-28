@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from advisor.models import Market
+from advisor.policy import DEFAULT_POLICY, Policy
 
 P_MIN = 0.58
 SWING_HORIZONS = frozenset({5, 10, 20})
@@ -45,11 +46,15 @@ def _priced(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) ->
     return df
 
 
-def pick_funnel(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> dict[str, Any]:
+def pick_funnel(
+    predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float, policy: Policy = DEFAULT_POLICY
+) -> dict[str, Any]:
     """How many forecasts pass each pick rule, and the highest P(beat) reached: why picks are few."""
     df = _priced(predictions, market, usd_fx_fee_pct)
+    if policy.horizons is not None:
+        df = df[df["horizon"].isin(policy.horizons)]
     p = df["p"]
-    confident = p >= P_MIN  # a NaN P never is
+    confident = p >= policy.p_buy  # a NaN P never is
     affordable = df["q50"] > df["cost"]
     known = p.notna().any()
     return {
@@ -64,23 +69,30 @@ def pick_funnel(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float
     }
 
 
-def simulate_picks(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) -> pd.DataFrame:
-    """One row per pick: each day and style, the best-ratio stocks within the sector cap.
+def simulate_picks(
+    predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float, policy: Policy = DEFAULT_POLICY
+) -> pd.DataFrame:
+    """One row per pick: each day and style, the best stocks within the sector cap.
 
+    `rule="ratio"` ranks by expected return per unit of range; `"p"` ranks by P(beat).
+    A tie goes to the shorter horizon. `horizons`, when set, is the only set considered.
     A stock is a separate bet only once its earlier pick's hold has ended.
     """
     df = _priced(predictions, market, usd_fx_fee_pct)
-    df = df[(df["p"] >= P_MIN) & (df["q50"] > df["cost"]) & df["ratio"].notna()]
+    if policy.horizons is not None:
+        df = df[df["horizon"].isin(policy.horizons)]
+    df = df[(df["p"] >= policy.p_buy) & (df["q50"] > df["cost"]) & df["ratio"].notna()]
     if df.empty:
         return pd.DataFrame(columns=PICK_COLUMNS)
 
-    df = df.sort_values(["day", "symbol", "ratio", "horizon"], ascending=[True, True, False, True])
+    rank = "p" if policy.rule == "p" else "ratio"
+    df = df.sort_values(["day", "symbol", rank, "horizon"], ascending=[True, True, False, True])
     df = df.drop_duplicates(["day", "symbol"], keep="first")
     df["style"] = np.where(df["horizon"].isin(SWING_HORIZONS), "swing", "position")
     # a stock without a sector label counts alone, not as one shared group
     df["_group"] = df["sector"].where(df["sector"].notna(), "unlabelled:" + df["symbol"].astype(str))
 
-    df = df.sort_values(["day", "style", "ratio", "symbol"], ascending=[True, True, False, True])
+    df = df.sort_values(["day", "style", rank, "symbol"], ascending=[True, True, False, True])
     chosen = []
     held_until: dict[str, np.datetime64] = {}  # symbol -> the day its pick's hold ends
     for day, today in df.groupby("day", sort=True):

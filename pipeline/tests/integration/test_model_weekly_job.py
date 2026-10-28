@@ -1,9 +1,11 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from advisor.model import weekly
 from advisor.model.train import PARAMS, TrainConfig, from_files
-from advisor.model.variants import BASELINE
+from advisor.model.variants import BASELINE, ModelConfig
 from advisor.models import Market
+from advisor.policy import DEFAULT_POLICY
 from advisor.store import repo
 from model_data import write_market
 
@@ -67,6 +69,24 @@ def test_weekly_training_follows_the_accepted_config(db, tmp_path):
     config_id = _accept(db, "TSX", BASELINE.to_json())
     report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
     assert report["TSX"]["config_reason"] == f"accepted configuration #{config_id} (baseline)"
+
+
+def test_weekly_training_stores_the_accepted_policy_and_judges_the_funnel_with_it(db, tmp_path, monkeypatch):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    policy = replace(DEFAULT_POLICY, p_buy=0.54)
+    _accept(db, "TSX", ModelConfig(policy=policy).to_json())
+    seen = []
+    real = weekly.pick_funnel
+
+    def spy(predictions, market, fee, policy=DEFAULT_POLICY):
+        seen.append(policy)
+        return real(predictions, market, fee)
+
+    monkeypatch.setattr(weekly, "pick_funnel", spy)
+    weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    stored = repo.active_model(db, "stock_tsx").metrics["config"]["policy"]
+    assert stored == policy.to_json()
+    assert seen[0].p_buy == 0.54
 
 
 def test_a_config_this_code_cannot_run_falls_back_to_the_baseline(db, tmp_path):

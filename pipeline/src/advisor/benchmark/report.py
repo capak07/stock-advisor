@@ -6,6 +6,8 @@ import math
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+_ABLATION_ORDER = ("baseline", "factors", "garch", "factors+garch", "full+policy")
+
 SURVIVORSHIP = (
     "Survivorship: the stock universes are today's listings — Yahoo has no delisted tickers "
     "and SEC's ticker map is current-only — so every result here is optimistic by an unknown amount."
@@ -121,6 +123,65 @@ def _policy_table(variant: Mapping) -> list[str]:
     return lines
 
 
+def _ordered(variants: Mapping) -> list[tuple[str, Mapping]]:
+    names = [name for name in _ABLATION_ORDER if name in variants]
+    names += [name for name in variants if name not in names]
+    return [(name, variants[name]) for name in names]
+
+
+def _book(value: object) -> Mapping:
+    if isinstance(value, Mapping) and isinstance(value.get("pooled"), Mapping):
+        return value["pooled"]
+    return value if isinstance(value, Mapping) else {}
+
+
+def _policy_bits(raw: Mapping) -> str:
+    horizons = raw.get("horizons")
+    days = "all" if horizons is None else ", ".join(str(day) for day in horizons)
+    return (
+        f"p_buy {raw['p_buy']:.2f}, p_sell {raw['p_sell']:.2f}, swing_atr {raw['swing_atr']}, "
+        f"position_atr {raw['position_atr']}, trail_atr {raw['trail_atr']}, rule {raw['rule']}, "
+        f"horizons {days}"
+    )
+
+
+def _book_row(label: str, book: Mapping) -> str:
+    claimed = (
+        "—"
+        if _missing(book.get("mean_p")) or _missing(book.get("beat_rate"))
+        else f"{_pct(book['mean_p'])} vs {_pct(book['beat_rate'])}"
+    )
+    trades = "—" if _missing(book.get("trades")) else str(int(book["trades"]))
+    return (
+        f"| {label} | {trades} | {_fmt(book.get('trades_per_month'), '.1f')} "
+        f"| {_net(book.get('mean_net_pct'))} | {_pct(book.get('hit_rate_net'))} "
+        f"| {_fmt(book.get('sharpe'), '.2f')} | {_pct(book.get('max_drawdown'))} | {claimed} |"
+    )
+
+
+def _tuned_policy(policy: Mapping, market: Mapping) -> list[str]:
+    lines = [
+        "### Policy (folds 1–3)",
+        "",
+        "| Book | Trades | Trades/month | Net per trade | Hit rate | Net Sharpe | Max drawdown | Claimed P vs beat rate |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        _book_row("today's rules", _book(policy.get("default"))),
+        _book_row("tuned", _book(policy.get("candidate"))),
+        "",
+    ]
+    for fold, raw in enumerate(policy.get("per_fold") or [], start=1):
+        lines.append(f"Fold {fold}: no policy" if not isinstance(raw, Mapping) else f"Fold {fold}: {_policy_bits(raw)}")
+    final = policy.get("final")
+    if isinstance(final, Mapping):
+        lines.append(f"Final policy: {_policy_bits(final)}")
+    else:
+        decision = (market.get("decisions") or {}).get("full+policy") or {}
+        reasons = decision.get("reasons") or []
+        why = reasons[0] if reasons else (policy.get("reason") or "none was accepted")
+        lines.append(f"No final policy: {why}")
+    return lines
+
+
 def _how(constants: Mapping) -> list[str]:
     pinball_pct = constants["pinball_tolerance"] * 100
     n, folds = constants["min_folds_improved"], constants["outer_folds"]
@@ -156,15 +217,19 @@ def render_markdown(report: Mapping) -> str:
             "| Variant | Status | Rank IC (pooled) | Pinball (pooled) | Worst calibration | Decision |",
             "| --- | --- | --- | --- | --- | --- |",
         ]
-        for name, variant in market["variants"].items():
+        for name, variant in _ordered(market["variants"]):
             lines.append(_ablation_row(name, variant, market))
         lines.append("")
-        for name, variant in market["variants"].items():
+        for name, variant in _ordered(market["variants"]):
             if variant.get("status") != "run":
                 continue
             lines += _outer_folds_table(name, variant)
             lines.append("")
-            lines += _policy_table(variant)
+            stored = variant.get("policy")
+            if name == "full+policy" and isinstance(stored, Mapping) and "default" in stored:
+                lines += _tuned_policy(stored, market)
+            elif isinstance(stored, Mapping):
+                lines += _policy_table(variant)
             lines.append("")
     lines += _how(report["constants"])
     lines.append("")

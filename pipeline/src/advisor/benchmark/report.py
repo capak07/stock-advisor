@@ -70,6 +70,8 @@ def _decision(name: str, market: Mapping) -> str:
 def _ablation_row(name: str, variant: Mapping, market: Mapping) -> str:
     if variant.get("status") != "run":
         return f"| {name} | arrives with {variant.get('plan', '')} | — | — | — | — |"
+    if "summary" not in variant:  # the policy row: no model scores of its own
+        return f"| {name} | run | — | — | — | {_decision(name, market)} |"
     summary = variant["summary"]["pooled"]
     return (
         f"| {name} | run | {_fmt(summary['rank_ic'], '.3f')} | {_fmt(summary['pinball'], '.5f')} "
@@ -169,16 +171,19 @@ def _tuned_policy(policy: Mapping, market: Mapping) -> list[str]:
         _book_row("tuned", _book(policy.get("candidate"))),
         "",
     ]
+    fold_reasons = policy.get("per_fold_reasons") or []
     for fold, raw in enumerate(policy.get("per_fold") or [], start=1):
-        lines.append(f"Fold {fold}: no policy" if not isinstance(raw, Mapping) else f"Fold {fold}: {_policy_bits(raw)}")
+        text = f"Fold {fold}: {_policy_bits(raw)}" if isinstance(raw, Mapping) else f"Fold {fold}: no policy"
+        why = fold_reasons[fold - 1] if fold - 1 < len(fold_reasons) else None
+        lines.append(f"{text} — {why}" if why else text)
     final = policy.get("final")
     if isinstance(final, Mapping):
         lines.append(f"Final policy: {_policy_bits(final)}")
+    elif policy.get("final_reason"):
+        lines.append(f"No final policy: {policy['final_reason']}")
     else:
-        decision = (market.get("decisions") or {}).get("full+policy") or {}
-        reasons = decision.get("reasons") or []
-        why = reasons[0] if reasons else (policy.get("reason") or "none was accepted")
-        lines.append(f"No final policy: {why}")
+        lines.append("No final policy")
+    lines.append(f"Decision: {_decision('full+policy', market)}")
     return lines
 
 
@@ -223,14 +228,17 @@ def render_markdown(report: Mapping) -> str:
         for name, variant in _ordered(market["variants"]):
             if variant.get("status") != "run":
                 continue
+            if "summary" not in variant:  # the policy row has books, not model scores
+                stored = variant.get("policy")
+                if isinstance(stored, Mapping):
+                    lines += _tuned_policy(stored, market)
+                    lines.append("")
+                continue
             lines += _outer_folds_table(name, variant)
             lines.append("")
-            stored = variant.get("policy")
-            if name == "full+policy" and isinstance(stored, Mapping) and "default" in stored:
-                lines += _tuned_policy(stored, market)
-            elif isinstance(stored, Mapping):
+            if isinstance(variant.get("policy"), Mapping):
                 lines += _policy_table(variant)
-            lines.append("")
+                lines.append("")
     lines += _how(report["constants"])
     lines.append("")
     return "\n".join(lines)

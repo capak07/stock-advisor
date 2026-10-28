@@ -107,3 +107,19 @@ def test_scores_are_read_from_the_per_fold_metrics():
     assert s.rank_ic == {"0": pytest.approx(0.10), "1": pytest.approx(0.03), "pooled": pytest.approx(0.06)}
     assert s.pinball == pytest.approx(0.02)
     assert s.calibration == {5: 3.0, 63: 6.0}
+
+
+def book(sharpe, trades=40, feasible=True, failures=()):
+    return {"pooled": {"sharpe": sharpe, "trades": trades}, "feasible": feasible, "failures": list(failures)}
+
+
+def test_a_policy_must_beat_todays_rules_or_cash():
+    from advisor.benchmark.accept import accept_policy
+    d = accept_policy(book(0.8), book(float("nan"), trades=0))  # today's rules never traded: cash
+    assert d.accepted and d.reasons == ("net Sharpe 0.80 vs 0.00 for today's rules, 40 trades",)
+    assert not accept_policy(book(0.8), book(1.1)).accepted
+    assert "net Sharpe 0.80 is not above 1.10 for today's rules" in accept_policy(book(0.8), book(1.1)).reasons
+    assert not accept_policy(book(-0.2), book(float("nan"), trades=0)).accepted
+    assert not accept_policy(book(float("nan")), book(0.0, trades=0)).accepted
+    infeasible = accept_policy(book(2.0, feasible=False, failures=["only 12 trades (needs 30)"]), book(0.0, trades=0))
+    assert not infeasible.accepted and infeasible.reasons == ("only 12 trades (needs 30)",)

@@ -101,9 +101,15 @@ def test_ablation_rows_print_in_a_fixed_order_whatever_order_the_dict_arrives_in
     assert names == ["baseline", "factors", "garch", "factors+garch", "full+policy"]
 
 
+def _score(pooled: dict) -> dict:
+    return {
+        "per_period": [pooled], "pooled": pooled, "feasible": bool(pooled["trades"] >= 30),
+        "failures": [], "objective": pooled["sharpe"],
+    }
+
+
 def test_the_policy_table_shows_both_books_and_dashes_an_empty_default():
     messy = json.loads(json.dumps(REPORT))
-    baseline = messy["markets"]["TSX"]["variants"]["baseline"]
     empty = {
         "trades": 0, "trades_per_month": None, "mean_net_pct": None, "hit_rate_net": None,
         "beat_rate": None, "mean_p": None, "sharpe": None, "max_drawdown": 0.0,
@@ -114,23 +120,34 @@ def test_the_policy_table_shows_both_books_and_dashes_an_empty_default():
     }
     one = {"p_buy": 0.6, "p_sell": 0.42, "swing_atr": 2.0, "position_atr": 3.0, "trail_atr": 2.5,
            "rule": "ratio", "horizons": None}
+    fold_reason = "no stage-1 combination met the limits: best failed on only 4 trades (needs 30)"
     messy["markets"]["TSX"]["variants"]["full+policy"] = {
         "status": "run",
-        "model": baseline["model"],
-        "summary": baseline["summary"],
-        "policy": {"default": empty, "candidate": tuned, "per_fold": [one, None, one], "final": None},
+        "model": "baseline",
+        "policy": {
+            "default": _score(empty),
+            "candidate": _score(tuned),
+            "per_fold": [one, None, one],
+            "per_fold_reasons": ["inner tune", fold_reason, "inner tune"],
+            "final": None,
+            "final_reason": "the whole-history tune found nothing",
+        },
     }
     messy["markets"]["TSX"]["decisions"]["full+policy"] = {
-        "accepted": False, "reasons": ["no stage-1 combination met the limits: best failed on only 4 trades (needs 30)"],
+        "accepted": False, "reasons": [f"outer fold 2: {fold_reason}"],
     }
     md = render_markdown(messy)
+    assert "| full+policy | run | — | — | — | rejected: outer fold 2: " in md
+    assert "### Outer folds: full+policy" not in md
     table = md.split("### Policy (folds 1–3)", 1)[1]
     today = next(line for line in table.splitlines() if line.startswith("| today's rules"))
     tuned_row = next(line for line in table.splitlines() if line.startswith("| tuned"))
     assert "—" in today and "nan" not in today.lower() and "None" not in today
     assert "| tuned | 40 | 4.0 | 1.20% | 55% | 0.80 | 12% | 60% vs 52% |" == tuned_row
-    assert "Fold 1: p_buy 0.60" in table and "Fold 2: no policy" in table
-    assert "No final policy: no stage-1 combination met the limits" in table
+    assert "Fold 1: p_buy 0.60" in table
+    assert f"Fold 2: no policy — {fold_reason}" in table
+    assert "No final policy: the whole-history tune found nothing" in table
+    assert "Decision: rejected: outer fold 2: " in table
 
 
 def test_nan_and_none_render_as_dashes_not_the_words():

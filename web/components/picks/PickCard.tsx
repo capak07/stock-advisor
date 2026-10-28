@@ -1,8 +1,10 @@
 import { Calendar, TrendingDown, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
+import { OrderGuide } from '@/components/OrderGuide'
 import { RangeBar } from '@/components/picks/RangeBar'
 import { catalystsLine, costText, describeFactor, factorBars, holdText, tfsaNote } from '@/lib/advice'
 import type { PickView } from '@/lib/data/picks'
+import type { Guide } from '@/lib/guidance'
 import { fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
 import { RISK_LABELS, type RiskLevel } from '@/lib/portfolio/actions'
 import { tickerHref } from '@/lib/ticker'
@@ -18,12 +20,15 @@ export function PickCard({
   pick,
   portfolioCad,
   usdFxFeePct,
+  guide = null,
   action,
 }: {
   pick: PickView
   /** The portfolio's total CAD value, for the max size in dollars; null when there's nothing held. */
   portfolioCad: number | null
   usdFxFeePct: number
+  /** How to place the buy; null without the rate a US pick needs. */
+  guide?: Guide | null
   action?: React.ReactNode
 }) {
   const p = pick
@@ -108,6 +113,7 @@ export function PickCard({
         {p.catalysts.length > 0 && <Calendar className="pick-cal" />}
         {catalystsLine(p.catalysts)}
       </p>
+      {guide && <OrderGuide plan={guide.plan} caption={guide.caption} />}
       <div className="pick-foot">
         <span className="sub">{tfsaNote(p.style)}</span>
         {action}

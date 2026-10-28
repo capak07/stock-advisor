@@ -4,8 +4,10 @@ import { X } from 'lucide-react'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 import { addWatch, removeWatch } from '@/app/(app)/watchlist/actions'
+import { OrderGuide } from '@/components/OrderGuide'
 import { SymbolSearch } from '@/components/SymbolSearch'
 import { useToast } from '@/components/Toast'
+import type { Guide } from '@/lib/guidance'
 import { assetKey, type AssetType } from '@/lib/portfolio/types'
 import type { SearchItem } from '@/lib/symbol-search'
 import { tickerHref } from '@/lib/ticker'
@@ -21,6 +23,8 @@ export interface WatchRow {
   /** The latest published run's verdict; null when the symbol was added after it. */
   verdict: Verdict | null
   why: string | null
+  /** How to place a Buy; null for other verdicts. */
+  guide: Guide | null
 }
 
 /** Search the stock and coin lists; picking a match watches it. `watched` holds asset keys. */
@@ -122,7 +126,10 @@ export function WatchList({ rows, withVerdicts = false }: { rows: WatchRow[]; wi
                     <span className="chip hold">New</span>
                   )}
                 </span>
-                <span className="w-detail sub">{row.why ?? 'Gets its first verdict at the next run'}</span>
+                <span className="w-why">
+                  <span className="w-detail sub">{row.why ?? 'Gets its first verdict at the next run'}</span>
+                  {row.verdict === 'buy' && row.guide && <OrderGuide plan={row.guide.plan} caption={row.guide.caption} />}
+                </span>
               </>
             )}
             <span className="w-price num" style={{ textAlign: 'right' }}>

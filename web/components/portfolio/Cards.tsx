@@ -2,7 +2,10 @@ import { Info, Sparkles, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { shortDay } from '@/lib/dates'
+import { OrderGuide } from '@/components/OrderGuide'
 import { fmtAmount, fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
+import { joinPlans } from '@/lib/guidance'
+import type { OrderPlan } from '@/lib/orders'
 import {
   ACTION_LABELS,
   RISK_LABELS,
@@ -23,10 +26,13 @@ import { HoldList } from './HoldList'
 /** A holding with its latest run action. */
 type Acted = HoldingRow & { action: HoldingAction }
 
+/** Each acted holding's order for its action and the stop to keep, by position key. */
+export type HoldingGuides = Map<string, { order: OrderPlan | null; stop: OrderPlan | null }>
+
 const acted = (holdings: readonly HoldingRow[]): Acted[] => holdings.filter((h): h is Acted => h.action !== null)
 
 /** Sell → Trim → Review → Add cards from the latest run's actions, then the plain Holds folded (spec §7.2, §7.3). */
-export function ActionsCard({ holdings, asOf }: { holdings: HoldingRow[]; asOf: string | null }) {
+export function ActionsCard({ holdings, asOf, guides }: { holdings: HoldingRow[]; asOf: string | null; guides: HoldingGuides }) {
   const rows = acted(holdings)
   const byKey = new Map(rows.map((h) => [positionKey(h.action), h]))
   const { cards, hold } = actionGroups(rows.map((h) => h.action))
@@ -52,6 +58,9 @@ export function ActionsCard({ holdings, asOf }: { holdings: HoldingRow[]; asOf: 
                 const h = byKey.get(positionKey(a)) as Acted
                 const group = actionGroup(a) ?? 'hold'
                 const tone = h.gainCad < 0 ? 'loss' : 'gain'
+                const guide = guides.get(h.key)
+                // a Sell's order replaces its stop
+                const plan = joinPlans(guide?.order ?? null, a.action === 'sell' ? null : (guide?.stop ?? null))
                 return (
                   <Link
                     key={h.key}
@@ -82,6 +91,7 @@ export function ActionsCard({ holdings, asOf }: { holdings: HoldingRow[]; asOf: 
                     <div className={`num ${tone}`} style={{ fontSize: 13 }}>
                       {fmtMoney(h.gainCad, { signed: true })} · {fmtPct(h.gainPct)}
                     </div>
+                    <OrderGuide plan={plan} />
                   </Link>
                 )
               })}
@@ -256,7 +266,7 @@ export function BreakdownCard({ byRisk, byMarket, byAccount }: { byRisk: Slice[]
   )
 }
 
-export function HoldingsCard({ holdings, accounts }: { holdings: HoldingRow[]; accounts: number }) {
+export function HoldingsCard({ holdings, accounts, guides }: { holdings: HoldingRow[]; accounts: number; guides: HoldingGuides }) {
   const modelled = holdings.some((h) => h.action !== null)
   return (
     <section className="card card-pad enter" aria-labelledby="hold-h">
@@ -302,6 +312,7 @@ export function HoldingsCard({ holdings, accounts }: { holdings: HoldingRow[]; a
             <tbody>
               {holdings.map((h) => {
                 const tone = h.gainCad < 0 ? 'loss' : 'gain'
+                const stop = guides.get(h.key)?.stop?.steps.map((s) => s.text).join(' · ') || null
                 return (
                   <tr key={h.key}>
                     <td className="sub h-acct">{ACCOUNT_LABELS[h.account]}</td>
@@ -325,8 +336,9 @@ export function HoldingsCard({ holdings, accounts }: { holdings: HoldingRow[]; a
                     </td>
                     {modelled && <ModelCells h={h} />}
                     <td className="h-note">
+                      {stop && <span className="sub order-note">{stop}</span>}
                       {h.notes.length === 0 ? (
-                        <span className="sub">—</span>
+                        !stop && <span className="sub">—</span>
                       ) : (
                         h.notes.map((n) =>
                           n.warn ? (

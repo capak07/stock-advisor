@@ -1,18 +1,40 @@
 import { Info } from 'lucide-react'
 import type { Metadata } from 'next'
+import { OrderDisclaimer } from '@/components/OrderGuide'
 import { AddWatch, WatchList, type WatchRow } from '@/components/watchlist/Watchlist'
 import { ownerClient } from '@/lib/auth'
-import { loadCloses, loadFx } from '@/lib/data/portfolio'
+import { loadCloses, loadFx, loadPortfolio } from '@/lib/data/portfolio'
 import { loadNames } from '@/lib/data/symbols'
 import { loadVerdicts, loadWatchlist } from '@/lib/data/watchlist'
 import { addDays, todayInToronto } from '@/lib/dates'
 import { fmtPrice } from '@/lib/format'
+import { verdictGuide } from '@/lib/guidance'
+import { portfolioView } from '@/lib/portfolio/view'
 import { assetKey } from '@/lib/portfolio/types'
 import { runTime } from '@/lib/runs'
+import type { Supabase } from '@/lib/supabase/server'
 import { marketOf } from '@/lib/symbols'
 import { verdictWhy } from '@/lib/verdicts'
 
 export const metadata: Metadata = { title: 'Watchlist' }
+
+/** The portfolio's CAD value, which sizes a Buy like a pick; null when nothing is held. */
+async function portfolioValue(supabase: Supabase): Promise<number | null> {
+  const data = await loadPortfolio(supabase)
+  const { totals } = portfolioView(
+    {
+      trades: data.trades,
+      prices: data.prices,
+      fx: data.fx,
+      names: data.names,
+      sectors: data.sectors,
+      actions: [],
+      guideline: { roundTrips: data.settings.tfsa_round_trips_warn, shortHoldShare: data.settings.tfsa_short_hold_share_warn },
+    },
+    todayInToronto(),
+  )
+  return totals.valueCad > 0 ? totals.valueCad : null
+}
 
 /** Watchlist (spec §9): add listed US and TSX stocks and coins from the search, or remove them, each with the latest run's verdict. */
 export default async function WatchlistPage() {
@@ -28,6 +50,9 @@ export default async function WatchlistPage() {
   ])
   const rate = fx.latest()?.usdCad ?? null
   const withVerdicts = latest !== null && latest.verdicts.size > 0
+  const buys = latest !== null && [...latest.verdicts.values()].some((v) => v.verdict === 'buy')
+  const portfolioCad = buys ? await portfolioValue(supabase) : null
+  const orders = { now: new Date(), usdCad: rate }
 
   const rows: WatchRow[] = items.map((item) => {
     const close = prices.latest(assetKey(item.assetType, item.symbol))
@@ -45,6 +70,7 @@ export default async function WatchlistPage() {
       price,
       verdict: v?.verdict ?? null,
       why: v ? verdictWhy({ ...v, market }, 'long') : null,
+      guide: v && item.assetType === 'stock' ? verdictGuide(item.symbol, v, portfolioCad, orders) : null,
     }
   })
 
@@ -72,6 +98,7 @@ export default async function WatchlistPage() {
           </div>
         )}
         <WatchList rows={rows} withVerdicts={withVerdicts} />
+        {rows.some((r) => r.guide !== null) && <OrderDisclaimer style={{ marginTop: 12 }} />}
       </section>
     </main>
   )

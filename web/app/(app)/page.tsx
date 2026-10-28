@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
-import { ActionsCard, BreakdownCard, HoldingsCard, WarningsCard } from '@/components/portfolio/Cards'
+import { OrderDisclaimer } from '@/components/OrderGuide'
+import { ActionsCard, BreakdownCard, HoldingsCard, WarningsCard, type HoldingGuides } from '@/components/portfolio/Cards'
 import { TradeButtons } from '@/components/portfolio/TradeForms'
 import { TradeList } from '@/components/portfolio/TradeList'
 import { ValueCard } from '@/components/portfolio/ValueCard'
@@ -7,6 +8,7 @@ import { ownerClient } from '@/lib/auth'
 import { loadHoldingActions } from '@/lib/data/actions'
 import { loadPortfolio } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
+import { holdingGuides } from '@/lib/guidance'
 import { tradeList } from '@/lib/portfolio/trade-list'
 import { portfolioView } from '@/lib/portfolio/view'
 
@@ -33,6 +35,15 @@ export default async function PortfolioPage() {
     },
     today,
   )
+  const orders = { now: new Date(), usdCad: view.fx?.usdCad ?? null }
+  const qtyOf = new Map(view.sellable.map((s) => [s.key, s.qty]))
+  const guides: HoldingGuides = new Map(
+    view.holdings.flatMap((h) => {
+      const qty = qtyOf.get(h.key)
+      if (h.action === null || qty === undefined) return []
+      return [[h.key, holdingGuides(h.action, { qty, valueCad: h.valueCad, portfolioCad: view.totals.valueCad }, orders)]]
+    }),
+  )
   const accounts = view.accounts.length === 0 ? 'No accounts yet' : `${view.accounts.join(' and ')} accounts`
   const rate = view.fx ? ` (${view.fx.usdCad.toFixed(4)})` : ''
 
@@ -49,13 +60,14 @@ export default async function PortfolioPage() {
       </div>
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>
-        <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} />
+        <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} />
         <aside className="grid gap-4">
           <WarningsCard warnings={view.warnings} />
           <BreakdownCard byRisk={view.byRisk} byMarket={view.byMarket} byAccount={view.byAccount} />
         </aside>
       </section>
-      <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} />
+      <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} guides={guides} />
+      {[...guides.values()].some((g) => (g.order?.steps.length ?? 0) + (g.stop?.steps.length ?? 0) > 0) && <OrderDisclaimer />}
       {data.trades.length > 0 && <TradeList lines={tradeList(data.trades, data.fx)} />}
     </main>
   )

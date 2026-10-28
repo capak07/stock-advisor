@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { daysAgo, resetData, seedCloses, seedCoins, seedFx, seedRun, seedSymbols, seedVerdict, sql } from './db'
+import { daysAgo, resetData, seedCloses, seedCoins, seedFeatures, seedFx, seedRun, seedSymbols, seedVerdict, sql } from './db'
 
 test.beforeEach(resetData)
 
@@ -113,6 +113,30 @@ test.describe('watchlist', () => {
     const sol = page.locator('.watch-row', { hasText: 'SOL' })
     await expect(sol.locator('.chip')).toHaveText('New')
     await expect(sol.locator('.w-detail')).toHaveText('Gets its first verdict at the next run')
+  })
+
+  test('a watched Buy says how to place it, sized at C$1,000 with nothing held', async ({ page }) => {
+    await seedSymbols([{ symbol: 'TD.TO', market: 'TSX', name: 'Toronto-Dominion Bank' }])
+    await sql`insert into watchlist (symbol, asset_type) values ('TD.TO', 'stock')`
+    const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    await seedFeatures(runId, 'TD.TO', 'stock', { atr_14_pct: 0.02, log_adv20: Math.log1p(5e6) })
+    await seedVerdict(runId, {
+      symbol: 'TD.TO',
+      assetType: 'stock',
+      verdict: 'buy',
+      reasons: ['P(beat XIU.TO) 0.62 over 10 trading days', 'expected 2.0% against 0.3% round-trip costs'],
+      details: { style: 'swing', horizon_days: 10, exit_by: '2026-11-10', rank: 1, entry_ref_price: 80, stop: 74, max_position_pct: 3, market_picks_enabled: true },
+    })
+    await page.goto('/watchlist')
+    const row = page.locator('.watch-row', { hasText: 'TD.TO' })
+    await expect(row.locator('.w-detail')).toHaveText("Swing · hold ~10 trading days · exit by Nov 10 · 62% to beat XIU.TO · also today's #1 TSX pick")
+    const guide = row.locator('.order-guide')
+    await expect(guide).toContainText('How to place it · for C$1,000')
+    // C$1,000 at C$80.40 is 12 shares and C$35 left over, bought as a fraction
+    await expect(guide).toContainText(/Limit buy 12 sh at C\$80\.40 · (Day order|set it to expire at the end of the next trading day)/)
+    await expect(guide).toContainText('Market buy C$35')
+    await expect(guide).toContainText('Then a stop-limit sell 12 sh: stop C$74.00, limit C$73.26, expiry 90 days')
+    await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toBeVisible()
   })
 
   test("a held watched stock's verdict says it is held", async ({ page }) => {

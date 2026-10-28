@@ -121,12 +121,14 @@ export async function seedHoldingAction(
     horizon_days?: number | null
     exit_by?: string | null
     risk_level?: 'low' | 'medium' | 'high' | 'very_high' | null
+    ref_price?: number | null
   },
 ) {
   const { reasons, warnings = [], ...rest } = row
   await sql`insert into holding_actions ${sql({
     run_id: runId,
     review: false,
+    ref_price: null,
     trailing_stop: null,
     q10: null,
     q50: null,

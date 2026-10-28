@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { resetData, seedFeatures, seedRun, seedSymbols, sql } from './db'
+import { daysAgo, resetData, seedCloses, seedFeatures, seedRun, seedSymbols, sql, weekdays } from './db'
 
 test.beforeEach(resetData)
 
@@ -85,6 +85,20 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   const foot = page.locator('.invest-foot')
   await expect(foot).toContainText('Total C$1,000')
   await expect(foot).toContainText('Not financial or tax advice. Forecasts are probabilistic and can be wrong.')
+})
+
+test('each Invest line says how to place it, and BTC also as a recurring buy', async ({ page }) => {
+  await seedForecasts()
+  await seedCloses('RY.TO', 'stock', 'CAD', weekdays(daysAgo(10)), 50, 0)
+  await page.goto('/invest?amount=1000&crypto=10&stocks=5')
+  const ry = stockRows(page).filter({ hasText: 'RY.TO' }).locator('.order-guide')
+  await expect(ry).toContainText('How to place it')
+  await expect(ry).toContainText(/Limit buy \d+ sh at C\$50\.50 · (Day order|set it to expire at the end of the next trading day)/)
+  await expect(ry).not.toContainText('stop-limit') // the Invest page isn't a pick, so no stop
+  // BTC has no price without a watchlist close, so only the recurring alternative shows
+  const btc = page.locator('#invest-lines .invest-row.crypto .order-guide')
+  await expect(btc.locator('.og-step')).toHaveText(['Or a recurring buy of C$25 of BTC weekly for 4 weeks (Wealthsimple offers daily, weekly, every two weeks or monthly)'])
+  await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toHaveCount(1)
 })
 
 test('one stock puts all of the money in the top-ranked one', async ({ page }) => {

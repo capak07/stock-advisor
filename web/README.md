@@ -13,6 +13,10 @@ button that pre-fills a buy linked to its pick), the Watchlist's verdict column 
 page's forecast: the cone on the price chart, horizon tabs, top factors, catalysts and past picks
 with their results. Only Track record is still to come.
 
+Every suggested trade (pick cards, watchlist Buys, My Portfolio's Sell, Trim and Add cards and
+holdings, and Invest lines) shows "How to place it": the Wealthsimple order type, quantity, price
+and duration, from the rules in `lib/orders.ts` (spec `2026-10-28-order-guidance-design.md`).
+
 ## Run it locally
 
 Needs Node 24 and Docker Desktop.

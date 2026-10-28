@@ -2,12 +2,16 @@ import { Info, TriangleAlert } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
+import { OrderDisclaimer, OrderGuide } from '@/components/OrderGuide'
 import { ownerClient } from '@/lib/auth'
 import { loadInvestData } from '@/lib/data/invest'
+import { loadFx } from '@/lib/data/portfolio'
 import { shortDay } from '@/lib/dates'
 import { fmtMoney, fmtPct } from '@/lib/format'
+import { btcGuide, investGuide, type OrderContext } from '@/lib/guidance'
 import { STOCKS, allocate, type StockLine } from '@/lib/invest/allocate'
 import { addWeekdays, parseInvestInputs, type InvestInputs } from '@/lib/invest/inputs'
+import type { OrderPlan } from '@/lib/orders'
 import { KIND_LABEL, type Run } from '@/lib/runs'
 import { tickerHref } from '@/lib/ticker'
 
@@ -30,7 +34,8 @@ export default async function InvestPage({ searchParams }: Props) {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
   const inputs = parseInvestInputs(await searchParams)
-  const data = await loadInvestData(supabase)
+  const [data, fx] = await Promise.all([loadInvestData(supabase), loadFx(supabase)])
+  const orders = { now: new Date(), usdCad: fx.latest()?.usdCad ?? null }
 
   return (
     <main className="page">
@@ -58,6 +63,7 @@ export default async function InvestPage({ searchParams }: Props) {
           <Result
             run={data.run}
             amount={inputs.amount}
+            orders={orders}
             allocation={allocate({
               amount: inputs.amount,
               cryptoPct: inputs.cryptoPct,
@@ -124,9 +130,21 @@ function SplitForm({ inputs }: { inputs: InvestInputs }) {
   )
 }
 
-function Result({ run, amount, allocation }: { run: Run; amount: number; allocation: ReturnType<typeof allocate> }) {
+function Result({
+  run,
+  amount,
+  orders,
+  allocation,
+}: {
+  run: Run
+  amount: number
+  orders: OrderContext
+  allocation: ReturnType<typeof allocate>
+}) {
   const { stocks, crypto, uninvested, notValidated, evenSplit } = allocation
   const mixed = notValidated && stocks.some((s) => s.qualifies)
+  const guides = new Map(stocks.map((s) => [s.symbol, investGuide(s, orders)]))
+  const btc = crypto.amount > 0 ? btcGuide(crypto, orders) : null
   return (
     <section className="card card-pad enter" aria-labelledby="result-h">
       <div className="section-head" style={{ marginBottom: 6 }}>
@@ -143,7 +161,7 @@ function Result({ run, amount, allocation }: { run: Run; amount: number; allocat
       )}
       <ul className="invest-list stagger" id="invest-lines">
         {stocks.map((line, i) => (
-          <StockRow key={line.symbol} line={line} run={run} mixed={mixed} index={i} />
+          <StockRow key={line.symbol} line={line} run={run} mixed={mixed} index={i} guide={guides.get(line.symbol) ?? null} />
         ))}
         {crypto.amount > 0 && (
           <li className="invest-row crypto" style={{ '--i': stocks.length } as CSSProperties}>
@@ -159,6 +177,7 @@ function Result({ run, amount, allocation }: { run: Run; amount: number; allocat
                 <span className="sub">Bitcoin · crypto · no forecast (no crypto model yet)</span>
               </div>
               {crypto.units === null && <p className="i-line sub">Add BTC to your watchlist to see its price.</p>}
+              {btc && <OrderGuide plan={btc} />}
             </div>
           </li>
         )}
@@ -187,11 +206,26 @@ function Result({ run, amount, allocation }: { run: Run; amount: number; allocat
           Shares are approximate; Wealthsimple allows fractional shares for many stocks.
         </p>
       )}
+      {(btc !== null || [...guides.values()].some((g) => g !== null && g.steps.length > 0)) && (
+        <OrderDisclaimer style={{ marginTop: 8 }} />
+      )}
     </section>
   )
 }
 
-function StockRow({ line, run, mixed, index }: { line: StockLine; run: Run; mixed: boolean; index: number }) {
+function StockRow({
+  line,
+  run,
+  mixed,
+  index,
+  guide,
+}: {
+  line: StockLine
+  run: Run
+  mixed: boolean
+  index: number
+  guide: OrderPlan | null
+}) {
   const about = [line.name, line.market, line.sector].filter(Boolean).join(' · ')
   const pct = (fraction: number) => fmtPct(fraction * 100)
   return (
@@ -222,6 +256,7 @@ function StockRow({ line, run, mixed, index }: { line: StockLine; run: Run; mixe
           exit by ≈ {shortDay(addWeekdays(run.et_date, line.horizonDays))} · round-trip cost {pct(line.cost)}
           {line.market === 'US' && ' (incl. currency fee)'}
         </p>
+        {guide && <OrderGuide plan={guide} />}
       </div>
     </li>
   )

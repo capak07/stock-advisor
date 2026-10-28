@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { PickCard } from '@/components/picks/PickCard'
 import { ExitEarlyCard, VerdictList } from '@/components/picks/VerdictList'
 import type { MarketPicks as Picks, PickView, Style, VerdictView } from '@/lib/data/picks'
+import type { Guide } from '@/lib/guidance'
 
 /** Spec §6.6's paper period: a style's picks are a trial until enough of them are graded live. */
 const VALIDATED_AT: Record<Style, number> = { swing: 100, position: 50 }
@@ -72,12 +73,14 @@ export function MarketPicks({
   verdicts,
   portfolioCad,
   usdFxFeePct,
+  guideFor,
   actionFor,
 }: {
   market: Picks
   verdicts: VerdictView[]
   portfolioCad: number | null
   usdFxFeePct: number
+  guideFor?: (pick: PickView) => Guide | null
   actionFor?: (pick: PickView) => React.ReactNode
 }) {
   const shown = market.enabled && market.swing.length + market.position.length > 0
@@ -101,7 +104,13 @@ export function MarketPicks({
                 <div className="pick-grid stagger">
                   {picks.map((p, i) => (
                     <div key={p.id} style={{ '--i': i, display: 'grid' } as CSSProperties}>
-                      <PickCard pick={p} portfolioCad={portfolioCad} usdFxFeePct={usdFxFeePct} action={actionFor?.(p)} />
+                      <PickCard
+                        pick={p}
+                        portfolioCad={portfolioCad}
+                        usdFxFeePct={usdFxFeePct}
+                        guide={guideFor?.(p)}
+                        action={actionFor?.(p)}
+                      />
                     </div>
                   ))}
                 </div>

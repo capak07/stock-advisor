@@ -116,6 +116,20 @@ test('a US pick card shows its range, odds, hold, stop, size and cost', async ({
   await expect(usCard(page, 'MSFT')).not.toContainText('round trip')
 })
 
+test('a pick card says how to place the buy and its stop', async ({ page }) => {
+  const { runId } = await seedPicksRun()
+  // log_adv20 under the liquid line, so no market-order note; a 2% daily range gives a 0.5% buffer
+  await seedFeatures(runId, 'F', 'stock', { atr_14_pct: 0.02, log_adv20: Math.log1p(5e6) })
+  await seedPick(runId, { symbol: 'F', market: 'US', style: 'swing', horizon: 10, rank: 2, exitBy: '2026-11-10', entry: 12, stop: 11, riskLevel: 'low', maxPct: 5 })
+  await page.goto('/picks')
+  const guide = page.locator('[data-panel="us"] article.pick[data-symbol="F"] .order-guide')
+  await expect(guide).toContainText('How to place it')
+  await expect(guide).toContainText(/Limit buy \d+ sh at US\$12\.06 · (Day order|set it to expire at the end of the next trading day)/)
+  await expect(guide).toContainText(/Then a stop-limit sell \d+ sh: stop US\$11\.00, limit US\$10\.89, expiry 90 days/)
+  await expect(guide).toContainText('A stop-limit won’t fill if the price gaps below its limit')
+  await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toHaveCount(1)
+})
+
 test('a disabled market shows its gate reason and still lists verdicts', async ({ page }) => {
   const { runId } = await seedPicksRun()
   // written before a retrain turned the gate off: the page goes by the active model's gate

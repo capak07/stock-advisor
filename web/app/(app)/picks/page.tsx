@@ -2,12 +2,14 @@ import { Sparkles } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { BoughtButton, PickBuyDrawer } from '@/components/picks/BoughtButton'
+import { OrderDisclaimer } from '@/components/OrderGuide'
 import { MarketPicks } from '@/components/picks/MarketPicks'
 import { PicksTabs } from '@/components/picks/PicksTabs'
 import { ownerClient } from '@/lib/auth'
 import { loadPicks } from '@/lib/data/picks'
 import { loadPortfolio } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
+import { pickGuide } from '@/lib/guidance'
 import { portfolioView } from '@/lib/portfolio/view'
 import { KIND_LABEL, runTime } from '@/lib/runs'
 
@@ -59,6 +61,7 @@ export default async function PicksPage() {
     todayInToronto(),
   )
   const portfolioCad = totals.valueCad > 0 ? totals.valueCad : null
+  const orders = { now: new Date(), usdCad: data.fx.latest()?.usdCad ?? null }
   const panel = (market: 'US' | 'TSX') => {
     const picks = markets.find((m) => m.market === market)!
     return (
@@ -67,10 +70,12 @@ export default async function PicksPage() {
         verdicts={verdicts}
         portfolioCad={portfolioCad}
         usdFxFeePct={data.settings.usd_fx_fee_pct}
+        guideFor={(p) => pickGuide(p, portfolioCad, orders)}
         actionFor={(p) => <BoughtButton pick={{ id: p.id, symbol: p.symbol, entry: p.entry }} />}
       />
     )
   }
+  const guided = markets.some((m) => m.enabled && [...m.swing, ...m.position].some((p) => pickGuide(p, portfolioCad, orders) !== null))
 
   return (
     <main className="page">
@@ -87,6 +92,7 @@ export default async function PicksPage() {
           }
           panels={{ US: panel('US'), TSX: panel('TSX') }}
         />
+        {guided && <OrderDisclaimer style={{ marginTop: 16 }} />}
       </PickBuyDrawer>
     </main>
   )

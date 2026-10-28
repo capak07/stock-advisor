@@ -571,6 +571,13 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 - **Past picks** (the last 10 for the symbol): date, style, horizon, P(beat) from that run, exit by, and the result: "open", "exited early" with its return, or the return "vs {benchmark}" with the excess and ✓ or ✗.
 - **"I bought this"** opens the buy drawer with the symbol, the TFSA and the pick's entry price, and the buy saves `lots.pick_id`. Changing the symbol drops the link.
 
+**How to place it (2026-10-28, `docs/superpowers/specs/2026-10-28-order-guidance-design.md`):** each suggested trade says which Wealthsimple order to place, for how many shares, at what price in the asset's own currency, and for how long. Each page that shows guidance also says once: "Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast."
+- **Today's Picks:** each card shows "How to place it" for a buy at its max size (C$1,000 when nothing is held, and it says so), then the 90-day stop-limit at the pick's stop.
+- **Watchlist:** each Buy shows "How to place it" under its why, sized like a pick.
+- **My Portfolio:** Sell, Trim and Add cards show "How to place it" for their order. Every card but a Sell's, and every held stock's note in the holdings table, also shows the stop-limit to keep at the trailing stop, with "raise it from {old}" when the previous published run's stop was lower. A coin gets a price-alert line instead.
+- **Invest:** each stock line shows "How to place it" for its amount (no stop), and BTC its limit buy when it has a price, with a weekly recurring buy as the alternative.
+- A US stock gets no guidance without a USD/CAD rate.
+
 ## 10. Error Handling
 
 - **Per source:**

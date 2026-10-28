@@ -20,6 +20,7 @@ const action = (over: Partial<HoldingAction>): HoldingAction => ({
   atrPct: null,
   dollarVolume20: null,
   previousStop: null,
+  maxPositionPct: null,
   ...over,
 })
 

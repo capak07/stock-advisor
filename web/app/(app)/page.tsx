@@ -9,6 +9,7 @@ import { loadHoldingActions } from '@/lib/data/actions'
 import { loadPortfolio } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
 import { holdingGuides } from '@/lib/guidance'
+import { assetKey } from '@/lib/portfolio/types'
 import { tradeList } from '@/lib/portfolio/trade-list'
 import { portfolioView } from '@/lib/portfolio/view'
 
@@ -41,7 +42,8 @@ export default async function PortfolioPage() {
     view.holdings.flatMap((h) => {
       const qty = qtyOf.get(h.key)
       if (h.action === null || qty === undefined) return []
-      return [[h.key, holdingGuides(h.action, { qty, valueCad: h.valueCad, portfolioCad: view.totals.valueCad }, orders)]]
+      const latest = data.prices.latest(assetKey(h.action.assetType, h.action.symbol)) // live after a Refresh
+      return [[h.key, holdingGuides(h.action, { qty, valueCad: h.valueCad, portfolioCad: view.totals.valueCad, latest }, orders)]]
     }),
   )
   const accounts = view.accounts.length === 0 ? 'No accounts yet' : `${view.accounts.join(' and ')} accounts`

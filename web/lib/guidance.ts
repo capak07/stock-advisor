@@ -9,12 +9,13 @@ import { fmtMoney } from './format'
 import type { StockLine } from './invest/allocate'
 import { planBuy, planRecurring, planSell, planStop, planTrim, type Instrument, type OrderPlan } from './orders'
 import type { HoldingAction, RiskLevel } from './portfolio/actions'
+import type { Close } from './portfolio/types'
 import { tradeCurrency } from './symbols'
 
 /** A buy sized for a portfolio with no value yet. */
 export const DEFAULT_BUY_CAD = 1000
 
-/** Spec §6.4: each risk level's suggested max position, in percent of the portfolio. */
+/** Spec §6.4: each risk level's suggested max position, in percent of the portfolio; for actions stored without one. */
 const MAX_POSITION_PCT: Record<RiskLevel, number> = { low: 5, medium: 3, high: 1.5, very_high: 0.5 }
 
 /** The clock and the latest USD/CAD rate; without a rate, nothing priced in USD gets guidance. */
@@ -79,22 +80,26 @@ export function verdictGuide(symbol: string, v: StoredVerdict, portfolioCad: num
  */
 export function holdingGuides(
   a: HoldingAction,
-  { qty, valueCad, portfolioCad }: { qty: number; valueCad: number; portfolioCad: number },
+  { qty, valueCad, portfolioCad, latest = null }: { qty: number; valueCad: number; portfolioCad: number; latest?: Close | null },
   { now, usdCad }: OrderContext,
 ): { order: OrderPlan | null; stop: OrderPlan | null } {
   const currency = tradeCurrency(a.assetType, a.symbol)
   const needsRate = currency === 'USD' || a.assetType === 'crypto'
   if (needsRate && usdCad === null) return { order: null, stop: null }
   const toTrading = (v: number | null) => (v === null ? null : a.assetType === 'crypto' ? v * usdCad! : v)
-  const price = toTrading(a.refPrice)
+  // the latest close (a Refresh's live price when there is one) beats the run's decision price
+  const latestPrice =
+    latest === null ? null : latest.currency === currency ? latest.close : currency === 'CAD' ? latest.close * usdCad! : latest.close / usdCad!
+  const price = latestPrice ?? toTrading(a.refPrice)
   const trailingStop = toTrading(a.trailingStop)
   const instrument = (p: number): Instrument => ({ assetType: a.assetType, currency, price: p, atrPct: a.atrPct, dollarVolume20: a.dollarVolume20 })
 
   let order: OrderPlan | null = null
   if (price !== null && a.action === 'sell') order = planSell(instrument(price), { qty, now })
   if (price !== null && a.action === 'trim') order = planTrim(instrument(price), { qty, now })
-  if (price !== null && a.action === 'add' && a.riskLevel !== null) {
-    const amountCad = (MAX_POSITION_PCT[a.riskLevel] * portfolioCad) / 100 - valueCad
+  const maxPct = a.maxPositionPct ?? (a.riskLevel === null ? null : MAX_POSITION_PCT[a.riskLevel])
+  if (price !== null && a.action === 'add' && maxPct !== null) {
+    const amountCad = (maxPct * portfolioCad) / 100 - valueCad
     if (amountCad > 0) order = planBuy(instrument(price), { amountCad, usdCad: usdCad ?? 1, now, stop: trailingStop })
   }
   // planStop reads only the stop and the daily range, so a holding without a decision price still gets one

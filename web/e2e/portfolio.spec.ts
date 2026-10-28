@@ -187,8 +187,11 @@ test('each action says how to place it, and each holding the stop to keep', asyn
   })
   await page.goto('/')
 
+  // the order is priced off the latest close (a Refresh's live price when there is one), not the run's ref_price
+  const lastShop = 160 - 0.5 * (days.length - 1)
+  const sellAt = (Math.round(lastShop * 0.995 * 100) / 100).toFixed(2).replace('.', '\\.')
   const sell = page.locator('.action-card.sell .order-guide')
-  await expect(sell).toContainText(/Limit sell 10 sh at C\$139\.30 · (Day order|set it to expire at the end of the next trading day)/)
+  await expect(sell).toContainText(new RegExp(`Limit sell 10 sh at C\\$${sellAt} · (Day order|set it to expire at the end of the next trading day)`))
   await expect(sell).not.toContainText('Stop-limit') // a Sell's order replaces its stop
   const review = page.locator('.action-card.review .order-guide')
   const stop = /^Stop-limit sell 5 sh: stop US\$398\.50, limit US\$394\.5[12], expiry 90 days · raise it from US\$390\.00$/

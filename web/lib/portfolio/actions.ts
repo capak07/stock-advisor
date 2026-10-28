@@ -34,6 +34,8 @@ export interface HoldingAction {
   dollarVolume20: number | null
   /** The trailing stop of the previous published run with actions, to say when to raise the stop order. */
   previousStop: number | null
+  /** The suggested max position for its risk level, in percent of the portfolio (spec §6.4), as the run stored it. */
+  maxPositionPct: number | null
 }
 
 /** The Actions card's groups, in the order they show. */

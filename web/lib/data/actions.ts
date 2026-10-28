@@ -20,10 +20,11 @@ interface ActionRow {
   exit_by: string | null
   risk_level: RiskLevel | null
   ref_price: string | number | null
+  max_position_pct: number | null
 }
 
 const COLUMNS =
-  'account, symbol, asset_type, action, review, reasons, warnings, trailing_stop, q10, q50, q90, horizon_days, exit_by, risk_level, ref_price'
+  'account, symbol, asset_type, action, review, reasons, warnings, trailing_stop, q10, q50, q90, horizon_days, exit_by, risk_level, ref_price, max_position_pct'
 
 const num = (value: unknown): number | null => {
   const n = typeof value === 'string' ? Number(value) : value
@@ -55,6 +56,7 @@ const toAction = (r: ActionRow, extra: OrderData): HoldingAction => ({
   atrPct: r.asset_type === 'stock' ? (extra.features.get(r.symbol)?.atrPct ?? null) : null,
   dollarVolume20: r.asset_type === 'stock' ? (extra.features.get(r.symbol)?.dollarVolume20 ?? null) : null,
   previousStop: extra.previousStops.get(keyOf(r)) ?? null,
+  maxPositionPct: num(r.max_position_pct),
 })
 
 /** The holding actions of the newest published run that has any, with that run's day; null before the first. */

@@ -52,6 +52,7 @@ const action = (over: Partial<HoldingAction>): HoldingAction => ({
   atrPct: null,
   dollarVolume20: null,
   previousStop: null,
+  maxPositionPct: null,
   ...over,
 })
 
@@ -108,6 +109,20 @@ describe('holdingGuides', () => {
     expect(order!.steps[0]).toMatchObject({ kind: 'limit', side: 'buy', qty: 39 }) // C$3,000 − C$1,000 at C$50.25
     expect(order!.steps.at(-1)).toMatchObject({ kind: 'stop-limit', qty: 39, stop: 45 })
     expect(holdingGuides(add, { ...held, valueCad: 3500 }, ctx).order).toBeNull()
+  })
+
+  it("sizes an Add by the holding's stored max position, not only its risk level's", () => {
+    const add = action({ action: 'add', refPrice: 50, atrPct: 0.02, riskLevel: 'medium', maxPositionPct: 2 })
+    expect(holdingGuides(add, held, ctx).order!.steps[0]).toMatchObject({ kind: 'limit', side: 'buy', qty: 19 }) // C$2,000 − C$1,000 at C$50.25
+  })
+
+  it("prices a holding's order at its latest price (a Refresh's live one) over the run's decision price", () => {
+    const sell = action({ symbol: 'MSFT', action: 'sell', refPrice: 400 })
+    const live = { day: '2026-10-28', close: 420, currency: 'USD' as const }
+    expect(holdingGuides(sell, { ...held, latest: live }, ctx).order!.steps[0]).toMatchObject({ price: 415.8 }) // 1% under 420
+    const coin = action({ symbol: 'ETH', assetType: 'crypto', account: 'crypto', action: 'sell', refPrice: 2000 })
+    const cad = { day: '2026-10-28', close: 3000, currency: 'CAD' as const } // a coin's live quote is already CAD
+    expect(holdingGuides(coin, { ...held, latest: cad }, ctx).order!.steps[0]).toMatchObject({ price: 2970 })
   })
 
   it('keeps a stop on the whole position and says when to raise it', () => {

@@ -2,10 +2,13 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from advisor.benchmark import job
+from advisor.benchmark.accept import Decision
+from advisor.benchmark.policy_search import Tuned
 from advisor.benchmark.report import render_markdown
 from advisor.model.train import PARAMS, TrainConfig
 from advisor.model.variants import BASELINE
 from advisor.models import Market
+from advisor.policy import DEFAULT_POLICY
 from advisor.store import repo
 from model_data import write_market
 
@@ -19,7 +22,7 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     tsx = report["markets"]["TSX"]
     assert tsx["chosen"] == "baseline" and tsx["accepted"]["changed"] is True
     assert tsx["variants"]["factors"] == {"status": "not built", "plan": "Plan 6c"}
-    assert tsx["variants"]["full+policy"] == {"status": "not built", "plan": "Plan 6e"}
+    assert tsx["variants"]["full+policy"]["status"] == "run"
     assert tsx["variants"]["baseline"]["status"] == "run"
     folds = {r["fold"] for r in db.execute("select fold from benchmark_results where variant = 'baseline'").fetchall()}
     assert folds == {"0", "1", "2", "3", "pooled"}
@@ -31,6 +34,9 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     assert active.benchmark_run_id == run["id"]
     text = render_markdown(report)  # the real report renders, with nothing unmeasured shown as nan
     assert "| baseline | run |" in text and "| garch | arrives with Plan 6d |" in text
+    policy_folds = {r["fold"] for r in db.execute("select fold from benchmark_results where variant = 'full+policy'").fetchall()}
+    assert policy_folds == {"1", "2", "3", "pooled"}
+    assert {"default", "candidate"} <= set(tsx["variants"]["full+policy"]["policy"])
     assert "nan" not in text and "None" not in text
 
 
@@ -77,3 +83,24 @@ def test_the_pipeline_role_can_record_a_benchmark(db):
         assert repo.active_config(db, "TSX").benchmark_run_id == run_id
     finally:
         db.execute("reset role")
+
+
+def test_a_policy_that_fails_keeps_the_model_without_one(db, tmp_path, monkeypatch):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    monkeypatch.setattr(job, "tune_for_outer", lambda *a, **k: Tuned(None, None, 0, "no stage-1 combination met the limits: x"))
+    report = job.run(tmp_path, [Market.TSX], db, NOW, None, FAST)
+    assert repo.active_config(db, "TSX").config["policy"] is None
+    assert "no stage-1 combination met the limits: x" in report["markets"]["TSX"]["decisions"]["full+policy"]["reasons"][0]
+
+
+def test_an_accepted_policy_is_stored_with_the_model(db, tmp_path, monkeypatch):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    tuned = replace(DEFAULT_POLICY, p_buy=0.54, rule="p")
+    monkeypatch.setattr(job, "tune_for_outer", lambda *a, **k: Tuned(tuned, 1.0, 127, "ok"))
+    monkeypatch.setattr(job, "accept_policy", lambda c, d: Decision(True, ("net Sharpe 1.00 vs 0.00 for today's rules, 40 trades",)))
+    report = job.run(tmp_path, [Market.TSX], db, NOW, None, FAST)
+    active = repo.active_config(db, "TSX")
+    assert active.config["policy"] == tuned.to_json() and report["markets"]["TSX"]["accepted"]["changed"] is True
+    assert active.reason.startswith("net Sharpe 1.00")
+    again = job.run(tmp_path, [Market.TSX], db, NOW + timedelta(days=28), None, FAST)
+    assert again["markets"]["TSX"]["accepted"]["changed"] is False

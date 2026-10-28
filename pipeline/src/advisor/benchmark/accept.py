@@ -109,3 +109,19 @@ def choose_model(
             if best is None or best == name or not accept_model(candidates[best], scores).accepted:
                 return name, decisions
     return best or "baseline", decisions
+
+
+def accept_policy(candidate: Mapping, default: Mapping) -> Decision:
+    """A tuned policy goes live only if it meets every hard limit and beats today's rules' net
+    Sharpe on the outer folds. Today's rules with no trades held cash: a Sharpe of 0."""
+    if not candidate["feasible"]:
+        return Decision(False, tuple(candidate["failures"]))
+    c = candidate["pooled"]["sharpe"]
+    d = default["pooled"]["sharpe"] if default["pooled"]["trades"] else 0.0
+    if _nan(c):
+        return Decision(False, ("net Sharpe couldn't be measured",))
+    if _nan(d):
+        return Decision(False, ("today's rules' net Sharpe couldn't be measured",))
+    if not c > d:
+        return Decision(False, (f"net Sharpe {c:.2f} is not above {d:.2f} for today's rules",))
+    return Decision(True, (f"net Sharpe {c:.2f} vs {d:.2f} for today's rules, {candidate['pooled']['trades']} trades",))

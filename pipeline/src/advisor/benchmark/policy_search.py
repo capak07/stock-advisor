@@ -82,7 +82,22 @@ def score(
     pred: pd.DataFrame, panel: DailyPanel, policy: Policy, market: Market, fee: float, periods: Sequence[Fold]
 ) -> dict:
     """The policy's book in each period and pooled, its hard-limit failures and its objective."""
-    books = [simulate_book(pred, panel, policy, market, fee, f.start, f.end) for f in periods]
+    return score_each(pred, panel, [policy] * len(periods), market, fee, periods)
+
+
+def score_each(
+    pred: pd.DataFrame,
+    panel: DailyPanel,
+    policies: Sequence[Policy],
+    market: Market,
+    fee: float,
+    periods: Sequence[Fold],
+) -> dict:
+    """As `score`, with each period run under its own policy (one tuned for each outer fold)."""
+    books = [
+        simulate_book(pred, panel, policy, market, fee, f.start, f.end)
+        for policy, f in zip(policies, periods, strict=True)
+    ]
     pooled = book_metrics(Book(
         pd.concat([b.trades for b in books], ignore_index=True),
         pd.concat([b.daily for b in books]).sort_index(),

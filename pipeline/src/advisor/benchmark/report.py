@@ -68,6 +68,8 @@ def _decision(name: str, market: Mapping) -> str:
 def _ablation_row(name: str, variant: Mapping, market: Mapping) -> str:
     if variant.get("status") != "run":
         return f"| {name} | arrives with {variant.get('plan', '')} | — | — | — | — |"
+    if "summary" not in variant:  # the policy row: no model scores of its own
+        return f"| {name} | run | — | — | — | {_decision(name, market)} |"
     summary = variant["summary"]["pooled"]
     return (
         f"| {name} | run | {_fmt(summary['rank_ic'], '.3f')} | {_fmt(summary['pinball'], '.5f')} "
@@ -160,7 +162,7 @@ def render_markdown(report: Mapping) -> str:
             lines.append(_ablation_row(name, variant, market))
         lines.append("")
         for name, variant in market["variants"].items():
-            if variant.get("status") != "run":
+            if variant.get("status") != "run" or "summary" not in variant:
                 continue
             lines += _outer_folds_table(name, variant)
             lines.append("")

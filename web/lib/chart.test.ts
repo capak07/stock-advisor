@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PAD, ease, geometry, indexAt, linePath, resample } from './chart'
+import { PAD, coneShape, ease, geometry, indexAt, linePath, resample } from './chart'
 
 describe('geometry', () => {
   const g = geometry(400, 240, [[0, 10], [5, 20]])
@@ -32,6 +32,33 @@ describe('geometry', () => {
     expect(indexAt(PAD.l, 5, g)).toBe(0)
     expect(indexAt(PAD.l + g.plotW, 5, g)).toBe(4)
     expect(indexAt(PAD.l + g.plotW + 60, 5, g)).toBeNull()
+  })
+})
+
+describe('the forecast cone', () => {
+  // history 0..10, last close 10; a cone of −10%..+20% around a +5% median
+  const q = { q10: -0.1, q50: 0.05, q90: 0.2 }
+  const g = geometry(400, 240, [[0, 10]], { cone: { last: 10, ...q } })
+
+  it('leaves the right quarter of the plot for the cone, and scales to its ends', () => {
+    expect(g.histW).toBeCloseTo(g.plotW * 0.76)
+    expect(g.x(1, 2)).toBeCloseTo(PAD.l + g.plotW * 0.76)
+    expect(g.hi).toBeCloseTo(12 + 1.2) // the +20% end, 12, plus 10% of the 0..12 range
+    expect(indexAt(PAD.l + g.histW, 50, g)).toBe(49) // the last close
+    expect(indexAt(PAD.l + g.plotW, 50, g)).toBeNull() // the cone isn't history
+  })
+
+  it('opens from the last close to the 10th and 90th percentiles, with the median between', () => {
+    const c = coneShape(g, 10, q)
+    expect([c.x0, c.y0]).toEqual([g.x(1, 2), g.y(10)])
+    expect(c.x1).toBeCloseTo(PAD.l + g.plotW)
+    expect([c.y10, c.y50, c.y90]).toEqual([g.y(9), g.y(10.5), g.y(12)])
+    expect(c.points).toBe(`${c.x0},${c.y0} ${c.x1},${c.y90} ${c.x1},${c.y10}`)
+  })
+
+  it('without a cone, history spans the whole plot', () => {
+    const plain = geometry(400, 240, [[0, 10]])
+    expect(plain.histW).toBe(plain.plotW)
   })
 })
 

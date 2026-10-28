@@ -1,4 +1,4 @@
-import { Activity, Eye, Settings, Wallet, type LucideIcon } from 'lucide-react'
+import { Activity, Eye, PiggyBank, Settings, Wallet, type LucideIcon } from 'lucide-react'
 
 export interface NavItem {
   href: string
@@ -12,6 +12,7 @@ export interface NavItem {
 export const NAV: readonly NavItem[] = [
   { href: '/', label: 'Portfolio', icon: Wallet, primary: true },
   { href: '/watchlist', label: 'Watchlist', icon: Eye, primary: true },
+  { href: '/invest', label: 'Invest', icon: PiggyBank, primary: true },
   { href: '/sources', label: 'Sources', icon: Activity, primary: false },
   { href: '/settings', label: 'Settings', icon: Settings, primary: false },
 ]

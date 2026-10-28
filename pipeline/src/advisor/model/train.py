@@ -8,7 +8,7 @@ metric is out of sample. The final model trains on every row with a target.
 
 import gzip
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 import lightgbm as lgb
@@ -165,9 +165,21 @@ def _metrics(scored: pd.DataFrame) -> dict:
     }
 
 
-def walk_forward(data: MarketData, config: TrainConfig = TrainConfig()) -> WalkForward:  # noqa: B008
+def walk_forward(
+    data: MarketData,
+    config: TrainConfig = TrainConfig(),  # noqa: B008
+    folds: Sequence[Fold] | None = None,
+    known_before: pd.Timestamp | None = None,
+) -> WalkForward:
+    """Out-of-sample predictions per fold (default: `make_folds`).
+
+    With `known_before`, a fold scores only rows whose target ended before it, so folds nested
+    inside a later period's training span never score an outcome from that period.
+    """
     rows = data.rows
-    folds = make_folds(pd.DatetimeIndex(rows["day"].unique()), config)
+    if folds is None:
+        folds = make_folds(pd.DatetimeIndex(rows["day"].unique()), config)
+    folds = list(folds)
     frames, metrics = [], {}
     jump = ["jump_5d"] if "jump_5d" in rows else []  # carried so the backtest can skip unconfirmed jumps
     for h in config.horizons:
@@ -175,7 +187,10 @@ def walk_forward(data: MarketData, config: TrainConfig = TrainConfig()) -> WalkF
         parts = []
         for k, fold in enumerate(folds):
             train = training_rows(rows, data.calendar, h, fold.start)
-            test = rows[(rows["day"] >= fold.start) & (rows["day"] < fold.end) & rows[target].notna()]
+            in_fold = (rows["day"] >= fold.start) & (rows["day"] < fold.end) & rows[target].notna()
+            if known_before is not None:
+                in_fold &= _ended_before(rows["day"], data.calendar, h, known_before)
+            test = rows[in_fold]
             if train.empty or test.empty:  # the last periods of long horizons have no targets yet
                 continue
             boosters = _fit_horizon(train[data.features], train[target], config)

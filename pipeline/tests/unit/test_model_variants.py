@@ -1,0 +1,53 @@
+import pandas as pd
+import pytest
+
+from advisor.model.dataset import load_market
+from advisor.model.train import PARAMS, TrainConfig, make_folds, walk_forward
+from advisor.model.variants import BASELINE, ModelConfig, run_variant
+from advisor.models import Market
+from model_data import write_market
+
+FAST = TrainConfig(horizons=(5, 63), rounds=40, params={**PARAMS, "min_data_in_leaf": 50, "num_threads": 2})
+
+
+def test_configs_name_themselves_and_round_trip():
+    assert BASELINE.name == "baseline"
+    assert ModelConfig(factors=True, garch=True).name == "factors+garch"
+    assert ModelConfig(policy={"p_buy": 0.6}).name == "baseline+policy"
+    assert BASELINE.to_json() == {"version": 1, "factors": False, "garch": False, "policy": None}
+    assert ModelConfig.from_json(BASELINE.to_json()) == BASELINE
+
+
+@pytest.mark.parametrize("stored, match", [
+    ({"version": 1, "factors": True, "garch": False, "policy": None}, "Plan 6c"),
+    ({"version": 1, "factors": False, "garch": False, "policy": {"p_buy": 0.6}}, "Plan 6e"),
+    ({"version": 2, "factors": False, "garch": False, "policy": None}, "version"),
+    ({"version": 1, "factors": False, "garch": False, "policy": None, "extra": 1}, "extra"),
+    ([], "mapping"),
+])
+def test_a_stored_config_this_code_cannot_run_is_refused(stored, match):
+    with pytest.raises(ValueError, match=match):
+        ModelConfig.from_json(stored)
+
+
+def test_unbuilt_variants_say_which_plan_builds_them(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
+    with pytest.raises(NotImplementedError, match="Plan 6d"):
+        run_variant(load_market(tmp_path, Market.TSX), ModelConfig(garch=True), FAST)
+
+
+def test_the_baseline_runs_todays_walk_forward_unchanged(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
+    data = load_market(tmp_path, Market.TSX)
+    pd.testing.assert_frame_equal(run_variant(data, BASELINE, FAST).predictions, walk_forward(data, FAST).predictions)
+
+
+def test_walk_forward_scores_only_targets_known_before_a_cutoff(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
+    data = load_market(tmp_path, Market.TSX)
+    folds = make_folds(pd.DatetimeIndex(data.rows["day"].unique()), TrainConfig())
+    cutoff = folds[2].start
+    pred = walk_forward(data, FAST, folds=folds[:2], known_before=cutoff).predictions
+    assert not pred.empty
+    position = data.calendar.searchsorted(pd.DatetimeIndex(pred["day"]))
+    assert (position + pred["horizon"].to_numpy() < data.calendar.searchsorted(cutoff)).all()

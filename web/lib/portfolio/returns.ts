@@ -94,9 +94,9 @@ export function growth(trades: readonly Trade[], prices: PriceBook, fx: FxRates)
   return { days, portfolio, xiu: benchmark(BENCHMARKS.xiu), spy: benchmark(BENCHMARKS.spy) }
 }
 
-export type Period = '1m' | '3m' | '12m' | 'all'
-export const PERIODS: readonly Period[] = ['1m', '3m', '12m', 'all']
-const TRADING_DAYS: Record<Exclude<Period, 'all'>, number> = { '1m': 21, '3m': 63, '12m': 252 }
+export type Period = '1d' | '1w' | '1m' | '3m' | '12m' | 'all'
+export const PERIODS: readonly Period[] = ['1d', '1w', '1m', '3m', '12m', 'all']
+const TRADING_DAYS: Record<Exclude<Period, 'all'>, number> = { '1d': 1, '1w': 5, '1m': 21, '3m': 63, '12m': 252 }
 
 /** A period's returns in percent, each line starting at 0 (the portfolio's "all" starts at cost). */
 export interface PeriodReturns {

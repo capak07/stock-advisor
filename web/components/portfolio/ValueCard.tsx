@@ -10,6 +10,8 @@ import type { Period, PeriodReturns } from '@/lib/portfolio/returns'
 import type { Totals } from '@/lib/portfolio/valuation'
 
 const PERIOD_TABS = [
+  { value: '1d', label: '1D' },
+  { value: '1w', label: '1W' },
   { value: '1m', label: '1M' },
   { value: '3m', label: '3M' },
   { value: '12m', label: '12M' },
@@ -38,6 +40,8 @@ export function ValueCard({
     return lines
   }, [r])
   const label = {
+    '1d': 'over the last day',
+    '1w': 'over the last week',
     '1m': 'over the last month',
     '3m': 'over 3 months',
     '12m': 'over 12 months',

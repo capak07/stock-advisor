@@ -138,4 +138,14 @@ describe('periodReturns', () => {
   it('uses the whole history when it is shorter than the period', () => {
     expect(periodReturns(g, '12m').days).toHaveLength(30)
   })
+
+  it('covers the last session and the last five trading days', () => {
+    const day = periodReturns(g, '1d')
+    const week = periodReturns(g, '1w')
+    expect(day.days).toEqual(['d28', 'd29'])
+    expect(day.portfolio[0]).toBe(0)
+    expect(week.days).toEqual(['d24', 'd25', 'd26', 'd27', 'd28', 'd29'])
+    expect(week.portfolio[0]).toBe(0)
+    expect(week.xiu![0]).toBe(0)
+  })
 })

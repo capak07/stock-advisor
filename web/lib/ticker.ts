@@ -4,9 +4,11 @@ import { addDays } from './dates'
 import type { FxRates } from './portfolio/lookup'
 import type { AssetType, Close, Currency } from './portfolio/types'
 
-export type Range = '1m' | '3m' | '6m' | '1y'
+export type Range = '1d' | '1w' | '1m' | '3m' | '6m' | '1y'
 /** Each range in calendar days: a coin closes every day, a stock only on trading days. */
 export const RANGES: { value: Range; label: string; days: number }[] = [
+  { value: '1d', label: '1D', days: 1 },
+  { value: '1w', label: '1W', days: 7 },
   { value: '1m', label: '1M', days: 31 },
   { value: '3m', label: '3M', days: 92 },
   { value: '6m', label: '6M', days: 183 },

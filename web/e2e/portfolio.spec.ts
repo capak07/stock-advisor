@@ -42,6 +42,10 @@ test('holdings are valued in CAD, charted against both benchmarks, and warned ab
 
   await expect(page.getByRole('img', { name: 'Portfolio return against XIU.TO and SPY in CAD' })).toBeVisible()
   await expect(page.getByText(/since the first buy, /)).toBeVisible()
+  await page.getByRole('tab', { name: '1D' }).click()
+  await expect(page.getByText('over the last day')).toBeVisible()
+  await page.getByRole('tab', { name: '1W' }).click()
+  await expect(page.getByText('over the last week')).toBeVisible()
   await page.getByRole('tab', { name: '1M' }).click()
   await expect(page.getByText('over the last month')).toBeVisible()
   await expect(page.getByRole('tab', { name: '1M' })).toHaveAttribute('aria-selected', 'true')

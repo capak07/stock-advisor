@@ -50,6 +50,10 @@ test("a held stock's page shows its price, the position, the last two days of ne
   await expect(page.locator('#last-price')).toHaveText(`C$${(170 + 0.25 * (days.length - 1)).toFixed(2)}`)
   await expect(page.getByText('You hold 10 · TFSA')).toBeVisible()
   await expect(page.getByRole('img', { name: 'RY.TO closes over 6M' })).toBeVisible()
+  await page.getByRole('tab', { name: '1D' }).click()
+  await expect(page.getByRole('img', { name: 'RY.TO closes over 1D' })).toBeVisible()
+  await page.getByRole('tab', { name: '1W' }).click()
+  await expect(page.getByRole('img', { name: 'RY.TO closes over 1W' })).toBeVisible()
   await page.getByRole('tab', { name: '1M' }).click()
   await expect(page.getByRole('img', { name: 'RY.TO closes over 1M' })).toBeVisible()
 
@@ -202,6 +206,10 @@ test("a coin's page is in CAD, and the coin can be watched and unwatched from it
   const [{ close }] = await sql`select close::float from daily_closes where symbol = 'ETH' order by day desc limit 1`
   await expect(page.locator('#last-price')).toHaveText(`C$${(close * 1.4).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
   await expect(page.getByText('You hold 1 · Crypto')).toBeVisible()
+  await page.getByRole('tab', { name: '1D' }).click()
+  await expect(page.getByRole('img', { name: 'ETH closes over 1D' })).toBeVisible()
+  await page.getByRole('tab', { name: '1W' }).click()
+  await expect(page.getByRole('img', { name: 'ETH closes over 1W' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Watch', exact: true }).click()
   await expect(page.getByRole('status')).toHaveText('ETH added to the watchlist')

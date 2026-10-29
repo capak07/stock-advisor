@@ -48,8 +48,12 @@ describe('ranges and the last move', () => {
     expect([month.days[0], month.days.at(-1)]).toEqual(['2026-09-15', '2026-10-16'])
     expect(month.values[0]).toBe(daily.values[daily.days.indexOf('2026-09-15')])
     expect([year.days[0], year.days.at(-1)]).toEqual(['2025-10-16', '2026-10-16'])
+    expect([inRange(daily, '1d').days[0], inRange(daily, '1w').days[0]]).toEqual(['2026-10-15', '2026-10-09'])
     // A stock to Wednesday Oct 14: the month's cutoff is Sunday Sep 13, so it starts on Friday Sep 11.
-    expect(inRange(dated('2026-01-01', '2026-10-14', true), '1m').days[0]).toBe('2026-09-11')
+    const stock = dated('2026-01-01', '2026-10-14', true)
+    expect(inRange(stock, '1m').days[0]).toBe('2026-09-11')
+    expect(inRange(stock, '1d').days[0]).toBe('2026-10-13')
+    expect(inRange(stock, '1w').days[0]).toBe('2026-10-07')
   })
 
   it('starts at the first close when none is as old as the range', () => {

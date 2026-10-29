@@ -20,19 +20,59 @@ const PRICE_LOOKBACK_DAYS = 10
 /** What the Invest page splits an amount over: the newest published run's forecasts and prices. */
 export interface InvestData {
   run: Run
-  candidates: Candidate[]
-  /** Stocks the owner holds in any account. */
-  held: Set<string>
+  stocks: Candidate[]
+  /** Coins this run scored. A run scores a coin when it is held or watched. */
+  coins: Candidate[]
+  heldStocks: Set<string>
+  heldCoins: Set<string>
   usdFxFeePct: number
-  /** BTC's latest price in CAD, when the run or the stored closes have one. */
-  btcPriceCad: number | null
-  /** BTC's forecasts this run. Empty unless BTC is held or watched, which is when a run scores it. */
-  btcForecasts: ForecastRow[]
+  cryptoFeePct: number
 }
 
 const num = (value: unknown): number | null => {
   const n = typeof value === 'string' ? Number(value) : value
   return typeof n === 'number' && Number.isFinite(n) ? n : null
+}
+
+interface Prediction {
+  symbol: string
+  horizon_days: number
+  q10: number
+  q50: number
+  q90: number
+  p_beat: number
+  benchmark: string
+}
+
+interface StockFeature {
+  symbol: string
+  vol_60: unknown
+  log_adv20: unknown
+  jump_5d: unknown
+  atr_14_pct: unknown
+}
+
+interface CoinFeature extends StockFeature {
+  price_cad: unknown
+  volume_24h_cad: unknown
+  unconfirmed_price: unknown
+}
+
+const horizonsOf = (predictions: readonly Prediction[]): Map<string, ForecastRow[]> => {
+  const rows = new Map<string, ForecastRow[]>()
+  for (const p of predictions) {
+    const list = rows.get(p.symbol) ?? []
+    list.push({
+      horizonDays: p.horizon_days,
+      q10: Number(p.q10),
+      q50: Number(p.q50),
+      q90: Number(p.q90),
+      pBeat: Number(p.p_beat),
+      benchmark: p.benchmark,
+    })
+    rows.set(p.symbol, list)
+  }
+  return rows
 }
 
 /** The forecasts, features and prices the Invest page reads (design: 2026-10-27-invest-page-design.md); null before any run forecast. */
@@ -49,7 +89,7 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
   const run = await runById(supabase, newest[0].run_id)
   if (!run) return null
 
-  const [predictions, features, btc, btcPredictions, settings, trades, fx] = await Promise.all([
+  const [predictions, features, coinPredictions, coinFeatures, settings, trades, fx] = await Promise.all([
     fetchAll((from, to) =>
       supabase
         .from('predictions')
@@ -59,9 +99,7 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
         .order('symbol')
         .order('horizon_days')
         .range(from, to),
-    ) as Promise<
-      { symbol: string; horizon_days: number; q10: number; q50: number; q90: number; p_beat: number; benchmark: string }[]
-    >,
+    ) as Promise<Prediction[]>,
     fetchAll((from, to) =>
       supabase
         .from('features_live')
@@ -70,60 +108,75 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
         .eq('asset_type', 'stock')
         .order('symbol')
         .range(from, to),
-    ) as Promise<{ symbol: string; vol_60: unknown; log_adv20: unknown; jump_5d: unknown; atr_14_pct: unknown }[]>,
-    supabase
-      .from('features_live')
-      .select('price_cad:features->price_cad')
-      .eq('run_id', run.id)
-      .eq('asset_type', 'crypto')
-      .eq('symbol', 'BTC')
-      .limit(1),
-    supabase
-      .from('predictions')
-      .select('horizon_days, q10, q50, q90, p_beat, benchmark')
-      .eq('run_id', run.id)
-      .eq('asset_type', 'crypto')
-      .eq('symbol', 'BTC')
-      .order('horizon_days'),
+    ) as Promise<StockFeature[]>,
+    fetchAll((from, to) =>
+      supabase
+        .from('predictions')
+        .select('symbol, horizon_days, q10, q50, q90, p_beat, benchmark')
+        .eq('run_id', run.id)
+        .eq('asset_type', 'crypto')
+        .order('symbol')
+        .order('horizon_days')
+        .range(from, to),
+    ) as Promise<Prediction[]>,
+    fetchAll((from, to) =>
+      supabase
+        .from('features_live')
+        .select(
+          'symbol, vol_60:features->vol_60, log_adv20:features->log_adv20, jump_5d:features->jump_5d, atr_14_pct:features->atr_14_pct, price_cad:features->price_cad, volume_24h_cad:features->volume_24h_cad, unconfirmed_price:features->unconfirmed_price',
+        )
+        .eq('run_id', run.id)
+        .eq('asset_type', 'crypto')
+        .order('symbol')
+        .range(from, to),
+    ) as Promise<CoinFeature[]>,
     loadSettings(supabase),
     loadTrades(supabase),
     loadFx(supabase),
   ])
 
-  const rows = new Map<string, ForecastRow[]>()
-  for (const p of predictions) {
-    const list = rows.get(p.symbol) ?? []
-    list.push({
-      horizonDays: p.horizon_days,
-      q10: Number(p.q10),
-      q50: Number(p.q50),
-      q90: Number(p.q90),
-      pBeat: Number(p.p_beat),
-      benchmark: p.benchmark,
-    })
-    rows.set(p.symbol, list)
-  }
-  const symbols = [...rows.keys()]
+  const stockRows = horizonsOf(predictions)
+  const coinRows = horizonsOf(coinPredictions)
+  const symbols = [...stockRows.keys()]
+  const coinSymbols = [...coinRows.keys()]
   const byFeature = new Map(features.map((f) => [f.symbol, f]))
+  const byCoin = new Map(coinFeatures.map((f) => [f.symbol, f]))
   const since = addDays(run.et_date, -PRICE_LOOKBACK_DAYS)
-  const [names, sectors, stored, live] = await Promise.all([
+  const [names, sectors, coinNames, stored, live] = await Promise.all([
     loadNames(supabase, symbols),
     loadSectors(supabase, symbols),
-    loadCloses(supabase, [...symbols.map((symbol) => ({ symbol, assetType: 'stock' as const })), { symbol: 'BTC', assetType: 'crypto' }], since),
+    coinSymbols.length === 0
+      ? Promise.resolve([] as { symbol: string; name: string }[])
+      : supabase
+          .from('symbols')
+          .select('symbol, name')
+          .eq('asset_type', 'crypto')
+          .in('symbol', coinSymbols)
+          .then((answer) => must(answer) as { symbol: string; name: string }[]),
+    loadCloses(
+      supabase,
+      [
+        ...symbols.map((symbol) => ({ symbol, assetType: 'stock' as const })),
+        ...coinSymbols.map((symbol) => ({ symbol, assetType: 'crypto' as const })),
+      ],
+      since,
+    ),
     liveQuotes(),
   ])
   const prices = withQuotes(stored, live) // a Refresh's live prices count the shares (lib/quotes.ts)
+  const coinName = new Map(coinNames.map((r) => [r.symbol, r.name]))
 
-  const candidates = symbols.map((symbol): Candidate => {
+  const stocks = symbols.map((symbol): Candidate => {
     const f = byFeature.get(symbol)
     const logAdv = num(f?.log_adv20)
     const close = prices.latest(assetKey('stock', symbol))
     return {
       symbol,
       name: names.get(symbol) ?? null,
+      assetType: 'stock',
       market: marketOf(symbol),
       sector: sectors.get(symbol) ?? null,
-      rows: rows.get(symbol) ?? [],
+      rows: stockRows.get(symbol) ?? [],
       vol60: num(f?.vol_60),
       dollarVolume20: logAdv === null ? null : Math.expm1(logAdv), // the pipeline stores log1p(ADV)
       jump5d: num(f?.jump_5d),
@@ -134,30 +187,40 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     }
   })
 
-  const btcLive = live?.quotes[assetKey('crypto', 'BTC')]?.price ?? null // live coin quotes are CAD
-  const btcQuote = btcLive ?? num((must(btc) as { price_cad: unknown }[])[0]?.price_cad)
-  const btcClose = prices.latest(assetKey('crypto', 'BTC'))
-  const held = new Set(
-    buildLedger(trades, fx)
-      .positions.filter((p) => p.assetType === 'stock')
-      .map((p) => p.symbol),
-  )
+  const coins = coinSymbols.map((symbol): Candidate => {
+    const f = byCoin.get(symbol)
+    const logAdv = num(f?.log_adv20)
+    const close = prices.latest(assetKey('crypto', symbol))
+    const liveCad = live?.quotes[assetKey('crypto', symbol)]?.price ?? null // live coin quotes are CAD
+    const priceCad = liveCad ?? num(f?.price_cad) ?? (close ? fx.toCad(close) : null)
+    const jump = num(f?.jump_5d)
+    const unconfirmed = f?.unconfirmed_price === true
+    return {
+      symbol,
+      name: coinName.get(symbol) ?? null,
+      assetType: 'crypto',
+      market: null,
+      sector: null,
+      rows: coinRows.get(symbol) ?? [],
+      vol60: num(f?.vol_60),
+      dollarVolume20: logAdv !== null ? Math.expm1(logAdv) : num(f?.volume_24h_cad),
+      // no stored jump counts as none; an unconfirmed latest print is the coin's jump
+      jump5d: jump ?? (unconfirmed ? 1 : 0),
+      priceCad,
+      price: priceCad, // a coin trades in CAD
+      currency: 'CAD',
+      atrPct: num(f?.atr_14_pct),
+    }
+  })
 
+  const positions = buildLedger(trades, fx).positions
   return {
     run,
-    candidates,
-    held,
+    stocks,
+    coins,
+    heldStocks: new Set(positions.filter((p) => p.assetType === 'stock').map((p) => p.symbol)),
+    heldCoins: new Set(positions.filter((p) => p.assetType === 'crypto').map((p) => p.symbol)),
     usdFxFeePct: Number(settings.usd_fx_fee_pct),
-    btcPriceCad: btcQuote ?? (btcClose ? fx.toCad(btcClose) : null),
-    btcForecasts: (must(btcPredictions) as { horizon_days: number; q10: number; q50: number; q90: number; p_beat: number; benchmark: string }[]).map(
-      (p) => ({
-        horizonDays: p.horizon_days,
-        q10: Number(p.q10),
-        q50: Number(p.q50),
-        q90: Number(p.q90),
-        pBeat: Number(p.p_beat),
-        benchmark: p.benchmark,
-      }),
-    ),
+    cryptoFeePct: Number(settings.crypto_fee_pct),
   }
 }

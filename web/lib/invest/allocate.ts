@@ -1,8 +1,8 @@
 /**
  * The Invest page's split of an amount (docs/superpowers/specs/2026-10-27-invest-page-design.md):
- * up to five stocks ranked by the picks' own rule, weighted by 1 / volatility, and a crypto share
- * for BTC. The qualify, ratio and cost rules mirror pipeline/src/advisor/recommend/picks.py and
- * advisor.model.backtest.round_trip_cost; keep them the same.
+ * up to five names of one kind, stocks or coins, ranked by the picks' own rule and weighted by
+ * 1 / volatility. The qualify, ratio and cost rules mirror pipeline/src/advisor/recommend/picks.py
+ * and advisor.model.backtest.round_trip_cost; keep them the same.
  */
 
 import type { Market } from '../portfolio/types'
@@ -22,13 +22,22 @@ export const HOLDS = [
   { value: '63', label: '~3 months', horizons: [63] },
   { value: '126', label: '~6 months', horizons: [126] },
 ] as const satisfies readonly { value: string; label: string; horizons: readonly number[] | null }[]
-export type Hold = (typeof HOLDS)[number]['value']
+
+/** A coin's horizons are calendar days (the crypto model forecasts 7, 14 and 30). */
+export const CRYPTO_HOLDS = [
+  { value: 'any', label: 'Any', horizons: null },
+  { value: '7', label: '~1 week', horizons: [7] },
+  { value: '14', label: '~2 weeks', horizons: [14] },
+  { value: '30', label: '~1 month', horizons: [30] },
+] as const satisfies readonly { value: string; label: string; horizons: readonly number[] | null }[]
+
+export type Hold = (typeof HOLDS)[number]['value'] | (typeof CRYPTO_HOLDS)[number]['value']
 
 const LARGE_DOLLAR_VOLUME = 10_000_000
 const SPREAD_LARGE = 0.001
 const SPREAD_SMALL = 0.003
 
-/** One forecast horizon of a stock, as `predictions` stores it: fractions of excess return. */
+/** One forecast horizon, as `predictions` stores it: fractions of excess return. */
 export interface ForecastRow {
   horizonDays: number
   q10: number
@@ -38,11 +47,13 @@ export interface ForecastRow {
   benchmark: string
 }
 
-/** A stock the run forecast, with what ranking and sizing read. */
+/** A stock or coin the run forecast, with what ranking and sizing read. */
 export interface Candidate {
   symbol: string
   name: string | null
-  market: Market
+  assetType: 'stock' | 'crypto'
+  /** Null for a coin. */
+  market: Market | null
   sector: string | null
   rows: ForecastRow[]
   /** Annualised 60-day volatility, a fraction. */
@@ -62,17 +73,16 @@ export interface Candidate {
 
 export interface InvestInput {
   amount: number
-  /** Percent of the amount for BTC, 0 to 100. */
-  cryptoPct: number
-  /** How many stocks to split over, 1 to STOCKS (default STOCKS); 1 puts it all in the top-ranked one. */
+  /** How many names to split over, 1 to STOCKS (default STOCKS); 1 puts it all in the top-ranked one. */
   stocks?: number
-  /** The forecast horizons to rank on (a HOLDS entry's); null or absent for any. */
+  /** The forecast horizons to rank on (a HOLDS or CRYPTO_HOLDS entry's); null or absent for any. */
   horizons?: readonly number[] | null
   usdFxFeePct: number
+  /** The crypto fee, in percent, added both ways. Used only for coins. */
+  cryptoFeePct: number
   candidates: Candidate[]
-  /** Stocks already held: they get holding actions on My Portfolio instead. */
+  /** Names already held: they get holding actions on My Portfolio instead. */
   held: ReadonlySet<string>
-  btcPriceCad: number | null
 }
 
 export type Volatility = 'low' | 'medium' | 'high' | 'very high'
@@ -80,11 +90,12 @@ export type Volatility = 'low' | 'medium' | 'high' | 'very high'
 export interface StockLine extends ForecastRow {
   symbol: string
   name: string | null
-  market: Market
+  assetType: 'stock' | 'crypto'
+  market: Market | null
   sector: string | null
   /** Whole dollars. */
   amount: number
-  /** Approximate shares at the latest price; null without a price. */
+  /** Approximate shares, or coin units, at the latest CAD price; null without a price. */
   shares: number | null
   /** Whether the chosen horizon passes the picks' bar (P >= 0.58 and q50 above cost). */
   qualifies: boolean
@@ -101,19 +112,18 @@ export interface StockLine extends ForecastRow {
 
 export interface Allocation {
   stocks: StockLine[]
-  crypto: { symbol: 'BTC'; amount: number; priceCad: number | null; units: number | null }
-  /** Money no stock is shown for: none was expected to beat its benchmark. */
+  /** Money no name is shown for: none was expected to beat its benchmark. */
   uninvested: number
-  /** At least one stock shown doesn't pass the bar. */
+  /** At least one name shown doesn't pass the bar. */
   notValidated: boolean
-  /** Two stocks, so the 40% cap couldn't hold and the money is split evenly. */
+  /** Two names, so the 40% cap couldn't hold and the money is split evenly. */
   evenSplit: boolean
 }
 
-/** Buy-and-sell cost: the spread, plus the currency fee both ways for a US stock. */
-export function roundTripCost(market: Market, dollarVolume20: number | null, usdFxFeePct: number): number {
+/** Buy-and-sell cost: the spread, plus a fee both ways for a US stock or a coin. */
+export function roundTripCost(market: Market | 'crypto', dollarVolume20: number | null, feePct: number): number {
   const spread = dollarVolume20 !== null && dollarVolume20 >= LARGE_DOLLAR_VOLUME ? SPREAD_LARGE : SPREAD_SMALL
-  return market === 'US' ? spread + (2 * usdFxFeePct) / 100 : spread
+  return market === 'TSX' ? spread : spread + (2 * feePct) / 100
 }
 
 const ratio = (r: ForecastRow): number | null => {
@@ -176,7 +186,9 @@ function capped(weights: readonly number[], cap: number): number[] {
 function choose(input: InvestInput) {
   const ranked = input.candidates.flatMap((c) => {
     if (input.held.has(c.symbol) || c.jump5d !== 0) return []
-    const cost = roundTripCost(c.market, c.dollarVolume20, input.usdFxFeePct)
+    const venue = c.assetType === 'crypto' ? 'crypto' : c.market
+    if (venue === null) return []
+    const cost = roundTripCost(venue, c.dollarVolume20, c.assetType === 'crypto' ? input.cryptoFeePct : input.usdFxFeePct)
     const allowed = input.horizons
     const rows = allowed ? c.rows.filter((r) => allowed.includes(r.horizonDays)) : c.rows
     const qualifying = best(rows, (r) => r.pBeat >= P_MIN && r.q50 > cost)
@@ -211,10 +223,8 @@ function wholeDollars(parts: readonly number[], total: number): number[] {
 }
 
 export function allocate(input: InvestInput): Allocation {
-  const cryptoRaw = (input.amount * input.cryptoPct) / 100
-  const stockMoney = input.amount - cryptoRaw
-  const chosen = stockMoney > 0 ? choose(input) : []
-  const evenSplit = chosen.length === 2 // one stock takes it all; three or more can hold the cap
+  const chosen = choose(input)
+  const evenSplit = chosen.length === 2 // one name takes it all; three or more can hold the cap
 
   const fallbackVol = median(chosen.map((r) => r.candidate.vol60).filter((v): v is number => v !== null && v > 0))
   const weights = chosen.map((r) => {
@@ -228,11 +238,10 @@ export function allocate(input: InvestInput): Allocation {
         MAX_SHARE,
       )
 
-  // every line in whole dollars; the parts (stocks, crypto, uninvested) add up to the amount exactly
-  const uninvestedRaw = chosen.length === 0 ? stockMoney : 0
-  const lines = wholeDollars([...shares.map((s) => s * stockMoney), cryptoRaw, uninvestedRaw], input.amount)
-  const cryptoAmount = lines[chosen.length]
-  const uninvested = lines[chosen.length + 1]
+  // every line in whole dollars; the parts add up to the amount exactly
+  const uninvestedRaw = chosen.length === 0 ? input.amount : 0
+  const lines = wholeDollars([...shares.map((s) => s * input.amount), uninvestedRaw], input.amount)
+  const uninvested = lines[chosen.length]
 
   const allVols = input.candidates.map((c) => c.vol60).filter((v): v is number => v !== null)
   const stocks = chosen.map((r, i): StockLine => {
@@ -241,6 +250,7 @@ export function allocate(input: InvestInput): Allocation {
       ...r.row,
       symbol: c.symbol,
       name: c.name,
+      assetType: c.assetType,
       market: c.market,
       sector: c.sector,
       amount: lines[i],
@@ -258,12 +268,6 @@ export function allocate(input: InvestInput): Allocation {
 
   return {
     stocks,
-    crypto: {
-      symbol: 'BTC',
-      amount: cryptoAmount,
-      priceCad: input.btcPriceCad,
-      units: input.btcPriceCad ? cryptoAmount / input.btcPriceCad : null,
-    },
     uninvested,
     notValidated: stocks.some((l) => !l.qualifies),
     evenSplit,

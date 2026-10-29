@@ -4,7 +4,7 @@ import { addWeekdays, parseInvestInputs } from './inputs'
 describe('parseInvestInputs', () => {
   it('shows only the form when no amount was given', () => {
     const r = parseInvestInputs({})
-    expect(r).toMatchObject({ amount: null, amountError: null, cryptoPct: 10, cryptoError: null, cryptoText: '10' })
+    expect(r).toMatchObject({ amount: null, amountError: null, asset: 'stocks', assetError: null })
   })
 
   it('accepts commas, a dollar sign and C$', () => {
@@ -22,16 +22,13 @@ describe('parseInvestInputs', () => {
     expect(parseInvestInputs({ amount: '10,000,000' }).amount).toBe(10_000_000)
   })
 
-  it('takes a crypto share from 0 to 100, with 10 by default', () => {
-    expect(parseInvestInputs({ amount: '100', crypto: '0' }).cryptoPct).toBe(0)
-    expect(parseInvestInputs({ amount: '100', crypto: '100' }).cryptoPct).toBe(100)
-    expect(parseInvestInputs({ amount: '100', crypto: '25%' }).cryptoPct).toBe(25)
-    expect(parseInvestInputs({ amount: '100', crypto: '' }).cryptoPct).toBe(10)
-    for (const crypto of ['101', 'x', '-1']) {
-      const r = parseInvestInputs({ amount: '100', crypto })
-      expect(r.cryptoPct, crypto).toBeNull()
-      expect(r.cryptoError, crypto).not.toBeNull()
-    }
+  it('invests in stocks unless crypto is chosen', () => {
+    expect(parseInvestInputs({ amount: '100' }).asset).toBe('stocks')
+    expect(parseInvestInputs({ amount: '100', asset: 'crypto' }).asset).toBe('crypto')
+    expect(parseInvestInputs({ amount: '100', asset: '' }).asset).toBe('stocks')
+    const bad = parseInvestInputs({ amount: '100', asset: 'bonds' })
+    expect(bad.asset).toBeNull()
+    expect(bad.assetError).toBe('Choose stocks or crypto.')
   })
 
   it('takes how many stocks, from 1 to 5, with 5 by default', () => {
@@ -43,6 +40,7 @@ describe('parseInvestInputs', () => {
       expect(r.stocks, stocks).toBeNull()
       expect(r.stocksError, stocks).toBe('Choose 1 to 5 stocks.')
     }
+    expect(parseInvestInputs({ amount: '500', asset: 'crypto', stocks: '0' }).stocksError).toBe('Choose 1 to 5 coins.')
   })
 
   it('takes how long to hold: any, about a month, 3 months or 6 months', () => {
@@ -53,6 +51,14 @@ describe('parseInvestInputs', () => {
     expect(parseInvestInputs({ amount: '500', hold: '' }).hold).toBe('any')
     const bad = parseInvestInputs({ amount: '500', hold: '7' })
     expect([bad.hold, bad.holdError]).toEqual([null, 'Choose how long to hold.'])
+  })
+
+  it('a crypto hold is a week, two weeks or a month', () => {
+    expect(parseInvestInputs({ amount: '500', asset: 'crypto' })).toMatchObject({ hold: 'any', horizons: null })
+    expect(parseInvestInputs({ amount: '500', asset: 'crypto', hold: '7' })).toMatchObject({ hold: '7', horizons: [7] })
+    expect(parseInvestInputs({ amount: '500', asset: 'crypto', hold: '14' })).toMatchObject({ hold: '14', horizons: [14] })
+    expect(parseInvestInputs({ amount: '500', asset: 'crypto', hold: '30' })).toMatchObject({ hold: '30', horizons: [30] })
+    expect(parseInvestInputs({ amount: '500', asset: 'crypto', hold: '63' }).holdError).toBe('Choose how long to hold.')
   })
 
   it('reads the first value of a repeated parameter', () => {

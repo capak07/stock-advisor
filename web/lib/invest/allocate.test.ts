@@ -13,6 +13,7 @@ const row = (horizonDays: number, q50: number, pBeat: number, width = 0.1): Fore
 const stock = (symbol: string, over: Partial<Candidate> = {}): Candidate => ({
   symbol,
   name: `${symbol} Inc.`,
+  assetType: 'stock',
   market: symbol.endsWith('.TO') ? 'TSX' : 'US',
   sector: `Sector ${symbol}`,
   rows: [row(21, 0.05, 0.6)],
@@ -26,22 +27,26 @@ const stock = (symbol: string, over: Partial<Candidate> = {}): Candidate => ({
   ...over,
 })
 
+const coin = (symbol: string, over: Partial<Candidate> = {}): Candidate =>
+  stock(symbol, { name: symbol, assetType: 'crypto', market: null, sector: null, currency: 'CAD', rows: [row(14, 0.08, 0.62)], ...over })
+
 const input = (candidates: Candidate[], over: Partial<InvestInput> = {}): InvestInput => ({
   amount: 1000,
-  cryptoPct: 0,
   usdFxFeePct: 1.5,
+  cryptoFeePct: 2,
   candidates,
   held: new Set(),
-  btcPriceCad: null,
   ...over,
 })
 
 describe('roundTripCost', () => {
-  it('is the spread, plus the currency fee both ways for a US stock', () => {
+  it('is the spread, plus a fee both ways for a US stock or a coin', () => {
     expect(roundTripCost('TSX', 2e7, 1.5)).toBeCloseTo(0.001)
     expect(roundTripCost('TSX', 5e6, 1.5)).toBeCloseTo(0.003)
     expect(roundTripCost('US', 2e7, 1.5)).toBeCloseTo(0.031)
     expect(roundTripCost('US', null, 1.5)).toBeCloseTo(0.033) // unknown volume counts as thin
+    expect(roundTripCost('crypto', 2e7, 2)).toBeCloseTo(0.041)
+    expect(roundTripCost('crypto', null, 2)).toBeCloseTo(0.043)
   })
 })
 
@@ -185,33 +190,35 @@ describe('allocate: splitting the money', () => {
     expect(out.stocks.map((l) => l.amount)).toEqual([400, 343, 257])
   })
 
-  it('takes the crypto share off first, for BTC, with units when its price is known', () => {
-    const out = allocate(input([stock('A.TO'), stock('B.TO'), stock('C.TO')], { cryptoPct: 10, btcPriceCad: 100_000 }))
-    expect(out.crypto).toEqual({ symbol: 'BTC', amount: 100, priceCad: 100_000, units: 0.001 })
-    expect(out.stocks.reduce((s, l) => s + l.amount, 0)).toBe(900)
-  })
-
   it('puts the rounding difference on the largest line so the total matches', () => {
+    const out = allocate(input([stock('A.TO', { vol60: 0.3 }), stock('B.TO', { vol60: 0.3 }), stock('C.TO', { vol60: 0.3 })]))
+    const total = out.stocks.reduce((s, l) => s + l.amount, 0) + out.uninvested
+    expect(total).toBe(1000)
+    expect(out.stocks.map((l) => l.amount)).toEqual([334, 333, 333])
+  })
+
+  it('leaves the money uninvested when nothing is expected to beat its benchmark', () => {
+    const out = allocate(input([stock('LAG.TO', { rows: [row(21, -0.02, 0.4)] })]))
+    expect(out.stocks).toEqual([])
+    expect(out.uninvested).toBe(1000)
+  })
+
+  it('ranks coins the same way, and a coin that is expected to lag is left out', () => {
     const out = allocate(
-      input([stock('A.TO', { vol60: 0.3 }), stock('B.TO', { vol60: 0.3 }), stock('C.TO', { vol60: 0.3 })], { amount: 1001, cryptoPct: 7 }),
+      input([
+        coin('SOL', { rows: [row(14, 0.06, 0.62, 0.2)] }), // ratio 0.3, above the 4.1% round trip
+        coin('ETH', { rows: [row(14, 0.08, 0.7)] }), // ratio 0.8
+        coin('DOGE', { rows: [row(14, -0.02, 0.4)] }),
+        coin('HELD', { rows: [row(14, 0.2, 0.9)] }),
+      ], { held: new Set(['HELD']) }),
     )
-    const total = out.stocks.reduce((s, l) => s + l.amount, 0) + out.crypto.amount + out.uninvested
-    expect(total).toBe(1001)
-    expect(out.stocks.every((l) => Number.isInteger(l.amount))).toBe(true)
-  })
-
-  it('leaves the stock money uninvested when nothing is expected to beat its benchmark', () => {
-    const out = allocate(input([stock('LAG.TO', { rows: [row(21, -0.02, 0.4)] })], { cryptoPct: 20 }))
-    expect(out.stocks).toEqual([])
-    expect(out.uninvested).toBe(800)
-    expect(out.crypto.amount).toBe(200)
-    expect(out.crypto.units).toBeNull() // no BTC price
-  })
-
-  it('puts everything in crypto at 100%', () => {
-    const out = allocate(input([stock('A.TO')], { cryptoPct: 100 }))
-    expect(out.stocks).toEqual([])
-    expect([out.crypto.amount, out.uninvested]).toEqual([1000, 0])
+    expect(out.stocks.map((l) => [l.symbol, l.qualifies, l.horizonDays])).toEqual([
+      ['ETH', true, 14],
+      ['SOL', true, 14],
+    ])
+    expect(out.stocks[0].cost).toBeCloseTo(0.041)
+    expect(out.stocks.reduce((s, l) => s + l.amount, 0)).toBe(1000)
+    expect(out.evenSplit).toBe(true)
   })
 })
 

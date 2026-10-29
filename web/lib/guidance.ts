@@ -108,10 +108,10 @@ export function holdingGuides(
   return { order, stop }
 }
 
-/** An Invest stock line bought for its amount, with no stop (the page isn't a pick). */
+/** An Invest line bought for its amount, with no stop (the page isn't a pick). */
 export function investGuide(line: StockLine, { now, usdCad }: OrderContext): OrderPlan | null {
   if (line.price === null || (line.currency === 'USD' && usdCad === null)) return null
-  const i: Instrument = { assetType: 'stock', currency: line.currency, price: line.price, atrPct: line.atrPct, dollarVolume20: line.dollarVolume20 }
+  const i: Instrument = { assetType: line.assetType, currency: line.currency, price: line.price, atrPct: line.atrPct, dollarVolume20: line.dollarVolume20 }
   return planBuy(i, { amountCad: line.amount, usdCad: usdCad ?? 1, now })
 }
 

@@ -3,14 +3,15 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { OrderDisclaimer, OrderGuide } from '@/components/OrderGuide'
+import { SplitForm } from '@/components/invest/SplitForm'
 import { ownerClient } from '@/lib/auth'
 import { loadInvestData } from '@/lib/data/invest'
 import { loadFx } from '@/lib/data/portfolio'
-import { shortDay } from '@/lib/dates'
-import { fmtMoney, fmtPct } from '@/lib/format'
-import { btcGuide, investGuide, type OrderContext } from '@/lib/guidance'
-import { HOLDS, STOCKS, allocate, forecastForHold, type ForecastRow, type Hold, type StockLine } from '@/lib/invest/allocate'
-import { addWeekdays, parseInvestInputs, type InvestInputs } from '@/lib/invest/inputs'
+import { addDays, shortDay } from '@/lib/dates'
+import { fmtMoney, fmtPct, fmtQty } from '@/lib/format'
+import { investGuide, type OrderContext } from '@/lib/guidance'
+import { allocate, type Hold, type StockLine } from '@/lib/invest/allocate'
+import { addWeekdays, parseInvestInputs, type AssetChoice } from '@/lib/invest/inputs'
 import type { OrderPlan } from '@/lib/orders'
 import { KIND_LABEL, type Run } from '@/lib/runs'
 import { tickerHref } from '@/lib/ticker'
@@ -18,17 +19,17 @@ import { tickerHref } from '@/lib/ticker'
 export const metadata: Metadata = { title: 'Invest' }
 
 interface Props {
-  searchParams: Promise<{ amount?: string | string[]; crypto?: string | string[]; stocks?: string | string[]; hold?: string | string[] }>
+  searchParams: Promise<{ amount?: string | string[]; asset?: string | string[]; stocks?: string | string[]; hold?: string | string[] }>
 }
 
-const NOT_VALIDATED =
-  "Not validated: none of these meets the picks' bar today. They're the model's best-ranked, not recommendations."
-const PARTLY_VALIDATED =
-  "Not validated: only the stocks marked “passes the bar” meet the picks' bar today. The rest are the model's best-ranked, not recommendations."
+const warning = (names: string, mixed: boolean) =>
+  mixed
+    ? `Not validated: only the ${names} marked “passes the bar” meet the picks' bar today. The rest are the model's best-ranked, not recommendations.`
+    : "Not validated: none of these meets the picks' bar today. They're the model's best-ranked, not recommendations."
 
 /**
- * Invest (docs/superpowers/specs/2026-10-27-invest-page-design.md): split an amount over up to five
- * of the newest run's best-ranked stocks and a BTC share. Returns are always excess over the benchmark.
+ * Invest: split an amount over up to five of the newest run's best-ranked stocks, or its best-ranked
+ * coins. Returns are always excess over the benchmark. A run scores a coin only when it is held or watched.
  */
 export default async function InvestPage({ searchParams }: Props) {
   const supabase = await ownerClient()
@@ -36,15 +37,13 @@ export default async function InvestPage({ searchParams }: Props) {
   const inputs = parseInvestInputs(await searchParams)
   const [data, fx] = await Promise.all([loadInvestData(supabase), loadFx(supabase)])
   const orders = { now: new Date(), usdCad: fx.latest()?.usdCad ?? null }
-  const btcForecast = data ? forecastForHold(data.btcForecasts, inputs.horizons) : null
-  const btcNote =
-    !data || btcForecast ? null : data.btcForecasts.length > 0 ? 'no forecast for this hold' : 'no forecast this run'
+  const ready = data !== null && inputs.amount !== null && inputs.asset !== null && inputs.stocks !== null && inputs.hold !== null
 
   return (
     <main className="page">
       <div className="enter">
         <h1>Invest</h1>
-        <p className="sub">Type an amount to see where it would go today, split over the model&apos;s best-ranked stocks and a share for BTC.</p>
+        <p className="sub">Type an amount and choose stocks or crypto. It is split over the model&apos;s best-ranked names.</p>
       </div>
       <section className="card card-pad enter" aria-labelledby="split-h">
         <h2 id="split-h" style={{ marginBottom: 12 }}>
@@ -60,27 +59,23 @@ export default async function InvestPage({ searchParams }: Props) {
           </div>
         </section>
       ) : (
-        inputs.amount !== null &&
-        inputs.cryptoPct !== null &&
-        inputs.stocks !== null &&
-        inputs.hold !== null && (
+        ready && (
           <Result
             run={data.run}
-            amount={inputs.amount}
-            hold={inputs.hold}
-            btcForecast={btcForecast}
-            btcNote={btcNote}
-            noTsx126={!data.candidates.some((c) => c.market === 'TSX' && c.rows.some((r) => r.horizonDays === 126))}
+            amount={inputs.amount!}
+            asset={inputs.asset!}
+            hold={inputs.hold!}
+            scored={inputs.asset === 'crypto' ? data.coins.length : data.stocks.length}
+            noTsx126={!data.stocks.some((c) => c.market === 'TSX' && c.rows.some((r) => r.horizonDays === 126))}
             orders={orders}
             allocation={allocate({
-              amount: inputs.amount,
-              cryptoPct: inputs.cryptoPct,
-              stocks: inputs.stocks,
+              amount: inputs.amount!,
+              stocks: inputs.stocks!,
               horizons: inputs.horizons,
               usdFxFeePct: data.usdFxFeePct,
-              candidates: data.candidates,
-              held: data.held,
-              btcPriceCad: data.btcPriceCad,
+              cryptoFeePct: data.cryptoFeePct,
+              candidates: inputs.asset === 'crypto' ? data.coins : data.stocks,
+              held: inputs.asset === 'crypto' ? data.heldCoins : data.heldStocks,
             })}
           />
         )
@@ -89,179 +84,105 @@ export default async function InvestPage({ searchParams }: Props) {
   )
 }
 
-function SplitForm({ inputs }: { inputs: InvestInputs }) {
-  return (
-    <form method="get" action="/invest" className="invest-form" noValidate>
-      <label className={`field ${inputs.amountError ? 'invalid' : ''}`}>
-        <span>Amount (C$)</span>
-        <input
-          className="input num-input"
-          name="amount"
-          inputMode="decimal"
-          autoComplete="off"
-          placeholder="1,000"
-          defaultValue={inputs.amountText}
-          aria-invalid={inputs.amountError ? true : undefined}
-        />
-        <span className="error">{inputs.amountError}</span>
-      </label>
-      <label className={`field ${inputs.cryptoError ? 'invalid' : ''}`}>
-        <span>Crypto share</span>
-        <span className="with-unit">
-          <input
-            className="input num-input"
-            name="crypto"
-            inputMode="decimal"
-            autoComplete="off"
-            defaultValue={inputs.cryptoText}
-            aria-invalid={inputs.cryptoError ? true : undefined}
-          />
-          <span className="unit">%</span>
-        </span>
-        <span className="hint">Goes to BTC</span>
-        <span className="error">{inputs.cryptoError}</span>
-      </label>
-      <label className={`field ${inputs.stocksError ? 'invalid' : ''}`}>
-        <span>Number of stocks</span>
-        <select className="select" name="stocks" defaultValue={String(inputs.stocks ?? STOCKS)}>
-          {Array.from({ length: STOCKS }, (_, i) => i + 1).map((n) => (
-            <option key={n} value={n}>
-              {n === 1 ? '1 (all in the top stock)' : n}
-            </option>
-          ))}
-        </select>
-        <span className="error">{inputs.stocksError}</span>
-      </label>
-      <label className={`field ${inputs.holdError ? 'invalid' : ''}`}>
-        <span>How long to hold</span>
-        <select className="select" name="hold" defaultValue={inputs.hold ?? 'any'}>
-          {HOLDS.map((h) => (
-            <option key={h.value} value={h.value}>
-              {h.label}
-            </option>
-          ))}
-        </select>
-        <span className="error">{inputs.holdError}</span>
-      </label>
-      <button type="submit" className="btn btn-primary">
-        Split it
-      </button>
-    </form>
-  )
-}
-
 function Result({
   run,
   amount,
+  asset,
   hold,
-  btcForecast,
-  btcNote,
+  scored,
   noTsx126,
   orders,
   allocation,
 }: {
   run: Run
   amount: number
+  asset: AssetChoice
   hold: Hold
-  btcForecast: ForecastRow | null
-  /** Why the Bitcoin line has no numbers: this hold, or this run scored none. */
-  btcNote: string | null
+  /** How many names this run forecast for the chosen kind, before held names are left out. */
+  scored: number
   noTsx126: boolean
   orders: OrderContext
   allocation: ReturnType<typeof allocate>
 }) {
-  const { stocks, crypto, uninvested, notValidated, evenSplit } = allocation
+  const { stocks, uninvested, notValidated, evenSplit } = allocation
+  const noun = asset === 'crypto' ? 'coin' : 'stock'
+  const names = asset === 'crypto' ? 'coins' : 'stocks'
   const mixed = notValidated && stocks.some((s) => s.qualifies)
   const guides = new Map(stocks.map((s) => [s.symbol, investGuide(s, orders)]))
-  const btc = crypto.amount > 0 ? btcGuide(crypto, orders) : null
   return (
     <section className="card card-pad enter" aria-labelledby="result-h">
       <div className="section-head" style={{ marginBottom: 6 }}>
         <h2 id="result-h">Where {fmtMoney(amount)} would go</h2>
       </div>
       <p className="sub" style={{ margin: '0 0 12px' }}>
-        From the {KIND_LABEL[run.kind]} run of {shortDay(run.et_date)} · returns are vs SPY (US) or XIU.TO (TSX), not plain gains
+        From the {KIND_LABEL[run.kind]} run of {shortDay(run.et_date)} ·{' '}
+        {asset === 'crypto'
+          ? 'returns are vs BTC (Bitcoin itself vs SPY), not plain gains'
+          : 'returns are vs SPY (US) or XIU.TO (TSX), not plain gains'}
       </p>
       {notValidated && (
         <div className="banner warn" role="alert" style={{ marginBottom: 12 }}>
           <TriangleAlert />
-          <div>{mixed ? PARTLY_VALIDATED : NOT_VALIDATED}</div>
+          <div>{warning(names, mixed)}</div>
         </div>
       )}
       <ul className="invest-list stagger" id="invest-lines">
         {stocks.map((line, i) => (
-          <StockRow key={line.symbol} line={line} run={run} mixed={mixed} index={i} guide={guides.get(line.symbol) ?? null} />
+          <Line key={line.symbol} line={line} run={run} mixed={mixed} index={i} guide={guides.get(line.symbol) ?? null} />
         ))}
-        {crypto.amount > 0 && (
-          <li className="invest-row crypto" style={{ '--i': stocks.length } as CSSProperties}>
-            <div className="i-amount">
-              <b className="num">{fmtMoney(crypto.amount)}</b>
-              {crypto.units !== null && <span className="sub num">≈ {crypto.units.toFixed(6)} BTC</span>}
-            </div>
-            <div className="i-main">
-              <div className="i-title">
-                <Link className="sym" href={tickerHref('BTC', 'crypto')}>
-                  BTC
-                </Link>
-                <span className="sub">Bitcoin · crypto{btcNote ? ` · ${btcNote}` : ''}</span>
-              </div>
-              {btcForecast && (
-                <p className="i-line">
-                  <span className="num">{fmtPct(btcForecast.q50 * 100)}</span> (likely{' '}
-                  <span className="num">{fmtPct(btcForecast.q10 * 100)}</span> to{' '}
-                  <span className="num">{fmtPct(btcForecast.q90 * 100)}</span>) over {btcForecast.horizonDays} days vs{' '}
-                  {btcForecast.benchmark} · P(beat) <span className="num">{Math.round(btcForecast.pBeat * 100)}%</span>
-                </p>
-              )}
-              {crypto.units === null && <p className="i-line sub">Add BTC to your watchlist to see its price.</p>}
-              {btc && <OrderGuide plan={btc} />}
-            </div>
-          </li>
-        )}
       </ul>
       {stocks.length === 1 && (
         <p className="sub" style={{ margin: '10px 0 0' }} id="invest-concentrated">
-          All in one stock: no spread of risk.
+          All in one {noun}: no spread of risk.
         </p>
       )}
       {evenSplit && (
         <p className="sub" style={{ margin: '10px 0 0' }}>
-          With two stocks the 40% cap can&apos;t hold, so the money is split evenly.
+          With two {names} the 40% cap can&apos;t hold, so the money is split evenly.
         </p>
       )}
-      {hold === '126' && noTsx126 && (
+      {asset === 'stocks' && hold === '126' && noTsx126 && (
         <p className="sub" style={{ margin: '10px 0 0' }}>
           No TSX stock has a 6-month forecast this run, so only US stocks are ranked.
         </p>
       )}
-      {(hold === 'any' || hold === '21') && (
+      {asset === 'stocks' && (hold === 'any' || hold === '21') && (
         <p className="sub" style={{ margin: '10px 0 0' }}>
           Frequent short-term trades in a TFSA can be treated as a business, which makes the gains taxable; a longer hold
           avoids that (not tax advice).
         </p>
       )}
-      {uninvested > 0 && (
+      {uninvested > 0 && asset === 'crypto' && scored === 0 && (
         <p className="i-uninvested" id="invest-uninvested">
-          <b className="num">{fmtMoney(uninvested)}</b> not invested: no stock is expected to beat its benchmark today.
+          No coin was scored this run. A run scores a coin when you hold or watch it, and the whole{' '}
+          <b className="num">{fmtMoney(amount)}</b> stays uninvested.
+        </p>
+      )}
+      {uninvested > 0 && !(asset === 'crypto' && scored === 0) && (
+        <p className="i-uninvested" id="invest-uninvested">
+          <b className="num">{fmtMoney(uninvested)}</b> not invested: no {noun} is expected to beat its benchmark today.
         </p>
       )}
       <div className="invest-foot">
         <b className="num">Total {fmtMoney(amount)}</b>
         <span className="sub">Not financial or tax advice. Forecasts are probabilistic and can be wrong.</span>
       </div>
-      {stocks.some((s) => s.shares !== null) && (
+      {stocks.some((s) => s.assetType === 'stock' && s.shares !== null) && (
         <p className="sub" style={{ margin: '8px 0 0' }}>
           Shares are approximate; Wealthsimple allows fractional shares for many stocks.
         </p>
       )}
-      {(btc !== null || [...guides.values()].some((g) => g !== null && g.steps.length > 0)) && (
-        <OrderDisclaimer style={{ marginTop: 8 }} />
+      {stocks.some((s) => s.assetType === 'crypto' && s.shares !== null) && (
+        <p className="sub" style={{ margin: '8px 0 0' }}>
+          Coin amounts are approximate.
+        </p>
       )}
+      {[...guides.values()].some((g) => g !== null && g.steps.length > 0) && <OrderDisclaimer style={{ marginTop: 8 }} />}
     </section>
   )
 }
 
-function StockRow({
+function Line({
   line,
   run,
   mixed,
@@ -274,17 +195,23 @@ function StockRow({
   index: number
   guide: OrderPlan | null
 }) {
-  const about = [line.name, line.market, line.sector].filter(Boolean).join(' · ')
+  const coin = line.assetType === 'crypto'
+  const about = coin
+    ? [line.name, 'Crypto'].filter(Boolean).join(' · ')
+    : [line.name, line.market, line.sector].filter(Boolean).join(' · ')
   const pct = (fraction: number) => fmtPct(fraction * 100)
+  const exit = coin ? addDays(run.et_date, line.horizonDays) : addWeekdays(run.et_date, line.horizonDays)
   return (
-    <li className="invest-row stock" style={{ '--i': index } as CSSProperties}>
+    <li className={`invest-row ${coin ? 'coin' : 'stock'}`} style={{ '--i': index } as CSSProperties}>
       <div className="i-amount">
         <b className="num">{fmtMoney(line.amount)}</b>
-        {line.shares !== null && <span className="sub num">≈ {line.shares.toFixed(2)} sh</span>}
+        {line.shares !== null && (
+          <span className="sub num">{coin ? `≈ ${fmtQty(line.shares)} ${line.symbol}` : `≈ ${line.shares.toFixed(2)} sh`}</span>
+        )}
       </div>
       <div className="i-main">
         <div className="i-title">
-          <Link className="sym" href={tickerHref(line.symbol, 'stock')}>
+          <Link className="sym" href={tickerHref(line.symbol, line.assetType)}>
             {line.symbol}
           </Link>
           <span className="sub">{about}</span>
@@ -292,7 +219,7 @@ function StockRow({
         </div>
         <p className="i-line">
           <span className="num">{pct(line.q50)}</span> (likely <span className="num">{pct(line.q10)}</span> to{' '}
-          <span className="num">{pct(line.q90)}</span>) over {line.horizonDays} trading days vs {line.benchmark} · P(beat){' '}
+          <span className="num">{pct(line.q90)}</span>) over {line.horizonDays} {coin ? 'days' : 'trading days'} vs {line.benchmark} · P(beat){' '}
           <span className="num">{Math.round(line.pBeat * 100)}%</span>
         </p>
         <p className="i-line sub">
@@ -301,8 +228,9 @@ function StockRow({
               Volatility {line.volatility} ({Math.round(line.vol60 * 100)}%/yr) ·{' '}
             </>
           )}
-          exit by ≈ {shortDay(addWeekdays(run.et_date, line.horizonDays))} · round-trip cost {pct(line.cost)}
+          exit by ≈ {shortDay(exit)} · round-trip cost {pct(line.cost)}
           {line.market === 'US' && ' (incl. currency fee)'}
+          {coin && ' (incl. crypto fee)'}
         </p>
         {guide && <OrderGuide plan={guide} />}
       </div>

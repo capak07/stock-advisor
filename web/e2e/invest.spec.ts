@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { daysAgo, resetData, seedCloses, seedFeatures, seedRun, seedSymbols, sql, weekdays } from './db'
+import { daysAgo, resetData, seedCloses, seedCoins, seedFeatures, seedPrediction, seedRun, seedSymbols, sql, weekdays } from './db'
 
 test.beforeEach(resetData)
 
@@ -46,18 +46,19 @@ test('Invest is in the navigation and starts with the form only', async ({ page 
   await expect(page).toHaveURL(/\/invest$/)
   await expect(page.getByRole('heading', { name: 'Invest', level: 1 })).toBeVisible()
   await expect(page.getByLabel('Amount (C$)')).toBeVisible()
-  await expect(page.getByLabel('Crypto share')).toHaveValue('10')
+  await expect(page.getByLabel('Invest in')).toHaveValue('stocks')
+  await expect(page.getByLabel('Crypto share')).toHaveCount(0)
   await expect(page.getByLabel('How long to hold')).toHaveValue('any')
   await expect(page.getByRole('button', { name: 'Split it' })).toBeVisible()
   await expect(page.locator('#invest-lines')).toHaveCount(0)
 })
 
-test('an amount is split over five stocks and BTC, under the Not validated warning', async ({ page }) => {
+test('an amount is split over five stocks, under the Not validated warning', async ({ page }) => {
   await seedForecasts()
   await page.goto('/invest')
   await page.getByLabel('Amount (C$)').fill('1,000')
   await page.getByRole('button', { name: 'Split it' }).click()
-  await expect(page).toHaveURL(/\/invest\?amount=1%2C000&crypto=10&stocks=5&hold=any$/)
+  await expect(page).toHaveURL(/\/invest\?amount=1%2C000&asset=stocks&stocks=5&hold=any$/)
 
   await expect(page.getByText(/^From the Pre-open run of .+ · returns are vs SPY \(US\) or XIU\.TO \(TSX\), not plain gains$/)).toBeVisible()
   // two of the five pass, so the warning points at their chips
@@ -76,11 +77,7 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   await expect(ry.getByRole('link', { name: 'RY.TO' })).toHaveAttribute('href', '/ticker/RY.TO')
   await expect(stockRows(page).filter({ hasText: 'AAPL' })).toContainText('(incl. currency fee)')
 
-  const btc = page.locator('#invest-lines .invest-row.crypto')
-  await expect(btc).toContainText('C$100')
-  await expect(btc).toContainText('Bitcoin · crypto · no forecast this run')
-  await expect(btc).not.toContainText('no crypto model yet')
-  await expect(btc).toContainText(/add BTC to your watchlist to see its price/i)
+  await expect(page.locator('#invest-lines .invest-row.coin')).toHaveCount(0)
 
   const amounts = await page.locator('#invest-lines .i-amount b').allTextContents()
   expect(amounts.reduce((sum, text) => sum + Number(text.replace(/[^\d.]/g, '')), 0)).toBe(1000)
@@ -89,31 +86,48 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   await expect(foot).toContainText('Not financial or tax advice. Forecasts are probabilistic and can be wrong.')
 })
 
-test('a Bitcoin share shows this run forecast, and says so when the hold has none', async ({ page }) => {
+test('crypto is ranked like stocks, and a coin expected to lag is left out', async ({ page }) => {
   await seedForecasts()
   const [{ id }] = await sql`select id from runs order by id desc limit 1`
-  await sql`insert into predictions (run_id, symbol, asset_type, horizon_days, q10, q50, q90, p_beat, benchmark, model_version)
-            values (${id}, 'BTC', 'crypto', 14, -0.04, 0.02, 0.09, 0.41, 'SPY', 'e2e'),
-                   (${id}, 'BTC', 'crypto', 30, -0.08, 0.01, 0.12, 0.38, 'SPY', 'e2e')`
-  await page.goto('/invest?amount=1000&crypto=10&stocks=1&hold=any')
-  const btc = page.locator('#invest-lines .invest-row.crypto')
-  await expect(btc).toContainText('+2.0% (likely −4.0% to +9.0%) over 14 days vs SPY · P(beat) 41%')
-  await expect(btc).not.toContainText('no crypto model yet')
-  await page.goto('/invest?amount=1000&crypto=10&stocks=1&hold=126')
-  await expect(page.locator('#invest-lines .invest-row.crypto')).toContainText('Bitcoin · crypto · no forecast for this hold')
+  await seedCoins([
+    { symbol: 'ETH', name: 'Ethereum', marketCap: 1 },
+    { symbol: 'SOL', name: 'Solana', marketCap: 1 },
+    { symbol: 'DOGE', name: 'Dogecoin', marketCap: 1 },
+  ])
+  await seedPrediction(id, 'ETH', 14, { q10: 0.03, q50: 0.08, q90: 0.13, p: 0.7 }, 'crypto')
+  await seedPrediction(id, 'SOL', 14, { q10: -0.04, q50: 0.06, q90: 0.16, p: 0.62 }, 'crypto')
+  await seedPrediction(id, 'DOGE', 14, { q10: -0.1, q50: -0.02, q90: 0.04, p: 0.4 }, 'crypto')
+  for (const symbol of ['ETH', 'SOL', 'DOGE']) {
+    await seedFeatures(id, symbol, 'crypto', { vol_60: 0.3, log_adv20: 17, jump_5d: 0, price_cad: symbol === 'ETH' ? 4000 : 200 })
+  }
+  await page.goto('/invest?amount=1000&asset=crypto&stocks=5&hold=any')
+  const coins = page.locator('#invest-lines .invest-row.coin')
+  await expect(coins).toHaveCount(2)
+  await expect(page.locator('#invest-lines .invest-row.stock')).toHaveCount(0)
+  await expect(coins.nth(0)).toContainText('Ethereum · Crypto')
+  await expect(coins.nth(0)).toContainText('+8.0% (likely +3.0% to +13.0%) over 14 days vs BTC · P(beat) 70%')
+  await expect(coins.nth(0)).toContainText('≈ 0.125 ETH')
+  await expect(coins.nth(0)).toContainText('(incl. crypto fee)')
+  await expect(coins.nth(0).getByRole('link', { name: 'ETH' })).toHaveAttribute('href', '/ticker/ETH?asset=crypto')
+  await expect(coins.nth(1)).toContainText('SOL')
+  await expect(page.getByText(/With two coins the 40% cap/)).toBeVisible()
+  const amounts = await page.locator('#invest-lines .i-amount b').allTextContents()
+  expect(amounts.reduce((sum, text) => sum + Number(text.replace(/[^\d.]/g, '')), 0)).toBe(1000)
+  await expect(coins.nth(0).locator('.order-guide')).toContainText(/Limit buy C\$500 of it at/)
+  await expect(page.getByText(/recurring buy/)).toHaveCount(0)
+
+  await page.goto('/invest?amount=1000&asset=crypto&stocks=5&hold=30')
+  await expect(page.locator('#invest-uninvested')).toContainText('no coin is expected to beat its benchmark today')
 })
 
-test('each Invest line says how to place it, and BTC also as a recurring buy', async ({ page }) => {
+test('each Invest line says how to place it', async ({ page }) => {
   await seedForecasts()
   await seedCloses('RY.TO', 'stock', 'CAD', weekdays(daysAgo(10)), 50, 0)
-  await page.goto('/invest?amount=1000&crypto=10&stocks=5')
+  await page.goto('/invest?amount=1000&asset=stocks&stocks=5')
   const ry = stockRows(page).filter({ hasText: 'RY.TO' }).locator('.order-guide')
   await expect(ry).toContainText('How to place it')
   await expect(ry).toContainText(/Limit buy \d+ sh at C\$50\.50 · (Day order|set it to expire at the end of the next trading day)/)
   await expect(ry).not.toContainText('stop-limit') // the Invest page isn't a pick, so no stop
-  // BTC has no price without a watchlist close, so only the recurring alternative shows
-  const btc = page.locator('#invest-lines .invest-row.crypto .order-guide')
-  await expect(btc.locator('.og-step')).toHaveText(['Or a recurring buy of C$25 of BTC weekly for 4 weeks (Wealthsimple offers daily, weekly, every two weeks or monthly)'])
   await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toHaveCount(1)
 })
 
@@ -122,16 +136,15 @@ test('one stock puts all of the money in the top-ranked one', async ({ page }) =
   await page.goto('/invest')
   await expect(page.getByLabel('Number of stocks')).toHaveValue('5')
   await page.getByLabel('Amount (C$)').fill('500')
-  await page.getByLabel('Crypto share').fill('0')
   await page.getByLabel('Number of stocks').selectOption('1')
   await page.getByRole('button', { name: 'Split it' }).click()
-  await expect(page).toHaveURL(/\/invest\?amount=500&crypto=0&stocks=1&hold=any$/)
+  await expect(page).toHaveURL(/\/invest\?amount=500&asset=stocks&stocks=1&hold=any$/)
 
   await expect(stockRows(page)).toHaveCount(1)
   await expect(stockRows(page).first()).toContainText('RY.TO') // the best expected return per unit of range
   await expect(stockRows(page).first().locator('.i-amount b')).toHaveText('C$500')
   await expect(page.locator('#invest-concentrated')).toHaveText('All in one stock: no spread of risk.')
-  await expect(page.locator('#invest-lines .invest-row.crypto')).toHaveCount(0)
+  await expect(page.locator('#invest-lines .invest-row.coin')).toHaveCount(0)
 })
 
 /** AAPL is best over 10 days; MSFT is best over 63. */
@@ -154,7 +167,7 @@ async function seedHoldForecasts() {
 
 test('holding for 3 months ranks on the 3-month forecast', async ({ page }) => {
   await seedHoldForecasts()
-  await page.goto('/invest?amount=1000&crypto=0&stocks=5&hold=63')
+  await page.goto('/invest?amount=1000&asset=stocks&stocks=5&hold=63')
   await expect(stockRows(page).first()).toContainText('MSFT')
   await expect(stockRows(page).first()).toContainText('over 63 trading days')
   await expect(stockRows(page).nth(1)).toContainText('AAPL')
@@ -172,10 +185,10 @@ test('the TFSA note shows for a short hold and not for 3 months', async ({ page 
   await seedForecasts()
   const note =
     'Frequent short-term trades in a TFSA can be treated as a business, which makes the gains taxable; a longer hold avoids that (not tax advice).'
-  await page.goto('/invest?amount=1000&crypto=10&stocks=5&hold=21')
+  await page.goto('/invest?amount=1000&asset=stocks&stocks=5&hold=21')
   await expect(page.getByRole('heading', { name: /Where C\$1,000 would go/ })).toBeVisible()
   await expect(page.getByText(note)).toBeVisible()
-  await page.goto('/invest?amount=1000&crypto=10&stocks=5&hold=63')
+  await page.goto('/invest?amount=1000&asset=stocks&stocks=5&hold=63')
   await expect(page.getByText(note)).toHaveCount(0)
 })
 
@@ -199,7 +212,7 @@ test.describe('on a phone', () => {
   test('the split stacks and is no wider than the screen', async ({ page }) => {
     await seedForecasts()
     await sql`update symbols set name = 'Royal Bank of Canada Global Diversified Holdings and Trust Incorporated' where symbol = 'RY.TO'`
-    await page.goto('/invest?amount=1000&crypto=10')
+    await page.goto('/invest?amount=1000&asset=stocks')
     await expect(stockRows(page)).toHaveCount(5)
     await expect(page.getByRole('navigation', { name: 'Main' }).last().getByRole('link', { name: 'Invest' })).toHaveAttribute('aria-current', 'page')
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)

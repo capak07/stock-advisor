@@ -1,6 +1,6 @@
 # Prediction upgrade: factor-adjusted targets, GARCH volatility, tuned policy — design
 
-**Status:** approved by the owner 2026-10-28. Plans 6a, 6e and 6b are built; §3 and §4 remain future design.
+**Status:** approved by the owner 2026-10-28. Plans 6a, 6e, 6b and 6c are built; §4 remains future design.
 
 **Extends:** `docs/superpowers/specs/2026-10-09-stock-advisor-design.md` (§5 Prediction, §6 Recommendations). Once this design is approved, the main spec gets a revision line and §5/§6 cross-references (Plan 6a, Task 1).
 

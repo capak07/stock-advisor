@@ -22,6 +22,7 @@
 - **Prediction upgrade (2026-10-28):** owner-approved design in docs/superpowers/specs/2026-10-28-prediction-upgrade-design.md — an evaluation harness, a crypto model, factor-adjusted targets, GARCH volatility and a tuned policy, each accepted only on held-out evidence (§5.2, §6.6). Plan 6a builds the harness.
 - **Plan 6e (2026-10-29):** the policy is tuned on inner folds and goes live only on held-out evidence (§6).
 - **Plan 6b (2026-10-29):** the crypto model replaces 'no crypto model yet' (§5.4).
+- **Plan 6c (2026-10-29):** factor-adjusted training target (accepted only by the benchmark); TSX forecasts say they are price and sector only.
 
 ## 1. Purpose
 

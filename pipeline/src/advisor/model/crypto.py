@@ -12,6 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from advisor.model.dataset import MarketData
+from advisor.model.factors import FACTORS, join_factor_columns, make_factors
 from advisor.model.features import (
     PRICE_FEATURES,
     Wide,
@@ -59,7 +60,7 @@ def _universe(close: pd.DataFrame, dollar_volume: pd.DataFrame, vol_60: pd.DataF
     return rank <= UNIVERSE
 
 
-def load_crypto(data_dir: Path) -> MarketData:
+def load_crypto(data_dir: Path, with_factors: bool = False) -> MarketData:
     manifest = json.loads((data_dir / "manifest.json").read_text())
     if "failed" in manifest:
         raise ValueError(f"the training data build failed: {manifest['failed']['error']}")
@@ -83,8 +84,18 @@ def load_crypto(data_dir: Path) -> MarketData:
     frames["dollar_volume_20"] = dollar_volume.rolling(ADV_WINDOW).mean().loc[days]
     stacked = pd.concat({name: frame.stack(future_stack=True) for name, frame in frames.items()}, axis=1)
     stacked.index.names = ["day", "symbol"]
-    keep = _universe(wide.close, dollar_volume, features["vol_60"]).loc[days].stack(future_stack=True)
+    universe = _universe(wide.close, dollar_volume, features["vol_60"])
+    keep = universe.loc[days].stack(future_stack=True)
     rows = stacked[keep.reindex(stacked.index, fill_value=False).astype(bool)].reset_index()
     rows["sector"] = None
     columns = ["day", "symbol", "sector", "dollar_volume_20", *(f"y_{h}" for h in CRYPTO_HORIZONS), *CRYPTO_FEATURES]
-    return MarketData(CRYPTO, rows[columns].reset_index(drop=True), list(CRYPTO_FEATURES), calendar)
+    rows = rows[columns].reset_index(drop=True)
+    factors = None
+    if with_factors:
+        size = -dollar_volume.rolling(VOLUME_WINDOW).mean()
+        mom = wide.close / wide.close.shift(28) - 1
+        factors, betas = make_factors(
+            wide.close, {"size": size, "mom": mom}, universe, BTC, days, CRYPTO_HORIZONS, FACTORS[CRYPTO],
+        )
+        rows = join_factor_columns(rows, betas, factors)
+    return MarketData(CRYPTO, rows, list(CRYPTO_FEATURES), calendar, factors)

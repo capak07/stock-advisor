@@ -239,6 +239,16 @@ def render_markdown(report: Mapping) -> str:
                 continue
             lines += _outer_folds_table(name, variant)
             lines.append("")
+            if "alpha_rank_ic" in variant or "fallback_count" in variant:
+                lines.append(
+                    "Factor diagnostic: rank IC of q50_alpha vs alpha "
+                    f"{_fmt(variant.get('alpha_rank_ic'), '.3f')}; "
+                    f"fallbacks {variant.get('fallback_count', 0)}."
+                )
+            if variant.get("french"):
+                lines.append(f"Kenneth French cross-check: {variant['french']}")
+            if "alpha_rank_ic" in variant or variant.get("french"):
+                lines.append("")
             if isinstance(variant.get("policy"), Mapping):
                 lines += _policy_table(variant)
                 lines.append("")

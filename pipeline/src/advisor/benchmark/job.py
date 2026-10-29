@@ -37,6 +37,7 @@ from advisor.config import Settings
 from advisor.model.backtest import MAX_CALIBRATION_PTS
 from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS, load_crypto
 from advisor.model.dataset import SAMPLE_EVERY, MarketData, load_market
+from advisor.model.factors import french_cross_check
 from advisor.model.train import Fold, TrainConfig, WalkForward
 from advisor.model.variants import BASELINE, ModelConfig, run_variant, unbuilt
 from advisor.model.weekly import crypto_skipped, json_safe
@@ -112,7 +113,7 @@ def _benchmark_market(
     data_dir: Path, market: Market | str, conn: psycopg.Connection, run_id: int, now: datetime, config: TrainConfig
 ) -> dict:
     coins = market == CRYPTO
-    data = load_crypto(data_dir) if coins else load_market(data_dir, market)
+    data = load_crypto(data_dir, with_factors=True) if coins else load_market(data_dir, market, with_factors=True)
     if coins:
         config = replace(config, horizons=CRYPTO_HORIZONS)
     usd_fx_fee_pct = repo.fee_settings(conn)[1 if coins else 0]  # coins pay the crypto fee instead
@@ -144,6 +145,11 @@ def _benchmark_market(
             "status": "run", "seconds": round(time.monotonic() - began, 1),
             "model": model, "summary": means, "policy": policy,
         }
+        if variant.factors:
+            variants[name]["alpha_rank_ic"] = wf.alpha_rank_ic
+            variants[name]["fallback_count"] = wf.fallback_count
+            if market == Market.US and data.factors is not None:
+                variants[name]["french"] = french_cross_check(data.factors.daily)
         scores[name] = Scores.of(model, config.horizons)
         runs[name] = (wf, usable)
         results += [

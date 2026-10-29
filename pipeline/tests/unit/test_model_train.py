@@ -3,10 +3,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from advisor.model.dataset import load_market
+from advisor.model.dataset import MarketData, load_market
 from advisor.model.train import (
     PARAMS,
     Calibrator,
+    Fold,
     TrainConfig,
     calibration_error,
     fit_final,
@@ -135,3 +136,56 @@ def test_contributions_name_the_features_that_moved_the_forecast(tmp_path):
         by_name = dict(zip(data.features, vals[:-1], strict=True))
         for part in out[key]:
             assert part["contribution"] == pytest.approx(by_name[part["feature"]])
+
+
+def _mom_book():
+    """One stock whose excess return is exactly 1 × the momentum factor, so alpha is 0."""
+    days = pd.bdate_range("2014-01-02", periods=400)
+    premium = np.full(len(days), 0.02)
+    rows = pd.DataFrame({
+        "day": days, "symbol": "MOM", "sector": "X", "dollar_volume_20": 1_000_000.0,
+        "y_5": premium, "x": 0.0, "beta_mom": 1.0, "f_mom_5": premium,
+    })
+    folds = [Fold(days[200], days[300]), Fold(days[300], days[-1] + pd.Timedelta(days=1))]
+    config = TrainConfig(horizons=(5,), rounds=15, params={**PARAMS, "min_data_in_leaf": 5, "num_threads": 1})
+    return MarketData("TSX", rows, ["x"], days), folds, config
+
+
+def test_a_pure_factor_return_trains_near_zero_alpha_and_keeps_the_premium():
+    data, folds, config = _mom_book()
+    pred = walk_forward(data, config, folds=folds, factor_names=("mom",)).predictions
+    assert pred["q50_alpha"].abs().max() < 0.02
+    assert pred["q50"].mean() == pytest.approx(0.02, abs=0.02)
+
+
+def test_a_fold_ignores_its_own_test_targets_and_forward_factors():
+    data, folds, config = _mom_book()
+    base = walk_forward(data, config, folds=folds, factor_names=("mom",))
+    leaked = data.rows.copy()
+    test = (leaked["day"] >= folds[1].start) & (leaked["day"] < folds[1].end)
+    leaked.loc[test, "y_5"] = 0.9
+    leaked.loc[test, "f_mom_5"] = -0.5
+    alt = walk_forward(
+        MarketData(data.market, leaked, data.features, data.calendar), config, folds=folds, factor_names=("mom",),
+    )
+    fold = base.predictions["fold"] == 1
+    for col in ("q50", "q50_alpha", "p_raw", "p"):
+        pd.testing.assert_series_equal(
+            base.predictions.loc[fold, col].reset_index(drop=True),
+            alt.predictions.loc[fold, col].reset_index(drop=True),
+        )
+
+
+def test_factor_files_round_trip_and_live_predict_shifts_only_a_known_symbol():
+    data, folds, config = _mom_book()
+    wf = walk_forward(data, config, folds=folds, factor_names=("mom",))
+    model = fit_final(data, wf, config, factor_names=("mom",))
+    restored = from_files(to_files(model))
+    assert restored.factor_names == ("mom",)
+    assert restored.mu[5]["mom"] == pytest.approx(model.mu[5]["mom"])
+    assert restored.betas["MOM"]["mom"] == pytest.approx(1.0)
+    out = restored.predict(pd.DataFrame({"x": [0.0, 0.0]}, index=["MOM", "NEW"]))
+    mom = out[out.index == "MOM"].iloc[0]
+    unknown = out[out.index == "NEW"].iloc[0]
+    assert mom["q50"] == pytest.approx(0.02, abs=0.02)
+    assert unknown["q50"] == pytest.approx(0.0, abs=0.02)

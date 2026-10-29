@@ -91,11 +91,11 @@ def test_weekly_training_stores_the_accepted_policy_and_judges_the_funnel_with_i
 
 def test_a_config_this_code_cannot_run_falls_back_to_the_baseline(db, tmp_path):
     write_market(tmp_path, Market.TSX, stocks=40)
-    config_id = _accept(db, "TSX", {"version": 1, "factors": True, "garch": False, "policy": None})
+    config_id = _accept(db, "TSX", {"version": 1, "factors": False, "garch": True, "policy": None})
     report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
     assert report["TSX"]["config"] == "baseline" and report["TSX"]["promoted"] is True
     assert report["TSX"]["config_reason"].startswith(f"accepted configuration #{config_id} can't be used (")
-    assert "Plan 6c" in report["TSX"]["config_reason"]
+    assert "Plan 6d" in report["TSX"]["config_reason"]
 
 
 def test_the_weekly_job_trains_the_crypto_model(db, tmp_path):

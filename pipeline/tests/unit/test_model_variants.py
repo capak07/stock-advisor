@@ -3,7 +3,7 @@ import pytest
 
 from advisor.model.dataset import load_market
 from advisor.model.train import PARAMS, TrainConfig, make_folds, walk_forward
-from advisor.model.variants import BASELINE, ModelConfig, run_variant
+from advisor.model.variants import BASELINE, ModelConfig, run_variant, unbuilt
 from advisor.models import Market
 from advisor.policy import Policy
 from model_data import write_market
@@ -20,7 +20,7 @@ def test_configs_name_themselves_and_round_trip():
 
 
 @pytest.mark.parametrize("stored, match", [
-    ({"version": 1, "factors": True, "garch": False, "policy": None}, "Plan 6c"),
+    ({"version": 1, "factors": False, "garch": True, "policy": None}, "Plan 6d"),
     ({"version": 2, "factors": False, "garch": False, "policy": None}, "version"),
     ({"version": 1, "factors": False, "garch": False, "policy": None, "extra": 1}, "extra"),
     ([], "mapping"),
@@ -42,6 +42,12 @@ def test_a_stored_policy_missing_keys_is_refused():
         ModelConfig.from_json(
             {"version": 1, "factors": False, "garch": False, "policy": {"p_buy": 0.5}}
         )
+
+
+def test_a_factors_config_can_be_stored_and_run():
+    config = ModelConfig(factors=True)
+    assert unbuilt(config) is None
+    assert ModelConfig.from_json(config.to_json()) == config
 
 
 def test_unbuilt_variants_say_which_plan_builds_them(tmp_path):

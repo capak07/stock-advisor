@@ -145,7 +145,10 @@ def _train_market(
     model_config, config_reason = config_for(conn, market)
     if coins:
         config = replace(config, horizons=CRYPTO_HORIZONS)
-    data = load_crypto(data_dir) if coins else load_market(data_dir, market)
+    data = (
+        load_crypto(data_dir, with_factors=model_config.factors)
+        if coins else load_market(data_dir, market, with_factors=model_config.factors)
+    )
     loaded = time.monotonic()
     wf = run_variant(data, model_config, config)
     walked = time.monotonic()

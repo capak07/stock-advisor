@@ -389,7 +389,8 @@ def model_feature_rows(features: pd.DataFrame, names: Sequence[str]) -> list[tup
     """
     eligible = features["eligible"].astype(bool)
     rows = []
-    for symbol, values in features[list(names)].astype(float).iterrows():
+    present = [name for name in names if name in features.columns]
+    for symbol, values in features[present].astype(float).iterrows():
         kept = {name: float(v) for name, v in values.items() if math.isfinite(v)}
         kept["model_eligible"] = bool(eligible[symbol])
         rows.append((AssetRef(str(symbol), AssetType.STOCK), kept))

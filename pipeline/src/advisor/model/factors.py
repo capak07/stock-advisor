@@ -5,8 +5,11 @@ through the next formation day inclusive. `mkt` is the benchmark's own daily ret
 30 ranked names leaves that holding period missing: a 9-name book is not a third of a universe.
 """
 
+import io
+import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from urllib.request import urlopen
 
 import numpy as np
 import pandas as pd
@@ -219,3 +222,49 @@ def fallback_count(rows: pd.DataFrame, names: Sequence[str]) -> int:
     """Rows whose target falls back to y_h because a beta is missing."""
     betas = rows[[f"beta_{name}" for name in names]]
     return int(betas.isna().any(axis=1).sum())
+
+
+_FRENCH_5 = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"
+_FRENCH_MOM = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Momentum_Factor_daily_CSV.zip"
+_FRENCH_PAIRS = (("size", "SMB"), ("value", "HML"), ("prof", "RMW"), ("mom", "Mom"))
+
+
+def _french_table(blob: bytes) -> pd.DataFrame:
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        text = archive.read(archive.namelist()[0]).decode("latin1")
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if "Mkt-RF" in line or line.strip().endswith(",Mom"))
+    header = [part.strip() for part in lines[start].split(",")]
+    rows = []
+    for line in lines[start + 1:]:
+        if not line.strip() or not line[0].isdigit():
+            break
+        rows.append([part.strip() for part in line.split(",")])
+    frame = pd.DataFrame(rows, columns=header)
+    frame.index = pd.to_datetime(frame.iloc[:, 0], format="%Y%m%d")
+    for col in frame.columns[1:]:
+        frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    return frame
+
+
+def french_cross_check(daily: pd.DataFrame) -> str:
+    """Correlation of our US factors with Kenneth French's. Never used in training.
+
+    Any failure, including a missing overlap, reads `cross-check unavailable`.
+    """
+    try:
+        with urlopen(_FRENCH_5, timeout=15) as response:  # noqa: S310  keyless published CSV
+            five = _french_table(response.read())
+        with urlopen(_FRENCH_MOM, timeout=15) as response:  # noqa: S310
+            mom = _french_table(response.read())
+        french = five.join(mom[["Mom"]], how="inner")
+        parts = []
+        for ours, theirs in _FRENCH_PAIRS:
+            joined = daily[ours].to_frame("ours").join(french[theirs].rename("theirs"), how="inner").dropna()
+            corr = float(joined["ours"].corr(joined["theirs"])) if len(joined) > 2 else float("nan")
+            if corr != corr:
+                raise ValueError("no overlap")
+            parts.append(f"{ours} vs {theirs} {corr:.2f}")
+        return ", ".join(parts)
+    except Exception:
+        return "cross-check unavailable"

@@ -1,9 +1,9 @@
 """A model configuration (a variant), and the one seam every variant trains through.
 
 The benchmark compares variants on identical folds; weekly training runs the market's accepted
-one. Plan 6a builds only the baseline: factors (Plan 6c) and GARCH (Plan 6d) are named here
-so stored configurations and reports can refer to them, but running one before its plan lands
-is refused, never silently treated as the baseline. A tuned policy is a `Policy` value.
+one. GARCH (Plan 6d) is named here so a stored configuration can refer to it, but running it
+before its plan lands is refused, never silently treated as the baseline. A tuned policy is a
+`Policy` value.
 """
 
 from collections.abc import Mapping, Sequence
@@ -58,11 +58,17 @@ BASELINE = ModelConfig()
 
 def unbuilt(config: ModelConfig) -> str | None:
     """The plan that builds the config's first missing part, or None when it can run."""
-    if config.factors:
-        return "Plan 6c"
     if config.garch:
         return "Plan 6d"
     return None
+
+
+def _factor_names(data: MarketData, config: ModelConfig) -> tuple[str, ...] | None:
+    if not config.factors:
+        return None
+    if data.factors is None:
+        raise ValueError(f"{config.name} needs factor columns; load the market with with_factors=True")
+    return data.factors.names
 
 
 def _require_built(config: ModelConfig) -> None:
@@ -79,10 +85,12 @@ def run_variant(
 ) -> WalkForward:
     """The variant's out-of-sample walk-forward over `folds` (default: the outer folds)."""
     _require_built(config)
-    return walk_forward(data, train_config, folds=folds, known_before=known_before)
+    return walk_forward(
+        data, train_config, folds=folds, known_before=known_before, factor_names=_factor_names(data, config),
+    )
 
 
 def fit_variant(data: MarketData, wf: WalkForward, config: ModelConfig, train_config: TrainConfig) -> FinalModel:
     """The variant's final model on every row with a target, calibrated on `wf`."""
     _require_built(config)
-    return fit_final(data, wf, train_config)
+    return fit_final(data, wf, train_config, factor_names=_factor_names(data, config))

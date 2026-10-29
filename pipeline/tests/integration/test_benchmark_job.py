@@ -21,7 +21,8 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     report = job.run(tmp_path, [Market.TSX], db, NOW, "abc1234", FAST)
     tsx = report["markets"]["TSX"]
     assert tsx["chosen"] == "baseline" and tsx["accepted"]["changed"] is True
-    assert tsx["variants"]["factors"] == {"status": "not built", "plan": "Plan 6c"}
+    assert tsx["variants"]["factors"]["status"] == "run"
+    assert tsx["variants"]["garch"] == {"status": "not built", "plan": "Plan 6d"}
     assert tsx["variants"]["full+policy"]["status"] == "run"
     assert tsx["variants"]["baseline"]["status"] == "run"
     folds = {r["fold"] for r in db.execute("select fold from benchmark_results where variant = 'baseline'").fetchall()}
@@ -104,6 +105,20 @@ def test_an_accepted_policy_is_stored_with_the_model(db, tmp_path, monkeypatch):
     assert active.reason.startswith("net Sharpe 1.00")
     again = job.run(tmp_path, [Market.TSX], db, NOW + timedelta(days=28), None, FAST)
     assert again["markets"]["TSX"]["accepted"]["changed"] is False
+
+
+def test_the_factors_variant_runs_on_us_data_and_keeps_the_baseline_rows(db, tmp_path):
+    write_market(tmp_path, Market.US, stocks=40, days=1200)
+    report = job.run(tmp_path, [Market.US], db, NOW, None, FAST)
+    us = report["markets"]["US"]
+    assert "error" not in us
+    factors = us["variants"]["factors"]
+    assert factors["status"] == "run"
+    assert "alpha_rank_ic" in factors and "fallback_count" in factors
+    assert isinstance(factors["french"], str) and factors["french"]
+    text = render_markdown(report)
+    assert "Factor diagnostic:" in text and "Kenneth French cross-check:" in text
+    assert "nan" not in text and "None" not in text
 
 
 def test_the_benchmark_scores_crypto(db, tmp_path):

@@ -66,11 +66,12 @@ def forecast_coins(
         return {}, reasons
 
     frame = pd.DataFrame({name: features[name].loc[last] for name in CRYPTO_FEATURES}).reindex(ready)
-    finite = frame[list(model.features)].map(math.isfinite).all(axis=1)
+    present = [name for name in model.features if name in frame.columns]
+    finite = frame[present].map(math.isfinite).all(axis=1)
     frame = frame.loc[finite]
     if frame.empty:
         return {}, reasons
-    predicted = model.predict(frame[list(model.features)]).dropna(subset=["q10", "q50", "q90", "p_beat"])
+    predicted = model.predict(frame).dropna(subset=["q10", "q50", "q90", "p_beat"])
     version = getattr(model, "version", "")
     rows: dict[str, list[PredictionRow]] = {}
     for symbol, row in predicted.iterrows():

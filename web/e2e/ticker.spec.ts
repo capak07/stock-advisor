@@ -206,6 +206,7 @@ test("a coin's page is in CAD, and the coin can be watched and unwatched from it
   const [{ close }] = await sql`select close::float from daily_closes where symbol = 'ETH' order by day desc limit 1`
   await expect(page.locator('#last-price')).toHaveText(`C$${(close * 1.4).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
   await expect(page.getByText('You hold 1 · Crypto')).toBeVisible()
+  await expect(page.getByText('A forecast for ETH appears here when you hold or watch it and a run has scored it.')).toBeVisible()
   await page.getByRole('tab', { name: '1D' }).click()
   await expect(page.getByRole('img', { name: 'ETH closes over 1D' })).toBeVisible()
   await page.getByRole('tab', { name: '1W' }).click()
@@ -218,6 +219,25 @@ test("a coin's page is in CAD, and the coin can be watched and unwatched from it
   await page.getByRole('button', { name: 'Watching' }).click()
   await expect(page.getByRole('status')).toHaveText('ETH removed from the watchlist')
   await expect(page.getByRole('button', { name: 'Watch', exact: true })).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('a held coin shows its forecast against Bitcoin', async ({ page }) => {
+  const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: hoursAgo(1) })
+  await seedPrediction(runId, 'ETH', 14, { q10: -0.09, q50: -0.02, q90: 0.04, p: 0.36 }, 'crypto')
+  await seedPrediction(runId, 'ETH', 30, { q10: -0.2, q50: -0.06, q90: 0.08, p: 0.27 }, 'crypto')
+  await page.goto('/ticker/ETH?asset=crypto')
+  await expect(page.getByRole('heading', { name: 'Price and forecast' })).toBeVisible()
+  const horizons = page.getByRole('tablist', { name: 'Forecast horizon in days' })
+  await expect(horizons.getByRole('tab')).toHaveText(['14d', '30d'])
+  await expect(horizons.getByRole('tab', { name: '14d' })).toHaveAttribute('aria-selected', 'true')
+  const kpis = page.locator('#forecast-kpis')
+  await expect(kpis).toContainText('Beats BTC36%over 14 days')
+  await expect(kpis).toContainText('Median−2.0%relative to BTC')
+  await expect(page.locator('g[aria-label="Forecast: +14 days · if BTC is flat"]')).toHaveCount(1)
+  await expect(page.getByText(/once the model runs/)).toHaveCount(0)
+  await expect(page.getByRole('tablist', { name: 'Range' })).toBeVisible()
+  await horizons.getByRole('tab', { name: '30d' }).click()
+  await expect(kpis).toContainText('Beats BTC27%over 30 days')
 })
 
 test('any symbol has a page, with no data until a run collects it', async ({ page }) => {

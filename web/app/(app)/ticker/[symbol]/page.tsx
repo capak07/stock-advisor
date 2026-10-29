@@ -136,7 +136,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
           <div className="grid gap-4">
             {data.forecast && data.market ? (
               <ForecastCard usdFxFeePct={settings.usd_fx_fee_pct} market={data.market} />
-            ) : (
+            ) : data.forecast ? null : (
               <section className="card card-pad enter" aria-labelledby="forecast-h">
                 <h2 id="forecast-h" style={{ marginBottom: 10 }}>
                   Forecast
@@ -144,8 +144,9 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 <div className="banner info">
                   <Info />
                   <div>
-                    The forecast cone, its top factors, catalysts and past picks for {symbol} appear here once the model
-                    runs.
+                    {coin
+                      ? `A forecast for ${symbol} appears here when you hold or watch it and a run has scored it.`
+                      : `The forecast cone, its top factors, catalysts and past picks for ${symbol} appear here once the model runs.`}
                   </div>
                 </div>
               </section>

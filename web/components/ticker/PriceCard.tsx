@@ -18,11 +18,13 @@ export function PriceCard({ symbol, series, coin }: { symbol: string; series: Pr
     <section className="card card-pad enter" aria-labelledby="chart-h">
       <div className="section-head">
         <h2 id="chart-h">{cone ? 'Price and forecast' : 'Price'}</h2>
-        <div className="flex flex-wrap gap-2">
-          {series.values.length > 1 && <Tabs items={RANGES} value={range} onChange={setRange} label="Range" />}
-          {cone && <HorizonTabs />}
-        </div>
+        {cone && <HorizonTabs />}
       </div>
+      {series.values.length > 1 && (
+        <div className="chart-ranges">
+          <Tabs className="compact" items={RANGES} value={range} onChange={setRange} label="Range" />
+        </div>
+      )}
       {series.values.length > 1 ? (
         <>
           <LineChart

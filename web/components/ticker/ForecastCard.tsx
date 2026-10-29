@@ -30,13 +30,14 @@ export function ForecastProvider({ forecast, children }: { forecast: TickerForec
   )
   const row = horizons.find((h) => h.horizon === horizon) ?? null
   const benchmark = forecast?.benchmark
+  const span = forecast?.span ?? 'trading days'
   // one object per horizon: the chart morphs whenever the cone changes identity
   const cone = useMemo(
     () =>
       row && benchmark
-        ? { q10: row.q10, q50: row.q50, q90: row.q90, label: `+${row.horizon} trading days · if ${benchmark} is flat`, short: `+${row.horizon}d` }
+        ? { q10: row.q10, q50: row.q50, q90: row.q90, label: `+${row.horizon} ${span} · if ${benchmark} is flat`, short: `+${row.horizon}d` }
         : undefined,
-    [row, benchmark],
+    [row, benchmark, span],
   )
   const value = useMemo(() => (forecast ? { forecast, row, setHorizon, cone } : null), [forecast, row, cone])
   return <ForecastContext.Provider value={value}>{children}</ForecastContext.Provider>
@@ -50,7 +51,7 @@ export function HorizonTabs() {
   if (!f || !f.row) return null
   const items = f.forecast.horizons.map((h) => ({ value: String(h.horizon), label: `${h.horizon}d` }))
   return (
-    <Tabs items={items} value={String(f.row.horizon)} onChange={(v) => f.setHorizon(Number(v))} label="Forecast horizon in trading days" />
+    <Tabs items={items} value={String(f.row.horizon)} onChange={(v) => f.setHorizon(Number(v))} label={`Forecast horizon in ${f.forecast.span}`} />
   )
 }
 
@@ -65,7 +66,7 @@ export function ForecastKpis() {
       <div className="kpi">
         <span className="label">Beats {bench}</span>
         <b>{Math.round(row.pBeat * 100)}%</b>
-        <span className="sub">over {row.horizon} trading days</span>
+        <span className="sub">over {row.horizon} {f.forecast.span}</span>
         {f.forecast.advice?.basis && <span className="sub">{f.forecast.advice.basis}</span>}
       </div>
       <div className="kpi">

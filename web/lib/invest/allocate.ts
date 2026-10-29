@@ -121,6 +121,12 @@ const ratio = (r: ForecastRow): number | null => {
   return width > 0 ? r.q50 / width : null
 }
 
+/** The best-ratio horizon the hold allows. Null when this hold names horizons the rows don't have. */
+export function forecastForHold(rows: readonly ForecastRow[], horizons: readonly number[] | null): ForecastRow | null {
+  const allowed = horizons ? rows.filter((r) => horizons.includes(r.horizonDays)) : rows
+  return best(allowed, () => true)?.row ?? null
+}
+
 /** The best-ratio row of those `keep` allows; a tie goes to the shorter horizon. */
 function best(rows: readonly ForecastRow[], keep: (r: ForecastRow) => boolean): { row: ForecastRow; ratio: number } | null {
   let found: { row: ForecastRow; ratio: number } | null = null

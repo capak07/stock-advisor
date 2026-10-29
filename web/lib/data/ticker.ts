@@ -61,7 +61,9 @@ export interface PastPick {
 
 export interface TickerForecast {
   benchmark: string
-  /** Ascending; empty when the latest run didn't forecast this stock (only past picks to show). */
+  /** A stock's horizon is trading days; a coin's is calendar days. */
+  span: 'trading days' | 'days'
+  /** Ascending; empty when the latest run didn't forecast this asset (a stock may still have past picks). */
   horizons: ForecastHorizon[]
   /** Stage 8's explanation at the stock's representative horizon (`features_live.features.advice`). */
   advice: { horizon: number; topFactors: Factor[]; catalysts: Catalyst[]; cost: number | null; basis: string | null } | null
@@ -83,7 +85,7 @@ export interface TickerData {
   /** In the active stock lists or the stored coin list, so it can be watched. */
   watchable: boolean
   positions: Position[]
-  /** Null for a coin, or a stock with neither a forecast nor past picks. */
+  /** Null when this asset has neither a forecast nor, for a stock, past picks. */
   forecast: TickerForecast | null
 }
 
@@ -148,7 +150,7 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
       ) as { features: Record<string, unknown> }[])
     : []
   const f = features[0]?.features
-  const forecast = ref.assetType === 'stock' ? await loadForecast(supabase, ref.symbol, run, f) : null
+  const forecast = await loadForecast(supabase, ref.symbol, ref.assetType, run, f)
   const stories = toNumber(f?.news_stories_48h)
   const listed = (must(info) as { name: string; market: Market | null; exchange: string; active: boolean }[])[0]
   // A coin's row only says it's in the coin list; its name and exchange aren't shown.
@@ -200,31 +202,35 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
   }
 }
 
-/** A stock's forecast, explanation and past picks (Plan 4b, the Ticker page's Forecast card). */
+/** A forecast, and for a stock its explanation and past picks (Plan 4b). Coins are never picks. */
 async function loadForecast(
   supabase: Supabase,
   symbol: string,
+  assetType: AssetType,
   run: Run | null,
   features: Record<string, unknown> | undefined,
 ): Promise<TickerForecast | null> {
+  const stock = assetType === 'stock'
   const [current, picked] = await Promise.all([
     run
       ? supabase
           .from('predictions')
           .select('horizon_days, q10, q50, q90, p_beat, benchmark')
           .eq('run_id', run.id)
-          .eq('asset_type', 'stock')
+          .eq('asset_type', assetType)
           .eq('symbol', symbol)
           .order('horizon_days')
       : null,
-    supabase
-      .from('picks')
-      .select('id, run_id, style, horizon_days, exit_by, status, runs!inner(et_date, published), pick_outcomes(ret, bench_ret, excess, beat, hit_stop, exit_reason)')
-      .eq('symbol', symbol)
-      .eq('asset_type', 'stock')
-      .eq('runs.published', true)
-      .order('id', { ascending: false })
-      .limit(10),
+    stock
+      ? supabase
+          .from('picks')
+          .select('id, run_id, style, horizon_days, exit_by, status, runs!inner(et_date, published), pick_outcomes(ret, bench_ret, excess, beat, hit_stop, exit_reason)')
+          .eq('symbol', symbol)
+          .eq('asset_type', 'stock')
+          .eq('runs.published', true)
+          .order('id', { ascending: false })
+          .limit(10)
+      : null,
   ])
   const rows = (current ? must(current) : []) as {
     horizon_days: number
@@ -235,7 +241,7 @@ async function loadForecast(
     benchmark: string
   }[]
   // supabase-js types embedded rows as lists; many-to-one and one-to-one embeds arrive as one object
-  const pastRows = must(picked) as unknown as {
+  const pastRows = (picked ? must(picked) : []) as unknown as {
     id: number
     run_id: number
     style: Style
@@ -256,7 +262,7 @@ async function loadForecast(
             .from('predictions')
             .select('run_id, horizon_days, p_beat')
             .eq('symbol', symbol)
-            .eq('asset_type', 'stock')
+            .eq('asset_type', assetType)
             .in('run_id', runIds),
         )
   ) as { run_id: number; horizon_days: number; p_beat: number }[]
@@ -272,7 +278,8 @@ async function loadForecast(
   const value = (feature: string) => toNumber(features?.[feature]) ?? undefined
 
   return {
-    benchmark: rows[0]?.benchmark ?? (symbol.endsWith('.TO') ? 'XIU.TO' : 'SPY'),
+    benchmark: rows[0]?.benchmark ?? (assetType === 'crypto' ? 'BTC' : symbol.endsWith('.TO') ? 'XIU.TO' : 'SPY'),
+    span: assetType === 'crypto' ? 'days' : 'trading days',
     horizons: rows.map((r) => ({
       horizon: r.horizon_days,
       q10: Number(r.q10),

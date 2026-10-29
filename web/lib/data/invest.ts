@@ -26,6 +26,8 @@ export interface InvestData {
   usdFxFeePct: number
   /** BTC's latest price in CAD, when the run or the stored closes have one. */
   btcPriceCad: number | null
+  /** BTC's forecasts this run. Empty unless BTC is held or watched, which is when a run scores it. */
+  btcForecasts: ForecastRow[]
 }
 
 const num = (value: unknown): number | null => {
@@ -47,7 +49,7 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
   const run = await runById(supabase, newest[0].run_id)
   if (!run) return null
 
-  const [predictions, features, btc, settings, trades, fx] = await Promise.all([
+  const [predictions, features, btc, btcPredictions, settings, trades, fx] = await Promise.all([
     fetchAll((from, to) =>
       supabase
         .from('predictions')
@@ -76,6 +78,13 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
       .eq('asset_type', 'crypto')
       .eq('symbol', 'BTC')
       .limit(1),
+    supabase
+      .from('predictions')
+      .select('horizon_days, q10, q50, q90, p_beat, benchmark')
+      .eq('run_id', run.id)
+      .eq('asset_type', 'crypto')
+      .eq('symbol', 'BTC')
+      .order('horizon_days'),
     loadSettings(supabase),
     loadTrades(supabase),
     loadFx(supabase),
@@ -140,5 +149,15 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     held,
     usdFxFeePct: Number(settings.usd_fx_fee_pct),
     btcPriceCad: btcQuote ?? (btcClose ? fx.toCad(btcClose) : null),
+    btcForecasts: (must(btcPredictions) as { horizon_days: number; q10: number; q50: number; q90: number; p_beat: number; benchmark: string }[]).map(
+      (p) => ({
+        horizonDays: p.horizon_days,
+        q10: Number(p.q10),
+        q50: Number(p.q50),
+        q90: Number(p.q90),
+        pBeat: Number(p.p_beat),
+        benchmark: p.benchmark,
+      }),
+    ),
   }
 }

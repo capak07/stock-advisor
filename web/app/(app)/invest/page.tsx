@@ -9,7 +9,7 @@ import { loadFx } from '@/lib/data/portfolio'
 import { shortDay } from '@/lib/dates'
 import { fmtMoney, fmtPct } from '@/lib/format'
 import { btcGuide, investGuide, type OrderContext } from '@/lib/guidance'
-import { HOLDS, STOCKS, allocate, type Hold, type StockLine } from '@/lib/invest/allocate'
+import { HOLDS, STOCKS, allocate, forecastForHold, type ForecastRow, type Hold, type StockLine } from '@/lib/invest/allocate'
 import { addWeekdays, parseInvestInputs, type InvestInputs } from '@/lib/invest/inputs'
 import type { OrderPlan } from '@/lib/orders'
 import { KIND_LABEL, type Run } from '@/lib/runs'
@@ -36,6 +36,9 @@ export default async function InvestPage({ searchParams }: Props) {
   const inputs = parseInvestInputs(await searchParams)
   const [data, fx] = await Promise.all([loadInvestData(supabase), loadFx(supabase)])
   const orders = { now: new Date(), usdCad: fx.latest()?.usdCad ?? null }
+  const btcForecast = data ? forecastForHold(data.btcForecasts, inputs.horizons) : null
+  const btcNote =
+    !data || btcForecast ? null : data.btcForecasts.length > 0 ? 'no forecast for this hold' : 'no forecast this run'
 
   return (
     <main className="page">
@@ -65,6 +68,8 @@ export default async function InvestPage({ searchParams }: Props) {
             run={data.run}
             amount={inputs.amount}
             hold={inputs.hold}
+            btcForecast={btcForecast}
+            btcNote={btcNote}
             noTsx126={!data.candidates.some((c) => c.market === 'TSX' && c.rows.some((r) => r.horizonDays === 126))}
             orders={orders}
             allocation={allocate({
@@ -149,6 +154,8 @@ function Result({
   run,
   amount,
   hold,
+  btcForecast,
+  btcNote,
   noTsx126,
   orders,
   allocation,
@@ -156,6 +163,9 @@ function Result({
   run: Run
   amount: number
   hold: Hold
+  btcForecast: ForecastRow | null
+  /** Why the Bitcoin line has no numbers: this hold, or this run scored none. */
+  btcNote: string | null
   noTsx126: boolean
   orders: OrderContext
   allocation: ReturnType<typeof allocate>
@@ -193,8 +203,16 @@ function Result({
                 <Link className="sym" href={tickerHref('BTC', 'crypto')}>
                   BTC
                 </Link>
-                <span className="sub">Bitcoin · crypto · no forecast (no crypto model yet)</span>
+                <span className="sub">Bitcoin · crypto{btcNote ? ` · ${btcNote}` : ''}</span>
               </div>
+              {btcForecast && (
+                <p className="i-line">
+                  <span className="num">{fmtPct(btcForecast.q50 * 100)}</span> (likely{' '}
+                  <span className="num">{fmtPct(btcForecast.q10 * 100)}</span> to{' '}
+                  <span className="num">{fmtPct(btcForecast.q90 * 100)}</span>) over {btcForecast.horizonDays} days vs{' '}
+                  {btcForecast.benchmark} · P(beat) <span className="num">{Math.round(btcForecast.pBeat * 100)}%</span>
+                </p>
+              )}
               {crypto.units === null && <p className="i-line sub">Add BTC to your watchlist to see its price.</p>}
               {btc && <OrderGuide plan={btc} />}
             </div>

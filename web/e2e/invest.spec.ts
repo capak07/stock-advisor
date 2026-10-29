@@ -78,7 +78,8 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
 
   const btc = page.locator('#invest-lines .invest-row.crypto')
   await expect(btc).toContainText('C$100')
-  await expect(btc).toContainText('Bitcoin · crypto · no forecast (no crypto model yet)')
+  await expect(btc).toContainText('Bitcoin · crypto · no forecast this run')
+  await expect(btc).not.toContainText('no crypto model yet')
   await expect(btc).toContainText(/add BTC to your watchlist to see its price/i)
 
   const amounts = await page.locator('#invest-lines .i-amount b').allTextContents()
@@ -86,6 +87,20 @@ test('an amount is split over five stocks and BTC, under the Not validated warni
   const foot = page.locator('.invest-foot')
   await expect(foot).toContainText('Total C$1,000')
   await expect(foot).toContainText('Not financial or tax advice. Forecasts are probabilistic and can be wrong.')
+})
+
+test('a Bitcoin share shows this run forecast, and says so when the hold has none', async ({ page }) => {
+  await seedForecasts()
+  const [{ id }] = await sql`select id from runs order by id desc limit 1`
+  await sql`insert into predictions (run_id, symbol, asset_type, horizon_days, q10, q50, q90, p_beat, benchmark, model_version)
+            values (${id}, 'BTC', 'crypto', 14, -0.04, 0.02, 0.09, 0.41, 'SPY', 'e2e'),
+                   (${id}, 'BTC', 'crypto', 30, -0.08, 0.01, 0.12, 0.38, 'SPY', 'e2e')`
+  await page.goto('/invest?amount=1000&crypto=10&stocks=1&hold=any')
+  const btc = page.locator('#invest-lines .invest-row.crypto')
+  await expect(btc).toContainText('+2.0% (likely −4.0% to +9.0%) over 14 days vs SPY · P(beat) 41%')
+  await expect(btc).not.toContainText('no crypto model yet')
+  await page.goto('/invest?amount=1000&crypto=10&stocks=1&hold=126')
+  await expect(page.locator('#invest-lines .invest-row.crypto')).toContainText('Bitcoin · crypto · no forecast for this hold')
 })
 
 test('each Invest line says how to place it, and BTC also as a recurring buy', async ({ page }) => {

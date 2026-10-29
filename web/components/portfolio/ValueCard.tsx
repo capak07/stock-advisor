@@ -68,34 +68,32 @@ export function ValueCard({
             <span className="muted">· cost {fmtMoney(totals.costCad)}</span>
           </div>
         </div>
-        {r && portfolio !== null && (
-          <div className="grid gap-3 justify-items-end">
-            <Tabs items={PERIOD_TABS} value={period} onChange={setPeriod} label="Period" />
-            <div className="num" style={{ fontSize: 13, textAlign: 'right' }}>
-              <span className="muted">{label}</span>
-              <br />
-              Portfolio{' '}
-              <b>
-                <TweenNumber value={portfolio} format={fmtPct} className={portfolio < 0 ? 'loss' : 'gain'} />
-              </b>
-              {xiu !== null && (
-                <>
-                  {' '}
-                  <span className="muted">· XIU.TO</span> <TweenNumber value={xiu} format={fmtPct} />
-                </>
-              )}
-              {spy !== null && (
-                <>
-                  {' '}
-                  <span className="muted">· SPY in CAD</span> <TweenNumber value={spy} format={fmtPct} />
-                </>
-              )}
-            </div>
-          </div>
-        )}
       </div>
-      {r ? (
+      {r && portfolio !== null ? (
         <>
+          <div className="chart-ranges">
+            <Tabs className="compact" items={PERIOD_TABS} value={period} onChange={setPeriod} label="Period" />
+          </div>
+          <div className="num" style={{ fontSize: 13 }}>
+            <span className="muted">{label}</span>
+            {' · '}
+            Portfolio{' '}
+            <b>
+              <TweenNumber value={portfolio} format={fmtPct} className={portfolio < 0 ? 'loss' : 'gain'} />
+            </b>
+            {xiu !== null && (
+              <>
+                {' '}
+                <span className="muted">· XIU.TO</span> <TweenNumber value={xiu} format={fmtPct} />
+              </>
+            )}
+            {spy !== null && (
+              <>
+                {' '}
+                <span className="muted">· SPY in CAD</span> <TweenNumber value={spy} format={fmtPct} />
+              </>
+            )}
+          </div>
           <div style={{ marginTop: 14 }}>
             <LineChart
               series={r.portfolio}

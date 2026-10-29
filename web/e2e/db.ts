@@ -199,16 +199,18 @@ export async function seedModel(kind: 'stock_us' | 'stock_tsx', metrics: JSONVal
             values (${`${kind}-test`}, ${kind}, now(), ${sql.json(metrics)}, true)`
 }
 
-/** A run's forecast for one stock at one horizon; the benchmark follows the symbol's market. */
+/** A run's forecast for one asset at one horizon. A coin is judged against BTC, and BTC against SPY. */
 export async function seedPrediction(
   runId: number,
   symbol: string,
   horizon: number,
   q: { q10: number; q50: number; q90: number; p: number },
+  asset: 'stock' | 'crypto' = 'stock',
 ) {
+  const benchmark =
+    asset === 'crypto' ? (symbol === 'BTC' ? 'SPY' : 'BTC') : symbol.endsWith('.TO') ? 'XIU.TO' : 'SPY'
   await sql`insert into predictions (run_id, symbol, asset_type, horizon_days, q10, q50, q90, p_beat, benchmark, model_version)
-            values (${runId}, ${symbol}, 'stock', ${horizon}, ${q.q10}, ${q.q50}, ${q.q90}, ${q.p},
-                    ${symbol.endsWith('.TO') ? 'XIU.TO' : 'SPY'}, 'test')`
+            values (${runId}, ${symbol}, ${asset}, ${horizon}, ${q.q10}, ${q.q50}, ${q.q90}, ${q.p}, ${benchmark}, 'test')`
 }
 
 /** A pick as stage 8 writes it; returns its id. */

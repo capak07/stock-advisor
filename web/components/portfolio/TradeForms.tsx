@@ -2,7 +2,7 @@
 
 import { FileUp, Link2, Minus, Plus, TriangleAlert } from 'lucide-react'
 import { useActionState, useCallback, useEffect, useMemo, useState } from 'react'
-import { addBuy, addSell } from '@/app/(app)/trades'
+import { addBuy, addSell, updateTrade } from '@/app/(app)/trades'
 import { Drawer } from '@/components/Drawer'
 import { ImportDrawer } from '@/components/portfolio/ImportDrawer'
 import { useFieldErrors } from '@/components/useFieldErrors'
@@ -12,6 +12,7 @@ import { fmtMoney, fmtQty } from '@/lib/format'
 import { FxRates, type FxRate } from '@/lib/portfolio/lookup'
 import { ACCOUNTS, ACCOUNT_LABELS, TAXABLE } from '@/lib/portfolio/types'
 import type { Account, Trade } from '@/lib/portfolio/types'
+import type { TradeLine } from '@/lib/portfolio/trade-list'
 import type { SellOption } from '@/lib/portfolio/view'
 import { normalizeSymbol, tradeCurrency } from '@/lib/symbols'
 import { parseAmount, type FormState } from '@/lib/trade-form'
@@ -381,6 +382,171 @@ function SellForm({ options, rates, today, onDone, onCancel }: FormProps & { opt
         )}
       </div>
       <Foot pending={pending} label="Save sell" onCancel={onCancel} />
+    </form>
+  )
+}
+
+/** A recorded trade, pre-filled, so a wrong quantity, price, date or note can be corrected in place. */
+export function EditTradeForm({
+  line,
+  rates,
+  today,
+  onDone,
+  onCancel,
+}: FormProps & { line: TradeLine }) {
+  const [state, action, pending] = useActionState<FormState, FormData>(updateTrade, {})
+  const { error, touch, editedSince } = useFieldErrors(state)
+  useDone(state, onDone)
+  const buy = line.side === 'buy'
+  const [account, setAccount] = useState<Account>(line.account)
+  const [symbol, setSymbol] = useState(line.symbol)
+  const [qty, setQty] = useState(String(line.qty))
+  const [price, setPrice] = useState(String(line.price))
+  const [day, setDay] = useState(line.day)
+  const [rate, setRate] = useState<string | null>(line.currency === 'USD' && line.fxRateCad !== null ? line.fxRateCad.toFixed(4) : null)
+  const [notes, setNotes] = useState(line.notes ?? '')
+  const [confirmed, setConfirmed] = useState(false)
+  const currency = buy ? tradeCurrency(account === 'crypto' ? 'crypto' : 'stock', normalizeSymbol(symbol)) : line.currency
+  const boc = useBocRate(rates, day)
+  const askConfirm = state.confirm && !editedSince('symbol') ? state.confirm : null
+
+  return (
+    <form action={action} style={{ display: 'contents' }} noValidate>
+      <div className="drawer-body">
+        <FormMessage state={state} />
+        <input type="hidden" name="side" value={line.side} />
+        <input type="hidden" name="id" value={line.id} />
+        {buy ? (
+          <>
+            <Field label="Account" error={error('account')}>
+              <select
+                className="select"
+                name="account"
+                value={account}
+                onChange={(e) => {
+                  setAccount(e.target.value as Account)
+                  touch('account')
+                }}
+              >
+                {ACCOUNTS.map((a) => (
+                  <option key={a} value={a}>
+                    {ACCOUNT_LABELS[a]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Symbol" error={error('symbol')} hint="US: AAPL · TSX: RY.TO · crypto: BTC">
+              <input
+                className="input num-input"
+                name="symbol"
+                autoCapitalize="characters"
+                value={symbol}
+                onChange={(e) => {
+                  setSymbol(e.target.value)
+                  setConfirmed(false)
+                  touch('symbol')
+                }}
+              />
+            </Field>
+          </>
+        ) : (
+          <p className="sub" style={{ margin: 0 }}>
+            {line.symbol} · {ACCOUNT_LABELS[line.account]}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Quantity" error={error('qty')}>
+            <input
+              className="input num-input"
+              name="qty"
+              inputMode="decimal"
+              value={qty}
+              onChange={(e) => {
+                setQty(e.target.value)
+                touch('qty')
+              }}
+            />
+          </Field>
+          <Field label={`Price (${currency})`} error={error('price')}>
+            <input
+              className="input num-input"
+              name="price"
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => {
+                setPrice(e.target.value)
+                touch('price')
+              }}
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Date" error={error('day')}>
+            <input
+              className="input num-input"
+              type="date"
+              name="day"
+              max={today}
+              value={day}
+              onChange={(e) => {
+                setDay(e.target.value)
+                touch('day')
+              }}
+            />
+          </Field>
+          {currency === 'USD' && (
+            <Field
+              label="USD/CAD rate"
+              error={error('fxRate')}
+              hint={boc.from ? `Bank of Canada, ${shortDay(boc.from)}` : 'Enter the rate.'}
+            >
+              <input
+                className="input num-input"
+                name="fxRate"
+                inputMode="decimal"
+                value={rate ?? boc.rate}
+                onChange={(e) => {
+                  setRate(e.target.value)
+                  touch('fxRate')
+                }}
+              />
+            </Field>
+          )}
+        </div>
+        {buy && (
+          <Field
+            label={
+              <>
+                Notes <span className="muted">(optional)</span>
+              </>
+            }
+            error={error('notes')}
+          >
+            <input
+              className="input"
+              name="notes"
+              value={notes}
+              onChange={(e) => {
+                setNotes(e.target.value)
+                touch('notes')
+              }}
+            />
+          </Field>
+        )}
+        {askConfirm && (
+          <div className="banner warn">
+            <TriangleAlert />
+            <div style={{ display: 'grid', gap: 8 }}>
+              <span>{askConfirm}</span>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" name="confirmUnlisted" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+                Save it anyway
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
+      <Foot pending={pending} label="Save changes" onCancel={onCancel} />
     </form>
   )
 }

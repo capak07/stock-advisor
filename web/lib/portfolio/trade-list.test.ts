@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays } from '../dates'
 import { FxRates } from './lookup'
-import { tradeList } from './trade-list'
+import { replaceTrade, tradeList } from './trade-list'
 import type { RecordedTrade } from './types'
 
 const FX = new FxRates([{ day: '2026-09-01', usdCad: 1.4 }])
@@ -16,6 +16,7 @@ const trade = (over: Partial<RecordedTrade>): RecordedTrade => ({
   currency: 'CAD',
   fxRateCad: null,
   day: '2026-09-02',
+  notes: null,
   ...over,
 })
 
@@ -83,5 +84,28 @@ describe('tradeList', () => {
     expect(lines).toHaveLength(5000)
     expect(lines.filter((l) => l.strandsSells)).toHaveLength(120)
     expect(took).toBeLessThan(1000)
+  })
+})
+
+describe('replaceTrade', () => {
+  it('accepts a price change that still covers later sells', () => {
+    const trades = [trade({ id: 1, qty: 10 }), trade({ id: 1, side: 'sell', qty: 4, day: '2026-09-20' })]
+    expect(replaceTrade(trades, trade({ id: 1, qty: 10, price: 180 }), FX)).toEqual({ ok: true })
+  })
+
+  it('refuses a buy that would leave a later sell with more than was held', () => {
+    const trades = [trade({ id: 1, qty: 10 }), trade({ id: 1, side: 'sell', qty: 8, day: '2026-09-20' })]
+    const result = replaceTrade(trades, trade({ id: 1, qty: 5 }), FX)
+    expect(result).toEqual({ error: 'RY.TO on 2026-09-20: sold 8 but held 5; counted as 5.' })
+  })
+
+  it('refuses a sell of more than is held', () => {
+    const trades = [trade({ id: 1, qty: 10 }), trade({ id: 2, side: 'sell', qty: 4, day: '2026-09-20' })]
+    const result = replaceTrade(trades, trade({ id: 2, side: 'sell', qty: 12, day: '2026-09-20' }), FX)
+    expect(result).toEqual({ error: 'RY.TO on 2026-09-20: sold 12 but held 10; counted as 10.' })
+  })
+
+  it('says when the trade is already gone', () => {
+    expect(replaceTrade([], trade({ id: 9 }), FX)).toEqual({ error: 'That buy was already gone.' })
   })
 })

@@ -70,7 +70,9 @@ export default async function PortfolioPage() {
       </section>
       <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} guides={guides} />
       {[...guides.values()].some((g) => (g.order?.steps.length ?? 0) + (g.stop?.steps.length ?? 0) > 0) && <OrderDisclaimer />}
-      {data.trades.length > 0 && <TradeList lines={tradeList(data.trades, data.fx)} />}
+      {data.trades.length > 0 && (
+        <TradeList lines={tradeList(data.trades, data.fx)} rates={[...data.fx.rates]} today={today} />
+      )}
     </main>
   )
 }

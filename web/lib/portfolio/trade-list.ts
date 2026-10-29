@@ -15,10 +15,44 @@ export interface TradeLine {
   qty: number
   price: number
   currency: Currency
+  /** CAD per USD, when the trade stored one. */
+  fxRateCad: number | null
   /** In CAD at the trade's own rate (or the Bank of Canada's for old USD trades); null if unknown. */
   amountCad: number | null
   /** Deleting this buy would leave a later sell with more than was held. */
   strandsSells: boolean
+  /** A buy's note; sells have none. */
+  notes: string | null
+}
+
+/** Problems in `after` that `before` didn't already have, so an edit can be refused for what it breaks. */
+export function addedProblems(before: readonly string[], after: readonly string[]): string[] {
+  const left = new Map<string, number>()
+  for (const problem of before) left.set(problem, (left.get(problem) ?? 0) + 1)
+  const added: string[] = []
+  for (const problem of after) {
+    const n = left.get(problem) ?? 0
+    if (n > 0) left.set(problem, n - 1)
+    else added.push(problem)
+  }
+  return added
+}
+
+/**
+ * The book with one stored trade replaced. Refuses a missing row, and an edit that would make the
+ * ledger drop or shorten a trade it previously counted.
+ */
+export function replaceTrade(
+  trades: readonly RecordedTrade[],
+  next: RecordedTrade,
+  fx: FxRates,
+): { ok: true } | { error: string } {
+  const index = trades.findIndex((t) => t.side === next.side && t.id === next.id)
+  if (index < 0) return { error: `That ${next.side} was already gone.` }
+  const updated = trades.map((t, i) => (i === index ? next : t))
+  const added = addedProblems(buildLedger(trades, fx).problems, buildLedger(updated, fx).problems)
+  if (added.length > 0) return { error: added[0] }
+  return { ok: true }
 }
 
 /**
@@ -56,8 +90,10 @@ export function tradeList(trades: readonly RecordedTrade[], fx: FxRates): TradeL
       qty: t.qty,
       price: t.price,
       currency: t.currency,
+      fxRateCad: t.fxRateCad,
       amountCad: tradeCad(t, fx),
       strandsSells: stranding.has(t),
+      notes: t.notes,
     }),
   )
   return lines.sort((a, b) => {

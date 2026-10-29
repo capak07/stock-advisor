@@ -21,7 +21,7 @@ interface TradeRow {
   fx_rate_cad: string | number | null
 }
 
-const toTrade = (side: Trade['side'], day: string, row: TradeRow): RecordedTrade => ({
+const toTrade = (side: Trade['side'], day: string, row: TradeRow, notes: string | null): RecordedTrade => ({
   id: row.id,
   side,
   account: row.account,
@@ -32,6 +32,7 @@ const toTrade = (side: Trade['side'], day: string, row: TradeRow): RecordedTrade
   currency: row.currency,
   fxRateCad: row.fx_rate_cad === null ? null : Number(row.fx_rate_cad),
   day,
+  notes,
 })
 
 const TRADE_COLUMNS = 'id, account, symbol, asset_type, qty, price, currency, fx_rate_cad'
@@ -39,7 +40,7 @@ const TRADE_COLUMNS = 'id, account, symbol, asset_type, qty, price, currency, fx
 /** Every buy (`lots`) and sell (`sells`), or only one asset's. Postgres numerics arrive as strings. */
 export async function loadTrades(supabase: Supabase, only?: AssetRef): Promise<RecordedTrade[]> {
   const lotsQuery = () => {
-    const query = supabase.from('lots').select(`${TRADE_COLUMNS}, bought_at`)
+    const query = supabase.from('lots').select(`${TRADE_COLUMNS}, notes, bought_at`)
     return only ? query.eq('symbol', only.symbol).eq('asset_type', only.assetType) : query
   }
   const sellsQuery = () => {
@@ -51,8 +52,8 @@ export async function loadTrades(supabase: Supabase, only?: AssetRef): Promise<R
     fetchAll((from, to) => sellsQuery().order('id').range(from, to)),
   ])
   return [
-    ...(lots as (TradeRow & { bought_at: string })[]).map((r) => toTrade('buy', r.bought_at, r)),
-    ...(sells as (TradeRow & { sold_at: string })[]).map((r) => toTrade('sell', r.sold_at, r)),
+    ...(lots as (TradeRow & { bought_at: string; notes: string | null })[]).map((r) => toTrade('buy', r.bought_at, r, r.notes)),
+    ...(sells as (TradeRow & { sold_at: string })[]).map((r) => toTrade('sell', r.sold_at, r, null)),
   ]
 }
 

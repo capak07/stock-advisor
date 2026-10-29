@@ -1,22 +1,25 @@
 'use client'
 
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { Fragment, useState, useTransition } from 'react'
 import { deleteTrade } from '@/app/(app)/trades'
+import { Drawer } from '@/components/Drawer'
+import { EditTradeForm } from '@/components/portfolio/TradeForms'
 import { useToast } from '@/components/Toast'
 import { longDay } from '@/lib/dates'
 import { fmtAmount, fmtPrice, fmtQty } from '@/lib/format'
+import type { FxRate } from '@/lib/portfolio/lookup'
 import type { TradeLine } from '@/lib/portfolio/trade-list'
 import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 
 const LATEST = 10
 
-/** Every buy and sell, newest first, each with Delete (Plan 5c). A mistaken trade is fixed by
- * deleting it and entering it again. */
-export function TradeList({ lines }: { lines: TradeLine[] }) {
+/** Every buy and sell, newest first, each with Edit and Delete. */
+export function TradeList({ lines, rates, today }: { lines: TradeLine[]; rates: FxRate[]; today: string }) {
   const toast = useToast()
   const [all, setAll] = useState(false)
   const [asking, setAsking] = useState<string | null>(null)
+  const [editing, setEditing] = useState<TradeLine | null>(null)
   const [pending, startTransition] = useTransition()
   const shown = all ? lines : lines.slice(0, LATEST)
 
@@ -46,7 +49,7 @@ export function TradeList({ lines }: { lines: TradeLine[] }) {
               <th className="r">Price</th>
               <th className="r">Amount C$</th>
               <th>
-                <span className="sr-only">Delete</span>
+                <span className="sr-only">Edit or delete</span>
               </th>
             </tr>
           </thead>
@@ -70,14 +73,27 @@ export function TradeList({ lines }: { lines: TradeLine[] }) {
                   </td>
                   <td className="t-del">
                     {asking !== line.key && (
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        aria-label={`Delete the ${line.side} of ${fmtQty(line.qty)} ${line.symbol} on ${longDay(line.day)}`}
-                        onClick={() => setAsking(line.key)}
-                      >
-                        <Trash2 />
-                      </button>
+                      <div className="trade-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Edit the ${line.side} of ${fmtQty(line.qty)} ${line.symbol} on ${longDay(line.day)}`}
+                          onClick={() => {
+                            setAsking(null)
+                            setEditing(line)
+                          }}
+                        >
+                          <Pencil />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Delete the ${line.side} of ${fmtQty(line.qty)} ${line.symbol} on ${longDay(line.day)}`}
+                          onClick={() => setAsking(line.key)}
+                        >
+                          <Trash2 />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -111,6 +127,26 @@ export function TradeList({ lines }: { lines: TradeLine[] }) {
           {all ? `Show the latest ${LATEST}` : `Show all ${lines.length}`}
         </button>
       )}
+      <Drawer
+        id="edit-trade"
+        title={editing?.side === 'sell' ? 'Edit this sell' : 'Edit this buy'}
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+      >
+        {editing && (
+          <EditTradeForm
+            key={editing.key}
+            line={editing}
+            rates={rates}
+            today={today}
+            onCancel={() => setEditing(null)}
+            onDone={(message) => {
+              setEditing(null)
+              toast(message)
+            }}
+          />
+        )}
+      </Drawer>
     </section>
   )
 }

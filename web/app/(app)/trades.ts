@@ -6,7 +6,9 @@ import { loadFx, loadTrades } from '@/lib/data/portfolio'
 import { isListedStock } from '@/lib/data/symbols'
 import { fmtQty } from '@/lib/format'
 import { buildLedger, positionKey } from '@/lib/portfolio/ledger'
+import { replaceTrade } from '@/lib/portfolio/trade-list'
 import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
+import type { RecordedTrade } from '@/lib/portfolio/types'
 import { createClient } from '@/lib/supabase/server'
 import { formFields, parseBuy, parseSell, type FormState } from '@/lib/trade-form'
 
@@ -77,6 +79,111 @@ export async function deleteTrade(side: 'buy' | 'sell', id: number): Promise<For
     message: `${side === 'buy' ? 'Buy' : 'Sell'} deleted: ${fmtQty(Number(row.qty))} ${row.symbol}`,
     at: Date.now(),
   }
+}
+
+/**
+ * Change a recorded buy or sell. A sell keeps its account and symbol. The edit is refused when it
+ * would leave a later sell with more than was held, or sell more than the position holds.
+ */
+export async function updateTrade(_: FormState, form: FormData): Promise<FormState> {
+  const fields = formFields(form)
+  const side = fields.side
+  const id = Number(fields.id)
+  if ((side !== 'buy' && side !== 'sell') || !Number.isSafeInteger(id) || id <= 0) {
+    return failed("That trade can't be edited.")
+  }
+  const supabase = await createClient()
+  const [trades, fx] = await Promise.all([loadTrades(supabase), loadFx(supabase)])
+  const current = trades.find((t) => t.side === side && t.id === id)
+  if (!current) return failed(`That ${side === 'buy' ? 'buy' : 'sell'} was already gone.`)
+
+  if (side === 'sell') {
+    fields.account = current.account
+    fields.symbol = current.symbol
+    fields.notes = ''
+  }
+  const parsed = parseBuy(fields, todayInToronto())
+  if ('errors' in parsed) return { errors: parsed.errors, at: Date.now() }
+  const buy = parsed.input
+
+  if (
+    side === 'buy' &&
+    buy.symbol !== current.symbol &&
+    buy.assetType === 'stock' &&
+    fields.confirmUnlisted !== 'on' &&
+    !(await isListedStock(supabase, buy.symbol))
+  ) {
+    return {
+      confirm: `${buy.symbol} isn't in the US or TSX stock lists (ETFs aren't listed). Check the symbol, or save it anyway.`,
+      at: Date.now(),
+    }
+  }
+
+  let rate = buy.fxRateCad
+  if (buy.currency === 'USD' && rate === null) {
+    rate = fx.on(buy.day)
+    if (rate === null) {
+      return { errors: { fxRate: 'No Bank of Canada rate on or before that day yet; enter the rate.' }, at: Date.now() }
+    }
+  }
+
+  const next: RecordedTrade =
+    side === 'buy'
+      ? {
+          id,
+          side,
+          account: buy.account,
+          symbol: buy.symbol,
+          assetType: buy.assetType,
+          qty: buy.qty,
+          price: buy.price,
+          currency: buy.currency,
+          fxRateCad: buy.currency === 'USD' ? rate : null,
+          day: buy.day,
+          notes: buy.notes,
+        }
+      : {
+          ...current,
+          qty: buy.qty,
+          price: buy.price,
+          day: buy.day,
+          fxRateCad: current.currency === 'USD' ? rate : null,
+        }
+  const check = replaceTrade(trades, next, fx)
+  if ('error' in check) return failed(check.error)
+
+  const shared = {
+    qty: next.qty,
+    price: next.price,
+    fx_rate_cad: next.fxRateCad,
+  }
+  const { data, error } =
+    side === 'buy'
+      ? await supabase
+          .from('lots')
+          .update({
+            ...shared,
+            account: next.account,
+            symbol: next.symbol,
+            asset_type: next.assetType,
+            currency: next.currency,
+            bought_at: next.day,
+            notes: next.notes,
+            ...(next.symbol !== current.symbol ? { pick_id: null } : {}),
+          })
+          .eq('id', id)
+          .select('symbol, qty')
+      : await supabase
+          .from('sells')
+          .update({ ...shared, sold_at: next.day })
+          .eq('id', id)
+          .select('symbol, qty')
+  if (error) return failed(`The ${side} wasn't saved: ${error.message}`)
+  const row = (data as { symbol: string; qty: string | number }[] | null)?.[0]
+  if (!row) return failed(`That ${side} was already gone.`)
+  revalidatePath('/')
+  const label = side === 'buy' ? 'Buy' : 'Sell'
+  return { ok: true, message: `${label} updated: ${fmtQty(Number(row.qty))} ${row.symbol}`, at: Date.now() }
 }
 
 /** Add a sell (a `sells` row), checked against what the ledger says is held. */

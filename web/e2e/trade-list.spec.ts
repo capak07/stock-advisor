@@ -49,6 +49,29 @@ test('the latest ten trades show until all are asked for', async ({ page }) => {
   await expect(rows(page)).toHaveCount(12)
 })
 
+test('a wrong price is corrected from the trade list', async ({ page }) => {
+  await lot(10, daysAgo(30))
+  await page.goto('/')
+  await page.getByRole('button', { name: `Edit the buy of 10 RY.TO on ${longDay(daysAgo(30))}` }).click()
+  const price = page.locator('#edit-trade input[name="price"]')
+  await price.fill('180')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByRole('status')).toHaveText('Buy updated: 10 RY.TO')
+  await expect(rows(page)).toContainText('1,800')
+  expect(await sql`select price::float as price from lots`).toEqual([{ price: 180 }])
+})
+
+test('editing a buy below what was later sold is refused', async ({ page }) => {
+  await lot(10, daysAgo(40))
+  await seedSell({ account: 'tfsa', symbol: 'RY.TO', asset_type: 'stock', qty: 8, price: 180, currency: 'CAD', sold_at: daysAgo(10) })
+  await page.goto('/')
+  await page.getByRole('button', { name: `Edit the buy of 10 RY.TO on ${longDay(daysAgo(40))}` }).click()
+  await page.locator('#edit-trade input[name="qty"]').fill('5')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.locator('#edit-trade').getByRole('alert')).toContainText('sold 8 but held 5')
+  expect(await sql`select qty::float as qty from lots`).toEqual([{ qty: 10 }])
+})
+
 test('the Delete confirmation spans the row, on desktop and on a phone', async ({ page }) => {
   await lot(10, daysAgo(40))
   await lot(5, daysAgo(30))

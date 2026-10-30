@@ -41,6 +41,15 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# capacitor
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/.idea/
+/android/captures/
+/mobile/server.url
+
 # playwright
 /test-results/
 /playwright-report/

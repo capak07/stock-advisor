@@ -13,9 +13,15 @@
     "db:start": "supabase start --workdir .. -x realtime,storage-api,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor",
     "db:stop": "supabase stop --workdir ..",
     "db:status": "supabase status --workdir ..",
-    "db:reset": "supabase db reset --workdir .."
+    "db:reset": "supabase db reset --workdir ..",
+    "android:sync": "cap sync android",
+    "android:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.0.1",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/status-bar": "8.0.1",
     "@supabase/ssr": "0.12.7",
     "@supabase/supabase-js": "2.117.2",
     "lucide-react": "1.50.0",
@@ -26,6 +32,7 @@
     "zod": "4.6.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.0",
     "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.19.1",

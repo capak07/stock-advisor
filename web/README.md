@@ -90,3 +90,14 @@ lists (ETFs) are left out unless ticked in. USD trades take the Bank of Canada r
 4. In Supabase, keep sign-ups off (Authentication → Sign In / Providers → Email: "Allow new users
    to sign up" off) and the owner's id in `app_config`, as in the root README's deployment steps.
 5. Deploy, then sign in with the owner's email and password.
+
+## Android
+
+The phone app is a Capacitor shell around the deployed dashboard. Sign-in, data and pages stay on
+that site. Android Studio builds the app; this repo does not contain an APK.
+
+1. Copy `mobile/server.url.example` to `mobile/server.url` and put the dashboard's URL on its own
+   line, for example `https://your-project.vercel.app`.
+2. `npm run android:sync`
+3. Open `android/` in Android Studio and run it on a phone or an emulator. The first build
+   downloads the Android SDK if it is not installed yet.

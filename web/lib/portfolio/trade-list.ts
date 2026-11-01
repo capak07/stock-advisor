@@ -26,6 +26,15 @@ export interface TradeLine {
 }
 
 /** Problems in `after` that `before` didn't already have, so an edit can be refused for what it breaks. */
+/**
+ * Whether an edited buy now names a different asset: another symbol, or the same symbol as another
+ * kind (a coin moved into a stock account). Such an edit is checked against the stock lists again,
+ * and loses its link to the pick it came from.
+ */
+export function buyChangedAsset(current: RecordedTrade, next: { symbol: string; assetType: AssetType }): boolean {
+  return next.symbol !== current.symbol || next.assetType !== current.assetType
+}
+
 export function addedProblems(before: readonly string[], after: readonly string[]): string[] {
   const left = new Map<string, number>()
   for (const problem of before) left.set(problem, (left.get(problem) ?? 0) + 1)

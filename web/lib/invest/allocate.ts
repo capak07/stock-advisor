@@ -211,15 +211,23 @@ function choose(input: InvestInput) {
   return chosen
 }
 
-/** Whole-dollar amounts summing exactly to the rounded parts' total; the difference goes to the largest. */
+/**
+ * Whole-dollar amounts that never go below zero and add up to the whole dollars of `total`: each
+ * part rounds down, then the dollars left go one each to the parts with the largest fractions (the
+ * earlier part on a tie). The last part is the uninvested line, which also takes the cents.
+ */
 function wholeDollars(parts: readonly number[], total: number): number[] {
-  const rounded = parts.map((p) => Math.round(p))
-  const diff = total - rounded.reduce((s, x) => s + x, 0)
-  if (diff !== 0 && rounded.length > 0) {
-    const largest = rounded.indexOf(Math.max(...rounded))
-    rounded[largest] += diff
+  const EPS = 1e-9 // 333.9999999 from a float split is 334
+  const floors = parts.map((p) => Math.floor(p + EPS))
+  let left = Math.floor(total + EPS) - floors.reduce((s, x) => s + x, 0)
+  const byFraction = parts.map((p, i) => i).sort((a, b) => (parts[b] - floors[b]) - (parts[a] - floors[a]) || a - b)
+  for (const i of byFraction) {
+    if (left <= 0) break
+    floors[i] += 1
+    left -= 1
   }
-  return rounded
+  if (floors.length > 0) floors[floors.length - 1] += total - Math.floor(total + EPS) // the cents
+  return floors
 }
 
 export function allocate(input: InvestInput): Allocation {

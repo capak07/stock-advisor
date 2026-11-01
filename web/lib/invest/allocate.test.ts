@@ -190,11 +190,24 @@ describe('allocate: splitting the money', () => {
     expect(out.stocks.map((l) => l.amount)).toEqual([400, 343, 257])
   })
 
-  it('puts the rounding difference on the largest line so the total matches', () => {
+  it('gives the dollars left after rounding down to the largest fractions, so the total matches', () => {
     const out = allocate(input([stock('A.TO', { vol60: 0.3 }), stock('B.TO', { vol60: 0.3 }), stock('C.TO', { vol60: 0.3 })]))
     const total = out.stocks.reduce((s, l) => s + l.amount, 0) + out.uninvested
     expect(total).toBe(1000)
     expect(out.stocks.map((l) => l.amount)).toEqual([334, 333, 333])
+  })
+
+  it('never gives a line less than nothing when the amount is small', () => {
+    const five = ['A.TO', 'B.TO', 'C.TO', 'D.TO', 'E.TO'].map((s) => stock(s, { vol60: 0.3 }))
+    const out = allocate(input(five, { amount: 3, stocks: 5 }))
+    expect(out.stocks.map((l) => l.amount)).toEqual([1, 1, 1, 0, 0])
+    expect(out.uninvested).toBe(0)
+  })
+
+  it('keeps every line in whole dollars, leaving the cents uninvested', () => {
+    const out = allocate(input([stock('A.TO', { vol60: 0.3 }), stock('B.TO', { vol60: 0.3 }), stock('C.TO', { vol60: 0.3 })], { amount: 1000.5 }))
+    expect(out.stocks.map((l) => l.amount)).toEqual([334, 333, 333])
+    expect(out.uninvested).toBeCloseTo(0.5)
   })
 
   it('leaves the money uninvested when nothing is expected to beat its benchmark', () => {

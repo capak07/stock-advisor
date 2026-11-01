@@ -37,3 +37,7 @@ export const fmtPrice = (value: number, currency: 'CAD' | 'USD'): string => {
 /** Quantities keep up to 8 decimals for coins: "10", "0.5", "1.25". */
 export const fmtQty = (value: number): string =>
   value.toLocaleString('en-CA', { maximumFractionDigits: 8 })
+
+/** A number as an input box should hold it: plain decimals (never `1e-7`), no grouping, no rounding a coin quantity away. */
+export const plainNumber = (value: number): string =>
+  value.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 })

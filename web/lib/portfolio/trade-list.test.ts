@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { addDays } from '../dates'
 import { FxRates } from './lookup'
-import { replaceTrade, tradeList } from './trade-list'
+import { buyChangedAsset, replaceTrade, tradeList } from './trade-list'
 import type { RecordedTrade } from './types'
 
 const FX = new FxRates([{ day: '2026-09-01', usdCad: 1.4 }])
@@ -107,5 +107,17 @@ describe('replaceTrade', () => {
 
   it('says when the trade is already gone', () => {
     expect(replaceTrade([], trade({ id: 9 }), FX)).toEqual({ error: 'That buy was already gone.' })
+  })
+})
+
+
+describe('buyChangedAsset', () => {
+  const btc = trade({ account: 'crypto', symbol: 'BTC', assetType: 'crypto', currency: 'CAD' })
+  it('is true when an edit changes the symbol or turns a coin into a stock', () => {
+    expect(buyChangedAsset(btc, { symbol: 'ETH', assetType: 'crypto' })).toBe(true)
+    expect(buyChangedAsset(btc, { symbol: 'BTC', assetType: 'stock' })).toBe(true)
+  })
+  it('is false when only the amount, price or day changes', () => {
+    expect(buyChangedAsset(btc, { symbol: 'BTC', assetType: 'crypto' })).toBe(false)
   })
 })

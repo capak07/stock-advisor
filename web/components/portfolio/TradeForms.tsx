@@ -8,7 +8,7 @@ import { ImportDrawer } from '@/components/portfolio/ImportDrawer'
 import { useFieldErrors } from '@/components/useFieldErrors'
 import { useToast } from '@/components/Toast'
 import { shortDay } from '@/lib/dates'
-import { fmtMoney, fmtQty } from '@/lib/format'
+import { fmtMoney, fmtQty, plainNumber } from '@/lib/format'
 import { FxRates, type FxRate } from '@/lib/portfolio/lookup'
 import { ACCOUNTS, ACCOUNT_LABELS, TAXABLE } from '@/lib/portfolio/types'
 import type { Account, Trade } from '@/lib/portfolio/types'
@@ -400,8 +400,8 @@ export function EditTradeForm({
   const buy = line.side === 'buy'
   const [account, setAccount] = useState<Account>(line.account)
   const [symbol, setSymbol] = useState(line.symbol)
-  const [qty, setQty] = useState(String(line.qty))
-  const [price, setPrice] = useState(String(line.price))
+  const [qty, setQty] = useState(plainNumber(line.qty))
+  const [price, setPrice] = useState(plainNumber(line.price))
   const [day, setDay] = useState(line.day)
   const [rate, setRate] = useState<string | null>(line.currency === 'USD' && line.fxRateCad !== null ? line.fxRateCad.toFixed(4) : null)
   const [notes, setNotes] = useState(line.notes ?? '')

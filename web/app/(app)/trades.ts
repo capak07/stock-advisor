@@ -6,7 +6,7 @@ import { loadFx, loadTrades } from '@/lib/data/portfolio'
 import { isListedStock } from '@/lib/data/symbols'
 import { fmtQty } from '@/lib/format'
 import { buildLedger, positionKey } from '@/lib/portfolio/ledger'
-import { replaceTrade } from '@/lib/portfolio/trade-list'
+import { buyChangedAsset, replaceTrade } from '@/lib/portfolio/trade-list'
 import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 import type { RecordedTrade } from '@/lib/portfolio/types'
 import { createClient } from '@/lib/supabase/server'
@@ -108,7 +108,7 @@ export async function updateTrade(_: FormState, form: FormData): Promise<FormSta
 
   if (
     side === 'buy' &&
-    buy.symbol !== current.symbol &&
+    buyChangedAsset(current, buy) &&
     buy.assetType === 'stock' &&
     fields.confirmUnlisted !== 'on' &&
     !(await isListedStock(supabase, buy.symbol))
@@ -169,7 +169,7 @@ export async function updateTrade(_: FormState, form: FormData): Promise<FormSta
             currency: next.currency,
             bought_at: next.day,
             notes: next.notes,
-            ...(next.symbol !== current.symbol ? { pick_id: null } : {}),
+            ...(buyChangedAsset(current, next) ? { pick_id: null } : {}),
           })
           .eq('id', id)
           .select('symbol, qty')

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, daysBetween, longDay, shortDay, todayInToronto } from './dates'
-import { fmtAmount, fmtMoney, fmtPct, fmtPrice, fmtQty } from './format'
+import { fmtAmount, fmtMoney, fmtPct, fmtPrice, fmtQty, plainNumber } from './format'
 
 describe('formats', () => {
   it('writes percentages with a sign and a real minus', () => {
@@ -45,5 +45,15 @@ describe('dates', () => {
   it("gives today's date in Toronto", () => {
     // 02:30 UTC on Oct 17 is still Oct 16 in Toronto (EDT, UTC−4).
     expect(todayInToronto(new Date('2026-10-17T02:30:00Z'))).toBe('2026-10-16')
+  })
+})
+
+
+describe('plainNumber', () => {
+  it('writes a number for an input box: no exponent, no grouping, every digit kept', () => {
+    expect(plainNumber(1e-7)).toBe('0.0000001')
+    expect(plainNumber(0.00012345)).toBe('0.00012345')
+    expect(plainNumber(12500)).toBe('12500')
+    expect(plainNumber(10.147)).toBe('10.147')
   })
 })

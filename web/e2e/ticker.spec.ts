@@ -70,6 +70,23 @@ test("a held stock's page shows its price, the position, the last two days of ne
   await expect(sources.getByText('Not available for TSX stocks: sec_8k, sec_form4.')).toBeVisible()
 })
 
+test("on a weekend, the news shows the headlines behind the last run's counts, not an empty list", async ({ page }) => {
+  // Friday's run was the last: 60 hours ago. Its counts cover the 48 hours before it started.
+  const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 60 * 3_600_000).toISOString() })
+  await seedFeatures(runId, 'RY.TO', 'stock', { news_stories_48h: 1, news_outlets_48h: 1, news_sentiment_mean: 0.4, news_sentiment_trend: null })
+  await seedNews([
+    { symbol: 'RY.TO', asset_type: 'stock', hoursAgo: 62, outlet: 'Globe', url: 'https://example.com/friday', title: 'RBC beats estimates', sentiment: 0.4 },
+    { symbol: 'RY.TO', asset_type: 'stock', hoursAgo: 120, outlet: 'Globe', url: 'https://example.com/older', title: 'An RBC story from before the window', sentiment: 0.1 },
+  ])
+
+  await page.goto('/ticker/RY.TO')
+  const news = page.getByRole('region', { name: 'News' })
+  await expect(news.locator('.kpi').first()).toHaveText('Stories1')
+  await expect(news.locator('.news-item')).toHaveCount(1)
+  await expect(news.getByRole('link', { name: 'RBC beats estimates' })).toBeVisible()
+  await expect(news.getByText(/The headlines and counts cover the 48 hours before the .* run\./)).toBeVisible()
+})
+
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
 
 /** A published run that forecast RY.TO at 21 and 63 days, explained at 63. */

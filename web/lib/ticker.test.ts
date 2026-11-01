@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays } from './dates'
 import { FxRates } from './portfolio/lookup'
 import type { Close } from './portfolio/types'
-import { fmtScore, inRange, lastMove, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
+import { fmtScore, headlineSince, inRange, lastMove, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
 
 const FX = new FxRates([
   { day: '2026-10-01', usdCad: 1.4 },
@@ -84,5 +84,17 @@ describe('news', () => {
   it('writes scores with a sign and colours them past ±0.2', () => {
     expect([fmtScore(0.25), fmtScore(-0.224), fmtScore(0), fmtScore(-0.001)]).toEqual(['+0.25', '−0.22', '+0.00', '+0.00'])
     expect([tone(0.25), tone(-0.22), tone(0.08), tone(null)]).toEqual(['pos', 'neg', 'neu', 'neu'])
+  })
+})
+
+describe('headlineSince', () => {
+  const now = new Date('2026-11-01T22:00:00Z') // a Sunday evening: the last run was Friday's
+
+  it("starts 48 hours before the run whose counts the page shows, not before now", () => {
+    expect(headlineSince({ started_at: '2026-10-30T13:00:00Z' }, now)).toBe('2026-10-28T13:00:00.000Z')
+  })
+
+  it('starts 48 hours before now when there is no run yet', () => {
+    expect(headlineSince(null, now)).toBe('2026-10-30T22:00:00.000Z')
   })
 })

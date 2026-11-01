@@ -76,6 +76,19 @@ export function lastMove(series: PriceSeries): LastMove | null {
 export const tickerHref = (symbol: string, assetType: AssetType): string =>
   `/ticker/${encodeURIComponent(symbol)}${assetType === 'crypto' ? '?asset=crypto' : ''}`
 
+/** The news stage reads two days of feeds (spec §4.2). */
+export const NEWS_HOURS = 48
+
+/**
+ * Where the headline list starts: 48 hours before the run whose news counts the page shows, so the
+ * list and the counts describe the same stories. Counting back from now emptied the list on a
+ * weekend, when the latest run was Friday's; with no run yet, it's 48 hours before now.
+ */
+export function headlineSince(run: { started_at: string } | null, now: Date): string {
+  const end = run ? new Date(run.started_at) : now
+  return new Date(end.getTime() - NEWS_HOURS * 3_600_000).toISOString()
+}
+
 /** Only web links: a headline's link is never allowed to run script. */
 export function safeLink(url: string): string | null {
   try {

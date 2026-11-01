@@ -43,7 +43,7 @@ export function NewsCard({ headlines, kpis, source }: { headlines: HeadlineView[
       )}
       {headlines.length === 0 ? (
         <p className="sub" style={{ margin: '6px 0 0' }}>
-          No headlines in the last 48 hours.
+          {source ? `No headlines in the 48 hours before the ${source} run.` : 'No headlines in the last 48 hours.'}
         </p>
       ) : (
         <div className="stagger" id="headlines">
@@ -72,7 +72,7 @@ export function NewsCard({ headlines, kpis, source }: { headlines: HeadlineView[
       )}
       <p className="sub" style={{ margin: '8px 0 0' }}>
         Headlines link to the publisher. Google News links open Google&apos;s redirect page. Sentiment is FinBERT, from
-        −1 to +1.{source && ` The counts are from the ${source} run.`}
+        −1 to +1.{source && ` The headlines and counts cover the 48 hours before the ${source} run.`}
       </p>
     </section>
   )

@@ -7,6 +7,7 @@ import type { Run } from '../runs'
 import { isValidSymbol, marketOf } from '../symbols'
 import type { Supabase } from '../supabase/server'
 import { withLiveClose } from '../quotes'
+import { headlineSince } from '../ticker'
 import { fetchAll, must } from './fetch'
 import { liveQuotes } from './quotes'
 import type { Catalyst, Factor, Style } from './picks'
@@ -16,8 +17,6 @@ import { isListedStock } from './symbols'
 
 /** A year of trading days and the close before it, with room for holidays. */
 const HISTORY_DAYS = 400
-/** The news stage reads two days of feeds (spec §4.2). */
-const NEWS_HOURS = 48
 const MAX_HEADLINES = 200
 
 export interface Headline {
@@ -109,8 +108,10 @@ const toNumber = (value: unknown): number | null => (typeof value === 'number' &
 /** Everything the Ticker page shows for one asset. */
 export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<TickerData> {
   const since = addDays(todayInToronto(), -HISTORY_DAYS)
-  const newsSince = new Date(Date.now() - NEWS_HOURS * 3_600_000).toISOString()
-  const [info, closes, fx, headlines, run, watch, trades] = await Promise.all([
+  // the headlines follow the run whose counts are shown, so the run comes first
+  const run = await lastPublishedRun(supabase)
+  const newsSince = headlineSince(run, new Date())
+  const [info, closes, fx, headlines, watch, trades] = await Promise.all([
     supabase.from('symbols').select('name, market, exchange, active').eq('asset_type', ref.assetType).eq('symbol', ref.symbol).limit(1),
     fetchAll((from, to) =>
       supabase
@@ -132,7 +133,6 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
       .order('published_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(MAX_HEADLINES),
-    lastPublishedRun(supabase),
     supabase.from('watchlist').select('symbol').eq('asset_type', ref.assetType).eq('symbol', ref.symbol).limit(1),
     loadTrades(supabase, ref),
   ])

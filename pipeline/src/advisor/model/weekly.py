@@ -177,7 +177,7 @@ def _train_market(
     mean_rank_ic = _mean_or_nan([m["rank_ic"] for m in wf.metrics.values()])
     importance = {}
     for h in model.horizons:
-        gain = model.boosters[h]["beat"].feature_importance("gain")
+        gain = model.boosters[h][model.p_source].feature_importance("gain")
         top = sorted(zip(model.features, gain, strict=True), key=lambda p: -p[1])[:TOP_FEATURES]
         importance[h] = {name: float(g) for name, g in top}
     metrics = json_safe({

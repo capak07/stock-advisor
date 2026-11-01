@@ -1,7 +1,8 @@
 """Walk-forward training of one market's stock model, its calibration, and its files.
 
-Per horizon: three quantile boosters (the excess-return range) and one binary booster (beats the
-benchmark?). The walk-forward predicts each test period with boosters trained only on rows whose
+Per horizon: three quantile boosters (the excess-return range) and one booster whose calibrated
+score is P(beat): a binary classifier (beats the benchmark?) or, with the ranker (spec §8), a
+booster that learns each stock's rank among that day's stocks. The walk-forward predicts each test period with boosters trained only on rows whose
 targets ended before it, and calibrates each period on earlier periods' predictions, so every
 metric is out of sample. The final model trains on every row with a target.
 """
@@ -28,7 +29,9 @@ PARAMS = {
 MIN_BIN = 500  # rows per bin that set the calibration's floor and ceiling
 SCREENER_HORIZON = 21
 QUANTILE_NAMES = tuple(f"q{round(q * 100)}" for q in QUANTILES)
-PARTS = (*QUANTILE_NAMES, "beat")
+# the ranking booster learns slower than the others; laid over the train config's params (spec §8)
+RANK_SETTINGS = {"learning_rate": 0.03, "num_leaves": 15}
+RANK_ROUNDS = 400
 
 
 @dataclass(frozen=True)
@@ -270,6 +273,16 @@ class WalkForward:
     folds: list[Fold] = field(default_factory=list)
     fallback_count: int = 0
     alpha_rank_ic: float | None = None
+    ranker: bool = False  # P and `score` come from the ranking booster
+
+
+def daily_rank(rows: pd.DataFrame, target: str) -> pd.Series:
+    """Each row's percentile rank of `target` among that day's rows, minus 0.5; NaN stays NaN.
+
+    Only the same day's targets enter a row's rank, and they all end on the same session, so the
+    rank is known exactly when the row's own target is.
+    """
+    return rows[target].groupby(rows["day"]).rank(pct=True, method="average") - 0.5
 
 
 def _fit(x: pd.DataFrame, y: np.ndarray, config: TrainConfig, **objective) -> lgb.Booster:
@@ -277,16 +290,22 @@ def _fit(x: pd.DataFrame, y: np.ndarray, config: TrainConfig, **objective) -> lg
 
 
 def _fit_horizon(
-    x: pd.DataFrame, y: pd.Series, config: TrainConfig, beat: pd.Series | None = None
+    x: pd.DataFrame, y: pd.Series, config: TrainConfig, beat: pd.Series | None = None,
+    rank: pd.Series | None = None,
 ) -> dict[str, lgb.Booster]:
-    """Quantile boosters learn `y`. The beat booster learns `beat > 0` when that series is given,
-    and `y > 0` otherwise."""
+    """Quantile boosters learn `y`. With `rank`, a ranking booster learns it in place of the beat
+    booster; otherwise the beat booster learns `beat > 0` when that series is given, and `y > 0`
+    otherwise."""
     labels = y if beat is None else beat
     boosters = {
         name: _fit(x, y.to_numpy(), config, objective="quantile", alpha=q)
         for name, q in zip(QUANTILE_NAMES, QUANTILES, strict=True)
     }
-    boosters["beat"] = _fit(x, (labels > 0).astype(int).to_numpy(), config, objective="binary")
+    if rank is not None:
+        params = config.params | RANK_SETTINGS | {"objective": "quantile", "alpha": 0.5}
+        boosters["rank"] = lgb.train(params, lgb.Dataset(x, rank.to_numpy()), num_boost_round=RANK_ROUNDS)
+    else:
+        boosters["beat"] = _fit(x, (labels > 0).astype(int).to_numpy(), config, objective="binary")
     return boosters
 
 
@@ -314,7 +333,7 @@ def _predict(boosters: Mapping[str, lgb.Booster], x: pd.DataFrame) -> pd.DataFra
     # boosters fitted separately can cross; a range must still read low <= mid <= high
     quantiles = np.sort(np.column_stack([boosters[name].predict(x) for name in QUANTILE_NAMES]), axis=1)
     out = pd.DataFrame(quantiles, index=x.index, columns=list(QUANTILE_NAMES))
-    out["p_raw"] = boosters["beat"].predict(x)
+    out["p_raw"] = boosters["rank" if "rank" in boosters else "beat"].predict(x)
     return out
 
 
@@ -325,7 +344,7 @@ def _metrics(scored: pd.DataFrame) -> dict:
     return {
         "calibration_pts": float(np.average(gaps, weights=weights)),
         "max_bin_gap_pts": float(gaps.max()),
-        "rank_ic": rank_ic(scored, "q50", "y"),
+        "rank_ic": rank_ic(scored, "score", "y"),
         "coverage_10_90": float(inside.mean()),
         "base_rate": float(beat.mean()),
     }
@@ -337,6 +356,7 @@ def walk_forward(
     folds: Sequence[Fold] | None = None,
     known_before: pd.Timestamp | None = None,
     factor_names: Sequence[str] | None = None,
+    ranker: bool = False,
 ) -> WalkForward:
     """Out-of-sample predictions per fold (default: `make_folds`).
 
@@ -344,6 +364,8 @@ def walk_forward(
     inside a later period's training span never score an outcome from that period.
     With `factor_names`, the quantile boosters learn the factor-adjusted target and the published
     range adds back that fold's mean factor premium. The beat booster still learns `y_h > 0`.
+    With `ranker`, a ranking booster learns `daily_rank` in place of the beat booster, and its
+    score ranks (`score`) and is calibrated into P. Otherwise `score` is the published q50.
     """
     rows = data.rows
     names = tuple(factor_names or ())
@@ -357,6 +379,7 @@ def walk_forward(
     for h in config.horizons:
         target = f"y_{h}"
         alpha = alpha_target(rows, h, names) if names else None
+        rank = daily_rank(rows, target) if ranker else None
         parts = []
         for k, fold in enumerate(folds):
             train = training_rows(rows, data.calendar, h, fold.start)
@@ -366,11 +389,14 @@ def walk_forward(
             test = rows[in_fold]
             if train.empty or test.empty:  # the last periods of long horizons have no targets yet
                 continue
+            ranks = None if rank is None else rank.loc[train.index]
             if names:
-                boosters = _fit_horizon(train[feat], alpha.loc[train.index], config, beat=train[target])
+                boosters = _fit_horizon(
+                    train[feat], alpha.loc[train.index], config, beat=train[target], rank=ranks
+                )
                 mu = {name: _finite_mean(train[f"f_{name}_{h}"]) for name in names}
             else:
-                boosters = _fit_horizon(train[feat], train[target], config)
+                boosters = _fit_horizon(train[feat], train[target], config, rank=ranks)
                 mu = {}
             raw = _predict(boosters, test[feat])
             if names:
@@ -396,6 +422,7 @@ def walk_forward(
             here = pred["fold"] == k
             pred.loc[here, "p"] = calibrator(pred.loc[here, "p_raw"].to_numpy())
         pred, ranges = calibrate_ranges(pred, data.calendar, h, folds)
+        pred["score"] = pred["p_raw"] if ranker else pred["q50"]  # what this model ranks by
         frames.append(pred)
         scored = pred[pred["p"].notna()]
         if not scored.empty:
@@ -403,14 +430,14 @@ def walk_forward(
     extra = ["q50_alpha", "alpha"] if names else []
     columns = [
         "day", "symbol", "sector", "dollar_volume_20", *jump, "horizon", "fold", "y", *QUANTILE_NAMES, *RAW_NAMES,
-        "p_raw", "p", *extra,
+        "p_raw", "p", "score", *extra,
     ]
     predictions = pd.concat(frames, ignore_index=True)[columns] if frames else pd.DataFrame(columns=columns)
     alpha_ic = None
     if names and not predictions.empty:
         comparable = predictions.dropna(subset=["q50_alpha", "alpha"])
         alpha_ic = rank_ic_by_horizon(comparable, "q50_alpha", "alpha") if not comparable.empty else float("nan")
-    return WalkForward(predictions, metrics, folds, fallbacks, alpha_ic)
+    return WalkForward(predictions, metrics, folds, fallbacks, alpha_ic, ranker)
 
 
 @dataclass(frozen=True)
@@ -427,6 +454,7 @@ class FinalModel:
     mu: dict = field(default_factory=dict)  # horizon → factor → mean forward return
     betas: dict = field(default_factory=dict)  # symbol → factor → latest beta
     ranges: dict = field(default_factory=dict)  # horizon → RangeCalibrator of the edges that beat the raw ones
+    p_source: str = "beat"  # the booster P is calibrated from: "beat", or "rank" (spec §8)
 
     def _with_betas(self, x: pd.DataFrame) -> pd.DataFrame:
         if not self.factor_names:
@@ -502,6 +530,8 @@ def fit_final(
     names = tuple(factor_names or ())
     feat = list(data.features) + [f"beta_{name}" for name in names]
     boosters, calibrators, ranges = {}, {}, {}
+    # the calibrators were fitted on the walk-forward's scores, so the final boosters follow it
+    ranker = wf.ranker
     for h in config.horizons:
         oos = wf.predictions[(wf.predictions["horizon"] == h) & (wf.predictions["fold"] > 0)]
         if oos.empty:
@@ -512,10 +542,13 @@ def fit_final(
         if edges:
             ranges[h] = RangeCalibrator.fit(_as_range(oos, RAW_NAMES).assign(y=oos["y"]), names=edges)
         train = rows[rows[f"y_{h}"].notna()]
+        ranks = daily_rank(train, f"y_{h}") if ranker else None
         if names:
-            boosters[h] = _fit_horizon(train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"])
+            boosters[h] = _fit_horizon(
+                train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"], rank=ranks
+            )
         else:
-            boosters[h] = _fit_horizon(train[feat], train[f"y_{h}"], config)
+            boosters[h] = _fit_horizon(train[feat], train[f"y_{h}"], config, rank=ranks)
     screener_features = PRICE_FEATURES + RS_FEATURES
     if not set(screener_features) <= set(data.features):  # coins have no sector features
         screener_features = list(data.features)
@@ -533,7 +566,7 @@ def fit_final(
     betas = _latest_betas(rows, names) if names else {}
     return FinalModel(
         feat, tuple(config.horizons), boosters, calibrators, screener, screener_features,
-        dict(config.params), config.rounds, names, mu, betas, ranges,
+        dict(config.params), config.rounds, names, mu, betas, ranges, "rank" if ranker else "beat",
     )
 
 
@@ -548,13 +581,14 @@ def _unpack(blob: bytes) -> str:
 def to_files(model: FinalModel) -> dict[str, bytes]:
     files = {
         f"h{h}_{part}": _pack(model.boosters[h][part].model_to_string())
-        for h in model.horizons for part in PARTS
+        for h in model.horizons for part in (*QUANTILE_NAMES, model.p_source)
     }
     files["screener"] = _pack(model.screener.model_to_string())
     files["calibration"] = _pack(json.dumps({str(h): c.to_json() for h, c in model.calibrators.items()}))
     files["meta"] = _pack(json.dumps({
         "features": model.features, "screener_features": model.screener_features,
         "horizons": list(model.horizons), "params": model.params, "rounds": model.rounds,
+        "p_source": model.p_source,
     }))
     if model.ranges:
         files["ranges"] = _pack(json.dumps({str(h): r.to_json() for h, r in model.ranges.items()}))
@@ -571,6 +605,7 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
     meta = json.loads(_unpack(files["meta"]))
     horizons = tuple(meta["horizons"])
     calibration = json.loads(_unpack(files["calibration"]))
+    p_source = meta.get("p_source", "beat")  # a model saved before the ranker has a beat booster
 
     def booster(name: str) -> lgb.Booster:
         return lgb.Booster(model_str=_unpack(files[name]))
@@ -587,11 +622,12 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
         factor_names, mu, betas = (), {}, {}
     return FinalModel(
         meta["features"], horizons,
-        {h: {part: booster(f"h{h}_{part}") for part in PARTS} for h in horizons},
+        {h: {part: booster(f"h{h}_{part}") for part in (*QUANTILE_NAMES, p_source)} for h in horizons},
         {h: Calibrator.from_json(calibration[str(h)]) for h in horizons},
         booster("screener"), meta["screener_features"], meta["params"], meta["rounds"],
         factor_names, mu, betas,
         # a model saved before range calibration has no `ranges` file and keeps its raw ranges
         {int(h): RangeCalibrator.from_json(d) for h, d in json.loads(_unpack(files["ranges"])).items()}
         if "ranges" in files else {},
+        p_source,
     )

@@ -50,6 +50,7 @@ from advisor.store.db import connect
 ABLATIONS: dict[str, ModelConfig | None] = {
     "baseline": BASELINE,
     "factors": ModelConfig(factors=True),
+    "ranker": ModelConfig(ranker=True),
     "garch": ModelConfig(garch=True),
     "factors+garch": ModelConfig(factors=True, garch=True),
     "full+policy": None,
@@ -69,6 +70,15 @@ def _model_name(stored: Mapping[str, Any]) -> str | None:
         return replace(ModelConfig.from_json(stored), policy=None).name
     except ValueError:
         return None
+
+
+def _same_config(stored: Mapping[str, Any], active: Mapping[str, Any]) -> bool:
+    """Whether two stored configs mean the same thing: an active config saved as version 1 equals
+    the same config written now. One this code can't read is never the same."""
+    try:
+        return ModelConfig.from_json(stored) == ModelConfig.from_json(active)
+    except ValueError:
+        return False
 
 
 def _policy_row(
@@ -187,7 +197,7 @@ def _benchmark_market(
 
     repo.write_benchmark_results(conn, run_id, results)
     stored = replace(model_config, policy=policy).to_json()
-    if active is not None and stored == active.config:
+    if active is not None and _same_config(stored, active.config):
         accepted = {"changed": False, "reason": "unchanged", "config": active.config}
     else:
         if policy is not None:

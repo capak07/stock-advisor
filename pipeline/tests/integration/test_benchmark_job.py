@@ -22,6 +22,7 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     tsx = report["markets"]["TSX"]
     assert tsx["chosen"] == "baseline" and tsx["accepted"]["changed"] is True
     assert tsx["variants"]["factors"]["status"] == "run"
+    assert tsx["variants"]["ranker"]["status"] == "run"
     assert tsx["variants"]["garch"] == {"status": "not built", "plan": "Plan 6d"}
     assert tsx["variants"]["full+policy"]["status"] == "run"
     assert tsx["variants"]["baseline"]["status"] == "run"
@@ -35,6 +36,7 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     assert active.benchmark_run_id == run["id"]
     text = render_markdown(report)  # the real report renders, with nothing unmeasured shown as nan
     assert "| baseline | run |" in text and "| garch | arrives with Plan 6d |" in text
+    assert "| ranker | run |" in text
     policy_folds = {r["fold"] for r in db.execute("select fold from benchmark_results where variant = 'full+policy'").fetchall()}
     assert policy_folds == {"1", "2", "3", "pooled"}
     assert {"default", "candidate"} <= set(tsx["variants"]["full+policy"]["policy"])
@@ -47,6 +49,20 @@ def test_a_second_benchmark_keeps_the_accepted_config(db, tmp_path):
     first = repo.active_config(db, "TSX").id
     report = job.run(tmp_path, [Market.TSX], db, NOW + timedelta(days=28), None, FAST)
     assert report["markets"]["TSX"]["accepted"]["changed"] is False
+    assert repo.active_config(db, "TSX").id == first
+    assert db.execute("select count(*) as n from accepted_configs").fetchone()["n"] == 1
+
+
+def test_a_kept_version_1_config_is_unchanged(db, tmp_path, monkeypatch):
+    # configs accepted before Plan 6f are stored as version 1; keeping one is not a change
+    write_market(tmp_path, Market.TSX, stocks=40)
+    monkeypatch.setattr(job, "ABLATIONS", {"baseline": BASELINE, "full+policy": None})
+    run_id = repo.start_benchmark_run(db, NOW, None)
+    v1 = {"version": 1, "factors": False, "garch": False, "policy": None}
+    first = repo.accept_config(db, "TSX", v1, "test", run_id, NOW)
+    report = job.run(tmp_path, [Market.TSX], db, NOW + timedelta(days=28), None, FAST)
+    tsx = report["markets"]["TSX"]
+    assert tsx["chosen"] == "baseline" and tsx["accepted"]["changed"] is False
     assert repo.active_config(db, "TSX").id == first
     assert db.execute("select count(*) as n from accepted_configs").fetchone()["n"] == 1
 

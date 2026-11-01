@@ -105,6 +105,7 @@ def test_ablation_rows_print_in_a_fixed_order_whatever_order_the_dict_arrives_in
     messy["markets"]["TSX"]["variants"] = {
         "garch": not_built,
         "factors": not_built,
+        "ranker": not_built,
         "baseline": baseline,
         "full+policy": not_built,
         "factors+garch": not_built,
@@ -115,7 +116,7 @@ def test_ablation_rows_print_in_a_fixed_order_whatever_order_the_dict_arrives_in
         for line in ablation.splitlines()
         if line.startswith("| ") and "Variant" not in line and "---" not in line
     ]
-    assert names == ["baseline", "factors", "garch", "factors+garch", "full+policy"]
+    assert names == ["baseline", "factors", "ranker", "garch", "factors+garch", "full+policy"]
 
 
 def _score(pooled: dict) -> dict:

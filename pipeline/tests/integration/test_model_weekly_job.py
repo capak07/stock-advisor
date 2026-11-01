@@ -71,6 +71,15 @@ def test_weekly_training_follows_the_accepted_config(db, tmp_path):
     assert report["TSX"]["config_reason"] == f"accepted configuration #{config_id} (baseline)"
 
 
+def test_weekly_training_follows_an_accepted_ranker_config(db, tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    _accept(db, "TSX", {"version": 2, "factors": False, "garch": False, "ranker": True, "policy": None})
+    report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    assert report["TSX"]["config"] == "ranker"
+    files = repo.load_model_files(db, report["TSX"]["version"])
+    assert "h5_rank" in files and "h5_beat" not in files
+
+
 def test_weekly_training_stores_the_accepted_policy_and_judges_the_funnel_with_it(db, tmp_path, monkeypatch):
     write_market(tmp_path, Market.TSX, stocks=40)
     policy = replace(DEFAULT_POLICY, p_buy=0.54)

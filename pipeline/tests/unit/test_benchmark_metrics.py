@@ -9,13 +9,14 @@ from advisor.model.train import calibration_error
 from advisor.models import Market
 
 
-def rows(fold, day, ys, q50s, p=np.nan, horizon=5):
+def rows(fold, day, ys, q50s, p=np.nan, horizon=5, scores=None):
     n = len(ys)
     q50 = np.asarray(q50s, float)
     return pd.DataFrame({
         "day": pd.Timestamp(day), "symbol": [f"S{i}" for i in range(n)], "sector": "Tech",
         "dollar_volume_20": 2e7, "horizon": horizon, "fold": fold, "y": ys,
         "q10": q50 - 0.1, "q50": q50, "q90": q50 + 0.1, "p_raw": 0.5, "p": p,
+        "score": q50 if scores is None else np.asarray(scores, float),
     })
 
 
@@ -40,6 +41,12 @@ def test_each_outer_fold_and_the_pool_are_scored_and_fold_0_has_no_calibration()
     assert m["pooled"][5]["calibration_pts"] == pytest.approx(calibration_error(fold1["p"], fold1["y"] > 0))
     assert m["1"][5]["rows"] == 6 and m["pooled"][5]["coverage_10_90"] == 1.0
     assert summary(m, (5,))["1"] == {"rank_ic": pytest.approx(-1.0), "pinball": m["1"][5]["pinball"]}
+
+
+def test_rank_ic_is_taken_on_the_variants_ranking_score():
+    # a ranker variant ranks by its ranking booster's score, not by q50 (spec §8)
+    pred = rows(1, "2024-02-01", [.01, .02, .03], [.03, .02, .01], scores=[.1, .2, .3])
+    assert model_metrics(pred)["1"][5]["rank_ic"] == pytest.approx(1.0)
 
 
 def test_combined_pinball_is_nan_if_any_quantile_cannot_be_scored():

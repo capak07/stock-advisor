@@ -32,7 +32,7 @@ def _metrics(frame: pd.DataFrame) -> dict[str, float]:
         cal_pts = max_gap = math.nan
     return {
         "rows": int(len(frame)),
-        "rank_ic": rank_ic(frame, "q50", "y"),
+        "rank_ic": rank_ic(frame, "score", "y"),  # q50, or a ranker's score (spec §8)
         "pinball_q10": p10,
         "pinball_q50": p50,
         "pinball_q90": p90,

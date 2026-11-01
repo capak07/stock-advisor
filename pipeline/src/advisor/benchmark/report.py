@@ -6,7 +6,7 @@ import math
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-_ABLATION_ORDER = ("baseline", "factors", "garch", "factors+garch", "full+policy")
+_ABLATION_ORDER = ("baseline", "factors", "ranker", "garch", "factors+garch", "full+policy")
 
 SURVIVORSHIP = (
     "Survivorship: the stock universes are today's listings — Yahoo has no delisted tickers "

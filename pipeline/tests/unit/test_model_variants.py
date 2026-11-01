@@ -15,19 +15,30 @@ def test_configs_name_themselves_and_round_trip():
     assert BASELINE.name == "baseline"
     assert ModelConfig(factors=True, garch=True).name == "factors+garch"
     assert ModelConfig(policy={"p_buy": 0.6}).name == "baseline+policy"
-    assert BASELINE.to_json() == {"version": 1, "factors": False, "garch": False, "policy": None}
+    assert ModelConfig(ranker=True).name == "ranker"
+    assert ModelConfig(factors=True, ranker=True).name == "factors+ranker"
+    assert BASELINE.to_json() == {"version": 2, "factors": False, "garch": False, "ranker": False, "policy": None}
+    assert ModelConfig.from_json(ModelConfig(ranker=True).to_json()) == ModelConfig(ranker=True)
     assert ModelConfig.from_json(BASELINE.to_json()) == BASELINE
 
 
 @pytest.mark.parametrize("stored, match", [
     ({"version": 1, "factors": False, "garch": True, "policy": None}, "Plan 6d"),
-    ({"version": 2, "factors": False, "garch": False, "policy": None}, "version"),
+    ({"version": 3, "factors": False, "garch": False, "ranker": False, "policy": None}, "version"),
+    ({"version": 2, "factors": False, "garch": False, "policy": None}, "ranker"),
+    ({"version": 1, "factors": False, "garch": False, "ranker": True, "policy": None}, "ranker"),
     ({"version": 1, "factors": False, "garch": False, "policy": None, "extra": 1}, "extra"),
     ([], "mapping"),
 ])
 def test_a_stored_config_this_code_cannot_run_is_refused(stored, match):
     with pytest.raises(ValueError, match=match):
         ModelConfig.from_json(stored)
+
+
+def test_a_version_1_config_loads_with_the_ranker_off():
+    # every config accepted before Plan 6f was stored as version 1
+    stored = {"version": 1, "factors": True, "garch": False, "policy": None}
+    assert ModelConfig.from_json(stored) == ModelConfig(factors=True)
 
 
 def test_a_config_carries_a_policy_through_json():
@@ -60,6 +71,15 @@ def test_the_baseline_runs_todays_walk_forward_unchanged(tmp_path):
     write_market(tmp_path, Market.TSX, stocks=20, days=1100)
     data = load_market(tmp_path, Market.TSX)
     pd.testing.assert_frame_equal(run_variant(data, BASELINE, FAST).predictions, walk_forward(data, FAST).predictions)
+
+
+def test_a_ranker_config_runs_the_ranking_walk_forward(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
+    data = load_market(tmp_path, Market.TSX)
+    pd.testing.assert_frame_equal(
+        run_variant(data, ModelConfig(ranker=True), FAST).predictions,
+        walk_forward(data, FAST, ranker=True).predictions,
+    )
 
 
 def test_walk_forward_scores_only_targets_known_before_a_cutoff(tmp_path):

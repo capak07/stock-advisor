@@ -1865,3 +1865,17 @@ def test_a_partial_bar_is_never_final_even_without_its_markets_benchmark_bars(db
         "picks": 0, "exited_early": 0, "actions": 0,
     }
     assert grade_stage(db, run_id, bars, {}, RunKind.PRE_OPEN, NOW) == {"picks": 0, "exited_early": 0, "actions": 1}
+
+
+def test_the_largest_coins_are_priced_for_the_invest_page_even_if_nobody_holds_them(db, tmp_path):
+    repo.upsert_coins(db, [("BTC", "Bitcoin", 2e12), ("ETH", "Ethereum", 4e11), ("USDT", "Tether", 1.8e11)], NOW)
+    extra = crypto_sources(quoted=("BTC",))  # ETH gets no quote this run
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS  # an unquoted coin nobody holds degrades nothing
+    assert extra["coingecko"].calls == [["BTC", "ETH"]]  # never the stablecoin
+    rows = db.execute(
+        "select symbol from features_live where run_id = %s and asset_type = 'crypto' order by symbol",
+        (outcome.run_id,),
+    ).fetchall()
+    assert [r["symbol"] for r in rows] == ["BTC", "ETH"]
+    assert (outcome.summary["crypto"], outcome.summary["crypto_unquoted"]) == (0, [])  # held and watched only

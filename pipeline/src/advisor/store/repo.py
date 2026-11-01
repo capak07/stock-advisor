@@ -12,6 +12,7 @@ from psycopg.types.json import Jsonb
 from advisor.collectors.base import Collector, CollectorResult
 from advisor.collectors.runner import SourceState
 from advisor.markets import MARKETS, TSX_SUFFIX, market_of
+from advisor.model.crypto import EXCLUDED
 from advisor.models import (
     ET,
     AcceptedConfig,
@@ -246,6 +247,17 @@ def upsert_coins(
             " where asset_type = 'crypto' and active and not (symbol = any(%s))",
             (now, [coin[0] for coin in coins]),
         )
+
+
+def top_coins(conn: psycopg.Connection, n: int) -> list[str]:
+    """The `n` largest coins in the stored coin list by market cap, leaving out stablecoins and
+    wrapped coins (a coin with no market cap comes last): what the Invest page can choose from."""
+    rows = conn.execute(
+        "select symbol from symbols where asset_type = 'crypto' and active and not (symbol = any(%s))"
+        " order by market_cap desc nulls last, symbol limit %s",
+        (sorted(EXCLUDED), n),
+    ).fetchall()
+    return [r["symbol"] for r in rows]
 
 
 def coins_refreshed_on(conn: psycopg.Connection) -> date | None:

@@ -76,9 +76,8 @@ describe('allocate: choosing the stocks', () => {
     )
     expect(out.stocks.map((l) => [l.symbol, l.qualifies])).toEqual([
       ['OK.TO', true],
-      ['LOWP.TO', false],
-      ['CHEAP', false],
-    ])
+      ['LOWP.TO', false], // fills: even odds or better, and clears its costs
+    ]) // CHEAP doesn't even fill: its 3% median doesn't cover the 3.1% US round trip
     expect(out.notValidated).toBe(true)
   })
 
@@ -91,6 +90,17 @@ describe('allocate: choosing the stocks', () => {
     )
     expect(out.stocks.map((l) => [l.symbol, l.horizonDays, l.qualifies])).toEqual([['WEAK.TO', 21, false]])
     expect(out.notValidated).toBe(true)
+  })
+
+  it('never fills with a stock more likely to lag, or one whose median does not cover its costs', () => {
+    const out = allocate(
+      input([
+        stock('SOIL.TO', { rows: [row(126, 0.23, 0.47, 0.9)] }), // a high median, but more likely to lag
+        stock('MSFT', { rows: [row(21, 0.02, 0.52)] }), // beats SPY more often than not, but not by the 3.2% fees
+        stock('CNQ.TO', { rows: [row(5, 0.019, 0.53, 0.055)] }),
+      ]),
+    )
+    expect(out.stocks.map((l) => l.symbol)).toEqual(['CNQ.TO'])
   })
 
   it('leaves out held stocks, unconfirmed jumps and flat ranges', () => {

@@ -188,6 +188,9 @@ def live_feature_rows(
     ]
 
 
+INVEST_COINS = 15  # the largest coins forecast every run, held or not
+
+
 def priority_order(held: set[AssetRef], watch: set[AssetRef], asset_type: AssetType) -> list[str]:
     """Holdings first, then watchlist-only symbols, each alphabetical (spec §7.2)."""
     held_symbols = sorted(ref.symbol for ref in held if ref.asset_type is asset_type)
@@ -481,6 +484,9 @@ def execute_run(
         held, watch = repo.load_held_symbols(conn), repo.load_watchlist(conn)
         priority = priority_order(held, watch, AssetType.STOCK)
         crypto = priority_order(held, watch, AssetType.CRYPTO)
+        # the largest coins are priced and forecast too, so the Invest page has coins to choose from;
+        # only held and watched ones get enrichment, news, verdicts and actions, or can degrade the run
+        priced_coins = list(dict.fromkeys([*crypto, *repo.top_coins(conn, INVEST_COINS)]))
         # Stocks grading waits on that aren't held or watched, such as one the owner has sold: they're
         # priced and their closes stored, and get no actions or verdicts.
         to_grade = [s for s in repo.symbols_to_grade(conn) if s not in priority]
@@ -499,17 +505,17 @@ def execute_run(
         quotes: dict[str, CryptoQuote] = {}
         candles: dict[str, list[DailyBar]] = {}
         crypto_features: dict[str, dict] = {}  # the holdings stage reads a coin's price check here
-        if crypto:
+        if priced_coins:
 
             def crypto_records(name: str, symbols: Sequence[str] | None = None) -> list:
-                asked = list(crypto if symbols is None else symbols)
+                asked = list(priced_coins if symbols is None else symbols)
                 return list(tracker.run(name, asked).records) if name in deps.collectors else []
 
             quotes = {quote.symbol: quote for quote in crypto_records(QUOTES)}
             # BTC's candles come along even when it isn't held: altcoin features are excess over BTC.
-            candle_symbols = list(dict.fromkeys([*crypto, BTC]))
+            candle_symbols = list(dict.fromkeys([*priced_coins, BTC]))
             candles, checks = group_bars(crypto_records(BARS, candle_symbols)), group_bars(crypto_records(CHECK))
-            coin_rows = crypto_feature_rows(crypto, quotes, candles, checks, now_utc)
+            coin_rows = crypto_feature_rows(priced_coins, quotes, candles, checks, now_utc)
             repo.write_features_live(conn, run_id, coin_rows, now_utc)
             crypto_features = {ref.symbol: features for ref, features in coin_rows}
 
@@ -607,25 +613,25 @@ def execute_run(
             crypto_model, crypto_note = load_crypto_model(conn)
             if crypto_model is not None or "failed" in crypto_note:
                 model_summary["crypto"] = crypto_note
-            if crypto_model is not None and crypto:
+            if crypto_model is not None and priced_coins:
                 try:
-                    history = {symbol: candles.get(symbol) or [] for symbol in dict.fromkeys([*crypto, BTC])}
+                    history = {symbol: candles.get(symbol) or [] for symbol in dict.fromkeys([*priced_coins, BTC])}
                     spy = bars.get("SPY")
                     found, coin_why = forecast_coins(
                         crypto_model.active.model, history, spy[-1].close if spy else None, now_utc,
                     )
                     usable = set(crypto_model.active.usable)
                     version = crypto_model.active.version
-                    held_or_watched = set(crypto)
+                    forecast_for = set(priced_coins)
                     coin_rows = {
                         symbol: [replace(row, model_version=version) for row in its if row.horizon_days in usable]
                         for symbol, its in found.items()
-                        if symbol in held_or_watched
+                        if symbol in forecast_for
                     }
                     coin_rows = {symbol: its for symbol, its in coin_rows.items() if its}
                     coin_why = {
                         symbol: reason for symbol, reason in coin_why.items()
-                        if symbol in held_or_watched and symbol not in coin_rows
+                        if symbol in forecast_for and symbol not in coin_rows
                     }
                     fee = repo.fee_settings(conn)[1]
                     priced = coin_costs(history, fee, now_utc)

@@ -8,6 +8,8 @@
 import type { Market } from '../portfolio/types'
 
 export const P_MIN = 0.58
+/** A filler is at least even odds to beat its benchmark. */
+export const FILL_P_MIN = 0.5
 export const STOCKS = 5
 export const PER_SECTOR = 2
 export const MAX_SHARE = 0.4
@@ -182,7 +184,7 @@ function capped(weights: readonly number[], cap: number): number[] {
   }
 }
 
-/** The stocks to show, in order: qualifying ones first, then positive forecasts to fill five. */
+/** The stocks to show, in order: qualifying ones first, then forecasts at even odds or better that clear their costs, to fill five. */
 function choose(input: InvestInput) {
   const ranked = input.candidates.flatMap((c) => {
     if (input.held.has(c.symbol) || c.jump5d !== 0) return []
@@ -192,7 +194,9 @@ function choose(input: InvestInput) {
     const allowed = input.horizons
     const rows = allowed ? c.rows.filter((r) => allowed.includes(r.horizonDays)) : c.rows
     const qualifying = best(rows, (r) => r.pBeat >= P_MIN && r.q50 > cost)
-    const pick = qualifying ?? best(rows, (r) => r.q50 > 0)
+    // a filler must still be more likely to beat its benchmark than lag it, and expected to clear
+    // its costs: a high median beside a sub-50% chance is the range leaning high, not an edge
+    const pick = qualifying ?? best(rows, (r) => r.pBeat >= FILL_P_MIN && r.q50 > cost)
     return pick ? [{ candidate: c, cost, row: pick.row, ratio: pick.ratio, qualifies: qualifying !== null }] : []
   })
   ranked.sort(

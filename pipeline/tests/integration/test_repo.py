@@ -719,3 +719,13 @@ def test_accepting_a_config_retires_the_markets_previous_one(db):
     assert active.id == second != first and active.reason == "better" and active.config == {"version": 1, "x": 1}
     repo.write_benchmark_results(db, run_id, [BenchmarkResult("TSX", "baseline", "pooled", {"a": 1})])
     assert db.execute("select metrics from benchmark_results").fetchone()["metrics"] == {"a": 1}
+
+
+def test_the_top_coins_are_the_largest_listed_ones_without_stablecoins(db):
+    now = datetime(2026, 10, 20, 13, tzinfo=UTC)
+    repo.upsert_coins(db, [
+        ("USDT", "Tether", 1.8e11), ("BTC", "Bitcoin", 2e12), ("ETH", "Ethereum", 4e11),
+        ("SOL", "Solana", 9e10), ("NEW", "New coin", None),
+    ], now)
+    assert repo.top_coins(db, 3) == ["BTC", "ETH", "SOL"]
+    assert repo.top_coins(db, 10) == ["BTC", "ETH", "SOL", "NEW"]  # no market cap last

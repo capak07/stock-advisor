@@ -29,9 +29,9 @@ async function seedForecasts() {
   const rows = [
     { symbol: 'RY.TO', horizon_days: 21, q10: -0.02, q50: 0.03, q90: 0.08, p_beat: 0.62, benchmark: 'XIU.TO' },
     { symbol: 'SHOP.TO', horizon_days: 21, q10: -0.04, q50: 0.03, q90: 0.1, p_beat: 0.62, benchmark: 'XIU.TO' },
-    { symbol: 'AAPL', horizon_days: 10, q10: -0.05, q50: 0.02, q90: 0.07, p_beat: 0.53, benchmark: 'SPY' },
-    { symbol: 'XOM', horizon_days: 21, q10: -0.06, q50: 0.015, q90: 0.08, p_beat: 0.52, benchmark: 'SPY' },
-    { symbol: 'JNJ', horizon_days: 40, q10: -0.05, q50: 0.01, q90: 0.06, p_beat: 0.51, benchmark: 'SPY' },
+    { symbol: 'AAPL', horizon_days: 10, q10: -0.05, q50: 0.04, q90: 0.09, p_beat: 0.53, benchmark: 'SPY' },
+    { symbol: 'XOM', horizon_days: 21, q10: -0.06, q50: 0.035, q90: 0.1, p_beat: 0.52, benchmark: 'SPY' },
+    { symbol: 'JNJ', horizon_days: 40, q10: -0.05, q50: 0.033, q90: 0.08, p_beat: 0.51, benchmark: 'SPY' },
     { symbol: 'PFE', horizon_days: 10, q10: -0.08, q50: -0.01, q90: 0.04, p_beat: 0.4, benchmark: 'SPY' },
     { symbol: 'PFE', horizon_days: 21, q10: -0.1, q50: -0.02, q90: 0.05, p_beat: 0.38, benchmark: 'SPY' },
   ].map((r) => ({ ...r, run_id: runId, asset_type: 'stock', model_version: 'e2e' }))
@@ -157,7 +157,7 @@ async function seedHoldForecasts() {
   const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
   const rows = [
     { symbol: 'AAPL', horizon_days: 10, q10: -0.02, q50: 0.09, q90: 0.16, p_beat: 0.7, benchmark: 'SPY' },
-    { symbol: 'AAPL', horizon_days: 63, q10: -0.04, q50: 0.02, q90: 0.08, p_beat: 0.6, benchmark: 'SPY' },
+    { symbol: 'AAPL', horizon_days: 63, q10: -0.04, q50: 0.04, q90: 0.1, p_beat: 0.6, benchmark: 'SPY' },
     { symbol: 'MSFT', horizon_days: 10, q10: -0.03, q50: 0.01, q90: 0.05, p_beat: 0.6, benchmark: 'SPY' },
     { symbol: 'MSFT', horizon_days: 63, q10: -0.03, q50: 0.07, q90: 0.13, p_beat: 0.62, benchmark: 'SPY' },
   ].map((r) => ({ ...r, run_id: runId, asset_type: 'stock', model_version: 'e2e' }))

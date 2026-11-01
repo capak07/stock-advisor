@@ -34,6 +34,16 @@ def test_a_range_calibrator_puts_a_tenth_half_and_nine_tenths_of_outcomes_below_
     assert RangeCalibrator.from_json(calibrator.to_json()).shifts == calibrator.shifts
 
 
+def test_a_range_calibrator_moves_only_the_edges_it_was_fitted_for():
+    calibrator = RangeCalibrator.fit(_biased(20_000), names=("q10", "q90"))
+    assert set(calibrator.shifts) == {"q10", "q90"}
+    fresh = _biased(1_000, seed=1)
+    fixed = calibrator(fresh[["q10", "q50", "q90"]])
+    assert (fixed["q50"] == fresh["q50"]).all()
+    assert (fixed["q10"] != fresh["q10"]).all()
+    assert RangeCalibrator.from_json(calibrator.to_json()).shifts == calibrator.shifts
+
+
 def test_a_wider_range_moves_further():
     calibrator = RangeCalibrator({"q10": 0.0, "q50": -0.25, "q90": 0.0})
     out = calibrator(pd.DataFrame({"q10": [-0.1, -0.4], "q50": [0.0, 0.0], "q90": [0.1, 0.4]}))
@@ -57,12 +67,31 @@ def _folds_frame(bias: float, seed: int = 0) -> tuple[pd.DataFrame, pd.DatetimeI
 def test_a_period_uses_a_calibrated_range_only_once_earlier_periods_show_it_helps():
     biased, calendar, folds = _folds_frame(bias=0.04)
     out, info = calibrate_ranges(biased, calendar, 5, folds)
-    assert info["adopted"] and info["pinball_calibrated"] < info["pinball_raw"]
-    assert info["periods"] == {"1": False, "2": True}  # period 1 has no calibrated period before it
+    every = {"q10": True, "q50": True, "q90": True}
+    assert info["adopted"] == every
+    assert all(info["pinball_calibrated"][n] < info["pinball_raw"][n] for n in every)
+    # period 1 has no calibrated period before it
+    assert info["periods"] == {"1": dict.fromkeys(every, False), "2": every}
     last = out["fold"] == 2
     assert (out.loc[last, "q50"] < biased.loc[last, "q50"]).all()  # pulled down towards the outcomes
     pd.testing.assert_series_equal(out.loc[~last, "q50"], biased.loc[~last, "q50"])
     assert (out["q50_raw"] == biased["q50"]).all()
+
+
+def test_each_edge_is_corrected_only_where_correcting_it_helped():
+    # the range is too narrow in every period, but the median was off only in the first: the
+    # median's correction, learned from that period, no longer fits, so the median stays raw
+    frame, calendar, folds = _folds_frame(bias=0.0)
+    frame["q10"], frame["q90"] = -0.03, 0.01
+    frame["q50"] = np.where(frame["fold"] == 0, 0.005, -0.01)
+    out, info = calibrate_ranges(frame, calendar, 5, folds)
+    assert info["periods"]["2"] == {"q10": True, "q50": False, "q90": True}
+    assert info["adopted"] == {"q10": True, "q50": False, "q90": True}
+    last = out["fold"] == 2
+    pd.testing.assert_series_equal(out.loc[last, "q50"], frame.loc[last, "q50"])
+    assert (out.loc[last, "q10"] < frame.loc[last, "q10"]).all()  # widened towards the outcomes
+    assert (out.loc[last, "q90"] > frame.loc[last, "q90"]).all()
+    assert ((out["q10"] <= out["q50"]) & (out["q50"] <= out["q90"])).all()
 
 
 def test_a_period_is_calibrated_only_on_outcomes_known_before_it():
@@ -82,12 +111,21 @@ def test_the_final_model_stores_and_applies_its_range_calibration(tmp_path):
     wf = walk_forward(data, config)
     assert {"adopted", "pinball_raw", "pinball_calibrated", "below_median_raw"} <= set(wf.metrics[5]["range"])
     model = fit_final(data, wf, config)
-    adopted = {h for h in config.horizons if wf.metrics[h]["range"]["adopted"]}
-    assert set(model.ranges) == adopted
+    adopted = {
+        h: {name for name, ok in wf.metrics[h]["range"]["adopted"].items() if ok} for h in config.horizons
+    }
+    assert {h: set(r.shifts) for h, r in model.ranges.items()} == {h: n for h, n in adopted.items() if n}
     back = from_files(to_files(model))
-    assert set(back.ranges) == adopted
+    assert {h: r.shifts for h, r in back.ranges.items()} == {h: r.shifts for h, r in model.ranges.items()}
     x = data.rows[data.features].head(20)
     pd.testing.assert_frame_equal(back.predict(x), model.predict(x))
+
+
+def test_a_range_saved_with_every_edge_still_moves_every_edge():
+    # models saved before edges were chosen one by one stored all three shifts
+    old = RangeCalibrator.from_json({"q10": -0.5, "q50": -0.25, "q90": 0.5})
+    out = old(pd.DataFrame({"q10": [-0.1], "q50": [0.0], "q90": [0.1]}))
+    assert out.iloc[0].tolist() == pytest.approx([-0.2, -0.05, 0.2])
 
 
 def test_a_model_saved_before_range_calibration_still_loads(tmp_path):

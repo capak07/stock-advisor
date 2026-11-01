@@ -113,24 +113,28 @@ class RangeCalibrator:
     The quantile boosters are never checked against outcomes the way P(beat) is, and on real data
     their median leans high (a +19% median beside a 46% chance of beating the benchmark). Each shift
     is in units of the range's width, so a wide, volatile range moves further than a narrow one.
+    Only the edges in `shifts` move; the others keep the boosters' value.
     """
 
     def __init__(self, shifts: Mapping[str, float]):
-        self.shifts = {name: float(shifts[name]) for name in QUANTILE_NAMES}
+        unknown = set(shifts) - set(QUANTILE_NAMES)
+        if unknown:
+            raise ValueError(f"not a range edge: {sorted(unknown)}")
+        self.shifts = {name: float(shifts[name]) for name in QUANTILE_NAMES if name in shifts}
 
     @classmethod
-    def fit(cls, pred: pd.DataFrame) -> "RangeCalibrator":
+    def fit(cls, pred: pd.DataFrame, names: Sequence[str] = QUANTILE_NAMES) -> "RangeCalibrator":
         width = _width(pred)
         y = pred["y"].to_numpy(dtype=float)
         return cls({
             name: float(np.quantile((y - pred[name].to_numpy(dtype=float)) / width, q))
-            for name, q in zip(QUANTILE_NAMES, QUANTILES, strict=True)
+            for name, q in zip(QUANTILE_NAMES, QUANTILES, strict=True) if name in names
         })
 
     def __call__(self, quantiles: pd.DataFrame) -> pd.DataFrame:
         width = _width(quantiles)
         moved = np.column_stack([
-            quantiles[name].to_numpy(dtype=float) + self.shifts[name] * width for name in QUANTILE_NAMES
+            quantiles[name].to_numpy(dtype=float) + self.shifts.get(name, 0.0) * width for name in QUANTILE_NAMES
         ])
         return pd.DataFrame(np.sort(moved, axis=1), index=quantiles.index, columns=list(QUANTILE_NAMES))
 
@@ -156,11 +160,13 @@ def pinball_loss(y: np.ndarray, q: np.ndarray, alpha: float) -> float:
     return float(np.mean(np.maximum(alpha * d, (alpha - 1) * d)))
 
 
-def _range_pinball(frame: pd.DataFrame, columns: Sequence[str]) -> float:
+def _edge_pinball(frame: pd.DataFrame, columns: Sequence[str]) -> dict[str, float]:
+    """Each edge's pinball loss at its own quantile, keyed by edge name."""
     y = frame["y"].to_numpy(dtype=float)
-    return float(np.mean([
-        pinball_loss(y, frame[c].to_numpy(dtype=float), q) for c, q in zip(columns, QUANTILES, strict=True)
-    ]))
+    return {
+        name: pinball_loss(y, frame[c].to_numpy(dtype=float), q)
+        for name, c, q in zip(QUANTILE_NAMES, columns, QUANTILES, strict=True)
+    }
 
 
 def _as_range(frame: pd.DataFrame, names: Sequence[str]) -> pd.DataFrame:
@@ -172,16 +178,19 @@ def calibrate_ranges(
 ) -> tuple[pd.DataFrame, dict]:
     """One horizon's predictions with each period's range calibrated on outcomes known before it.
 
-    A period uses its calibrated range only if calibrating beat the raw range, by pinball loss, on
-    earlier periods whose outcomes were known when it began; so neither the shift nor the choice to
-    use it sees the period's own outcomes. The raw range stays in `q*_raw`. `info["adopted"]` is the
-    same test over every calibrated period: what the final model, fitted on all of them, follows.
+    Each edge (q10, q50, q90) is judged on its own: a period uses an edge's calibrated value only if
+    it beat the raw one, by that edge's pinball loss, on earlier periods whose outcomes were known
+    when it began; so neither the shift nor the choice to use it sees the period's own outcomes. On
+    real data the edges were too narrow while the median was already centred, so correcting all
+    three together fixed the edges and pushed the median off. The raw range stays in `q*_raw`.
+    `info["adopted"]` is the same test, per edge, over every calibrated period: what the final
+    model, fitted on all of them, follows.
     """
     out = pred.copy()
     for name, raw in zip(QUANTILE_NAMES, RAW_NAMES, strict=True):
         out[raw] = out[name].to_numpy(dtype=float)
     calibrated = pd.DataFrame(np.nan, index=out.index, columns=list(QUANTILE_NAMES))
-    used: dict[int, bool] = {}
+    used: dict[int, dict[str, bool]] = {}
     for k in sorted(out["fold"].unique()):
         known = _ended_before(out["day"], calendar, horizon, folds[int(k)].start)
         earlier = out[known]
@@ -191,27 +200,34 @@ def calibrate_ranges(
         fitted = RangeCalibrator.fit(_as_range(earlier, RAW_NAMES).assign(y=earlier["y"]))
         calibrated.loc[here] = fitted(_as_range(out.loc[here], RAW_NAMES)).to_numpy()
         evidence = known & calibrated["q50"].notna() & ~here
-        used[int(k)] = bool(evidence.any()) and _calibration_helps(out[evidence], calibrated[evidence])
-        if used[int(k)]:
-            for name in QUANTILE_NAMES:
+        none = dict.fromkeys(QUANTILE_NAMES, False)
+        used[int(k)] = _calibration_helps(out[evidence], calibrated[evidence]) if evidence.any() else none
+        chosen = [name for name in QUANTILE_NAMES if used[int(k)][name]]
+        if chosen:
+            for name in chosen:
                 out.loc[here, name] = calibrated.loc[here, name]
+            # a moved edge can pass one left raw; a range must still read low <= mid <= high
+            edges = list(QUANTILE_NAMES)
+            out.loc[here, edges] = np.sort(out.loc[here, edges].to_numpy(dtype=float), axis=1)
     scored = calibrated["q50"].notna()
-    info = {"adopted": False, "periods": {str(k): v for k, v in used.items()}, "pinball_raw": None,
-            "pinball_calibrated": None, "below_median_raw": None, "below_median_calibrated": None}
+    info = {"adopted": dict.fromkeys(QUANTILE_NAMES, False), "periods": {str(k): v for k, v in used.items()},
+            "pinball_raw": None, "pinball_calibrated": None, "below_median_raw": None,
+            "below_median_calibrated": None}
     if scored.any():
         both = out.loc[scored, ["y", *RAW_NAMES]].join(calibrated.loc[scored])
-        info["pinball_raw"] = _range_pinball(both, RAW_NAMES)
-        info["pinball_calibrated"] = _range_pinball(both, QUANTILE_NAMES)
+        info["pinball_raw"] = _edge_pinball(both, RAW_NAMES)
+        info["pinball_calibrated"] = _edge_pinball(both, QUANTILE_NAMES)
         info["below_median_raw"] = float((both["y"] < both["q50_raw"]).mean())
         info["below_median_calibrated"] = float((both["y"] < both["q50"]).mean())
-        info["adopted"] = bool(info["pinball_calibrated"] < info["pinball_raw"])  # a NaN never is
+        info["adopted"] = _calibration_helps(out[scored], calibrated[scored])
     return out, info
 
 
-def _calibration_helps(raw: pd.DataFrame, calibrated: pd.DataFrame) -> bool:
-    """Whether the calibrated range had a lower pinball loss than the raw one on these rows."""
+def _calibration_helps(raw: pd.DataFrame, calibrated: pd.DataFrame) -> dict[str, bool]:
+    """Per edge, whether its calibrated value had a lower pinball loss than the raw one on these rows."""
     both = raw[["y", *RAW_NAMES]].join(calibrated)
-    return bool(_range_pinball(both, QUANTILE_NAMES) < _range_pinball(both, RAW_NAMES))
+    before, after = _edge_pinball(both, RAW_NAMES), _edge_pinball(both, QUANTILE_NAMES)
+    return {name: bool(after[name] < before[name]) for name in QUANTILE_NAMES}  # a NaN never is
 
 
 def _bin_gaps(p: np.ndarray, beat: np.ndarray, bins: int) -> tuple[np.ndarray, np.ndarray]:
@@ -403,7 +419,7 @@ class FinalModel:
     factor_names: tuple[str, ...] = ()
     mu: dict = field(default_factory=dict)  # horizon → factor → mean forward return
     betas: dict = field(default_factory=dict)  # symbol → factor → latest beta
-    ranges: dict = field(default_factory=dict)  # horizon → RangeCalibrator, where it beat the raw range
+    ranges: dict = field(default_factory=dict)  # horizon → RangeCalibrator of the edges that beat the raw ones
 
     def _with_betas(self, x: pd.DataFrame) -> pd.DataFrame:
         if not self.factor_names:
@@ -484,8 +500,10 @@ def fit_final(
         if oos.empty:
             raise ValueError(f"no out-of-sample predictions to calibrate horizon {h} on")
         calibrators[h] = Calibrator.fit(oos["p_raw"].to_numpy(), (oos["y"] > 0).to_numpy())
-        if wf.metrics.get(h, {}).get("range", {}).get("adopted"):
-            ranges[h] = RangeCalibrator.fit(_as_range(oos, RAW_NAMES).assign(y=oos["y"]))
+        adopted = wf.metrics.get(h, {}).get("range", {}).get("adopted") or {}
+        edges = [name for name in QUANTILE_NAMES if adopted.get(name)]
+        if edges:
+            ranges[h] = RangeCalibrator.fit(_as_range(oos, RAW_NAMES).assign(y=oos["y"]), names=edges)
         train = rows[rows[f"y_{h}"].notna()]
         if names:
             boosters[h] = _fit_horizon(train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"])

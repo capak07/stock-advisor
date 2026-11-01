@@ -1,5 +1,8 @@
 import json
 import math
+import os
+import subprocess
+import sys
 
 from advisor.benchmark.report import SURVIVORSHIP, render_markdown, write_reports
 
@@ -79,6 +82,20 @@ def test_the_report_names_the_choice_the_survivorship_bias_and_the_rules(tmp_pat
     write_reports(REPORT, tmp_path)
     assert json.loads((tmp_path / "benchmark-report.json").read_text()) == REPORT
     assert (tmp_path / "benchmark-report.md").read_text() == md
+
+
+def test_the_markdown_report_is_utf8_whatever_the_machine_locale(tmp_path):
+    # on Windows the default file encoding is cp1252, and the report's dashes came out as "�"
+    script = (
+        "import json, sys; from pathlib import Path; from advisor.benchmark.report import write_reports; "
+        "write_reports(json.loads(sys.argv[1]), Path(sys.argv[2]))"
+    )
+    env = {**os.environ, "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0", "LC_ALL": "C", "LANG": "C"}
+    done = subprocess.run(
+        [sys.executable, "-c", script, json.dumps(REPORT), str(tmp_path)], env=env, capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
+    assert (tmp_path / "benchmark-report.md").read_bytes().decode("utf-8") == render_markdown(REPORT)
 
 
 def test_ablation_rows_print_in_a_fixed_order_whatever_order_the_dict_arrives_in():

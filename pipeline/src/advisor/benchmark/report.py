@@ -259,5 +259,5 @@ def render_markdown(report: Mapping) -> str:
 
 def write_reports(report: Mapping, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    (out / "benchmark-report.json").write_text(json.dumps(report, indent=2) + "\n")
-    (out / "benchmark-report.md").write_text(render_markdown(report))
+    (out / "benchmark-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (out / "benchmark-report.md").write_text(render_markdown(report), encoding="utf-8")

@@ -87,7 +87,8 @@ def test_a_final_model_round_trips_through_its_files(tmp_path):
     data = load_market(tmp_path, Market.TSX)
     model = fit_final(data, walk_forward(data, FAST), FAST)
     files = to_files(model)
-    assert set(files) == {"meta", "calibration", "screener"} | {
+    # a `ranges` file is written only for edges the data earned a correction for (test_model_ranges)
+    assert set(files) - {"ranges"} == {"meta", "calibration", "screener"} | {
         f"h{h}_{part}" for h in (5, 63) for part in ("q10", "q50", "q90", "beat")
     }
     back = from_files(files)

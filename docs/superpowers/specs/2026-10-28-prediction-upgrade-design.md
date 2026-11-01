@@ -111,7 +111,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - **The five ablations** run per market on identical rows, folds and seeds.
 - **Metrics, per outer fold and pooled:**
   - **Model:**
-    - rank IC of q50 against the realised benchmark-excess return;
+    - rank IC of the variant's ranking score against the realised benchmark-excess return: q50, or the ranking booster's score for a `ranker` variant (§8, added 2026-11-01);
     - pinball loss of q10, q50 and q90;
     - q10–q90 coverage;
     - calibration of P (the existing 10-bin weighted gap and the worst bin).
@@ -255,6 +255,25 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - a factor portfolio formed on day t must use no characteristic dated t or later;
   - betas, GARCH parameters, calibrators and policy values must be byte-identical when a fold's test rows are deleted.
 
+### 8. The ranking booster (Plan 6f, added 2026-11-01)
+
+- **Why:** two measurements on 2026-11-01 data.
+  - The beat classifier ranked which stocks beat the benchmark *worse* than the median forecast did, on two separate quarters of US stocks. At US 63 and 126 days, its score even ran backwards in the earlier periods.
+  - A booster that learns each stock's rank among that day's stocks, with slower learning, raised rank IC 25–32% at 21 and 63 days. That was measured on two separate quarters of US stocks, over outer folds 1–3.
+- **What it is:** a `ranker` model variant.
+  - **Per horizon, one booster:**
+    - its target is the daily cross-sectional percentile rank of `y_h`, minus 0.5;
+    - median (quantile 0.5) objective;
+    - `learning_rate` 0.03, `num_leaves` 15, 400 rounds;
+    - the other parameters are as `PARAMS`.
+  - It replaces the beat classifier: P(beat) is the fixed calibrator applied to the ranking booster's score.
+  - The quantile boosters, and so the ranges, are unchanged.
+- **Ranking score:** every variant's predictions carry `score`, the value it ranks by: q50 normally, the ranking booster's score with `ranker`. The weekly job and the benchmark measure rank IC on `score`. P is a monotone map of it, so ranking by P follows the ranker.
+- **Acceptance:** the same rule as any model addition (§1). It's judged on outer folds and goes live only if accepted.
+- **Stored configs:** version 2 adds `ranker`. Version 1 configs (no `ranker`) still load, as `ranker` off. Comparing configs compares their meaning, not their JSON.
+- **Stored models:** a model's files say which booster gives P. Models saved before 6f use the beat classifier.
+- **Known limit:** with the default pick rule (`ratio`), the ranker decides which stocks clear the P floor, but q50 over range width still orders them. The policy search can choose rule `p`.
+
 ## Plans, in dependency order
 
 | Plan | Builds | Needs |
@@ -264,6 +283,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
 | **6c** | Factors and the factor-adjusted target (all three markets) | 6a, 6b for crypto |
 | **6d** | GARCH volatility (feature, range and risk adjustment) | 6a |
 | **6e** | The policy search and the live use of accepted policies | 6a, ideally after 6c and 6d |
+| **6f** | The ranking booster: a `ranker` variant whose score ranks and gives P(beat) (§8) | 6a |
 
 The full ablation table becomes reportable once 6c, 6d and 6e land. Each plan's report states which ablation rows it could fill.
 

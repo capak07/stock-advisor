@@ -61,6 +61,17 @@ def test_calibration_never_claims_more_than_the_data_supports():
     assert back(np.array([0.5]))[0] == pytest.approx(cal(np.array([0.5]))[0])
 
 
+def test_a_score_that_ran_backwards_promises_no_stock_more_than_the_overall_rate():
+    # the US 63- and 126-day pattern: the lowest scores beat most often, so the fit goes flat, and
+    # two lucky top-scored rows must not inherit the bottom bin's hit rate as a 59% promise
+    rng = np.random.default_rng(3)
+    p_raw = np.concatenate([rng.uniform(0.0, 0.85, 30_000), [0.9, 0.91]])
+    beat = np.concatenate([rng.random(30_000) < 0.6 - 0.25 * p_raw[:30_000], [True, True]])
+    cal = Calibrator.fit(p_raw, beat)
+    assert cal(np.array([0.95]))[0] <= beat.mean() + 0.005
+    assert cal(np.linspace(0, 1, 101)).max() <= beat.mean() + 0.005
+
+
 def test_calibration_error_is_in_percentage_points():
     rng = np.random.default_rng(2)
     p = rng.uniform(0.2, 0.8, 50_000)

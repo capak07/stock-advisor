@@ -74,8 +74,10 @@ def _ended_before(
 class Calibrator:
     """Isotonic map from the classifier's score to a beat probability.
 
-    Clipped to the lowest and highest hit rate of `MIN_BIN`-row bins: a handful of lucky extreme
-    scores must not turn into a promise the bulk of the data doesn't support.
+    Clipped between the hit rates of the lowest- and highest-scored `MIN_BIN`-row bins: a handful of
+    lucky extreme scores must not turn into a promise the bulk of the data doesn't support. When the
+    score ran backwards (the lowest-scored bin beat more often than the highest), every score gets
+    the overall rate: the score told nothing about beating the benchmark.
     """
 
     def __init__(self, xs: np.ndarray, ys: np.ndarray, lo: float, hi: float):
@@ -92,8 +94,13 @@ class Calibrator:
         keep = np.ones(len(ys), dtype=bool)
         keep[1:-1] = (ys[1:-1] != ys[:-2]) | (ys[1:-1] != ys[2:])
         bins = np.array_split(np.argsort(p_raw, kind="stable"), min(20, max(1, len(p_raw) // min_bin)))
-        rates = [beat[b].mean() for b in bins]
-        return cls(xs[keep], ys[keep], float(min(rates)), float(max(rates)))
+        # in score order: the best bin anywhere is no ceiling for the top scores. On US 63- and
+        # 126-day data the lowest-scored bin beat most often, and its rate capped two lucky
+        # top-scored rows at a 59% promise that 11-33% of picks then delivered
+        lo, hi = float(beat[bins[0]].mean()), float(beat[bins[-1]].mean())
+        if lo > hi:
+            lo = hi = float(beat.mean())
+        return cls(xs[keep], ys[keep], lo, hi)
 
     def __call__(self, p_raw: np.ndarray) -> np.ndarray:
         return np.clip(np.interp(np.asarray(p_raw, float), self.xs, self.ys), self.lo, self.hi)

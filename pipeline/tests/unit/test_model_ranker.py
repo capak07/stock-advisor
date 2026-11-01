@@ -45,10 +45,12 @@ def test_the_rank_target_is_each_days_percentile_rank_centred_on_zero():
     }, index=[10, 11, 12, 13, 14, 15, 16])
     out = daily_rank(rows, "y_5")
     assert out.index.equals(rows.index)
-    assert out.tolist()[:3] == pytest.approx([-1 / 6, 0.5, 1 / 6])
+    assert out.tolist()[:3] == pytest.approx([-1 / 3, 1 / 3, 0.0])
     assert np.isnan(out[13])
-    assert out[14] == pytest.approx(0.5)  # a day with one stock
-    assert out[15] == out[16] == pytest.approx(0.25)  # a tie shares the average rank
+    # a lone coin on an early crypto day is the middle, not the top
+    assert out[14] == pytest.approx(0.0)
+    assert out[15] == out[16] == pytest.approx(0.0)  # a tie shares the average rank
+    assert out.groupby(rows["day"]).mean().tolist() == pytest.approx([0.0, 0.0, 0.0])  # every day averages 0
 
 
 def test_the_baseline_score_is_its_published_median(market):

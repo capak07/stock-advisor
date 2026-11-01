@@ -277,12 +277,15 @@ class WalkForward:
 
 
 def daily_rank(rows: pd.DataFrame, target: str) -> pd.Series:
-    """Each row's percentile rank of `target` among that day's rows, minus 0.5; NaN stays NaN.
+    """Each row's mid-rank percentile of `target` among that day's rows, minus 0.5; NaN stays NaN.
 
+    `(rank - 0.5) / n - 0.5` averages exactly 0 on every day, so a day with few rows (early crypto
+    history) doesn't teach the booster that its era ranks high: a lone row is 0, not the top.
     Only the same day's targets enter a row's rank, and they all end on the same session, so the
     rank is known exactly when the row's own target is.
     """
-    return rows[target].groupby(rows["day"]).rank(pct=True, method="average") - 0.5
+    by_day = rows[target].groupby(rows["day"])
+    return (by_day.rank(method="average") - 0.5) / by_day.transform("count") - 0.5
 
 
 def _fit(x: pd.DataFrame, y: np.ndarray, config: TrainConfig, **objective) -> lgb.Booster:

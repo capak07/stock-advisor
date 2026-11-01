@@ -262,7 +262,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - A booster that learns each stock's rank among that day's stocks, with slower learning, raised rank IC 25–32% at 21 and 63 days. That was measured on two separate quarters of US stocks, over outer folds 1–3.
 - **What it is:** a `ranker` model variant.
   - **Per horizon, one booster:**
-    - its target is the daily cross-sectional percentile rank of `y_h`, minus 0.5;
+    - its target is the daily cross-sectional mid-rank percentile of `y_h`, `(rank − 0.5)/n`, minus 0.5, so every day averages 0 and a day with one coin doesn't count as top-ranked (review fix, 2026-11-01);
     - median (quantile 0.5) objective;
     - `learning_rate` 0.03, `num_leaves` 15, 400 rounds;
     - the other parameters are as `PARAMS`.

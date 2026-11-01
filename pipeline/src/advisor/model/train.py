@@ -106,6 +106,114 @@ class Calibrator:
         return cls(np.array(d["xs"]), np.array(d["ys"]), d["lo"], d["hi"])
 
 
+class RangeCalibrator:
+    """Moves each edge of a forecast range so that, on earlier out-of-sample outcomes, a tenth, half
+    and nine tenths of outcomes fell below q10, q50 and q90.
+
+    The quantile boosters are never checked against outcomes the way P(beat) is, and on real data
+    their median leans high (a +19% median beside a 46% chance of beating the benchmark). Each shift
+    is in units of the range's width, so a wide, volatile range moves further than a narrow one.
+    """
+
+    def __init__(self, shifts: Mapping[str, float]):
+        self.shifts = {name: float(shifts[name]) for name in QUANTILE_NAMES}
+
+    @classmethod
+    def fit(cls, pred: pd.DataFrame) -> "RangeCalibrator":
+        width = _width(pred)
+        y = pred["y"].to_numpy(dtype=float)
+        return cls({
+            name: float(np.quantile((y - pred[name].to_numpy(dtype=float)) / width, q))
+            for name, q in zip(QUANTILE_NAMES, QUANTILES, strict=True)
+        })
+
+    def __call__(self, quantiles: pd.DataFrame) -> pd.DataFrame:
+        width = _width(quantiles)
+        moved = np.column_stack([
+            quantiles[name].to_numpy(dtype=float) + self.shifts[name] * width for name in QUANTILE_NAMES
+        ])
+        return pd.DataFrame(np.sort(moved, axis=1), index=quantiles.index, columns=list(QUANTILE_NAMES))
+
+    def to_json(self) -> dict:
+        return dict(self.shifts)
+
+    @classmethod
+    def from_json(cls, d: Mapping) -> "RangeCalibrator":
+        return cls(d)
+
+
+MIN_WIDTH = 1e-4  # a range with no width still moves, by a tiny amount
+RAW_NAMES = tuple(f"{name}_raw" for name in QUANTILE_NAMES)
+
+
+def _width(quantiles: pd.DataFrame) -> np.ndarray:
+    return np.maximum((quantiles["q90"] - quantiles["q10"]).to_numpy(dtype=float), MIN_WIDTH)
+
+
+def pinball_loss(y: np.ndarray, q: np.ndarray, alpha: float) -> float:
+    """Mean pinball loss at `alpha`: over- and under-shoots are weighted by the quantile."""
+    d = np.asarray(y, float) - np.asarray(q, float)
+    return float(np.mean(np.maximum(alpha * d, (alpha - 1) * d)))
+
+
+def _range_pinball(frame: pd.DataFrame, columns: Sequence[str]) -> float:
+    y = frame["y"].to_numpy(dtype=float)
+    return float(np.mean([
+        pinball_loss(y, frame[c].to_numpy(dtype=float), q) for c, q in zip(columns, QUANTILES, strict=True)
+    ]))
+
+
+def _as_range(frame: pd.DataFrame, names: Sequence[str]) -> pd.DataFrame:
+    return frame[list(names)].set_axis(list(QUANTILE_NAMES), axis=1)
+
+
+def calibrate_ranges(
+    pred: pd.DataFrame, calendar: pd.DatetimeIndex, horizon: int, folds: Sequence[Fold]
+) -> tuple[pd.DataFrame, dict]:
+    """One horizon's predictions with each period's range calibrated on outcomes known before it.
+
+    A period uses its calibrated range only if calibrating beat the raw range, by pinball loss, on
+    earlier periods whose outcomes were known when it began; so neither the shift nor the choice to
+    use it sees the period's own outcomes. The raw range stays in `q*_raw`. `info["adopted"]` is the
+    same test over every calibrated period: what the final model, fitted on all of them, follows.
+    """
+    out = pred.copy()
+    for name, raw in zip(QUANTILE_NAMES, RAW_NAMES, strict=True):
+        out[raw] = out[name].to_numpy(dtype=float)
+    calibrated = pd.DataFrame(np.nan, index=out.index, columns=list(QUANTILE_NAMES))
+    used: dict[int, bool] = {}
+    for k in sorted(out["fold"].unique()):
+        known = _ended_before(out["day"], calendar, horizon, folds[int(k)].start)
+        earlier = out[known]
+        if earlier.empty:  # nothing out of sample to calibrate this period on
+            continue
+        here = out["fold"] == k
+        fitted = RangeCalibrator.fit(_as_range(earlier, RAW_NAMES).assign(y=earlier["y"]))
+        calibrated.loc[here] = fitted(_as_range(out.loc[here], RAW_NAMES)).to_numpy()
+        evidence = known & calibrated["q50"].notna() & ~here
+        used[int(k)] = bool(evidence.any()) and _calibration_helps(out[evidence], calibrated[evidence])
+        if used[int(k)]:
+            for name in QUANTILE_NAMES:
+                out.loc[here, name] = calibrated.loc[here, name]
+    scored = calibrated["q50"].notna()
+    info = {"adopted": False, "periods": {str(k): v for k, v in used.items()}, "pinball_raw": None,
+            "pinball_calibrated": None, "below_median_raw": None, "below_median_calibrated": None}
+    if scored.any():
+        both = out.loc[scored, ["y", *RAW_NAMES]].join(calibrated.loc[scored])
+        info["pinball_raw"] = _range_pinball(both, RAW_NAMES)
+        info["pinball_calibrated"] = _range_pinball(both, QUANTILE_NAMES)
+        info["below_median_raw"] = float((both["y"] < both["q50_raw"]).mean())
+        info["below_median_calibrated"] = float((both["y"] < both["q50"]).mean())
+        info["adopted"] = bool(info["pinball_calibrated"] < info["pinball_raw"])  # a NaN never is
+    return out, info
+
+
+def _calibration_helps(raw: pd.DataFrame, calibrated: pd.DataFrame) -> bool:
+    """Whether the calibrated range had a lower pinball loss than the raw one on these rows."""
+    both = raw[["y", *RAW_NAMES]].join(calibrated)
+    return bool(_range_pinball(both, QUANTILE_NAMES) < _range_pinball(both, RAW_NAMES))
+
+
 def _bin_gaps(p: np.ndarray, beat: np.ndarray, bins: int) -> tuple[np.ndarray, np.ndarray]:
     p, beat = np.asarray(p, float), np.asarray(beat, float)
     parts = [b for b in np.array_split(np.argsort(p, kind="stable"), bins) if len(b)]
@@ -264,12 +372,16 @@ def walk_forward(
             calibrator = Calibrator.fit(earlier["p_raw"].to_numpy(), (earlier["y"] > 0).to_numpy())
             here = pred["fold"] == k
             pred.loc[here, "p"] = calibrator(pred.loc[here, "p_raw"].to_numpy())
+        pred, ranges = calibrate_ranges(pred, data.calendar, h, folds)
         frames.append(pred)
         scored = pred[pred["p"].notna()]
         if not scored.empty:
-            metrics[h] = _metrics(scored)
+            metrics[h] = _metrics(scored) | {"range": ranges}
     extra = ["q50_alpha", "alpha"] if names else []
-    columns = ["day", "symbol", "sector", "dollar_volume_20", *jump, "horizon", "fold", "y", *QUANTILE_NAMES, "p_raw", "p", *extra]
+    columns = [
+        "day", "symbol", "sector", "dollar_volume_20", *jump, "horizon", "fold", "y", *QUANTILE_NAMES, *RAW_NAMES,
+        "p_raw", "p", *extra,
+    ]
     predictions = pd.concat(frames, ignore_index=True)[columns] if frames else pd.DataFrame(columns=columns)
     alpha_ic = None
     if names and not predictions.empty:
@@ -291,6 +403,7 @@ class FinalModel:
     factor_names: tuple[str, ...] = ()
     mu: dict = field(default_factory=dict)  # horizon → factor → mean forward return
     betas: dict = field(default_factory=dict)  # symbol → factor → latest beta
+    ranges: dict = field(default_factory=dict)  # horizon → RangeCalibrator, where it beat the raw range
 
     def _with_betas(self, x: pd.DataFrame) -> pd.DataFrame:
         if not self.factor_names:
@@ -312,6 +425,8 @@ class FinalModel:
                 shift = _factor_shift(frame, self.factor_names, self.mu.get(h, {}))
                 for quantile in QUANTILE_NAMES:
                     out[quantile] = out[quantile].to_numpy(dtype=float) + shift
+            if h in self.ranges:
+                out[list(QUANTILE_NAMES)] = self.ranges[h](out[list(QUANTILE_NAMES)])
             out["p_beat"] = self.calibrators[h](out.pop("p_raw").to_numpy())
             out.insert(0, "horizon", h)
             frames.append(out)
@@ -363,12 +478,14 @@ def fit_final(
     rows = data.rows
     names = tuple(factor_names or ())
     feat = list(data.features) + [f"beta_{name}" for name in names]
-    boosters, calibrators = {}, {}
+    boosters, calibrators, ranges = {}, {}, {}
     for h in config.horizons:
         oos = wf.predictions[(wf.predictions["horizon"] == h) & (wf.predictions["fold"] > 0)]
         if oos.empty:
             raise ValueError(f"no out-of-sample predictions to calibrate horizon {h} on")
         calibrators[h] = Calibrator.fit(oos["p_raw"].to_numpy(), (oos["y"] > 0).to_numpy())
+        if wf.metrics.get(h, {}).get("range", {}).get("adopted"):
+            ranges[h] = RangeCalibrator.fit(_as_range(oos, RAW_NAMES).assign(y=oos["y"]))
         train = rows[rows[f"y_{h}"].notna()]
         if names:
             boosters[h] = _fit_horizon(train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"])
@@ -391,7 +508,7 @@ def fit_final(
     betas = _latest_betas(rows, names) if names else {}
     return FinalModel(
         feat, tuple(config.horizons), boosters, calibrators, screener, screener_features,
-        dict(config.params), config.rounds, names, mu, betas,
+        dict(config.params), config.rounds, names, mu, betas, ranges,
     )
 
 
@@ -414,6 +531,8 @@ def to_files(model: FinalModel) -> dict[str, bytes]:
         "features": model.features, "screener_features": model.screener_features,
         "horizons": list(model.horizons), "params": model.params, "rounds": model.rounds,
     }))
+    if model.ranges:
+        files["ranges"] = _pack(json.dumps({str(h): r.to_json() for h, r in model.ranges.items()}))
     if model.factor_names:
         files["factors"] = _pack(json.dumps({
             "names": list(model.factor_names),
@@ -447,4 +566,7 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
         {h: Calibrator.from_json(calibration[str(h)]) for h in horizons},
         booster("screener"), meta["screener_features"], meta["params"], meta["rounds"],
         factor_names, mu, betas,
+        # a model saved before range calibration has no `ranges` file and keeps its raw ranges
+        {int(h): RangeCalibrator.from_json(d) for h, d in json.loads(_unpack(files["ranges"])).items()}
+        if "ranges" in files else {},
     )

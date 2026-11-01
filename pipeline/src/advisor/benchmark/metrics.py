@@ -8,14 +8,8 @@ import numpy as np
 import pandas as pd
 
 from advisor.model.backtest import MAX_CALIBRATION_PTS, simulate_picks
-from advisor.model.train import _bin_gaps, calibration_error, rank_ic
+from advisor.model.train import _bin_gaps, calibration_error, pinball_loss, rank_ic
 from advisor.models import Market
-
-
-def pinball_loss(y: np.ndarray, q: np.ndarray, alpha: float) -> float:
-    """Mean pinball loss at `alpha`: over- and under-shoots are weighted by the quantile."""
-    d = np.asarray(y, float) - np.asarray(q, float)
-    return float(np.mean(np.maximum(alpha * d, (alpha - 1) * d)))
 
 
 def _mean_or_nan(values: Sequence[float]) -> float:

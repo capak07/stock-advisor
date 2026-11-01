@@ -210,18 +210,22 @@ def join_factor_columns(
     return out
 
 
+def _factor_part(rows: pd.DataFrame, h: int, names: Sequence[str]) -> pd.Series:
+    """Σ beta_k · f_k_h: NaN when any beta or any factor sum over the window is missing."""
+    return sum(rows[f"beta_{name}"] * rows[f"f_{name}_{h}"] for name in names)
+
+
 def alpha_target(rows: pd.DataFrame, h: int, names: Sequence[str]) -> pd.Series:
-    """y_h minus the factor part. A row with any NaN beta keeps y_h."""
+    """y_h minus the factor part. A row whose factor part is missing (a NaN beta, or a factor with
+    too few names to form over the window) keeps y_h; a NaN label would train as 0."""
     y = rows[f"y_{h}"]
-    betas = rows[[f"beta_{name}" for name in names]]
-    shift = sum(rows[f"beta_{name}"] * rows[f"f_{name}_{h}"] for name in names)
-    return y.where(betas.isna().any(axis=1), y - shift)
+    part = _factor_part(rows, h, names)
+    return y.where(part.isna(), y - part)
 
 
-def fallback_count(rows: pd.DataFrame, names: Sequence[str]) -> int:
-    """Rows whose target falls back to y_h because a beta is missing."""
-    betas = rows[[f"beta_{name}" for name in names]]
-    return int(betas.isna().any(axis=1).sum())
+def fallback_count(rows: pd.DataFrame, h: int, names: Sequence[str]) -> int:
+    """Rows whose `h`-day target falls back to y_h because the factor part is missing."""
+    return int(_factor_part(rows, h, names).isna().sum())
 
 
 _FRENCH_5 = "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_5_Factors_2x3_daily_CSV.zip"

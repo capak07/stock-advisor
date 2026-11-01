@@ -189,3 +189,21 @@ def test_factor_files_round_trip_and_live_predict_shifts_only_a_known_symbol():
     unknown = out[out.index == "NEW"].iloc[0]
     assert mom["q50"] == pytest.approx(0.02, abs=0.02)
     assert unknown["q50"] == pytest.approx(0.0, abs=0.02)
+
+
+def test_explanations_never_name_a_factor_exposure():
+    data, folds, config = _mom_book()
+    model = fit_final(data, walk_forward(data, config, folds=folds, factor_names=("mom",)), config, factor_names=("mom",))
+    out = model.contributions(pd.DataFrame({"x": [0.0]}, index=["MOM"]), 5, top=3)
+    assert out["MOM"] and not any(p["feature"].startswith("beta_") for p in out["MOM"])
+
+
+def test_the_alpha_diagnostic_ranks_within_each_horizon():
+    from advisor.model.train import rank_ic_by_horizon
+    day = pd.Timestamp("2024-01-02")
+    frame = pd.DataFrame({
+        "day": day, "horizon": [5, 5, 126, 126],
+        "q50_alpha": [0.01, 0.02, 0.10, 0.20],
+        "alpha": [0.01, 0.02, -0.10, -0.20],  # right at 5 days, backwards at 126: on average no skill
+    })
+    assert rank_ic_by_horizon(frame, "q50_alpha", "alpha") == pytest.approx(0.0)

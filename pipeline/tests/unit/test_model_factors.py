@@ -161,7 +161,21 @@ def test_a_missing_beta_falls_back_to_the_raw_target():
     alpha = alpha_target(rows, 5, ("mkt", "mom"))
     assert alpha.iloc[0] == pytest.approx(0.10 - (1.0 * 0.01 + 0.5 * 0.04))
     assert alpha.iloc[1] == pytest.approx(0.20)
-    assert fallback_count(rows, ("mkt", "mom")) == 1
+    assert fallback_count(rows, 5, ("mkt", "mom")) == 1
+
+
+def test_a_gap_in_a_factor_falls_back_to_the_raw_target_too():
+    # finite betas, but a factor had too few names to form over this window: no NaN label
+    rows = pd.DataFrame({
+        "y_5": [0.10, 0.20],
+        "beta_mkt": [1.0, 1.0],
+        "beta_mom": [0.5, 0.5],
+        "f_mkt_5": [0.01, 0.02],
+        "f_mom_5": [0.04, np.nan],
+    })
+    alpha = alpha_target(rows, 5, ("mkt", "mom"))
+    assert alpha.notna().all() and alpha.iloc[1] == pytest.approx(0.20)
+    assert fallback_count(rows, 5, ("mkt", "mom")) == 1
 
 
 def test_load_market_with_factors_adds_columns_and_keeps_the_old_ones(tmp_path):

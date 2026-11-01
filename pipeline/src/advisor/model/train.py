@@ -125,6 +125,13 @@ def rank_ic(frame: pd.DataFrame, pred: str, actual: str) -> float:
     return float(pd.Series(per_day, dtype=float).mean())
 
 
+def rank_ic_by_horizon(frame: pd.DataFrame, pred: str, actual: str) -> float:
+    """`rank_ic` within each horizon, averaged: ranking 5-day and 126-day values together would
+    reward a forecast for knowing that longer horizons move more."""
+    per_horizon = [rank_ic(g, pred, actual) for _, g in frame.groupby("horizon")]
+    return float(pd.Series(per_horizon, dtype=float).mean())
+
+
 @dataclass
 class WalkForward:
     predictions: pd.DataFrame
@@ -242,7 +249,7 @@ def walk_forward(
                     raw[quantile] = raw[quantile].to_numpy(dtype=float) + shift
                 raw["q50_alpha"] = q50_alpha
                 raw["alpha"] = alpha.loc[test.index].to_numpy(dtype=float)
-                fallbacks += fallback_count(test, names)
+                fallbacks += fallback_count(test, h, names)
             out = test[["day", "symbol", "sector", "dollar_volume_20", *jump]].assign(horizon=h, fold=k, y=test[target])
             parts.append(out.join(raw))
         if not parts:
@@ -267,7 +274,7 @@ def walk_forward(
     alpha_ic = None
     if names and not predictions.empty:
         comparable = predictions.dropna(subset=["q50_alpha", "alpha"])
-        alpha_ic = rank_ic(comparable, "q50_alpha", "alpha") if not comparable.empty else float("nan")
+        alpha_ic = rank_ic_by_horizon(comparable, "q50_alpha", "alpha") if not comparable.empty else float("nan")
     return WalkForward(predictions, metrics, folds, fallbacks, alpha_ic)
 
 
@@ -316,9 +323,12 @@ class FinalModel:
         cross, `_predict` sorts them, so the explained booster may not be the displayed q50."""
         frame = self._with_betas(x)
         contrib = self.boosters[horizon]["q50"].predict(frame[self.features], pred_contrib=True)[:, :-1]  # last = bias
+        # a factor exposure (beta_*) says how the stock moves with a factor, not what moved this
+        # forecast; explanations name only the stock's own features
+        own = np.array([not f.startswith("beta_") for f in self.features])
         out = {}
         for key, vals in zip(x.index, contrib, strict=True):
-            order = np.argsort(-np.abs(vals), kind="stable")[:top]
+            order = [i for i in np.argsort(-np.abs(vals), kind="stable") if own[i]][:top]
             out[key] = [{"feature": self.features[i], "contribution": float(vals[i])} for i in order]
         return out
 

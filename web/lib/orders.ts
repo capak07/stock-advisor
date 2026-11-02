@@ -179,10 +179,45 @@ function wholeShares(price: number, currency: Currency, amountCad: number, usdCa
   return { whole, left: amountCad - whole * price * toCad }
 }
 
+/** The pick stop rule's multipliers of the daily range (pipeline `Policy.swing_atr`, `position_atr`). */
+export interface StopRules {
+  swingAtr: number
+  positionAtr: number
+}
+
+/** Today's rules, as the pipeline's DEFAULT_POLICY; a market's model may store tuned ones. */
+export const DEFAULT_STOP_RULES: StopRules = { swingAtr: 2, positionAtr: 3 }
+/** A model's stop rules from `metrics.config.policy` (pipeline `policy_of`); today's rules when absent or unreadable. */
+export function stopRulesOf(metrics: unknown): StopRules {
+  const config = (metrics as { config?: { policy?: { swing_atr?: unknown; position_atr?: unknown } | null } } | null)?.config
+  const swing = config?.policy?.swing_atr
+  const position = config?.policy?.position_atr
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
+  return ok(swing) && ok(position) ? { swingAtr: swing, positionAtr: position } : DEFAULT_STOP_RULES
+}
+
+/** Stock horizons held as a swing (pipeline backtest.SWING_HORIZONS); the rest are position holds. */
+const SWING_HORIZONS: readonly number[] = [5, 10, 20]
+/** A position stop is never more than this far under the price (pipeline picks.POSITION_MAX_DROP). */
+const POSITION_MAX_DROP = 0.15
+
+/**
+ * A pick's stop for a stock bought at `price` and held `horizonDays` sessions, as the pipeline's
+ * `stop_price`: `swingAtr` daily ranges under for a swing hold, `positionAtr` (at most 15%) for a
+ * position hold. Null without a daily range, or when the stop wouldn't stay above zero.
+ */
+export function pickStop(price: number, atrPct: number | null, horizonDays: number, rules: StopRules = DEFAULT_STOP_RULES): number | null {
+  if (atrPct === null || !Number.isFinite(atrPct) || atrPct < 0) return null
+  const stop = SWING_HORIZONS.includes(horizonDays)
+    ? price * (1 - rules.swingAtr * atrPct)
+    : Math.max(price * (1 - rules.positionAtr * atrPct), price * (1 - POSITION_MAX_DROP))
+  return stop > 0 ? roundPrice(stop) : null
+}
+
 const BRACKET_DAYS = 90
 const BRACKET_STOP_NOTE = 'A bracket’s stop loss sells at market once hit: in a gap it fills lower, but it fills.'
 const BRACKET_EDIT_NOTE =
-  'A bracket can’t be edited and lapses after 90 days: to raise the stop as it trails up, cancel the bracket’s stop loss and place the stop-limit instead.'
+  'A bracket can’t be edited and lapses after 90 days: to raise the stop as it trails up, cancel the bracket’s stop loss and place a stop-limit sell instead.'
 const TAKE_PROFIT_NOTE =
   'The take-profit is the top of the forecast range (q90) on today’s price; the range is against the benchmark, so a market move shifts it.'
 
@@ -194,7 +229,15 @@ const TAKE_PROFIT_NOTE =
  */
 export function planBracket(
   i: Instrument,
-  { amountCad, usdCad, now, stop, q90, exitBy }: { amountCad: number; usdCad: number; now: Date; stop: number; q90: number | null; exitBy: string },
+  {
+    amountCad,
+    usdCad,
+    now,
+    stop,
+    q90,
+    exitBy,
+    horizonDays = null,
+  }: { amountCad: number; usdCad: number; now: Date; stop: number; q90: number | null; exitBy: string | null; horizonDays?: number | null },
 ): OrderPlan {
   if (i.assetType !== 'stock') return { steps: [], notes: [] }
   const price = roundPrice(i.price * (1 + buffer(i.atrPct)))
@@ -207,7 +250,13 @@ export function planBracket(
     ...(takeProfit === null ? [] : [`take profit ${fmtPrice(takeProfit, i.currency)} (${vs(takeProfit)})`]),
     `stop loss ${fmtPrice(stop, i.currency)} (${vs(stop)})`,
   ]
-  const lapses = new Date(`${exitBy}T00:00:00Z`).getTime() > now.getTime() + BRACKET_DAYS * 86_400_000
+  // without an exit-by date, a hold of h sessions spans about h × 7/5 calendar days
+  const lapses =
+    exitBy !== null
+      ? new Date(`${exitBy}T00:00:00Z`).getTime() > now.getTime() + BRACKET_DAYS * 86_400_000
+      : horizonDays !== null && Math.ceil((horizonDays * 7) / 5) > BRACKET_DAYS
+  const lapseNote =
+    exitBy !== null ? `It lapses before the ${shortDay(exitBy)} exit-by; place a new stop then.` : 'It lapses before this hold ends; place a new stop then.'
   return {
     steps: [
       step({
@@ -224,7 +273,7 @@ export function planBracket(
     notes: [
       BRACKET_STOP_NOTE,
       BRACKET_EDIT_NOTE,
-      ...(lapses ? [`It lapses before the ${shortDay(exitBy)} exit-by; place a new stop then.`] : []),
+      ...(lapses ? [lapseNote] : []),
       ...(takeProfit === null ? [] : [TAKE_PROFIT_NOTE]),
       ...(left >= MIN_FRACTION_CAD ? ['A bracket covers whole shares only; the fraction stays a separate market buy.'] : []),
     ],

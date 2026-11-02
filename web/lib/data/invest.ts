@@ -1,8 +1,9 @@
 import 'server-only'
 import { addDays } from '../dates'
 import type { Candidate, ForecastRow } from '../invest/allocate'
+import { stopRulesOf, type StopRules } from '../orders'
 import { buildLedger } from '../portfolio/ledger'
-import { assetKey } from '../portfolio/types'
+import { assetKey, type Market } from '../portfolio/types'
 import type { Run } from '../runs'
 import { marketOf } from '../symbols'
 import type { Supabase } from '../supabase/server'
@@ -27,6 +28,8 @@ export interface InvestData {
   heldCoins: Set<string>
   usdFxFeePct: number
   cryptoFeePct: number
+  /** Each market's stop rule for a bracket's stop loss: its active model's tuned one, else today's. */
+  stopRules: Partial<Record<Market, StopRules>>
 }
 
 const num = (value: unknown): number | null => {
@@ -89,7 +92,7 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
   const run = await runById(supabase, newest[0].run_id)
   if (!run) return null
 
-  const [predictions, features, coinPredictions, coinFeatures, settings, trades, fx] = await Promise.all([
+  const [predictions, features, coinPredictions, coinFeatures, settings, trades, fx, models] = await Promise.all([
     fetchAll((from, to) =>
       supabase
         .from('predictions')
@@ -133,6 +136,12 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     loadSettings(supabase),
     loadTrades(supabase),
     loadFx(supabase),
+    supabase
+      .from('models')
+      .select('kind, metrics')
+      .eq('active', true)
+      .in('kind', ['stock_us', 'stock_tsx'])
+      .then((answer) => must(answer) as { kind: 'stock_us' | 'stock_tsx'; metrics: unknown }[]),
   ])
 
   const stockRows = horizonsOf(predictions)
@@ -222,5 +231,6 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     heldCoins: new Set(positions.filter((p) => p.assetType === 'crypto').map((p) => p.symbol)),
     usdFxFeePct: Number(settings.usd_fx_fee_pct),
     cryptoFeePct: Number(settings.crypto_fee_pct),
+    stopRules: Object.fromEntries(models.map((m) => [m.kind === 'stock_us' ? 'US' : 'TSX', stopRulesOf(m.metrics)])),
   }
 }

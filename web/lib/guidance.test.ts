@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PickView } from './data/picks'
-import { btcGuide, holdingGuides, joinPlans, pickGuide, verdictGuide } from './guidance'
+import { btcGuide, holdingGuides, investGuide, joinPlans, pickGuide, verdictGuide } from './guidance'
+import type { StockLine } from './invest/allocate'
 import type { HoldingAction } from './portfolio/actions'
 
 const NOW = new Date('2026-10-28T15:00:00Z') // 11:00 in Toronto, a Wednesday
@@ -178,5 +179,52 @@ describe('btcGuide and joinPlans', () => {
   it('keeps each note once', () => {
     const plan = { steps: [], notes: ['a', 'b'] }
     expect(joinPlans(plan, null, { steps: [], notes: ['b'] }).notes).toEqual(['a', 'b'])
+  })
+})
+
+describe('investGuide', () => {
+  const line = (over: Partial<StockLine> = {}): StockLine => ({
+    symbol: 'RY.TO',
+    name: null,
+    assetType: 'stock',
+    market: 'TSX',
+    sector: null,
+    amount: 1000,
+    shares: 20,
+    qualifies: false,
+    cost: 0.003,
+    vol60: 0.2,
+    volatility: 'low',
+    price: 50,
+    currency: 'CAD',
+    atrPct: 0.02,
+    dollarVolume20: 5e6,
+    horizonDays: 21,
+    q10: -0.02,
+    q50: 0.03,
+    q90: 0.08,
+    pBeat: 0.55,
+    benchmark: 'XIU.TO',
+    ...over,
+  })
+
+  it("buys the line, then offers it as one bracket order with the picks' stop and the top of its range", () => {
+    const plan = investGuide(line(), ctx)!
+    expect(kinds(plan)).toEqual(['limit', 'market', 'bracket']) // C$45 left over buys a fraction
+    // C$1,000 at C$50.25 is 19 sh; a 21-day hold is a position hold: 3 ranges under C$50
+    expect(plan.steps[2]).toMatchObject({ qty: 19, price: 50.25, takeProfit: 54, stop: 47 })
+    expect(plan.notes).toContain("The bracket's stop loss is the picks' rule: 2× the daily range under the price for a hold up to 20 days, 3× (at most 15% under) for longer.")
+  })
+
+  it("follows the market's tuned stop rule", () => {
+    const plan = investGuide(line(), ctx, { TSX: { swingAtr: 2, positionAtr: 2 } })!
+    expect(plan.steps[2]).toMatchObject({ stop: 48 })
+    expect(plan.notes.join(' ')).toContain('2× (at most 15% under) for longer')
+  })
+
+  it('offers no bracket without a daily range, and none for a coin', () => {
+    expect(kinds(investGuide(line({ atrPct: null }), ctx))).toEqual(['limit', 'market'])
+    const coin = line({ symbol: 'ETH', assetType: 'crypto', market: null, currency: 'CAD', price: 3000, atrPct: 0.04, horizonDays: 14 })
+    expect(kinds(investGuide(coin, ctx))).toEqual(['limit'])
   })
 })

@@ -7,9 +7,21 @@ import type { PickView } from './data/picks'
 import type { StoredVerdict } from './data/watchlist'
 import { fmtMoney } from './format'
 import type { StockLine } from './invest/allocate'
-import { planBracket, planBuy, planRecurring, planSell, planStop, planTrim, type Instrument, type OrderPlan } from './orders'
+import {
+  DEFAULT_STOP_RULES,
+  pickStop,
+  planBracket,
+  planBuy,
+  planRecurring,
+  planSell,
+  planStop,
+  planTrim,
+  type Instrument,
+  type OrderPlan,
+  type StopRules,
+} from './orders'
 import type { HoldingAction, RiskLevel } from './portfolio/actions'
-import type { Close } from './portfolio/types'
+import type { Close, Market } from './portfolio/types'
 import { tradeCurrency } from './symbols'
 
 /** A buy sized for a portfolio with no value yet. */
@@ -147,11 +159,28 @@ export function holdingGuides(
   return { order, stop }
 }
 
-/** An Invest line bought for its amount, with no stop (the page isn't a pick). */
-export function investGuide(line: StockLine, { now, usdCad }: OrderContext): OrderPlan | null {
+/**
+ * An Invest line bought for its amount with no stop order (the page isn't a pick), then, for a stock
+ * with a daily range, the same buy as one bracket order: the picks' stop rule for its hold (the
+ * market's tuned one when its model stores it) and the top of its range as the take-profit.
+ */
+export function investGuide(
+  line: StockLine,
+  { now, usdCad }: OrderContext,
+  stopRules: Partial<Record<Market, StopRules>> = {},
+): OrderPlan | null {
   if (line.price === null || (line.currency === 'USD' && usdCad === null)) return null
   const i: Instrument = { assetType: line.assetType, currency: line.currency, price: line.price, atrPct: line.atrPct, dollarVolume20: line.dollarVolume20 }
-  return planBuy(i, { amountCad: line.amount, usdCad: usdCad ?? 1, now })
+  const sized = { amountCad: line.amount, usdCad: usdCad ?? 1, now }
+  const buy = planBuy(i, sized)
+  if (line.assetType !== 'stock' || line.market === null) return buy
+  const rules = stopRules[line.market] ?? DEFAULT_STOP_RULES
+  const stop = pickStop(line.price, line.atrPct, line.horizonDays, rules)
+  if (stop === null) return buy
+  const bracket = planBracket(i, { ...sized, stop, q90: line.q90, exitBy: null, horizonDays: line.horizonDays })
+  if (bracket.steps.length === 0) return buy
+  const rule = `The bracket's stop loss is the picks' rule: ${rules.swingAtr}× the daily range under the price for a hold up to 20 days, ${rules.positionAtr}× (at most 15% under) for longer.`
+  return joinPlans(buy, bracket, { steps: [], notes: [rule] })
 }
 
 /** The Invest page's BTC share: a limit buy at its CAD price when there is one, and the recurring alternative. */

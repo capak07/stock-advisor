@@ -77,18 +77,19 @@ Inputs per line: side and kind (buy, add, sell, trim, stop, recurring), the last
 - **Coins:**
   - Buy: "**Limit buy {amount} at {price × (1 + b)}**; it cancels after 24 hours unless you extend it". The ATR comes from candles where stored.
   - Stop: "If Wealthsimple offers a stop order for this coin: stop {trailing stop}…", otherwise "set a price alert at {stop}".
-- **Bracket** (added 2026-11-02; picks, watched Buys and Adds, as an alternative after the steps above):
+- **Bracket** (added 2026-11-02; picks, watched Buys, Adds and Invest stock lines, as an alternative after the steps above):
   - "**Or as one bracket order: limit buy {n} sh at {price × (1 + b)}**, {Day order or next trading day}, **take profit {price × (1 + q90)} ({+x%}), stop loss {stop} ({−y%})**". The percentages are against the limit price.
   - `n` is the same whole shares as the limit buy. Under one share, or for a coin, there is no bracket.
   - **The take-profit is the top of the forecast range (q90)** at the hold's horizon, applied to the entry price (the owner's choice, 2026-11-02). Leave it out when q90 is missing or not a gain. The range is an excess return against the benchmark, so a market move shifts it, and a note says so.
   - The stop-loss is the pick's stop. For an Add it is the holding's trailing stop, and the take-profit is the top of the holding's own range.
   - Notes:
     - the stop-loss sells at market;
-    - a bracket can't be edited and lapses after 90 days, so to raise a trailing stop, cancel the bracket's stop-loss and place the stop-limit instead;
+    - a bracket can't be edited and lapses after 90 days, so to raise a trailing stop, cancel the bracket's stop-loss and place a stop-limit sell instead;
     - "It lapses before the {exit-by} exit-by; place a new stop then", when the exit-by is more than 90 days away;
     - when a fractional remainder is bought at market, the bracket covers whole shares only.
   - **An Add's bracket covers only the shares it buys.** Wealthsimple can't bracket shares already owned, so the held ones keep their stop-limit, and a note says so (the owner's choice, 2026-11-02). An Add with no trailing stop or exit-by gets no bracket.
-  - **Not for Invest lines** (they have no stop), and not for plain Holds (no new buy to attach it to).
+  - **An Invest stock line's bracket** (the owner's ask, 2026-11-02): the line keeps no separate stop order, but its bracket's stop-loss is the picks' rule for its hold (`swing_atr` daily ranges under the price for 5, 10 or 20 sessions, else `position_atr`, at most 15% under). The market's active model's tuned policy is used when it stores one, else today's 2 and 3, and a note names the rule. With no daily range there is no stop, so no bracket. With no exit-by date, the lapse note fires when the hold's sessions × 7/5 exceed 90 days.
+  - Not for coins (Wealthsimple brackets stocks and ETFs only), and not for plain Holds (no new buy to attach it to).
 - **Recurring** (the Invest page's BTC share only): "**Or a recurring buy:** C${amount ÷ 4} weekly for 4 weeks ★ (Wealthsimple: daily, weekly, every two weeks or monthly)".
 - **Prices** round to the cent at C$/US$1 or more, and to 4 significant figures below that, never in scientific notation (the existing `fmtPrice`).
 

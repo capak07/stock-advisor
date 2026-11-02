@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isMarketHours, planBracket, planBuy, planRecurring, planSell, planStop, planTrim, type Instrument } from './orders'
+import { isMarketHours, pickStop, stopRulesOf, planBracket, planBuy, planRecurring, planSell, planStop, planTrim, type Instrument } from './orders'
 
 // Tuesday Oct 27, 2026: 2 PM and 10 PM in Toronto (EDT, UTC−4)
 const OPEN = new Date('2026-10-27T18:00:00Z')
@@ -182,7 +182,7 @@ describe('planBracket', () => {
     const notes = planBracket(tsx(), { ...near, q90: 0.14 }).notes
     expect(notes).toContain('A bracket’s stop loss sells at market once hit: in a gap it fills lower, but it fills.')
     expect(notes).toContain(
-      'A bracket can’t be edited and lapses after 90 days: to raise the stop as it trails up, cancel the bracket’s stop loss and place the stop-limit instead.',
+      'A bracket can’t be edited and lapses after 90 days: to raise the stop as it trails up, cancel the bracket’s stop loss and place a stop-limit sell instead.',
     )
     expect(notes.join(' ')).not.toMatch(/exit-by/)
   })
@@ -204,5 +204,39 @@ describe('planBracket', () => {
     expect(planBracket(tsx({ currency: 'USD', price: 500 }), { ...near, amountCad: 300, stop: 450, q90: 0.1 }).steps).toEqual([])
     const bonk: Instrument = { assetType: 'crypto', currency: 'CAD', price: 0.0000043, atrPct: null, dollarVolume20: null }
     expect(planBracket(bonk, { ...near, stop: 0.000003, q90: 0.1 }).steps).toEqual([])
+  })
+})
+
+describe('pickStop', () => {
+  it('is 2 daily ranges under the price for a swing hold, 3 for a position hold, never more than 15% under', () => {
+    expect(pickStop(100, 0.02, 10)).toBe(96)
+    expect(pickStop(100, 0.02, 21)).toBe(94) // 21 sessions is a position hold, as in the pipeline
+    expect(pickStop(100, 0.08, 63)).toBe(85) // 24% under is capped at 15%
+    expect(pickStop(100, 0.08, 20)).toBe(84) // a swing stop has no cap
+  })
+
+  it('follows tuned rules, and gives none without a daily range or when it would not stay above zero', () => {
+    expect(pickStop(100, 0.02, 10, { swingAtr: 1.5, positionAtr: 2.5 })).toBe(97)
+    expect(pickStop(100, null, 10)).toBeNull()
+    expect(pickStop(100, 0.6, 10)).toBeNull()
+  })
+})
+
+describe('planBracket without an exit-by', () => {
+  const base = { amountCad: 1000, usdCad: 1.4, now: OPEN, stop: 9.5, q90: 0.14, exitBy: null }
+
+  it('warns of the 90-day lapse from the hold length when there is no exit-by date', () => {
+    expect(planBracket(tsx(), { ...base, horizonDays: 126 }).notes).toContain('It lapses before this hold ends; place a new stop then.')
+    expect(planBracket(tsx(), { ...base, horizonDays: 21 }).notes.join(' ')).not.toMatch(/lapses before/)
+  })
+})
+
+describe('stopRulesOf', () => {
+  it("reads a model's tuned stop multipliers, and today's rules when it stores none or a broken one", () => {
+    const tuned = { config: { policy: { p_buy: 0.6, p_sell: 0.4, swing_atr: 1.5, position_atr: 2.5, trail_atr: 2, rule: 'ratio', horizons: null } } }
+    expect(stopRulesOf(tuned)).toEqual({ swingAtr: 1.5, positionAtr: 2.5 })
+    expect(stopRulesOf({ config: { policy: null } })).toEqual({ swingAtr: 2, positionAtr: 3 })
+    expect(stopRulesOf({})).toEqual({ swingAtr: 2, positionAtr: 3 })
+    expect(stopRulesOf({ config: { policy: { swing_atr: 'x', position_atr: -1 } } })).toEqual({ swingAtr: 2, positionAtr: 3 })
   })
 })

@@ -12,7 +12,8 @@ import { fmtMoney, fmtPct, fmtQty } from '@/lib/format'
 import { investGuide, type OrderContext } from '@/lib/guidance'
 import { allocate, type Hold, type StockLine } from '@/lib/invest/allocate'
 import { addWeekdays, parseInvestInputs, type AssetChoice } from '@/lib/invest/inputs'
-import type { OrderPlan } from '@/lib/orders'
+import type { OrderPlan, StopRules } from '@/lib/orders'
+import type { Market } from '@/lib/portfolio/types'
 import { KIND_LABEL, type Run } from '@/lib/runs'
 import { tickerHref } from '@/lib/ticker'
 
@@ -68,6 +69,7 @@ export default async function InvestPage({ searchParams }: Props) {
             scored={inputs.asset === 'crypto' ? data.coins.length : data.stocks.length}
             noTsx126={!data.stocks.some((c) => c.market === 'TSX' && c.rows.some((r) => r.horizonDays === 126))}
             orders={orders}
+            stopRules={data.stopRules}
             allocation={allocate({
               amount: inputs.amount!,
               stocks: inputs.stocks!,
@@ -92,6 +94,7 @@ function Result({
   scored,
   noTsx126,
   orders,
+  stopRules,
   allocation,
 }: {
   run: Run
@@ -102,13 +105,14 @@ function Result({
   scored: number
   noTsx126: boolean
   orders: OrderContext
+  stopRules: Partial<Record<Market, StopRules>>
   allocation: ReturnType<typeof allocate>
 }) {
   const { stocks, uninvested, notValidated, evenSplit } = allocation
   const noun = asset === 'crypto' ? 'coin' : 'stock'
   const names = asset === 'crypto' ? 'coins' : 'stocks'
   const mixed = notValidated && stocks.some((s) => s.qualifies)
-  const guides = new Map(stocks.map((s) => [s.symbol, investGuide(s, orders)]))
+  const guides = new Map(stocks.map((s) => [s.symbol, investGuide(s, orders, stopRules)]))
   return (
     <section className="card card-pad enter" aria-labelledby="result-h">
       <div className="section-head" style={{ marginBottom: 6 }}>

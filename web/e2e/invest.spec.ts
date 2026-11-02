@@ -123,11 +123,21 @@ test('crypto is ranked like stocks, and a coin expected to lag is left out', asy
 test('each Invest line says how to place it', async ({ page }) => {
   await seedForecasts()
   await seedCloses('RY.TO', 'stock', 'CAD', weekdays(daysAgo(10)), 50, 0)
+  await seedCloses('SHOP.TO', 'stock', 'CAD', weekdays(daysAgo(10)), 80, 0) // priced, but with no daily range
+  await sql`update features_live set features = features || '{"atr_14_pct": 0.02}'::jsonb where symbol = 'RY.TO'`
   await page.goto('/invest?amount=1000&asset=stocks&stocks=5')
   const ry = stockRows(page).filter({ hasText: 'RY.TO' }).locator('.order-guide')
   await expect(ry).toContainText('How to place it')
-  await expect(ry).toContainText(/Limit buy \d+ sh at C\$50\.50 · (Day order|set it to expire at the end of the next trading day)/)
-  await expect(ry).not.toContainText('stop-limit') // the Invest page isn't a pick, so no stop
+  await expect(ry).toContainText(/Limit buy \d+ sh at C\$50\.25 · (Day order|set it to expire at the end of the next trading day)/)
+  await expect(ry.locator('.og-step', { hasText: 'stop-limit' })).toHaveCount(0) // the Invest page isn't a pick, so no separate stop order
+  // the bracket: the top of its 21-day range (C$50 × 1.08), and the picks' position stop (3 ranges under)
+  await expect(ry).toContainText(
+    /Or as one bracket order: limit buy \d+ sh at C\$50\.25 · (Day order|set it to expire at the end of the next trading day), take profit C\$54\.00 \(\+7%\), stop loss C\$47\.00 \(−6%\)/,
+  )
+  // a priced stock without a daily range gets its buy, but no bracket
+  const shop = stockRows(page).filter({ hasText: 'SHOP.TO' }).locator('.order-guide')
+  await expect(shop).toContainText('Limit buy')
+  await expect(shop).not.toContainText('bracket')
   await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toHaveCount(1)
 })
 

@@ -1,6 +1,8 @@
 from dataclasses import replace
 
-from advisor.models import PredictionRow
+import pytest
+
+from advisor.models import AssetType, PredictionRow
 from advisor.policy import DEFAULT_POLICY
 from advisor.recommend.verdicts import TSX_BASIS, coin_verdict, stock_verdict
 
@@ -36,14 +38,54 @@ def test_a_buy_explains_the_expected_return_against_costs():
     assert (v.symbol, v.asset_type) == ("AAA", "stock")
 
 
-def test_low_odds_at_every_horizon_is_avoid():
+def test_low_odds_at_the_best_ratio_horizon_is_avoid():
+    # equal ratios: the tie goes to the shorter horizon, as for a holding
     v = stock_verdict("AAA", [row(21, 0.40), row(63, 0.42)], 0.001, True, None, None)
-    assert (v.verdict, v.reasons) == ("avoid", ["P(beat SPY) at most 0.42 at every horizon"])
+    assert (v.verdict, v.reasons) == ("avoid", ["P(beat SPY) 0.40 over 21 trading days"])
 
 
-def test_odds_just_above_the_avoid_line_at_one_horizon_is_not_avoid():
-    v = stock_verdict("AAA", [row(21, 0.40), row(63, 0.43)], 0.001, True, None, None)
+def test_the_best_ratio_horizon_decides_avoid_not_the_other_horizons():
+    worse_elsewhere = stock_verdict("AAA", [row(21, 0.40, q50=0.02), row(63, 0.50, q50=0.06)], 0.001, True, None, None)
+    better_elsewhere = stock_verdict("AAA", [row(21, 0.40, q50=0.06), row(63, 0.50, q50=0.02)], 0.001, True, None, None)
+    assert worse_elsewhere.verdict == "hold"
+    assert better_elsewhere.verdict == "avoid"  # 63 is above the line, but 21 is the horizon a holding is judged at
+
+
+def test_odds_just_above_the_avoid_line_at_the_best_ratio_horizon_is_not_avoid():
+    v = stock_verdict("AAA", [row(21, 0.43), row(63, 0.40)], 0.001, True, None, None)
     assert v.verdict == "hold"
+
+
+def test_no_horizon_with_a_range_is_never_avoid():
+    flat = PredictionRow("AAA", 21, 0.01, 0.01, 0.01, 0.30, "SPY", "v1")
+    assert stock_verdict("AAA", [flat], 0.001, True, None, None).verdict == "hold"
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [row(21, 0.40), row(63, 0.42)],
+        [row(21, 0.40, q50=0.06), row(63, 0.50, q50=0.02)],
+        [row(21, 0.40, q50=0.02), row(63, 0.50, q50=0.06)],
+        [row(21, 0.43), row(63, 0.40)],
+        [row(10, 0.42)],
+        [row(10, 0.4201)],
+        [row(63, 0.62)],
+        [PredictionRow("AAA", 21, 0.01, 0.01, 0.01, 0.30, "SPY", "v1")],
+    ],
+)
+def test_a_watched_stock_is_avoid_exactly_when_holding_it_would_be_a_forecast_sell(rows):
+    from advisor.portfolio.actions import Holding, decide
+
+    holding = Holding(
+        account="tfsa", symbol="AAA", asset_type=AssetType.STOCK, benchmark="SPY", price=100.0,
+        value_cad=1000.0, cost_cad=1000.0, portfolio_cad=100_000.0, trailing_stop=None, rows=rows,
+        why_no_forecast=None, cost=0.001, sane=True, risk_level="medium", max_position_pct=5.0,
+        momentum_pct=70.0, signals_reversed=None, review=[], sold_at_loss_on=None,
+    )
+    verdict = stock_verdict("AAA", rows, 0.001, True, None, None)
+    assert (verdict.verdict == "avoid") == (decide(holding).action == "sell")
+    assert (verdict.verdict == "buy") == (decide(holding).action == "add")
 
 
 def test_anything_else_is_hold():

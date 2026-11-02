@@ -409,7 +409,7 @@ The score is a weighted sum of percentile ranks within the symbol's market. Plan
   - **Gate:** a market whose model lacks `picks_enabled` (§6.6) counts as disabled and gets no picks, though its watchlist still gets verdicts.
 - **Watchlist verdicts:** every watchlist symbol gets one. A **Buy** verdict carries the same fields as a pick.
   - **Buy** if it qualifies.
-  - **Avoid** if P ≤ 0.42 at every horizon.
+  - **Avoid** if P ≤ 0.42 at its best-ratio horizon, the horizon a holding's Sell is judged at (§7.3), so the two never disagree on the same forecast (revised 2026-11-02; it was P ≤ 0.42 at every horizon).
   - **Hold** otherwise.
 
   A stock with no forecast gets Hold with the reason: no model or no usable horizon, not eligible for the model, not priced this run, the model failed this run, "no forecast this run" for a priced, eligible stock with none, or the recommender failed. A watched coin gets Hold with "no crypto model yet" (§5.4 isn't built). A Buy's fields are the pick's, whether or not the market has picks; each stock verdict says in `market_picks_enabled` whether its market has them. A watched stock that is also held keeps its verdict, marked `held`, with no rank.

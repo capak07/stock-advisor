@@ -1389,7 +1389,7 @@ def test_one_markets_recommender_failure_spares_the_other_market_and_the_verdict
 
 
 def split_odds(active, features, benchmark):
-    """TD.TO qualifies; RY.TO is unlikely to beat the benchmark at any horizon."""
+    """TD.TO qualifies; RY.TO is unlikely to beat the benchmark."""
     return [
         PredictionRow(s, 63, -0.05, 0.04, 0.10, 0.65 if s == "TD.TO" else 0.30, benchmark, active.version)
         for s in features.index
@@ -1433,7 +1433,7 @@ def test_an_enabled_markets_verdicts_say_so_and_a_watched_pick_carries_its_rank(
     verdicts = verdict_rows(db, outcome.run_id)
     assert all(v["details"]["market_picks_enabled"] is True for v in verdicts.values())
     assert verdicts["TD.TO"]["details"]["rank"] == 1
-    assert verdicts["RY.TO"]["reasons"] == ["P(beat XIU.TO) at most 0.30 at every horizon"]
+    assert verdicts["RY.TO"]["reasons"] == ["P(beat XIU.TO) 0.30 over 63 trading days"]
 
 
 def test_a_watched_stock_the_model_may_not_score_is_hold_with_the_reason(db, tmp_path, tsx_model_files, monkeypatch):

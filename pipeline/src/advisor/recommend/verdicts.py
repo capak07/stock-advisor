@@ -68,10 +68,13 @@ def stock_verdict(
             reasons.append(TSX_BASIS)
             details["basis"] = TSX_BASIS
         return Verdict(symbol, "stock", "buy", reasons, details)
-    max_p = max(r.p_beat for r in rows)
-    if all(r.p_beat <= policy.p_sell for r in rows):
-        return Verdict(symbol, "stock", "avoid", [f"P(beat {benchmark}) at most {max_p:.2f} at every horizon"])
+    # judged at the horizon a holding is (portfolio/actions.py `decide`), so a watched stock you hold
+    # is never Avoid on the Watchlist and Hold on My Portfolio, or the other way round
     best = best_horizon(rows)
+    if best is not None and best.p_beat <= policy.p_sell:
+        return Verdict(
+            symbol, "stock", "avoid", [f"P(beat {benchmark}) {best.p_beat:.2f} over {best.horizon_days} trading days"]
+        )
     details = (
         {"horizon": best.horizon_days, "p_beat": best.p_beat, "q10": best.q10, "q50": best.q50, "q90": best.q90}
         if best

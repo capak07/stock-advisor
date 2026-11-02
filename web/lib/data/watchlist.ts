@@ -28,6 +28,8 @@ export interface StoredVerdict {
   /** A stock's 14-day daily range and 20-day dollar volume this run, for a Buy's order guidance (lib/orders.ts). */
   atrPct: number | null
   dollarVolume20: number | null
+  /** A stock Buy's top of the forecast range at its hold, for a bracket's take-profit; else null. */
+  q90: number | null
 }
 
 const num = (value: unknown): number | null => {
@@ -50,17 +52,22 @@ export async function loadVerdicts(
   ])
   const rows = must(verdictRows) as { symbol: string; asset_type: AssetType; verdict: Verdict; reasons: string[] | null; details: Record<string, unknown> | null }[]
   const buys = rows.filter((r) => r.verdict === 'buy' && r.asset_type === 'stock').map((r) => r.symbol)
-  const features = buys.length
-    ? (must(
-        await supabase
+  const [featureRows, predictionRows] = buys.length
+    ? await Promise.all([
+        supabase
           .from('features_live')
           .select('symbol, atr:features->atr_14_pct, adv:features->log_adv20')
           .eq('run_id', run.id)
           .eq('asset_type', 'stock')
           .in('symbol', buys),
-      ) as { symbol: string; atr: unknown; adv: unknown }[])
-    : []
+        supabase.from('predictions').select('symbol, horizon_days, q90').eq('run_id', run.id).eq('asset_type', 'stock').in('symbol', buys),
+      ])
+    : [null, null]
+  const features = featureRows ? (must(featureRows) as { symbol: string; atr: unknown; adv: unknown }[]) : []
+  const predictions = predictionRows ? (must(predictionRows) as { symbol: string; horizon_days: number; q90: unknown }[]) : []
   const byStock = new Map(features.map((f) => [f.symbol, f]))
+  // a Buy's range is its pick's, at the horizon in its details
+  const q90At = new Map(predictions.map((p) => [`${p.symbol}:${p.horizon_days}`, num(p.q90)]))
   return {
     run,
     held,
@@ -76,6 +83,7 @@ export async function loadVerdicts(
             details: r.details ?? {},
             atrPct: num(f?.atr),
             dollarVolume20: adv === null ? null : Math.expm1(adv), // the pipeline stores log1p(ADV)
+            q90: r.verdict === 'buy' ? (q90At.get(`${r.symbol}:${num(r.details?.horizon_days)}`) ?? null) : null,
           },
         ]
       }),

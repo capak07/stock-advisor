@@ -3,10 +3,14 @@
  * Execution rules of thumb, not forecasts. They rest on Wealthsimple's order rules as checked on
  * 2026-10-28: fractions trade only at market; a stop-limit lasts to the close unless extended to 90
  * days; a crypto limit order cancels after 24 hours unless extended; recurring buys run daily,
- * weekly, every two weeks or monthly. The numbers marked ★ in the design are its calls.
+ * weekly, every two weeks or monthly. Bracket orders (checked 2026-11-02): a take-profit and a
+ * stop-loss on a new market or limit buy of whole shares, active once it fully fills, one cancelling
+ * the other, selling at market in regular hours, not editable, lapsing 90 days after the order.
+ * The numbers marked ★ in the design are its calls.
  */
 
-import { fmtMoney, fmtPrice, fmtQty } from './format'
+import { shortDay } from './dates'
+import { fmtMoney, fmtPct, fmtPrice, fmtQty } from './format'
 import type { AssetType, Currency } from './portfolio/types'
 
 /** ★ A buy's limit sits this share of the daily range above the price, within these bounds. */
@@ -37,7 +41,7 @@ export interface Instrument {
 }
 
 export interface OrderStep {
-  kind: 'limit' | 'market' | 'stop-limit' | 'alert' | 'recurring'
+  kind: 'limit' | 'market' | 'stop-limit' | 'bracket' | 'alert' | 'recurring'
   side: 'buy' | 'sell'
   /** Shares or coins; null when the order is by amount. */
   qty: number | null
@@ -48,6 +52,8 @@ export interface OrderStep {
   stop: number | null
   /** A stop-limit's limit price. */
   limit: number | null
+  /** A bracket's take-profit price; null without one. */
+  takeProfit: number | null
   /** 'day', 'next trading day', '24 hours', '90 days' or null. */
   expiry: string | null
   /** The step in words, as the page shows it. */
@@ -85,6 +91,7 @@ const step = (s: Partial<OrderStep> & Pick<OrderStep, 'kind' | 'side' | 'text'>)
   price: null,
   stop: null,
   limit: null,
+  takeProfit: null,
   expiry: null,
   ...s,
 })
@@ -139,9 +146,7 @@ export function planBuy(i: Instrument, { amountCad, usdCad, now, stop }: { amoun
     }
   }
 
-  const toCad = i.currency === 'USD' ? usdCad : 1
-  const whole = Math.floor(amountCad / (price * toCad))
-  const left = amountCad - whole * price * toCad
+  const { whole, left } = wholeShares(price, i.currency, amountCad, usdCad)
   const steps: OrderStep[] = []
   const notes: string[] = []
   const { expiry, words } = stockExpiry(now)
@@ -165,6 +170,65 @@ export function planBuy(i: Instrument, { amountCad, usdCad, now, stop }: { amoun
     notes.push(GAP_NOTE)
   }
   return { steps, notes }
+}
+
+/** The whole shares `amountCad` buys at a limit `price`, and the CAD left over. */
+function wholeShares(price: number, currency: Currency, amountCad: number, usdCad: number): { whole: number; left: number } {
+  const toCad = currency === 'USD' ? usdCad : 1
+  const whole = Math.floor(amountCad / (price * toCad))
+  return { whole, left: amountCad - whole * price * toCad }
+}
+
+const BRACKET_DAYS = 90
+const BRACKET_STOP_NOTE = 'A bracket’s stop loss sells at market once hit: in a gap it fills lower, but it fills.'
+const BRACKET_EDIT_NOTE =
+  'A bracket can’t be edited and lapses after 90 days: to raise the stop as it trails up, cancel the bracket’s stop loss and place the stop-limit instead.'
+const TAKE_PROFIT_NOTE =
+  'The take-profit is the top of the forecast range (q90) on today’s price; the range is against the benchmark, so a market move shifts it.'
+
+/**
+ * The same stock buy as one Wealthsimple bracket order, an alternative to `planBuy`'s steps: a limit
+ * buy of the whole shares with the stop as its stop loss and, when the top of the forecast range
+ * (`q90`, an excess return) is a gain, a take-profit there. Brackets take whole shares only, so a
+ * coin or a buy under one share gets none.
+ */
+export function planBracket(
+  i: Instrument,
+  { amountCad, usdCad, now, stop, q90, exitBy }: { amountCad: number; usdCad: number; now: Date; stop: number; q90: number | null; exitBy: string },
+): OrderPlan {
+  if (i.assetType !== 'stock') return { steps: [], notes: [] }
+  const price = roundPrice(i.price * (1 + buffer(i.atrPct)))
+  const { whole, left } = wholeShares(price, i.currency, amountCad, usdCad)
+  if (whole < 1) return { steps: [], notes: [] }
+  const takeProfit = q90 !== null && q90 > 0 ? roundPrice(i.price * (1 + q90)) : null
+  const vs = (level: number) => fmtPct((level / price - 1) * 100, 0)
+  const { words } = stockExpiry(now)
+  const exits = [
+    ...(takeProfit === null ? [] : [`take profit ${fmtPrice(takeProfit, i.currency)} (${vs(takeProfit)})`]),
+    `stop loss ${fmtPrice(stop, i.currency)} (${vs(stop)})`,
+  ]
+  const lapses = new Date(`${exitBy}T00:00:00Z`).getTime() > now.getTime() + BRACKET_DAYS * 86_400_000
+  return {
+    steps: [
+      step({
+        kind: 'bracket',
+        side: 'buy',
+        qty: whole,
+        price,
+        stop,
+        takeProfit,
+        expiry: `${BRACKET_DAYS} days`,
+        text: `Or as one bracket order: limit buy ${whole} sh at ${fmtPrice(price, i.currency)} · ${words}, ${exits.join(', ')}`,
+      }),
+    ],
+    notes: [
+      BRACKET_STOP_NOTE,
+      BRACKET_EDIT_NOTE,
+      ...(lapses ? [`It lapses before the ${shortDay(exitBy)} exit-by; place a new stop then.`] : []),
+      ...(takeProfit === null ? [] : [TAKE_PROFIT_NOTE]),
+      ...(left >= MIN_FRACTION_CAD ? ['A bracket covers whole shares only; the fraction stays a separate market buy.'] : []),
+    ],
+  }
 }
 
 /** Whole shares by a limit `price`, and any fraction at market. */

@@ -7,6 +7,7 @@ import {
   seedFeatures,
   seedFx,
   seedHoldingAction,
+  seedPrediction,
   seedRun,
   seedSymbols,
   seedVerdict,
@@ -175,6 +176,8 @@ test.describe('watchlist', () => {
       reasons: ['P(beat XIU.TO) 0.62 over 10 trading days', 'expected 2.0% against 0.3% round-trip costs'],
       details: { style: 'swing', horizon_days: 10, exit_by: '2026-11-10', rank: 1, entry_ref_price: 80, stop: 74, max_position_pct: 3, market_picks_enabled: true },
     })
+    await seedPrediction(runId, 'TD.TO', 10, { q10: -0.03, q50: 0.02, q90: 0.06, p: 0.62 })
+    await seedPrediction(runId, 'TD.TO', 21, { q10: -0.05, q50: 0.03, q90: 0.2, p: 0.55 }) // another horizon, not the Buy's
     await page.goto('/watchlist')
     const row = page.locator('.watch-row', { hasText: 'TD.TO' })
     await expect(row.locator('.w-detail')).toHaveText("Swing · hold ~10 trading days · exit by Nov 10 · 62% to beat XIU.TO · also today's #1 TSX pick")
@@ -184,6 +187,11 @@ test.describe('watchlist', () => {
     await expect(guide).toContainText(/Limit buy 12 sh at C\$80\.40 · (Day order|set it to expire at the end of the next trading day)/)
     await expect(guide).toContainText('Market buy C$35')
     await expect(guide).toContainText('Then a stop-limit sell 12 sh: stop C$74.00, limit C$73.26, expiry 90 days')
+    // take-profit at the 10-day range's top, C$80 × 1.06
+    await expect(guide).toContainText(
+      /Or as one bracket order: limit buy 12 sh at C\$80\.40 · (Day order|set it to expire at the end of the next trading day), take profit C\$84\.80 \(\+5%\), stop loss C\$74\.00 \(−8%\)/,
+    )
+    await expect(guide).toContainText('A bracket covers whole shares only; the fraction stays a separate market buy.')
     await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toBeVisible()
   })
 

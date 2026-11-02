@@ -46,6 +46,11 @@ The owner asked for the best approach to market, limit, stop-limit and recurring
   - Stop orders appear only for some crypto accounts, and the help articles disagree, so the app says "if Wealthsimple offers it for this coin".
 - **Recurring investments:** stocks, ETFs and crypto; daily, weekly, every two weeks or monthly.
   - Crypto is per the help centre's summary, not confirmed in the app, so the line hedges.
+- **Bracket orders** (checked 2026-11-02, rolling out in phases):
+  - A take-profit, a stop-loss or both on a **new** market or limit buy of **whole shares** of a US or Canadian stock or ETF. Fractional orders and shares already owned can't have one.
+  - Both switch on only once the buy fully fills. When one executes it sells the shares and cancels the other.
+  - They trade only in regular market hours. The stop-loss sells at market once hit, so in a gap it can fill lower.
+  - Neither can be edited, only cancelled. Both lapse 90 days after the order is placed.
 
 ## The rules (a pure function; all numbers are the designer's calls, marked ★)
 
@@ -72,6 +77,17 @@ Inputs per line: side and kind (buy, add, sell, trim, stop, recurring), the last
 - **Coins:**
   - Buy: "**Limit buy {amount} at {price × (1 + b)}**; it cancels after 24 hours unless you extend it". The ATR comes from candles where stored.
   - Stop: "If Wealthsimple offers a stop order for this coin: stop {trailing stop}…", otherwise "set a price alert at {stop}".
+- **Bracket** (added 2026-11-02; picks and watched Buys only, as an alternative after the steps above):
+  - "**Or as one bracket order: limit buy {n} sh at {price × (1 + b)}**, {Day order or next trading day}, **take profit {price × (1 + q90)} ({+x%}), stop loss {stop} ({−y%})**". The percentages are against the limit price.
+  - `n` is the same whole shares as the limit buy. Under one share, or for a coin, there is no bracket.
+  - **The take-profit is the top of the forecast range (q90)** at the hold's horizon, applied to the entry price (the owner's choice, 2026-11-02). Leave it out when q90 is missing or not a gain. The range is an excess return against the benchmark, so a market move shifts it, and a note says so.
+  - The stop-loss is the pick's stop.
+  - Notes:
+    - the stop-loss sells at market;
+    - a bracket can't be edited and lapses after 90 days, so to raise a trailing stop, cancel the bracket's stop-loss and place the stop-limit instead;
+    - "It lapses before the {exit-by} exit-by; place a new stop then", when the exit-by is more than 90 days away;
+    - when a fractional remainder is bought at market, the bracket covers whole shares only.
+  - **Not for an Add** (a bracket covers only the new shares, beside the holding's own stop), and **not for Invest lines** (they have no stop).
 - **Recurring** (the Invest page's BTC share only): "**Or a recurring buy:** C${amount ÷ 4} weekly for 4 weeks ★ (Wealthsimple: daily, weekly, every two weeks or monthly)".
 - **Prices** round to the cent at C$/US$1 or more, and to 4 significant figures below that, never in scientific notation (the existing `fmtPrice`).
 
@@ -98,3 +114,4 @@ Inputs per line: side and kind (buy, add, sell, trim, stop, recurring), the last
 - Wealthsimple, stop-limit orders and their expiry: https://help.wealthsimple.com/hc/en-ca/articles/4413542667675
 - Wealthsimple, crypto order types: https://help.wealthsimple.com/hc/en-ca/articles/31804031644059-Choose-a-crypto-order-type
 - Wealthsimple, recurring investments: https://help.wealthsimple.com/hc/en-ca/articles/9544942923547
+- Wealthsimple, bracket orders (2026-11-01): https://help.wealthsimple.com/hc/en-ca/articles/57814660213147-Understanding-bracket-orders

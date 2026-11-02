@@ -147,12 +147,18 @@ test('a pick card says how to place the buy and its stop', async ({ page }) => {
   // log_adv20 under the liquid line, so no market-order note; a 2% daily range gives a 0.5% buffer
   await seedFeatures(runId, 'F', 'stock', { atr_14_pct: 0.02, log_adv20: Math.log1p(5e6) })
   await seedPick(runId, { symbol: 'F', market: 'US', style: 'swing', horizon: 10, rank: 2, exitBy: '2026-11-10', entry: 12, stop: 11, riskLevel: 'low', maxPct: 5 })
+  await seedPrediction(runId, 'F', 10, { q10: -0.04, q50: 0.03, q90: 0.1, p: 0.6 })
   await page.goto('/picks')
   const guide = page.locator('[data-panel="us"] article.pick[data-symbol="F"] .order-guide')
   await expect(guide).toContainText('How to place it')
   await expect(guide).toContainText(/Limit buy \d+ sh at US\$12\.06 · (Day order|set it to expire at the end of the next trading day)/)
   await expect(guide).toContainText(/Then a stop-limit sell \d+ sh: stop US\$11\.00, limit US\$10\.89, expiry 90 days/)
   await expect(guide).toContainText('A stop-limit won’t fill if the price gaps below its limit')
+  // the same buy as one bracket: take-profit at the top of the range, US$12 × 1.10
+  await expect(guide).toContainText(
+    /Or as one bracket order: limit buy \d+ sh at US\$12\.06 · (Day order|set it to expire at the end of the next trading day), take profit US\$13\.20 \(\+9%\), stop loss US\$11\.00 \(−9%\)/,
+  )
+  await expect(guide).toContainText('A bracket’s stop loss sells at market once hit')
   await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toHaveCount(1)
 })
 

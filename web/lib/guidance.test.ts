@@ -63,10 +63,16 @@ describe('pickGuide', () => {
   it('buys the max size in whole shares, the rest at market, then the stop', () => {
     const g = pickGuide(pick(), 50_000, ctx)!
     expect(g.caption).toBeNull()
-    expect(kinds(g.plan)).toEqual(['limit', 'market', 'stop-limit'])
+    expect(kinds(g.plan)).toEqual(['limit', 'market', 'stop-limit', 'bracket'])
     expect(g.plan.steps[0]).toMatchObject({ qty: 14, price: 100.5 }) // C$1,500 at a 0.5% buffer
     expect(g.plan.steps[1]).toMatchObject({ amountCad: 93 })
     expect(g.plan.steps[2]).toMatchObject({ qty: 14, stop: 95, limit: 94.05 })
+  })
+
+  it('offers the same buy as one bracket order, its take-profit at the top of the range', () => {
+    const steps = pickGuide(pick({ q90: 0.1 }), 50_000, ctx)!.plan.steps
+    expect(steps.at(-1)).toMatchObject({ kind: 'bracket', qty: 14, price: 100.5, takeProfit: 110, stop: 95 })
+    expect(pickGuide(pick(), 50_000, ctx)!.plan.steps.at(-1)).toMatchObject({ kind: 'bracket', takeProfit: null, stop: 95 })
   })
 
   it('sizes an empty portfolio at C$1,000 and says so', () => {
@@ -84,13 +90,18 @@ describe('verdictGuide', () => {
   const buy = {
     verdict: 'buy' as const,
     reasons: [],
-    details: { entry_ref_price: 100, stop: 95, max_position_pct: 3 },
+    details: { entry_ref_price: 100, stop: 95, max_position_pct: 3, exit_by: '2026-11-10' },
     atrPct: 0.02,
     dollarVolume20: null,
+    q90: 0.08,
   }
 
   it("plans a Buy like a pick from its details, and nothing for a Hold or a Buy missing its price", () => {
-    expect(kinds(verdictGuide('RY.TO', buy, 50_000, ctx)!.plan)).toEqual(['limit', 'market', 'stop-limit'])
+    expect(kinds(verdictGuide('RY.TO', buy, 50_000, ctx)!.plan)).toEqual(['limit', 'market', 'stop-limit', 'bracket'])
+    expect(verdictGuide('RY.TO', buy, 50_000, ctx)!.plan.steps.at(-1)).toMatchObject({ takeProfit: 108, stop: 95 })
+    // without its exit-by a bracket can't say whether it outlasts the hold
+    const noExit = { ...buy, details: { entry_ref_price: 100, stop: 95, max_position_pct: 3 } }
+    expect(kinds(verdictGuide('RY.TO', noExit, 50_000, ctx)!.plan)).toEqual(['limit', 'market', 'stop-limit'])
     expect(verdictGuide('RY.TO', { ...buy, verdict: 'hold' }, 50_000, ctx)).toBeNull()
     expect(verdictGuide('RY.TO', { ...buy, details: { stop: 95, max_position_pct: 3 } }, 50_000, ctx)).toBeNull()
   })

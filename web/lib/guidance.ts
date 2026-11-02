@@ -7,7 +7,7 @@ import type { PickView } from './data/picks'
 import type { StoredVerdict } from './data/watchlist'
 import { fmtMoney } from './format'
 import type { StockLine } from './invest/allocate'
-import { planBuy, planRecurring, planSell, planStop, planTrim, type Instrument, type OrderPlan } from './orders'
+import { planBracket, planBuy, planRecurring, planSell, planStop, planTrim, type Instrument, type OrderPlan } from './orders'
 import type { HoldingAction, RiskLevel } from './portfolio/actions'
 import type { Close } from './portfolio/types'
 import { tradeCurrency } from './symbols'
@@ -43,21 +43,46 @@ function buyAmount(maxPositionPct: number, portfolioCad: number | null): { amoun
     : { amountCad: DEFAULT_BUY_CAD, caption: `for ${fmtMoney(DEFAULT_BUY_CAD)}` }
 }
 
-function stockBuy(
-  stock: { symbol: string; price: number; stop: number; maxPositionPct: number; atrPct: number | null; dollarVolume20: number | null },
-  portfolioCad: number | null,
-  { now, usdCad }: OrderContext,
-): Guide | null {
+interface StockBuy {
+  symbol: string
+  price: number
+  stop: number
+  maxPositionPct: number
+  atrPct: number | null
+  dollarVolume20: number | null
+  /** The top of the forecast range at the hold, for a bracket's take-profit; null when unknown. */
+  q90: number | null
+  /** The hold's exit-by; without it no bracket is offered. */
+  exitBy: string | null
+}
+
+/** A stock buy for its max size with its stop, then the same buy as one bracket order. */
+function stockBuy(stock: StockBuy, portfolioCad: number | null, { now, usdCad }: OrderContext): Guide | null {
   const currency = tradeCurrency('stock', stock.symbol)
   if (currency === 'USD' && usdCad === null) return null
   const i: Instrument = { assetType: 'stock', currency, price: stock.price, atrPct: stock.atrPct, dollarVolume20: stock.dollarVolume20 }
   const { amountCad, caption } = buyAmount(stock.maxPositionPct, portfolioCad)
-  return { plan: planBuy(i, { amountCad, usdCad: usdCad ?? 1, now, stop: stock.stop }), caption }
+  const sized = { amountCad, usdCad: usdCad ?? 1, now, stop: stock.stop }
+  const bracket = stock.exitBy === null ? null : planBracket(i, { ...sized, q90: stock.q90, exitBy: stock.exitBy })
+  return { plan: joinPlans(planBuy(i, sized), bracket), caption }
 }
 
 /** A pick bought at its entry price for its max size, with its stop. */
 export const pickGuide = (p: PickView, portfolioCad: number | null, ctx: OrderContext): Guide | null =>
-  stockBuy({ symbol: p.symbol, price: p.entry, stop: p.stop, maxPositionPct: p.maxPositionPct, atrPct: p.atrPct, dollarVolume20: p.dollarVolume20 }, portfolioCad, ctx)
+  stockBuy(
+    {
+      symbol: p.symbol,
+      price: p.entry,
+      stop: p.stop,
+      maxPositionPct: p.maxPositionPct,
+      atrPct: p.atrPct,
+      dollarVolume20: p.dollarVolume20,
+      q90: p.q90,
+      exitBy: p.exitBy,
+    },
+    portfolioCad,
+    ctx,
+  )
 
 const finite = (value: unknown): number | null => {
   const n = typeof value === 'string' ? Number(value) : value
@@ -71,7 +96,8 @@ export function verdictGuide(symbol: string, v: StoredVerdict, portfolioCad: num
   const stop = finite(v.details.stop)
   const maxPositionPct = finite(v.details.max_position_pct)
   if (price === null || stop === null || maxPositionPct === null) return null
-  return stockBuy({ symbol, price, stop, maxPositionPct, atrPct: v.atrPct, dollarVolume20: v.dollarVolume20 }, portfolioCad, ctx)
+  const exitBy = typeof v.details.exit_by === 'string' ? v.details.exit_by : null
+  return stockBuy({ symbol, price, stop, maxPositionPct, atrPct: v.atrPct, dollarVolume20: v.dollarVolume20, q90: v.q90, exitBy }, portfolioCad, ctx)
 }
 
 /**

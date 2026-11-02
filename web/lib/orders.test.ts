@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isMarketHours, planBuy, planRecurring, planSell, planStop, planTrim, type Instrument } from './orders'
+import { isMarketHours, planBracket, planBuy, planRecurring, planSell, planStop, planTrim, type Instrument } from './orders'
 
 // Tuesday Oct 27, 2026: 2 PM and 10 PM in Toronto (EDT, UTC−4)
 const OPEN = new Date('2026-10-27T18:00:00Z')
@@ -142,5 +142,67 @@ describe('planRecurring', () => {
     expect(planRecurring({ amountCad: 100, symbol: 'BTC' }).steps[0].text).toBe(
       'Or a recurring buy of C$25 of BTC weekly for 4 weeks (Wealthsimple offers daily, weekly, every two weeks or monthly)',
     )
+  })
+})
+
+describe('planBracket', () => {
+  const near = { amountCad: 1000, usdCad: 1.4, now: OPEN, stop: 9.5, exitBy: '2026-11-10' }
+
+  it('buys the whole shares with the top of the range as its take-profit and the stop as its stop loss', () => {
+    // C$1,000 of a C$10 stock at a 0.5% buffer: 99 sh at C$10.05; the take-profit is C$10 × 1.14
+    const plan = planBracket(tsx(), { ...near, q90: 0.14 })
+    expect(plan.steps).toHaveLength(1)
+    expect(plan.steps[0]).toMatchObject({
+      kind: 'bracket',
+      side: 'buy',
+      qty: 99,
+      price: 10.05,
+      takeProfit: 11.4,
+      stop: 9.5,
+      expiry: '90 days',
+    })
+    expect(plan.steps[0].text).toBe(
+      'Or as one bracket order: limit buy 99 sh at C$10.05 · Day order, take profit C$11.40 (+13%), stop loss C$9.50 (−5%)',
+    )
+    expect(plan.notes).toContain(
+      'The take-profit is the top of the forecast range (q90) on today’s price; the range is against the benchmark, so a market move shifts it.',
+    )
+  })
+
+  it('leaves the take-profit out when the range has no top or its top is no gain', () => {
+    for (const q90 of [null, 0, -0.02]) {
+      const plan = planBracket(tsx(), { ...near, q90 })
+      expect(plan.steps[0]).toMatchObject({ kind: 'bracket', takeProfit: null, stop: 9.5 })
+      expect(plan.steps[0].text).toBe('Or as one bracket order: limit buy 99 sh at C$10.05 · Day order, stop loss C$9.50 (−5%)')
+      expect(plan.notes.join(' ')).not.toMatch(/take-profit is the top/)
+    }
+  })
+
+  it('says its stop loss sells at market, can’t be raised and lapses after 90 days', () => {
+    const notes = planBracket(tsx(), { ...near, q90: 0.14 }).notes
+    expect(notes).toContain('A bracket’s stop loss sells at market once hit: in a gap it fills lower, but it fills.')
+    expect(notes).toContain(
+      'A bracket can’t be edited and lapses after 90 days: to raise the stop as it trails up, cancel the bracket’s stop loss and place the stop-limit instead.',
+    )
+    expect(notes.join(' ')).not.toMatch(/exit-by/)
+  })
+
+  it('warns when the bracket lapses before the exit-by', () => {
+    const notes = planBracket(tsx(), { ...near, q90: 0.14, exitBy: '2027-04-27' }).notes
+    expect(notes).toContain('It lapses before the Apr 27 exit-by; place a new stop then.')
+  })
+
+  it('covers whole shares only, and says the fraction stays a market buy', () => {
+    // C$1,000 at C$100.50 is 9 sh and C$95.50 over
+    const plan = planBracket(tsx({ price: 100 }), { ...near, stop: 95, q90: 0.1 })
+    expect(plan.steps[0]).toMatchObject({ qty: 9, takeProfit: 110 })
+    expect(plan.notes).toContain('A bracket covers whole shares only; the fraction stays a separate market buy.')
+    expect(planBracket(tsx(), { ...near, q90: 0.14 }).notes.join(' ')).not.toMatch(/fraction/)
+  })
+
+  it('offers nothing under one whole share, and nothing for a coin', () => {
+    expect(planBracket(tsx({ currency: 'USD', price: 500 }), { ...near, amountCad: 300, stop: 450, q90: 0.1 }).steps).toEqual([])
+    const bonk: Instrument = { assetType: 'crypto', currency: 'CAD', price: 0.0000043, atrPct: null, dollarVolume20: null }
+    expect(planBracket(bonk, { ...near, stop: 0.000003, q90: 0.1 }).steps).toEqual([])
   })
 })

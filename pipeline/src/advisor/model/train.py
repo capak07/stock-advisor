@@ -32,6 +32,7 @@ QUANTILE_NAMES = tuple(f"q{round(q * 100)}" for q in QUANTILES)
 # the ranking booster learns slower than the others; laid over the train config's params (spec §8)
 RANK_SETTINGS = {"learning_rate": 0.03, "num_leaves": 15}
 RANK_ROUNDS = 400
+BAG_SEEDS = (7, 8, 9)  # a bag averages one booster per seed (spec §9); the first is PARAMS' own seed
 
 
 @dataclass(frozen=True)
@@ -288,28 +289,65 @@ def daily_rank(rows: pd.DataFrame, target: str) -> pd.Series:
     return (by_day.rank(method="average") - 0.5) / by_day.transform("count") - 0.5
 
 
-def _fit(x: pd.DataFrame, y: np.ndarray, config: TrainConfig, **objective) -> lgb.Booster:
-    return lgb.train(config.params | objective, lgb.Dataset(x, y), num_boost_round=config.rounds)
+@dataclass(frozen=True)
+class Bag:
+    """Boosters of one part trained with different seeds; it predicts their mean.
+
+    `pred_contrib` contributions are additive, so their mean is the mean prediction's contributions."""
+
+    boosters: tuple[lgb.Booster, ...]
+
+    def predict(self, x, **kwargs) -> np.ndarray:
+        return np.mean([b.predict(x, **kwargs) for b in self.boosters], axis=0)
+
+    def feature_importance(self, importance_type: str = "split") -> np.ndarray:
+        return np.mean([b.feature_importance(importance_type) for b in self.boosters], axis=0)
+
+    def model_strings(self) -> list[str]:
+        return [b.model_to_string() for b in self.boosters]
+
+
+Part = lgb.Booster | Bag
+
+
+def _train(params: dict, x: pd.DataFrame, y: np.ndarray, rounds: int, seeds: Sequence[int] = ()) -> Part:
+    """One booster, or with two or more `seeds` a `Bag` of one per seed."""
+    if len(seeds) < 2:
+        return lgb.train(params, lgb.Dataset(x, y), num_boost_round=rounds)
+    return Bag(tuple(
+        lgb.train(params | {"seed": s}, lgb.Dataset(x, y), num_boost_round=rounds) for s in seeds
+    ))
+
+
+def _fit(x: pd.DataFrame, y: np.ndarray, config: TrainConfig, seeds: Sequence[int] = (), **objective) -> Part:
+    return _train(config.params | objective, x, y, config.rounds, seeds)
 
 
 def _fit_horizon(
     x: pd.DataFrame, y: pd.Series, config: TrainConfig, beat: pd.Series | None = None,
-    rank: pd.Series | None = None,
-) -> dict[str, lgb.Booster]:
+    rank: pd.Series | None = None, seeds: Sequence[int] = (),
+) -> dict[str, Part]:
     """Quantile boosters learn `y`. With `rank`, a ranking booster learns it in place of the beat
     booster; otherwise the beat booster learns `beat > 0` when that series is given, and `y > 0`
-    otherwise."""
+    otherwise. With two or more `seeds`, every part is a `Bag` averaging one booster per seed."""
     labels = y if beat is None else beat
     boosters = {
-        name: _fit(x, y.to_numpy(), config, objective="quantile", alpha=q)
+        name: _fit(x, y.to_numpy(), config, seeds, objective="quantile", alpha=q)
         for name, q in zip(QUANTILE_NAMES, QUANTILES, strict=True)
     }
     if rank is not None:
         params = config.params | RANK_SETTINGS | {"objective": "quantile", "alpha": 0.5}
-        boosters["rank"] = lgb.train(params, lgb.Dataset(x, rank.to_numpy()), num_boost_round=RANK_ROUNDS)
+        boosters["rank"] = _train(params, x, rank.to_numpy(), RANK_ROUNDS, seeds)
     else:
-        boosters["beat"] = _fit(x, (labels > 0).astype(int).to_numpy(), config, objective="binary")
+        boosters["beat"] = _fit(x, (labels > 0).astype(int).to_numpy(), config, seeds, objective="binary")
     return boosters
+
+
+def _feature_list(data: MarketData, extra_features: Sequence[str], names: Sequence[str]) -> list[str]:
+    missing = [f for f in extra_features if f not in data.extras]
+    if missing:
+        raise ValueError(f"extra features not in this market's data: {missing}")
+    return list(data.features) + list(extra_features) + [f"beta_{name}" for name in names]
 
 
 def _finite_mean(values: pd.Series) -> float:
@@ -332,7 +370,7 @@ def _factor_shift(frame: pd.DataFrame, names: Sequence[str], mu: Mapping[str, fl
     return np.where(missing, 0.0, shift)
 
 
-def _predict(boosters: Mapping[str, lgb.Booster], x: pd.DataFrame) -> pd.DataFrame:
+def _predict(boosters: Mapping[str, Part], x: pd.DataFrame) -> pd.DataFrame:
     # boosters fitted separately can cross; a range must still read low <= mid <= high
     quantiles = np.sort(np.column_stack([boosters[name].predict(x) for name in QUANTILE_NAMES]), axis=1)
     out = pd.DataFrame(quantiles, index=x.index, columns=list(QUANTILE_NAMES))
@@ -360,6 +398,8 @@ def walk_forward(
     known_before: pd.Timestamp | None = None,
     factor_names: Sequence[str] | None = None,
     ranker: bool = False,
+    extra_features: Sequence[str] = (),
+    bag: bool = False,
 ) -> WalkForward:
     """Out-of-sample predictions per fold (default: `make_folds`).
 
@@ -369,10 +409,13 @@ def walk_forward(
     range adds back that fold's mean factor premium. The beat booster still learns `y_h > 0`.
     With `ranker`, a ranking booster learns `daily_rank` in place of the beat booster, and its
     score ranks (`score`) and is calibrated into P. Otherwise `score` is the published q50.
+    `extra_features` (each in `data.extras`) join the features; with `bag`, every booster is a
+    mean of `BAG_SEEDS` seeds.
     """
     rows = data.rows
     names = tuple(factor_names or ())
-    feat = list(data.features) + [f"beta_{name}" for name in names]
+    feat = _feature_list(data, extra_features, names)
+    seeds = BAG_SEEDS if bag else ()
     if folds is None:
         folds = make_folds(pd.DatetimeIndex(rows["day"].unique()), config)
     folds = list(folds)
@@ -395,11 +438,11 @@ def walk_forward(
             ranks = None if rank is None else rank.loc[train.index]
             if names:
                 boosters = _fit_horizon(
-                    train[feat], alpha.loc[train.index], config, beat=train[target], rank=ranks
+                    train[feat], alpha.loc[train.index], config, beat=train[target], rank=ranks, seeds=seeds
                 )
                 mu = {name: _finite_mean(train[f"f_{name}_{h}"]) for name in names}
             else:
-                boosters = _fit_horizon(train[feat], train[target], config, rank=ranks)
+                boosters = _fit_horizon(train[feat], train[target], config, rank=ranks, seeds=seeds)
                 mu = {}
             raw = _predict(boosters, test[feat])
             if names:
@@ -447,7 +490,7 @@ def walk_forward(
 class FinalModel:
     features: list[str]
     horizons: tuple[int, ...]
-    boosters: dict[int, dict[str, lgb.Booster]]
+    boosters: dict[int, dict[str, Part]]
     calibrators: dict[int, Calibrator]
     screener: lgb.Booster
     screener_features: list[str]
@@ -528,10 +571,13 @@ def fit_final(
     wf: WalkForward,
     config: TrainConfig = TrainConfig(),  # noqa: B008
     factor_names: Sequence[str] | None = None,
+    extra_features: Sequence[str] = (),
+    bag: bool = False,
 ) -> FinalModel:
     rows = data.rows
     names = tuple(factor_names or ())
-    feat = list(data.features) + [f"beta_{name}" for name in names]
+    feat = _feature_list(data, extra_features, names)
+    seeds = BAG_SEEDS if bag else ()
     boosters, calibrators, ranges = {}, {}, {}
     # the calibrators were fitted on the walk-forward's scores, so the final boosters follow it
     ranker = wf.ranker
@@ -548,10 +594,10 @@ def fit_final(
         ranks = daily_rank(train, f"y_{h}") if ranker else None
         if names:
             boosters[h] = _fit_horizon(
-                train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"], rank=ranks
+                train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"], rank=ranks, seeds=seeds
             )
         else:
-            boosters[h] = _fit_horizon(train[feat], train[f"y_{h}"], config, rank=ranks)
+            boosters[h] = _fit_horizon(train[feat], train[f"y_{h}"], config, rank=ranks, seeds=seeds)
     screener_features = PRICE_FEATURES + RS_FEATURES
     if not set(screener_features) <= set(data.features):  # coins have no sector features
         screener_features = list(data.features)
@@ -581,18 +627,29 @@ def _unpack(blob: bytes) -> str:
     return gzip.decompress(blob).decode()
 
 
+def _bag_size(model: FinalModel) -> int:
+    first = model.boosters[model.horizons[0]][QUANTILE_NAMES[0]]
+    return len(first.boosters) if isinstance(first, Bag) else 1
+
+
 def to_files(model: FinalModel) -> dict[str, bytes]:
-    files = {
-        f"h{h}_{part}": _pack(model.boosters[h][part].model_to_string())
-        for h in model.horizons for part in (*QUANTILE_NAMES, model.p_source)
-    }
+    files = {}
+    for h in model.horizons:
+        for part in (*QUANTILE_NAMES, model.p_source):
+            booster = model.boosters[h][part]
+            strings = booster.model_strings() if isinstance(booster, Bag) else [booster.model_to_string()]
+            for i, text in enumerate(strings):  # the first seed keeps the unbagged name
+                files[f"h{h}_{part}" + (f"_s{i}" if i else "")] = _pack(text)
     files["screener"] = _pack(model.screener.model_to_string())
     files["calibration"] = _pack(json.dumps({str(h): c.to_json() for h, c in model.calibrators.items()}))
-    files["meta"] = _pack(json.dumps({
+    meta = {
         "features": model.features, "screener_features": model.screener_features,
         "horizons": list(model.horizons), "params": model.params, "rounds": model.rounds,
         "p_source": model.p_source,
-    }))
+    }
+    if (bag := _bag_size(model)) > 1:
+        meta["bag"] = bag
+    files["meta"] = _pack(json.dumps(meta))
     if model.ranges:
         files["ranges"] = _pack(json.dumps({str(h): r.to_json() for h, r in model.ranges.items()}))
     if model.factor_names:
@@ -610,8 +667,12 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
     calibration = json.loads(_unpack(files["calibration"]))
     p_source = meta.get("p_source", "beat")  # a model saved before the ranker has a beat booster
 
-    def booster(name: str) -> lgb.Booster:
-        return lgb.Booster(model_str=_unpack(files[name]))
+    bag = meta.get("bag", 1)  # a model saved before bagging has one booster per part
+
+    def booster(name: str) -> Part:
+        names = [name] + [f"{name}_s{i}" for i in range(1, bag)]
+        boosters = tuple(lgb.Booster(model_str=_unpack(files[n])) for n in names)
+        return Bag(boosters) if bag > 1 else boosters[0]
 
     stored = json.loads(_unpack(files["factors"])) if "factors" in files else None
     if stored:
@@ -627,7 +688,7 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
         meta["features"], horizons,
         {h: {part: booster(f"h{h}_{part}") for part in (*QUANTILE_NAMES, p_source)} for h in horizons},
         {h: Calibrator.from_json(calibration[str(h)]) for h in horizons},
-        booster("screener"), meta["screener_features"], meta["params"], meta["rounds"],
+        lgb.Booster(model_str=_unpack(files["screener"])), meta["screener_features"], meta["params"], meta["rounds"],
         factor_names, mu, betas,
         # a model saved before range calibration has no `ranges` file and keeps its raw ranges
         {int(h): RangeCalibrator.from_json(d) for h, d in json.loads(_unpack(files["ranges"])).items()}

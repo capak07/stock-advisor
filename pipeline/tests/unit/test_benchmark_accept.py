@@ -123,3 +123,29 @@ def test_a_policy_must_beat_todays_rules_or_cash():
     assert not accept_policy(book(float("nan")), book(0.0, trades=0)).accepted
     infeasible = accept_policy(book(2.0, feasible=False, failures=["only 12 trades (needs 30)"]), book(0.0, trades=0))
     assert not infeasible.accepted and infeasible.reasons == ("only 12 trades (needs 30)",)
+
+
+TWINS = {"ranker+extras+bagged": "ranker+extras"}
+
+
+def test_a_bagged_row_must_also_beat_the_same_row_without_bagging():
+    twin = scores(ic=0.05)
+    noise = scores(ic=0.0502, folds=(0.06, 0.06, 0.045, 0.045))  # beats the baseline, not its twin
+    name, decisions = choose_model(BASE, {"ranker+extras": twin, "ranker+extras+bagged": noise}, None, TWINS)
+    assert name == "ranker+extras"
+    d = decisions["ranker+extras+bagged"]
+    assert not d.accepted and d.reasons[0] == "not better than ranker+extras"
+    assert "rank IC better in 2 of 4 outer folds (needs 3)" in d.reasons
+
+
+def test_a_bagged_row_that_beats_its_twin_can_win():
+    twin, better = scores(ic=0.05), scores(ic=0.06, folds=(0.06,) * 4)
+    assert choose_model(BASE, {"ranker+extras": twin, "ranker+extras+bagged": better}, None, TWINS)[0] == (
+        "ranker+extras+bagged"
+    )
+
+
+def test_a_bagged_row_whose_twin_was_not_scored_fails_closed():
+    name, decisions = choose_model(BASE, {"ranker+extras+bagged": scores(ic=0.06, folds=(0.06,) * 4)}, None, TWINS)
+    assert name == "baseline"
+    assert decisions["ranker+extras+bagged"].reasons == ("ranker+extras wasn't scored",)

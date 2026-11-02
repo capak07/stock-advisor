@@ -296,6 +296,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
 - **Benchmark rows:** `extras`, `ranker+extras` and `ranker+extras+bagged`, after `ranker`.
   - The usual rule judges them (§1). As always, ties go to the earlier row.
   - `extras+bagged` isn't run: it would add about 40 minutes to the US benchmark.
+  - A bagged row must also pass the same rule against the same row without bagging (`ranker+extras+bagged` against `ranker+extras`). Bagging triples training compute, and the 2026-11-02 measurement found no gain beyond noise, so it is adopted only for a measured gain (the owner's decision, 2026-11-02). A bagged row whose twin wasn't scored fails.
 - **Stored configs:** version 3 adds `extras` and `bagged`. Versions 1 and 2 still load, with both off.
 - **Stored models:** a bagged model's files hold each booster's three seeds, and its meta says `bag: 3`. A model without `bag` has one booster per part.
 - **Compute limits:**

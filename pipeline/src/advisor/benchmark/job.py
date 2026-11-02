@@ -59,6 +59,23 @@ ABLATIONS: dict[str, ModelConfig | None] = {
     "full+policy": None,
 }
 POLICY_ROW = "full+policy"
+
+
+def bagging_twins(ablations: Mapping[str, ModelConfig | None]) -> dict[str, str]:
+    """Each bagged row and the row with the same config but no bagging, which it must also beat."""
+    twins = {}
+    for name, config in ablations.items():
+        if config is None or not config.bagged:
+            continue
+        plain = replace(config, bagged=False)
+        twin = next((n for n, c in ablations.items() if c == plain), None)
+        if twin is None:
+            raise ValueError(f"{name} has no row without bagging")
+        twins[name] = twin
+    return twins
+
+
+BAGGING_TWINS = bagging_twins(ABLATIONS)
 FIRST = "first benchmark: today's model"
 MARKET_ORDER = [Market.TSX, Market.US, CRYPTO]  # the smaller load first, as in the weekly job
 
@@ -176,7 +193,7 @@ def _benchmark_market(
     active_name = _model_name(active.config) if active else None
     incumbent = (active_name, scores[active_name]) if active_name in scores and active_name != "baseline" else None
     others = {name: s for name, s in scores.items() if name != "baseline"}
-    chosen, decisions = choose_model(scores["baseline"], others, incumbent)
+    chosen, decisions = choose_model(scores["baseline"], others, incumbent, BAGGING_TWINS)
 
     began = time.monotonic()
     panel = daily_panel(data_dir, market)

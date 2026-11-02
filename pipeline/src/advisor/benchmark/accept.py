@@ -93,13 +93,28 @@ def accept_model(candidate: Scores, reference: Scores) -> Decision:
 
 
 def choose_model(
-    baseline: Scores, candidates: Mapping[str, Scores], incumbent: tuple[str, Scores] | None
+    baseline: Scores,
+    candidates: Mapping[str, Scores],
+    incumbent: tuple[str, Scores] | None,
+    twins: Mapping[str, str] | None = None,
 ) -> tuple[str, dict[str, Decision]]:
     """The model to use, and each candidate's decision against the baseline.
 
     `incumbent` is the accepted non-baseline configuration, scored in this same benchmark.
+    `twins` maps a candidate to the row it must also beat: a bagged row to the same row without
+    bagging, so seed averaging's triple cost is paid only for a measured gain (spec §9). A twin
+    that wasn't scored fails the candidate closed.
     """
     decisions = {name: accept_model(scores, baseline) for name, scores in candidates.items()}
+    for name, twin in (twins or {}).items():
+        if name not in decisions or not decisions[name].accepted:
+            continue
+        if twin not in candidates:
+            decisions[name] = Decision(False, (f"{twin} wasn't scored",))
+            continue
+        against = accept_model(candidates[name], candidates[twin])
+        if not against.accepted:
+            decisions[name] = Decision(False, (f"not better than {twin}", *against.reasons))
     passing = [name for name in candidates if decisions[name].accepted]
     # max keeps the first of equals: a tie goes to the earlier row
     best = max(passing, key=lambda name: candidates[name].rank_ic["pooled"]) if passing else None

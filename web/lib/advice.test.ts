@@ -6,7 +6,8 @@ describe('advice text', () => {
     const features = ['ret_5', 'ret_21', 'ret_63', 'ret_126', 'mom_12_1', 'rsi_14', 'atr_14_pct', 'vol_20', 'vol_60',
       'dist_52w_high', 'dist_52w_low', 'volume_z', 'gap', 'jump_5d', 'log_adv20', 'ex_bench_21', 'ex_bench_63',
       'ex_sector_21', 'ex_sector_63', 'sector_rank_63', 'rev_growth', 'gross_margin', 'op_margin', 'gross_margin_trend',
-      'op_margin_trend', 'eps_growth', 'earnings_yield', 'sales_yield', 'fcf_yield', 'debt_to_equity', 'log_mcap']
+      'op_margin_trend', 'eps_growth', 'earnings_yield', 'sales_yield', 'fcf_yield', 'debt_to_equity', 'log_mcap',
+      'sector_mom_12_1', 'sector_dist_52w_high', 'amihud_20']
     expect(features.filter((f) => !(f in FACTORS))).toEqual([])
   })
 
@@ -16,6 +17,12 @@ describe('advice text', () => {
     expect(describeFactor('sector_rank_63', 0.88, 'SPY')).toBe("Sector's 63-day rank 88th percentile")
     expect(describeFactor('ret_21', undefined, 'SPY')).toBe('Return over 21 days')
     expect(describeFactor('mystery', 1, 'SPY')).toBe('mystery')
+  })
+
+  it('describes the sector and illiquidity features', () => {
+    expect(describeFactor('sector_mom_12_1', 0.12, 'SPY')).toBe("Its sector's 12-month momentum, skipping the last month +12.0%")
+    expect(describeFactor('sector_dist_52w_high', -0.05, 'SPY')).toBe("Its sector's distance from the 52-week high −5.0%")
+    expect(describeFactor('amihud_20', 0.0042, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.4%')
   })
 
   it('sizes factor bars by contribution, at most half the bar', () => {

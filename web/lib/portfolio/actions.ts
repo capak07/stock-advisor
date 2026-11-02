@@ -43,7 +43,7 @@ export type ActionGroup = 'sell' | 'trim' | 'review' | 'add'
 const GROUP_ORDER: readonly ActionGroup[] = ['sell', 'trim', 'review', 'add']
 
 /** A Hold or Add with a review flag is a Review card; a Sell or Trim keeps its own group. */
-export const actionGroup = (a: HoldingAction): ActionGroup | null =>
+export const actionGroup = (a: Pick<HoldingAction, 'action' | 'review'>): ActionGroup | null =>
   a.action === 'sell' || a.action === 'trim' ? a.action : a.review ? 'review' : a.action === 'add' ? 'add' : null
 
 /** Cards in Sell → Trim → Review → Add order, by symbol within a group; the plain Holds apart. */
@@ -63,13 +63,13 @@ const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.s
  * The sentence on an action card. A Review card gives its review reasons, which follow the
  * headline; the other cards give the headline.
  */
-export function cardReason(a: HoldingAction): string {
+export function cardReason(a: Pick<HoldingAction, 'action' | 'review' | 'reasons'>): string {
   const review = actionGroup(a) === 'review' ? a.reasons.slice(1).join('; ') : ''
   return sentence(review || (a.reasons[0] ?? ''))
 }
 
 /** A plain Hold's line: how long to hold and when to exit, or its reason without a horizon (coins). */
-export const holdText = (a: HoldingAction): string =>
+export const holdText = (a: Pick<HoldingAction, 'horizonDays' | 'exitBy' | 'reasons'>): string =>
   a.horizonDays !== null && a.exitBy !== null
     ? `hold ~${a.horizonDays} days · exit by ${shortDay(a.exitBy)}`
     : sentence(a.reasons[0] ?? '')

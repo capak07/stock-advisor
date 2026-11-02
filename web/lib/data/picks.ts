@@ -1,8 +1,10 @@
 import 'server-only'
-import type { Market } from '../portfolio/types'
+import { assetKey, type Market } from '../portfolio/types'
 import type { Run } from '../runs'
 import { marketOf } from '../symbols'
 import type { Supabase } from '../supabase/server'
+import type { HeldCall } from '../verdicts'
+import { loadHeldCalls } from './actions'
 import { fetchAll, must } from './fetch'
 import { lastPublishedRun } from './runs'
 import { loadNames, loadSectors } from './symbols'
@@ -90,6 +92,8 @@ export interface VerdictView {
   verdict: 'buy' | 'hold' | 'avoid'
   reasons: string[]
   details: Record<string, unknown>
+  /** Held at the run: My Portfolio's action, shown instead of the verdict. */
+  held: HeldCall | null
 }
 
 const num = (value: unknown): number | undefined => {
@@ -102,7 +106,7 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
   const run = await lastPublishedRun(supabase)
   if (!run) return { run: null, markets: [], verdicts: [] }
 
-  const [picks, models, verdictRows, exits, graded] = await Promise.all([
+  const [picks, models, verdictRows, exits, graded, held] = await Promise.all([
     supabase
       .from('picks')
       .select('id, symbol, market, style, horizon_days, exit_by, entry_ref_price, stop, risk_level, max_position_pct, rank, top_factors, catalysts')
@@ -120,6 +124,7 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
     fetchAll((from, to) =>
       supabase.from('pick_outcomes').select('pick_id, picks!inner(market, style)').order('pick_id').range(from, to),
     ) as unknown as Promise<{ pick_id: number; picks: { market: Market; style: Style } }[]>,
+    loadHeldCalls(supabase, run.id),
   ])
 
   const pickRows = must(picks) as {
@@ -243,6 +248,7 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
       verdict: v.verdict,
       reasons: v.reasons ?? [],
       details: v.details ?? {},
+      held: held.get(assetKey(v.asset_type, v.symbol)) ?? null,
     }))
     .sort((a, b) => marketRank(a) - marketRank(b) || a.symbol.localeCompare(b.symbol))
 

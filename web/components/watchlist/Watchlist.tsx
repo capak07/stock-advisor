@@ -11,7 +11,7 @@ import type { Guide } from '@/lib/guidance'
 import { assetKey, type AssetType } from '@/lib/portfolio/types'
 import type { SearchItem } from '@/lib/symbol-search'
 import { tickerHref } from '@/lib/ticker'
-import { VERDICT_LABEL, type Verdict } from '@/lib/verdicts'
+import { type HeldGroup, VERDICT_LABEL, type Verdict } from '@/lib/verdicts'
 import { PICK_FROM_LIST } from '@/lib/watch-form'
 
 export interface WatchRow {
@@ -22,6 +22,8 @@ export interface WatchRow {
   price: string | null
   /** The latest published run's verdict; null when the symbol was added after it. */
   verdict: Verdict | null
+  /** Held at that run: My Portfolio's action, shown instead of the verdict. */
+  held: { group: HeldGroup; label: string } | null
   why: string | null
   /** How to place a Buy; null for other verdicts. */
   guide: Guide | null
@@ -120,7 +122,9 @@ export function WatchList({ rows, withVerdicts = false }: { rows: WatchRow[]; wi
             {withVerdicts && (
               <>
                 <span className="w-verdict">
-                  {row.verdict ? (
+                  {row.held ? (
+                    <span className={`chip ${row.held.group}`}>{row.held.label}</span>
+                  ) : row.verdict ? (
                     <span className={`chip ${row.verdict}`}>{VERDICT_LABEL[row.verdict]}</span>
                   ) : (
                     <span className="chip hold">New</span>
@@ -128,7 +132,7 @@ export function WatchList({ rows, withVerdicts = false }: { rows: WatchRow[]; wi
                 </span>
                 <span className="w-why">
                   <span className="w-detail sub">{row.why ?? 'Gets its first verdict at the next run'}</span>
-                  {row.verdict === 'buy' && row.guide && <OrderGuide plan={row.guide.plan} caption={row.guide.caption} />}
+                  {row.verdict === 'buy' && !row.held && row.guide && <OrderGuide plan={row.guide.plan} caption={row.guide.caption} />}
                 </span>
               </>
             )}

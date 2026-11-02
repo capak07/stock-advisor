@@ -2,6 +2,7 @@ import 'server-only'
 import type { ActionKind, HoldingAction, RiskLevel } from '../portfolio/actions'
 import type { Account, AssetType } from '../portfolio/types'
 import type { Supabase } from '../supabase/server'
+import { heldCalls, type HeldCall } from '../verdicts'
 import { fetchAll, must } from './fetch'
 
 interface ActionRow {
@@ -125,4 +126,26 @@ async function orderData(supabase: Supabase, runId: number, rows: readonly Actio
     ),
     previousStops: new Map(stops.flatMap((s) => (num(s.trailing_stop) === null ? [] : [[keyOf(s), num(s.trailing_stop)!]]))),
   }
+}
+
+/** What My Portfolio says of each symbol held at run `runId`, by asset key (lib/verdicts.ts `heldCalls`). */
+export async function loadHeldCalls(supabase: Supabase, runId: number): Promise<Map<string, HeldCall>> {
+  const rows = must(
+    await supabase
+      .from('holding_actions')
+      .select('account, symbol, asset_type, action, review, reasons, horizon_days, exit_by')
+      .eq('run_id', runId),
+  ) as Pick<ActionRow, 'account' | 'symbol' | 'asset_type' | 'action' | 'review' | 'reasons' | 'horizon_days' | 'exit_by'>[]
+  return heldCalls(
+    rows.map((r) => ({
+      account: r.account,
+      symbol: r.symbol,
+      assetType: r.asset_type,
+      action: r.action,
+      review: r.review,
+      reasons: r.reasons ?? [],
+      horizonDays: r.horizon_days,
+      exitBy: r.exit_by,
+    })),
+  )
 }

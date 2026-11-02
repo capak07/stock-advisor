@@ -29,8 +29,12 @@ export function VerdictList({ verdicts }: { verdicts: VerdictView[] }) {
               <span className="sub" style={{ gridColumn: 'auto' }}>
                 {v.market ?? 'Crypto'}
               </span>
-              <span className={`chip ${v.verdict}`}>{VERDICT_LABEL[v.verdict]}</span>
-              <span className="sub">{verdictWhy(v, 'short')}</span>
+              {v.held ? (
+                <span className={`chip ${v.held.group}`}>{v.held.label}</span>
+              ) : (
+                <span className={`chip ${v.verdict}`}>{VERDICT_LABEL[v.verdict]}</span>
+              )}
+              <span className="sub">{v.held ? v.held.why : verdictWhy(v, 'short')}</span>
             </div>
           ))}
         </div>

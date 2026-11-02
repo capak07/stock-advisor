@@ -1,5 +1,17 @@
 import { expect, test } from '@playwright/test'
-import { daysAgo, resetData, seedCloses, seedCoins, seedFeatures, seedFx, seedRun, seedSymbols, seedVerdict, sql } from './db'
+import {
+  daysAgo,
+  resetData,
+  seedCloses,
+  seedCoins,
+  seedFeatures,
+  seedFx,
+  seedHoldingAction,
+  seedRun,
+  seedSymbols,
+  seedVerdict,
+  sql,
+} from './db'
 
 test.beforeEach(resetData)
 
@@ -93,7 +105,7 @@ test.describe('watchlist', () => {
       symbol: 'TD.TO',
       assetType: 'stock',
       verdict: 'avoid',
-      reasons: ['P(beat XIU.TO) at most 0.40 at every horizon'],
+      reasons: ['P(beat XIU.TO) 0.40 over 21 trading days'],
       details: { market_picks_enabled: true },
     })
     await page.goto('/watchlist')
@@ -108,11 +120,47 @@ test.describe('watchlist', () => {
     )
     const td = page.locator('.watch-row', { hasText: 'TD.TO' })
     await expect(td.locator('.chip')).toHaveText('Avoid')
-    await expect(td.locator('.w-detail')).toHaveText('P(beat XIU.TO) at most 0.40 at every horizon')
+    await expect(td.locator('.w-detail')).toHaveText('P(beat XIU.TO) 0.40 over 21 trading days')
     // added after the run: no verdict yet
     const sol = page.locator('.watch-row', { hasText: 'SOL' })
     await expect(sol.locator('.chip')).toHaveText('New')
     await expect(sol.locator('.w-detail')).toHaveText('Gets its first verdict at the next run')
+  })
+
+  test("a watched symbol you hold shows My Portfolio's action, on the Watchlist and on Picks", async ({ page }) => {
+    await seedSymbols([
+      { symbol: 'XRPN', market: 'US', name: 'XRPN Corp.' },
+      { symbol: 'VEEA', market: 'US', name: 'Veea Inc.' },
+    ])
+    await sql`insert into watchlist (symbol, asset_type) values ('XRPN', 'stock'), ('VEEA', 'stock')`
+    const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    const hold = ["doesn't qualify as a buy", 'P(beat SPY) 0.45 is under 0.58 at every horizon']
+    for (const symbol of ['XRPN', 'VEEA']) {
+      await seedVerdict(runId, { symbol, assetType: 'stock', verdict: 'hold', reasons: hold, details: { market_picks_enabled: false } })
+    }
+    // XRPN is held and closed under its trailing stop; VEEA isn't held
+    await seedHoldingAction(runId, {
+      account: 'tfsa',
+      symbol: 'XRPN',
+      asset_type: 'stock',
+      action: 'sell',
+      reasons: ['closed at 14.71, under its trailing stop 31.35'],
+      trailing_stop: 31.35,
+    })
+
+    await page.goto('/watchlist')
+    const xrpn = page.locator('.watch-row', { hasText: 'XRPN' })
+    await expect(xrpn.locator('.chip')).toHaveText('Sell')
+    await expect(xrpn.locator('.w-detail')).toHaveText('You hold it · Closed at 14.71, under its trailing stop 31.35')
+    const veea = page.locator('.watch-row', { hasText: 'VEEA' })
+    await expect(veea.locator('.chip')).toHaveText('Hold')
+    await expect(veea.locator('.w-detail')).toContainText("doesn't qualify as a buy")
+
+    await page.goto('/picks')
+    const sidebar = page.locator('[data-panel="us"]')
+    await expect(sidebar.locator('.verdict', { hasText: 'XRPN' }).locator('.chip')).toHaveText('Sell')
+    await expect(sidebar.locator('.verdict', { hasText: 'XRPN' })).toContainText('You hold it · Closed at 14.71, under its trailing stop 31.35')
+    await expect(sidebar.locator('.verdict', { hasText: 'VEEA' }).locator('.chip')).toHaveText('Hold')
   })
 
   test('a watched Buy says how to place it, sized at C$1,000 with nothing held', async ({ page }) => {

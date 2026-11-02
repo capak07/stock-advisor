@@ -3,7 +3,8 @@ import type { AssetType } from '../portfolio/types'
 import { assetKey } from '../portfolio/types'
 import type { Run } from '../runs'
 import type { Supabase } from '../supabase/server'
-import type { Verdict } from '../verdicts'
+import type { HeldCall, Verdict } from '../verdicts'
+import { loadHeldCalls } from './actions'
 import { must } from './fetch'
 import type { AssetRef } from './portfolio'
 import { lastPublishedRun } from './runs'
@@ -34,13 +35,20 @@ const num = (value: unknown): number | null => {
   return typeof n === 'number' && Number.isFinite(n) ? n : null
 }
 
-/** The latest published run's verdicts by asset key; null before any published run. */
-export async function loadVerdicts(supabase: Supabase): Promise<{ run: Run; verdicts: Map<string, StoredVerdict> } | null> {
+/**
+ * The latest published run's verdicts by asset key, and what My Portfolio said that run of each
+ * symbol held (a watched symbol you hold shows that instead of its verdict); null before any published run.
+ */
+export async function loadVerdicts(
+  supabase: Supabase,
+): Promise<{ run: Run; verdicts: Map<string, StoredVerdict>; held: Map<string, HeldCall> } | null> {
   const run = await lastPublishedRun(supabase)
   if (!run) return null
-  const rows = must(
-    await supabase.from('watchlist_verdicts').select('symbol, asset_type, verdict, reasons, details').eq('run_id', run.id),
-  ) as { symbol: string; asset_type: AssetType; verdict: Verdict; reasons: string[] | null; details: Record<string, unknown> | null }[]
+  const [verdictRows, held] = await Promise.all([
+    supabase.from('watchlist_verdicts').select('symbol, asset_type, verdict, reasons, details').eq('run_id', run.id),
+    loadHeldCalls(supabase, run.id),
+  ])
+  const rows = must(verdictRows) as { symbol: string; asset_type: AssetType; verdict: Verdict; reasons: string[] | null; details: Record<string, unknown> | null }[]
   const buys = rows.filter((r) => r.verdict === 'buy' && r.asset_type === 'stock').map((r) => r.symbol)
   const features = buys.length
     ? (must(
@@ -55,6 +63,7 @@ export async function loadVerdicts(supabase: Supabase): Promise<{ run: Run; verd
   const byStock = new Map(features.map((f) => [f.symbol, f]))
   return {
     run,
+    held,
     verdicts: new Map(
       rows.map((r) => {
         const f = r.asset_type === 'stock' ? byStock.get(r.symbol) : undefined

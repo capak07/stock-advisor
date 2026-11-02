@@ -62,6 +62,8 @@ export default async function WatchlistPage() {
     else if (close && rate !== null) price = fmtPrice(close.currency === 'USD' ? close.close * rate : close.close, 'CAD')
     const market = item.assetType === 'crypto' ? null : marketOf(item.symbol)
     const v = latest?.verdicts.get(assetKey(item.assetType, item.symbol)) ?? null
+    // held at the run: My Portfolio's action, so the two pages never disagree
+    const held = latest?.held.get(assetKey(item.assetType, item.symbol)) ?? null
     return {
       symbol: item.symbol,
       assetType: item.assetType,
@@ -69,8 +71,9 @@ export default async function WatchlistPage() {
       type: market ?? 'Crypto',
       price,
       verdict: v?.verdict ?? null,
-      why: v ? verdictWhy({ ...v, market }, 'long') : null,
-      guide: v && item.assetType === 'stock' ? verdictGuide(item.symbol, v, portfolioCad, orders) : null,
+      held: held && { group: held.group, label: held.label },
+      why: held ? held.why : v ? verdictWhy({ ...v, market }, 'long') : null,
+      guide: !held && v && item.assetType === 'stock' ? verdictGuide(item.symbol, v, portfolioCad, orders) : null,
     }
   })
 

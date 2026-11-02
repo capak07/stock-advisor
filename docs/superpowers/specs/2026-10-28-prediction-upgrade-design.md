@@ -274,6 +274,38 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
 - **Stored models:** a model's files say which booster gives P. Models saved before 6f use the beat classifier.
 - **Known limit:** with the default pick rule (`ratio`), the ranker decides which stocks clear the P floor, but q50 over range width still orders them. The policy search can choose rule `p`.
 
+### 9. More price features and seed averaging (Plan 6g, added 2026-11-02)
+
+- **Why:** the owner asked for ways to improve the forecasts (research of 2026-11-02).
+  - Large studies agree that momentum, liquidity and volatility dominate the predictors. Gu, Kelly & Xiu (RFS 2020) found this across every model they tried.
+  - The model has momentum and volatility. Its only liquidity measure is the 20-day dollar volume.
+  - Industry momentum explains much of stock momentum. The 52-week-high effect is stronger at industry level.
+  - All three can be built from bars the pipeline already has, and are known live for every stock it forecasts.
+- **What it is:** two model variants' parts.
+  - **`extras`: three more features.**
+    - `sector_mom_12_1`: the stock's sector ETF's `mom_12_1`.
+    - `sector_dist_52w_high`: the stock's sector ETF's `dist_52w_high`.
+    - `amihud_20`: the 20-session mean of `|daily return| / dollar volume`, per $1M traded. A day with no dollar volume is left out, and the mean needs 15 of the 20 sessions.
+    - A stock with no sector (its sector is the benchmark) has no sector features, as with `sector_rank_63`.
+    - Coins have no sectors, so a coin's only extra is `amihud_20`, on USD dollar volume.
+    - The features are computed in the shared feature step for every config. Only `extras` configs train on them, so other configs don't move.
+  - **`bagged`: seed averaging.**
+    - Every booster of a horizon (q10, q50, q90 and the P booster) is trained three times, with `seed` 7, 8 and 9. Its prediction is the three boosters' mean.
+    - Explanations average the three boosters' contributions. Importance averages their gains.
+    - It costs three times the training compute.
+- **Benchmark rows:** `extras`, `ranker+extras` and `ranker+extras+bagged`, after `ranker`.
+  - The usual rule judges them (§1). As always, ties go to the earlier row.
+  - `extras+bagged` isn't run: it would add about 40 minutes to the US benchmark.
+- **Stored configs:** version 3 adds `extras` and `bagged`. Versions 1 and 2 still load, with both off.
+- **Stored models:** a bagged model's files hold each booster's three seeds, and its meta says `bag: 3`. A model without `bag` has one booster per part.
+- **Compute limits:**
+  - `benchmark.yml` is raised to 360 minutes, GitHub's limit for one job.
+  - `train.yml` is raised to 180 minutes, for a market that accepts `bagged`.
+- **Not done: per-day rank normalisation.**
+  - It would replace each feature with its rank among that day's stocks.
+  - The live run forecasts only a screened shortlist, about 100 stocks per market, and fetches SEC filings only for those. So a stock's rank among the whole market isn't known when it is forecast.
+  - It needs the live run to compute features for the whole universe first, which would be its own plan.
+
 ## Plans, in dependency order
 
 | Plan | Builds | Needs |
@@ -284,6 +316,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
 | **6d** | GARCH volatility (feature, range and risk adjustment) | 6a |
 | **6e** | The policy search and the live use of accepted policies | 6a, ideally after 6c and 6d |
 | **6f** | The ranking booster: a `ranker` variant whose score ranks and gives P(beat) (§8) | 6a |
+| **6g** | More price features (`extras`) and seed averaging (`bagged`) as variants (§9) | 6a, 6f |
 
 The full ablation table becomes reportable once 6c, 6d and 6e land. Each plan's report states which ablation rows it could fill.
 

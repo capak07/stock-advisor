@@ -100,8 +100,12 @@ export function verdictGuide(symbol: string, v: StoredVerdict, portfolioCad: num
   return stockBuy({ symbol, price, stop, maxPositionPct, atrPct: v.atrPct, dollarVolume20: v.dollarVolume20, q90: v.q90, exitBy }, portfolioCad, ctx)
 }
 
+const ADD_BRACKET_NOTE = 'A bracket covers only the shares this buy adds; the shares you hold keep their own stop-limit.'
+
 /**
  * A holding's order for its action (Sell, Trim, Add; a Hold has none) and the stop to keep on it.
+ * An Add also gets the buy as one bracket order on the new shares, its take-profit at the top of
+ * the holding's range and its stop loss the trailing stop.
  * Prices are converted to the currency the asset trades in: a coin's Coinbase USD prices to CAD.
  */
 export function holdingGuides(
@@ -126,7 +130,16 @@ export function holdingGuides(
   const maxPct = a.maxPositionPct ?? (a.riskLevel === null ? null : MAX_POSITION_PCT[a.riskLevel])
   if (price !== null && a.action === 'add' && maxPct !== null) {
     const amountCad = (maxPct * portfolioCad) / 100 - valueCad
-    if (amountCad > 0) order = planBuy(instrument(price), { amountCad, usdCad: usdCad ?? 1, now, stop: trailingStop })
+    if (amountCad > 0) {
+      const sized = { amountCad, usdCad: usdCad ?? 1, now, stop: trailingStop }
+      // Wealthsimple brackets only a new buy: the added shares, beside the held ones' stop-limit
+      const bracket =
+        trailingStop === null || a.exitBy === null
+          ? null
+          : planBracket(instrument(price), { ...sized, stop: trailingStop, q90: a.q90, exitBy: a.exitBy })
+      const held = bracket && bracket.steps.length > 0 ? { steps: [], notes: [ADD_BRACKET_NOTE] } : null
+      order = joinPlans(planBuy(instrument(price), sized), bracket, held)
+    }
   }
   // planStop reads only the stop and the daily range, so a holding without a decision price still gets one
   const stop =

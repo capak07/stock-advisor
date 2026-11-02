@@ -123,6 +123,23 @@ describe('holdingGuides', () => {
     expect(holdingGuides(add, { ...held, valueCad: 3500 }, ctx).order).toBeNull()
   })
 
+  it('offers an Add as one bracket order on the new shares, the held ones keeping their stop', () => {
+    const add = action({ action: 'add', refPrice: 50, atrPct: 0.02, riskLevel: 'medium', trailingStop: 45, q90: 0.12, exitBy: '2026-11-25' })
+    const { order } = holdingGuides(add, held, ctx)
+    expect(kinds(order)).toEqual(['limit', 'market', 'stop-limit', 'bracket']) // C$40 left over buys a fraction
+    // the top of the holding's range on its price, C$50 × 1.12; the trailing stop as its stop loss
+    expect(order!.steps.at(-1)).toMatchObject({ kind: 'bracket', qty: 39, price: 50.25, takeProfit: 56, stop: 45 })
+    expect(order!.notes).toContain('A bracket covers only the shares this buy adds; the shares you hold keep their own stop-limit.')
+  })
+
+  it('gives an Add no bracket without a trailing stop or an exit-by, and none for a coin', () => {
+    const base = { action: 'add' as const, refPrice: 50, atrPct: 0.02, riskLevel: 'medium' as const, q90: 0.12 }
+    expect(kinds(holdingGuides(action({ ...base, exitBy: '2026-11-25' }), held, ctx).order)).toEqual(['limit', 'market'])
+    expect(kinds(holdingGuides(action({ ...base, trailingStop: 45 }), held, ctx).order)).toEqual(['limit', 'market', 'stop-limit'])
+    const coin = action({ ...base, symbol: 'ETH', assetType: 'crypto', account: 'crypto', trailingStop: 45, exitBy: '2026-11-25' })
+    expect(kinds(holdingGuides(coin, held, ctx).order)).toEqual(['limit'])
+  })
+
   it("sizes an Add by the holding's stored max position, not only its risk level's", () => {
     const add = action({ action: 'add', refPrice: 50, atrPct: 0.02, riskLevel: 'medium', maxPositionPct: 2 })
     expect(holdingGuides(add, held, ctx).order!.steps[0]).toMatchObject({ kind: 'limit', side: 'buy', qty: 19 }) // C$2,000 − C$1,000 at C$50.25

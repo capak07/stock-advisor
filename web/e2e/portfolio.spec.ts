@@ -205,3 +205,41 @@ test('each action says how to place it, and each holding the stop to keep', asyn
   await expect(holdings(page).filter({ hasText: 'SHOP.TO' }).locator('.order-note')).toContainText('Stop-limit sell 10 sh: stop C$146.10')
   await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toHaveCount(1)
 })
+
+test('an Add also offers the buy as one bracket order on the new shares', async ({ page }) => {
+  const days = weekdays(daysAgo(30))
+  await seedSymbols([
+    { symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' },
+    { symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' },
+  ])
+  await seedFx(days, 1.4)
+  await seedCloses('SHOP.TO', 'stock', 'CAD', days, 100, 0)
+  await seedCloses('RY.TO', 'stock', 'CAD', days, 100, 0)
+  // a C$100,000 portfolio holding C$1,000 of SHOP.TO: a medium-risk Add tops it up to 3%, C$2,000 more
+  await seedLot({ account: 'tfsa', symbol: 'SHOP.TO', asset_type: 'stock', qty: 10, price: 100, currency: 'CAD', bought_at: days[0] })
+  await seedLot({ account: 'tfsa', symbol: 'RY.TO', asset_type: 'stock', qty: 990, price: 100, currency: 'CAD', bought_at: days[0] })
+  const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date().toISOString() })
+  await seedFeatures(runId, 'SHOP.TO', 'stock', { atr_14_pct: 0.02, log_adv20: Math.log1p(5e6) })
+  await seedHoldingAction(runId, {
+    account: 'tfsa',
+    symbol: 'SHOP.TO',
+    asset_type: 'stock',
+    action: 'add',
+    reasons: ['would be a Buy today: P(beat XIU.TO) 0.60 over 10 trading days, below its max size'],
+    trailing_stop: 92,
+    ref_price: 100,
+    q10: -0.04,
+    q50: 0.03,
+    q90: 0.12,
+    horizon_days: 10,
+    exit_by: addDays(today(), 14),
+    risk_level: 'medium',
+  })
+  await page.goto('/')
+  const guide = page.locator('.action-card.add .order-guide')
+  // C$2,000 at C$100.50 is 19 sh; the take-profit is C$100 × 1.12, the stop loss the trailing stop
+  await expect(guide).toContainText(
+    /Or as one bracket order: limit buy 19 sh at C\$100\.50 · (Day order|set it to expire at the end of the next trading day), take profit C\$112\.00 \(\+11%\), stop loss C\$92\.00 \(−8%\)/,
+  )
+  await expect(guide).toContainText('A bracket covers only the shares this buy adds; the shares you hold keep their own stop-limit.')
+})

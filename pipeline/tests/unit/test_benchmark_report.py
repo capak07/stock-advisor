@@ -38,6 +38,7 @@ REPORT = {
         "min_folds_improved": 3,
         "max_calibration_pts": 5.0,
         "seed": 7,
+        "bag_seeds": [7, 8, 9],
         "rounds": 200,
         "sample_every": 10,
     },

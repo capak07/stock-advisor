@@ -7,7 +7,7 @@
 import { shortDay } from './dates'
 import { fmtPct } from './format'
 
-export type Formatter = 'pct' | 'signedPct' | 'number' | 'ratio' | 'percentile' | 'dollars' | 'flag'
+export type Formatter = 'pct' | 'signedPct' | 'number' | 'ratio' | 'percentile' | 'smallPct' | 'dollars' | 'flag'
 
 /** `{benchmark}` in a label is replaced by the stock's benchmark (SPY or XIU.TO). */
 export const FACTORS: Record<string, { label: string; format: Formatter }> = {
@@ -36,7 +36,7 @@ export const FACTORS: Record<string, { label: string; format: Formatter }> = {
   // sector and liquidity
   sector_mom_12_1: { label: "Its sector's 12-month momentum, skipping the last month", format: 'signedPct' },
   sector_dist_52w_high: { label: "Its sector's distance from the 52-week high", format: 'signedPct' },
-  amihud_20: { label: 'Price move per $1M traded, 20-day average', format: 'pct' },
+  amihud_20: { label: 'Price move per $1M traded, 20-day average', format: 'smallPct' },
   // fundamentals
   rev_growth: { label: 'Revenue growth, year over year', format: 'signedPct' },
   gross_margin: { label: 'Gross margin', format: 'pct' },
@@ -60,10 +60,20 @@ const ordinal = (n: number): string => {
 const compactDollars = (value: number): string =>
   `$${value.toLocaleString('en-CA', { notation: 'compact', maximumFractionDigits: 1 })}`
 
+/** A percentage to two significant figures, never in exponent notation: 0.0002 -> "0.020%". */
+function smallPct(value: number): string {
+  const pct = value * 100
+  const text = pct.toPrecision(2)
+  if (!text.includes('e')) return `${text}%`
+  return `${pct.toFixed(Math.min(100, Math.max(0, 1 - Math.floor(Math.log10(Math.abs(pct))))))}%`
+}
+
 function formatValue(feature: string, format: Formatter, value: number): string {
   switch (format) {
     case 'pct':
       return `${(value * 100).toFixed(1)}%`
+    case 'smallPct':
+      return smallPct(value)
     case 'signedPct':
       return fmtPct(value * 100)
     case 'number':

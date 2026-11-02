@@ -22,7 +22,9 @@ describe('advice text', () => {
   it('describes the sector and illiquidity features', () => {
     expect(describeFactor('sector_mom_12_1', 0.12, 'SPY')).toBe("Its sector's 12-month momentum, skipping the last month +12.0%")
     expect(describeFactor('sector_dist_52w_high', -0.05, 'SPY')).toBe("Its sector's distance from the 52-week high −5.0%")
-    expect(describeFactor('amihud_20', 0.0042, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.4%')
+    expect(describeFactor('amihud_20', 0.0042, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.42%')
+    expect(describeFactor('amihud_20', 0.0002, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.020%')
+    expect(describeFactor('amihud_20', 0.000002, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.00020%')
   })
 
   it('sizes factor bars by contribution, at most half the bar', () => {

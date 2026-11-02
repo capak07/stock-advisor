@@ -38,7 +38,7 @@ from advisor.model.backtest import MAX_CALIBRATION_PTS
 from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS, load_crypto
 from advisor.model.dataset import SAMPLE_EVERY, MarketData, load_market
 from advisor.model.factors import french_cross_check
-from advisor.model.train import Fold, TrainConfig, WalkForward
+from advisor.model.train import BAG_SEEDS, Fold, TrainConfig, WalkForward
 from advisor.model.variants import BASELINE, ModelConfig, run_variant, unbuilt
 from advisor.model.weekly import crypto_skipped, json_safe
 from advisor.models import BenchmarkResult, Market
@@ -46,7 +46,7 @@ from advisor.policy import DEFAULT_POLICY, Policy
 from advisor.store import repo
 from advisor.store.db import connect
 
-# The design's five ablation rows. The last is the chosen model plus a policy tuned for it.
+# The ablation rows, in report order. The last is the chosen model plus a policy tuned for it.
 ABLATIONS: dict[str, ModelConfig | None] = {
     "baseline": BASELINE,
     "factors": ModelConfig(factors=True),
@@ -229,7 +229,7 @@ def _constants(config: TrainConfig) -> dict:
         "outer_folds": config.folds, "min_train_years": config.min_train_years,
         "inner_splits": INNER_SPLITS, "inner_min_train_years": INNER_MIN_TRAIN_YEARS,
         "pinball_tolerance": PINBALL_TOLERANCE, "min_folds_improved": MIN_FOLDS_IMPROVED,
-        "max_calibration_pts": MAX_CALIBRATION_PTS, "seed": config.params.get("seed"),
+        "max_calibration_pts": MAX_CALIBRATION_PTS, "seed": config.params.get("seed"), "bag_seeds": list(BAG_SEEDS),
         "rounds": config.rounds, "sample_every": SAMPLE_EVERY,
     }
 

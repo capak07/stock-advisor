@@ -80,6 +80,17 @@ def test_weekly_training_follows_an_accepted_ranker_config(db, tmp_path):
     assert "h5_rank" in files and "h5_beat" not in files
 
 
+def test_weekly_training_follows_an_accepted_extras_and_bagged_config(db, tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    config = ModelConfig(ranker=True, extras=True, bagged=True)
+    _accept(db, "TSX", config.to_json())
+    report = weekly.run(tmp_path, [Market.TSX], db, NOW, FAST)
+    assert report["TSX"]["config"] == "ranker+extras+bagged"
+    files = repo.load_model_files(db, report["TSX"]["version"])
+    assert "h5_q50_s2" in files
+    assert "amihud_20" in from_files(files).features
+
+
 def test_weekly_training_stores_the_accepted_policy_and_judges_the_funnel_with_it(db, tmp_path, monkeypatch):
     write_market(tmp_path, Market.TSX, stocks=40)
     policy = replace(DEFAULT_POLICY, p_buy=0.54)

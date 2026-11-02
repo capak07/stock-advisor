@@ -4,6 +4,7 @@ The benchmark compares variants on identical folds; weekly training runs the mar
 one. GARCH (Plan 6d) is named here so a stored configuration can refer to it, but running it
 before its plan lands is refused, never silently treated as the baseline. A tuned policy is a
 `Policy` value. `ranker` (Plan 6f) swaps the beat classifier for a ranking booster (spec §8).
+`extras` adds the market's extra features and `bagged` averages three seeds per booster (spec §9).
 """
 
 from collections.abc import Mapping, Sequence
@@ -16,9 +17,14 @@ from advisor.model.dataset import MarketData
 from advisor.model.train import FinalModel, Fold, TrainConfig, WalkForward, fit_final, walk_forward
 from advisor.policy import Policy
 
-CONFIG_VERSION = 2
-# version 1 (before Plan 6f) had no `ranker`; it still loads, with the ranker off
-_KEYS = {1: {"version", "factors", "garch", "policy"}, 2: {"version", "factors", "garch", "ranker", "policy"}}
+CONFIG_VERSION = 3
+# version 1 (before Plan 6f) had no `ranker`, version 2 (before Plan 6g) no `extras` or `bagged`;
+# both still load, with those parts off
+_KEYS = {
+    1: {"version", "factors", "garch", "policy"},
+    2: {"version", "factors", "garch", "ranker", "policy"},
+    3: {"version", "factors", "garch", "ranker", "extras", "bagged", "policy"},
+}
 
 
 @dataclass(frozen=True)
@@ -27,10 +33,13 @@ class ModelConfig:
     garch: bool = False
     policy: Policy | None = None  # tuned rules; None = today's constants
     ranker: bool = False
+    extras: bool = False
+    bagged: bool = False
 
     @property
     def name(self) -> str:
-        parts = (("factors", self.factors), ("garch", self.garch), ("ranker", self.ranker))
+        parts = (("factors", self.factors), ("garch", self.garch), ("ranker", self.ranker),
+                 ("extras", self.extras), ("bagged", self.bagged))
         model = "+".join(part for part, on in parts if on)
         return (model or "baseline") + ("+policy" if self.policy is not None else "")
 
@@ -38,7 +47,7 @@ class ModelConfig:
         policy = None if self.policy is None else self.policy.to_json()
         return {
             "version": CONFIG_VERSION, "factors": self.factors, "garch": self.garch, "ranker": self.ranker,
-            "policy": policy,
+            "extras": self.extras, "bagged": self.bagged, "policy": policy,
         }
 
     @classmethod
@@ -54,7 +63,8 @@ class ModelConfig:
             raise ValueError(f"a stored config has unexpected or missing keys: {', '.join(odd)}")
         raw = d["policy"]
         policy = None if raw is None else Policy.from_json(raw)
-        config = cls(bool(d["factors"]), bool(d["garch"]), policy, bool(d.get("ranker", False)))
+        config = cls(bool(d["factors"]), bool(d["garch"]), policy, bool(d.get("ranker", False)),
+                     bool(d.get("extras", False)), bool(d.get("bagged", False)))
         if (plan := unbuilt(config)) is not None:
             raise ValueError(f"{config.name} arrives with {plan}")
         return config
@@ -94,7 +104,7 @@ def run_variant(
     _require_built(config)
     return walk_forward(
         data, train_config, folds=folds, known_before=known_before, factor_names=_factor_names(data, config),
-        ranker=config.ranker,
+        ranker=config.ranker, extra_features=data.extras if config.extras else (), bag=config.bagged,
     )
 
 
@@ -102,4 +112,7 @@ def fit_variant(data: MarketData, wf: WalkForward, config: ModelConfig, train_co
     """The variant's final model on every row with a target, calibrated on `wf` (whose run
     decides whether P comes from the ranking booster)."""
     _require_built(config)
-    return fit_final(data, wf, train_config, factor_names=_factor_names(data, config))
+    return fit_final(
+        data, wf, train_config, factor_names=_factor_names(data, config),
+        extra_features=data.extras if config.extras else (), bag=config.bagged,
+    )

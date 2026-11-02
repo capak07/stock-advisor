@@ -6,7 +6,7 @@ from advisor.benchmark.accept import Decision
 from advisor.benchmark.policy_search import Tuned
 from advisor.benchmark.report import render_markdown
 from advisor.model.train import PARAMS, TrainConfig
-from advisor.model.variants import BASELINE
+from advisor.model.variants import BASELINE, ModelConfig
 from advisor.models import Market
 from advisor.policy import DEFAULT_POLICY
 from advisor.store import repo
@@ -23,6 +23,7 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     assert tsx["chosen"] == "baseline" and tsx["accepted"]["changed"] is True
     assert tsx["variants"]["factors"]["status"] == "run"
     assert tsx["variants"]["ranker"]["status"] == "run"
+    assert tsx["variants"]["ranker+extras+bagged"]["status"] == "run"
     assert tsx["variants"]["garch"] == {"status": "not built", "plan": "Plan 6d"}
     assert tsx["variants"]["full+policy"]["status"] == "run"
     assert tsx["variants"]["baseline"]["status"] == "run"
@@ -36,7 +37,7 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     assert active.benchmark_run_id == run["id"]
     text = render_markdown(report)  # the real report renders, with nothing unmeasured shown as nan
     assert "| baseline | run |" in text and "| garch | arrives with Plan 6d |" in text
-    assert "| ranker | run |" in text
+    assert "| ranker | run |" in text and "| ranker+extras+bagged | run |" in text
     policy_folds = {r["fold"] for r in db.execute("select fold from benchmark_results where variant = 'full+policy'").fetchall()}
     assert policy_folds == {"1", "2", "3", "pooled"}
     assert {"default", "candidate"} <= set(tsx["variants"]["full+policy"]["policy"])
@@ -63,6 +64,24 @@ def test_a_kept_version_1_config_is_unchanged(db, tmp_path, monkeypatch):
     report = job.run(tmp_path, [Market.TSX], db, NOW + timedelta(days=28), None, FAST)
     tsx = report["markets"]["TSX"]
     assert tsx["chosen"] == "baseline" and tsx["accepted"]["changed"] is False
+    assert repo.active_config(db, "TSX").id == first
+    assert db.execute("select count(*) as n from accepted_configs").fetchone()["n"] == 1
+
+
+def test_a_kept_version_2_config_is_unchanged(db, tmp_path, monkeypatch):
+    # configs accepted under Plan 6f are stored as version 2; choosing one again is not a change
+    write_market(tmp_path, Market.TSX, stocks=40)
+    monkeypatch.setattr(job, "ABLATIONS", {"baseline": BASELINE, "ranker": ModelConfig(ranker=True), "full+policy": None})
+    monkeypatch.setattr(job, "choose_model", lambda *a, **k: ("ranker", {}))
+    monkeypatch.setattr(
+        job, "tune_for_outer", lambda *a, **k: Tuned(None, None, 0, "no stage-1 combination met the limits: x")
+    )
+    run_id = repo.start_benchmark_run(db, NOW, None)
+    v2 = {"version": 2, "factors": False, "garch": False, "ranker": True, "policy": None}
+    first = repo.accept_config(db, "TSX", v2, "test", run_id, NOW)
+    report = job.run(tmp_path, [Market.TSX], db, NOW + timedelta(days=28), None, FAST)
+    tsx = report["markets"]["TSX"]
+    assert tsx["chosen"] == "ranker" and tsx["accepted"]["changed"] is False
     assert repo.active_config(db, "TSX").id == first
     assert db.execute("select count(*) as n from accepted_configs").fetchone()["n"] == 1
 

@@ -13,3 +13,9 @@ def test_the_benchmark_runs_on_the_first_sunday_only_or_on_demand():
     assert "date -u +%-d" in text and "workflow_dispatch" in text
     assert text.count("steps.due.outputs.run == 'true'") >= 5
     assert "ADMIN_DATABASE_URL" not in text
+
+
+def test_the_workflows_have_time_for_the_extra_benchmark_rows():
+    workflows = WORKFLOW.parent
+    assert "timeout-minutes: 360" in WORKFLOW.read_text()
+    assert "timeout-minutes: 180" in (workflows / "train.yml").read_text()

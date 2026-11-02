@@ -17,14 +17,25 @@ def test_configs_name_themselves_and_round_trip():
     assert ModelConfig(policy={"p_buy": 0.6}).name == "baseline+policy"
     assert ModelConfig(ranker=True).name == "ranker"
     assert ModelConfig(factors=True, ranker=True).name == "factors+ranker"
-    assert BASELINE.to_json() == {"version": 2, "factors": False, "garch": False, "ranker": False, "policy": None}
+    assert ModelConfig(ranker=True, extras=True, bagged=True).name == "ranker+extras+bagged"
+    assert ModelConfig(extras=True).name == "extras"
+    assert BASELINE.to_json() == {
+        "version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
+        "policy": None,
+    }
+    full = ModelConfig(ranker=True, extras=True, bagged=True)
+    assert ModelConfig.from_json(full.to_json()) == full
     assert ModelConfig.from_json(ModelConfig(ranker=True).to_json()) == ModelConfig(ranker=True)
     assert ModelConfig.from_json(BASELINE.to_json()) == BASELINE
 
 
 @pytest.mark.parametrize("stored, match", [
     ({"version": 1, "factors": False, "garch": True, "policy": None}, "Plan 6d"),
-    ({"version": 3, "factors": False, "garch": False, "ranker": False, "policy": None}, "version"),
+    ({"version": 4, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
+      "policy": None}, "version"),
+    ({"version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "policy": None}, "bagged"),
+    ({"version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
+      "policy": None, "extra": 1}, "extra"),
     ({"version": 2, "factors": False, "garch": False, "policy": None}, "ranker"),
     ({"version": 1, "factors": False, "garch": False, "ranker": True, "policy": None}, "ranker"),
     ({"version": 1, "factors": False, "garch": False, "policy": None, "extra": 1}, "extra"),
@@ -39,6 +50,11 @@ def test_a_version_1_config_loads_with_the_ranker_off():
     # every config accepted before Plan 6f was stored as version 1
     stored = {"version": 1, "factors": True, "garch": False, "policy": None}
     assert ModelConfig.from_json(stored) == ModelConfig(factors=True)
+
+
+def test_a_version_2_config_loads_with_extras_and_bagging_off():
+    stored = {"version": 2, "factors": False, "garch": False, "ranker": True, "policy": None}
+    assert ModelConfig.from_json(stored) == ModelConfig(ranker=True)
 
 
 def test_a_config_carries_a_policy_through_json():
@@ -79,6 +95,15 @@ def test_a_ranker_config_runs_the_ranking_walk_forward(tmp_path):
     pd.testing.assert_frame_equal(
         run_variant(data, ModelConfig(ranker=True), FAST).predictions,
         walk_forward(data, FAST, ranker=True).predictions,
+    )
+
+
+def test_an_extras_config_trains_on_the_extra_features(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
+    data = load_market(tmp_path, Market.TSX)
+    pd.testing.assert_frame_equal(
+        run_variant(data, ModelConfig(extras=True), FAST).predictions,
+        walk_forward(data, FAST, extra_features=data.extras).predictions,
     )
 
 

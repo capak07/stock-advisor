@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 from advisor.model.features import (
+    EXTRA_FEATURES,
     PRICE_FEATURES,
     Wide,
     as_traded,
@@ -11,6 +12,7 @@ from advisor.model.features import (
     jump_days,
     price_features,
     relative_strength,
+    sector_trend,
     to_wide,
 )
 
@@ -69,7 +71,7 @@ def test_price_features_on_a_steady_climb():
     assert f["dist_52w_low"].loc[t, "X"] == pytest.approx(1.01**251 - 1)
     assert f["jump_5d"].loc[t, "X"] == 0.0
     assert f["log_adv20"].loc[t, "X"] == pytest.approx(np.log1p((climb[280:300] * 1e6).mean()))
-    assert set(f) == set(PRICE_FEATURES)
+    assert set(f) == set(PRICE_FEATURES) | {"amihud_20"}
 
 
 def test_features_on_a_day_ignore_everything_after_it():
@@ -78,7 +80,7 @@ def test_features_on_a_day_ignore_everything_after_it():
     changed = base.copy()
     changed[300:] *= 3  # whatever happens later
     a, b = price_features(*inputs(base)), price_features(*inputs(changed))
-    for name in PRICE_FEATURES:
+    for name in [*PRICE_FEATURES, "amihud_20"]:
         pd.testing.assert_series_equal(a[name]["X"].iloc[:300], b[name]["X"].iloc[:300], check_names=False)
 
 
@@ -110,3 +112,50 @@ def test_eligibility_needs_a_dollar_a_million_a_day_and_sixty_sessions():
     ok = eligible(w.close, dollar_volume)
     assert ok["OK"].tolist() == [False] * 59 + [True] * 21
     assert not ok["CHEAP"].any() and not ok["THIN"].any()
+
+
+def _amihud(closes: np.ndarray, dollar_volume: np.ndarray) -> pd.Series:
+    w = wide({"X": list(closes)})
+    volume = pd.DataFrame({"X": dollar_volume}, index=w.close.index)
+    return price_features(w, volume, jump_days(w.close))["amihud_20"]["X"]
+
+
+def _zigzag(n: int = 25) -> np.ndarray:
+    """Closes whose every return is +2% or -2%."""
+    return 100 * np.cumprod(np.where(np.arange(n) % 2 == 0, 1.02, 0.98))
+
+
+def test_amihud_is_the_mean_move_per_million_traded():
+    closes = _zigzag()
+    got = _amihud(closes, np.full(25, 4_000_000.0)).iloc[-1]
+    assert got == pytest.approx(1e6 * 0.02 / 4e6, rel=1e-6)
+
+
+def test_amihud_leaves_out_days_with_no_volume_and_needs_fifteen():
+    closes = _zigzag()
+    volume = np.full(25, 4_000_000.0)
+    volume[-20:-15] = 0.0  # 5 of the last 20 days
+    five = _amihud(closes, volume)
+    assert np.isfinite(five.iloc[-1])
+    assert five.iloc[-1] == pytest.approx(1e6 * 0.02 / 4e6)
+    volume[-15] = 0.0  # a sixth: only 14 days left
+    six = _amihud(closes, volume)
+    assert np.isnan(six.iloc[-1])
+    for series in (five, six):
+        assert not np.isinf(series.dropna()).any()
+
+
+def test_sector_trend_takes_the_sector_etfs_momentum_and_distance_from_high():
+    day = DAYS[:1]
+    returns = {"X": [0.10], "Y": [0.02], "Z": [0.04], "B": [0.03], "E": [0.05], "F": [0.01]}
+    feats = {
+        "ret_21": pd.DataFrame(returns, index=day),
+        "mom_12_1": pd.DataFrame({**returns, "E": [0.3], "B": [0.1]}, index=day),
+        "dist_52w_high": pd.DataFrame({**returns, "E": [-0.05], "B": [0.0]}, index=day),
+    }
+    out = sector_trend(feats, "B", {"X": "E", "Z": "G"})  # Y has no sector (the benchmark); G has no column
+    assert out["sector_mom_12_1"].loc[day[0], "X"] == pytest.approx(0.3)
+    assert out["sector_dist_52w_high"].loc[day[0], "X"] == pytest.approx(-0.05)
+    for name in ("sector_mom_12_1", "sector_dist_52w_high"):
+        assert np.isnan(out[name].loc[day[0], "Y"]) and np.isnan(out[name].loc[day[0], "Z"])
+    assert set(EXTRA_FEATURES) == {"sector_mom_12_1", "sector_dist_52w_high", "amihud_20"}

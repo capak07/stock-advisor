@@ -6,7 +6,7 @@ import pytest
 
 from advisor.markets import MARKETS
 from advisor.model.dataset import SAMPLE_EVERY, WARMUP, load_market
-from advisor.model.features import HORIZONS, PRICE_FEATURES, RS_FEATURES
+from advisor.model.features import EXTRA_FEATURES, HORIZONS, PRICE_FEATURES, RS_FEATURES
 from advisor.model.fundamentals import FUNDAMENTAL_FEATURES
 from advisor.models import Market
 from model_data import write_market
@@ -71,3 +71,12 @@ def test_a_failed_build_is_never_trained_on(tmp_path):
     (tmp_path / "manifest.json").write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="the training data build failed: macro step failed"):
         load_market(tmp_path, Market.TSX)
+
+
+def test_training_rows_carry_the_extras_but_the_baseline_names_do_not_change(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=3, days=400)
+    data = load_market(tmp_path, Market.TSX)
+    assert data.extras == tuple(EXTRA_FEATURES)
+    assert set(EXTRA_FEATURES) <= set(data.rows.columns)
+    assert data.features == PRICE_FEATURES + RS_FEATURES
+    assert data.rows["amihud_20"].notna().all()

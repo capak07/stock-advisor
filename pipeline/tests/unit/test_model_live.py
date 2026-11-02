@@ -33,8 +33,9 @@ def test_live_features_match_the_training_rows_on_the_same_day(tmp_path):
     live = live_features(window, Market.TSX, day, sectors=sectors, partial_day=False)
     training = data.rows[data.rows["day"] == day].set_index("symbol")
     assert set(training.index) == set(live.index[live["eligible"]])
+    names = list(data.features) + list(data.extras)
     pd.testing.assert_frame_equal(
-        live.loc[training.index, data.features], training[data.features], check_exact=False, rtol=1e-6, atol=1e-9,
+        live.loc[training.index, names], training[names], check_exact=False, rtol=1e-6, atol=1e-9,
     )
 
 

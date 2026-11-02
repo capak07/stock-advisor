@@ -1,7 +1,14 @@
 import pandas as pd
 import pytest
 
-from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS, CRYPTO_WARMUP, UNIVERSE, load_crypto
+from advisor.model.crypto import (
+    CRYPTO,
+    CRYPTO_FEATURES,
+    CRYPTO_HORIZONS,
+    CRYPTO_WARMUP,
+    UNIVERSE,
+    load_crypto,
+)
 from advisor.model.train import PARAMS, TrainConfig, training_rows, walk_forward
 from model_data import CRYPTO_START as START
 from model_data import write_crypto as write
@@ -74,3 +81,11 @@ def test_walk_forward_trains_on_crypto(tmp_path):
     config = TrainConfig(horizons=CRYPTO_HORIZONS, rounds=20, params={**PARAMS, "min_data_in_leaf": 20, "num_threads": 2})
     wf = walk_forward(load_crypto(tmp_path), config)
     assert set(wf.predictions["horizon"]) == set(CRYPTO_HORIZONS)
+
+
+def test_coin_rows_carry_amihud_illiquidity(tmp_path):
+    write(tmp_path)
+    data = load_crypto(tmp_path)
+    assert data.extras == ("amihud_20",)
+    assert "amihud_20" in data.rows.columns and data.rows["amihud_20"].notna().any()
+    assert data.features == CRYPTO_FEATURES

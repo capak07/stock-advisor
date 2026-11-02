@@ -1,3 +1,4 @@
+import math
 from datetime import UTC, date, datetime, timedelta
 
 import pandas as pd
@@ -55,3 +56,19 @@ def test_a_short_history_and_a_run_without_btc_say_why():
     rows, why = forecast_coins(_Model(), missing, None, AS_OF)
     assert rows == {}
     assert why == {"ETH": "no BTC candles this run"}
+
+
+def test_a_model_trained_on_amihud_gets_the_column():
+    class Recording(_Model):
+        features = [*CRYPTO_FEATURES, "amihud_20"]
+        seen: pd.DataFrame | None = None
+
+        def predict(self, x: pd.DataFrame) -> pd.DataFrame:
+            type(self).seen = x
+            return super().predict(x)
+
+    bars = {BTC: _bars(BTC, 400), "ETH": _bars("ETH", 400)}
+    rows, why = forecast_coins(Recording(), bars, 500.0, AS_OF)
+    assert why == {} and "ETH" in rows
+    assert Recording.seen is not None and "amihud_20" in Recording.seen.columns
+    assert Recording.seen["amihud_20"].map(math.isfinite).all()

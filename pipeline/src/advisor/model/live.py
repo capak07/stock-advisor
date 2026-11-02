@@ -20,7 +20,7 @@ from advisor.screener import ADV_WINDOW
 from advisor.training.prices import download_history, training_download
 from advisor.training.sectors import SECTOR_ETFS
 
-VOLUME_FEATURES = ("volume_z", "log_adv20")
+VOLUME_FEATURES = ("volume_z", "log_adv20", "amihud_20")
 # the window of bars a live run fetches; it must cover the 252-session look-back (see the collector)
 LIVE_WINDOW = LOOKBACK
 SPLIT_REACH = timedelta(days=3 * 365)  # the split factor reaches back past any filing in use
@@ -70,7 +70,7 @@ def _day_row(prices, events, sectors, market, day, facts, tickers, session: pd.T
         prices[pd.to_datetime(prices["day"]) <= session], events, sectors, market, days,
         facts=facts, tickers=tickers, split_calendar=pd.bdate_range(session - SPLIT_REACH, session),
     )
-    out = pd.DataFrame({name: frames.features[name].loc[session] for name in frames.names})
+    out = pd.DataFrame({name: frames.features[name].loc[session] for name in [*frames.names, *frames.extras]})
     out["eligible"] = frames.eligible.loc[session].astype(bool)
     out["dollar_volume_20"] = frames.dollar_volume.rolling(ADV_WINDOW).mean().loc[session]
     return out

@@ -36,6 +36,7 @@ EXCLUDED = frozenset({
     "WBTC", "CBBTC", "CBETH", "WETH", "STETH",
 })
 CRYPTO_FEATURES = PRICE_FEATURES + ["ex_btc_21", "ex_btc_63"]
+CRYPTO_EXTRAS = ["amihud_20"]
 
 
 def crypto_frames(prices: pd.DataFrame) -> tuple[Wide, dict[str, pd.DataFrame], pd.DataFrame]:
@@ -48,7 +49,7 @@ def crypto_frames(prices: pd.DataFrame) -> tuple[Wide, dict[str, pd.DataFrame], 
     for k in (21, 63):
         ret = features[f"ret_{k}"]
         features[f"ex_btc_{k}"] = ret.sub(ret[BTC], axis=0)
-    return wide, {name: features[name] for name in CRYPTO_FEATURES}, dollar_volume
+    return wide, {name: features[name] for name in [*CRYPTO_FEATURES, *CRYPTO_EXTRAS]}, dollar_volume
 
 
 def _universe(close: pd.DataFrame, dollar_volume: pd.DataFrame, vol_60: pd.DataFrame) -> pd.DataFrame:
@@ -88,7 +89,7 @@ def load_crypto(data_dir: Path, with_factors: bool = False) -> MarketData:
     keep = universe.loc[days].stack(future_stack=True)
     rows = stacked[keep.reindex(stacked.index, fill_value=False).astype(bool)].reset_index()
     rows["sector"] = None
-    columns = ["day", "symbol", "sector", "dollar_volume_20", *(f"y_{h}" for h in CRYPTO_HORIZONS), *CRYPTO_FEATURES]
+    columns = ["day", "symbol", "sector", "dollar_volume_20", *(f"y_{h}" for h in CRYPTO_HORIZONS), *CRYPTO_FEATURES, *CRYPTO_EXTRAS]
     rows = rows[columns].reset_index(drop=True)
     factors = None
     if with_factors:
@@ -98,4 +99,4 @@ def load_crypto(data_dir: Path, with_factors: bool = False) -> MarketData:
             wide.close, {"size": size, "mom": mom}, universe, BTC, days, CRYPTO_HORIZONS, FACTORS[CRYPTO],
         )
         rows = join_factor_columns(rows, betas, factors)
-    return MarketData(CRYPTO, rows, list(CRYPTO_FEATURES), calendar, factors)
+    return MarketData(CRYPTO, rows, list(CRYPTO_FEATURES), calendar, factors, tuple(CRYPTO_EXTRAS))

@@ -20,6 +20,8 @@ PRICE_FEATURES = [
     "ret_5", "ret_21", "ret_63", "ret_126", "mom_12_1", "rsi_14", "atr_14_pct", "vol_20", "vol_60",
     "dist_52w_high", "dist_52w_low", "volume_z", "gap", "jump_5d", "log_adv20",
 ]
+# computed for every row and live frame, but only trained on once a model config names them
+EXTRA_FEATURES = ["sector_mom_12_1", "sector_dist_52w_high", "amihud_20"]
 RS_FEATURES = ["ex_bench_21", "ex_bench_63", "ex_sector_21", "ex_sector_63", "sector_rank_63"]
 
 
@@ -137,6 +139,9 @@ def price_features(wide: Wide, dollar_volume: pd.DataFrame, jumps: pd.DataFrame)
     f["gap"] = wide.open / prev - 1
     f["jump_5d"] = jumps.astype(float).rolling(5, min_periods=1).max()
     f["log_adv20"] = np.log1p(dollar_volume.rolling(ADV_WINDOW).mean())
+    # price move per dollar traded, in millions; a day with no dollar volume says nothing about it
+    traded = dollar_volume.where(dollar_volume > 0)
+    f["amihud_20"] = 1e6 * (c / prev - 1).abs().div(traded).replace(np.inf, np.nan).rolling(20, min_periods=15).mean()
     return f
 
 
@@ -159,6 +164,25 @@ def relative_strength(
         out[f"ex_sector_{k}"] = ret - per_stock(ret)
     rank = per_stock(features["ret_63"].reindex(columns=list(etfs)).rank(axis=1, pct=True))
     out["sector_rank_63"] = rank.loc[:, [e != benchmark for e in sector]].reindex(columns=columns)
+    return out
+
+
+def sector_trend(
+    features: Mapping[str, pd.DataFrame], benchmark: str, etf_of: Mapping[str, str]
+) -> dict[str, pd.DataFrame]:
+    """The stock's sector ETF's own 12-1 momentum and distance from its 52-week high.
+
+    NaN for a stock with no sector (its ETF is the benchmark) and where the ETF has no column.
+    """
+    columns = list(features["mom_12_1"].columns)
+    sector = [etf_of.get(symbol, benchmark) for symbol in columns]
+    has_sector = [etf != benchmark for etf in sector]
+    out: dict[str, pd.DataFrame] = {}
+    for name in ("mom_12_1", "dist_52w_high"):
+        picked = features[name].reindex(columns=sector)
+        picked.columns = columns
+        picked.loc[:, [not has for has in has_sector]] = np.nan
+        out[f"sector_{name}"] = picked
     return out
 
 

@@ -8,7 +8,14 @@ import numpy as np
 import pandas as pd
 
 from advisor.model.backtest import round_trip_cost
-from advisor.model.crypto import BTC, CRYPTO, CRYPTO_FEATURES, CRYPTO_WARMUP, crypto_frames
+from advisor.model.crypto import (
+    BTC,
+    CRYPTO,
+    CRYPTO_EXTRAS,
+    CRYPTO_FEATURES,
+    CRYPTO_WARMUP,
+    crypto_frames,
+)
 from advisor.model.train import FinalModel
 from advisor.models import DailyBar, PredictionRow
 from advisor.screener import ADV_WINDOW
@@ -65,7 +72,7 @@ def forecast_coins(
     if not ready:
         return {}, reasons
 
-    frame = pd.DataFrame({name: features[name].loc[last] for name in CRYPTO_FEATURES}).reindex(ready)
+    frame = pd.DataFrame({name: features[name].loc[last] for name in CRYPTO_FEATURES + CRYPTO_EXTRAS}).reindex(ready)
     present = [name for name in model.features if name in frame.columns]
     finite = frame[present].map(math.isfinite).all(axis=1)
     frame = frame.loc[finite]

@@ -19,6 +19,7 @@ from advisor.model.factors import (
     stock_characteristics,
 )
 from advisor.model.features import (
+    EXTRA_FEATURES,
     HORIZONS,
     PRICE_FEATURES,
     RS_FEATURES,
@@ -29,6 +30,7 @@ from advisor.model.features import (
     jump_days,
     price_features,
     relative_strength,
+    sector_trend,
     split_factor,
     to_wide,
 )
@@ -48,6 +50,7 @@ class MarketData:
     features: list[str]
     calendar: pd.DatetimeIndex
     factors: FactorFrames | None = None
+    extras: tuple[str, ...] = ()  # columns on the rows beyond `features`, for configs that name them
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,7 @@ class FeatureFrames:
     wide: Wide
     calendar: pd.DatetimeIndex
     names: list[str]
+    extras: list[str]
     features: dict[str, pd.DataFrame]  # full calendar for price and RS features, `days` for fundamentals
     dollar_volume: pd.DataFrame
     eligible: pd.DataFrame
@@ -89,6 +93,7 @@ def feature_frames(
     features = price_features(wide, dollar_volume, jump_days(wide.close))
     etf_of = {row.symbol: sector_etf(market, row.sector) for row in sectors.itertuples()}
     features |= relative_strength(features, benchmark, etf_of, etfs)
+    features |= sector_trend(features, benchmark, etf_of)
     names = PRICE_FEATURES + RS_FEATURES
     if market == Market.US:
         splits = split_factor(calendar if split_calendar is None else split_calendar, list(wide.close.columns), events)
@@ -96,7 +101,7 @@ def feature_frames(
         splits = splits.loc[:, splits.ne(1).any()]
         features |= fundamental_features(facts, tickers, days, split_adjusted.loc[days], splits)
         names = names + FUNDAMENTAL_FEATURES
-    return FeatureFrames(wide, calendar, names, features, dollar_volume, eligible(traded, dollar_volume))
+    return FeatureFrames(wide, calendar, names, list(EXTRA_FEATURES), features, dollar_volume, eligible(traded, dollar_volume))
 
 
 def load_market(data_dir: Path, market: Market, with_factors: bool = False) -> MarketData:
@@ -120,7 +125,8 @@ def load_market(data_dir: Path, market: Market, with_factors: bool = False) -> M
     built = feature_frames(prices, events, sectors, market, days, facts=facts, tickers=tickers)
     wide, calendar, names, dollar_volume = built.wide, built.calendar, built.names, built.dollar_volume
 
-    frames = {name: built.features[name].loc[days] for name in names}
+    extras = built.extras
+    frames = {name: built.features[name].loc[days] for name in [*names, *extras]}
     frames |= {f"y_{h}": target.loc[days] for h, target in forward_excess(wide.close, benchmark).items()}
     frames["dollar_volume_20"] = dollar_volume.rolling(ADV_WINDOW).mean().loc[days]
     stacked = pd.concat({name: frame.stack(future_stack=True) for name, frame in frames.items()}, axis=1)
@@ -131,7 +137,7 @@ def load_market(data_dir: Path, market: Market, with_factors: bool = False) -> M
     rows = rows[~rows["symbol"].isin([benchmark, *etfs])]
     label = sectors.drop_duplicates("symbol").set_index("symbol")["sector"]
     rows["sector"] = rows["symbol"].map(label)
-    columns = ["day", "symbol", "sector", "dollar_volume_20", *(f"y_{h}" for h in HORIZONS), *names]
+    columns = ["day", "symbol", "sector", "dollar_volume_20", *(f"y_{h}" for h in HORIZONS), *names, *extras]
     factors = None
     if with_factors:
         universe = built.eligible.copy()
@@ -146,4 +152,4 @@ def load_market(data_dir: Path, market: Market, with_factors: bool = False) -> M
     if factors is not None:
         rows = join_factor_columns(rows, betas, factors)
     del built, wide, dollar_volume, frames, stacked  # the full-calendar frames are large
-    return MarketData(market, rows, names, calendar, factors)
+    return MarketData(market, rows, names, calendar, factors, tuple(extras))

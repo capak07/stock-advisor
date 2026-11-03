@@ -311,6 +311,34 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - The live run forecasts only a screened shortlist, about 100 stocks per market, and fetches SEC filings only for those. So a stock's rank among the whole market isn't known when it is forecast.
   - It needs the live run to compute features for the whole universe first, which would be its own plan.
 
+### 10. Probabilities calibrated the way the live model is (Plan 6h, added 2026-11-03)
+
+- **Why:** on 2026-11-03 the ranker ranked better than the baseline but failed the calibration limit: 5.2 points at US 126 days, 5.4 at crypto 14 days. The owner asked why. A measurement on a quarter of US stocks and all coins found three causes:
+  - **The share of stocks that beat the benchmark moves between periods.** At US 126 days, the rate each period's map was fitted on, against the rate it met: 46.8% → 35.3%, 41.1% → 39.3%, 39.9% → 43.0%. Shifting P by each period's gap cuts the error from about 6 points to under 3, for the baseline and the ranker alike.
+  - **The walk-forward fitted one map per outer fold**, so a period's map lagged its outcomes by up to a whole fold: about 15 months in the US, 26 for coins. Weekly training refits every week, so the live map lags only about one horizon. The benchmark judged probabilities staler than the ones the app shows.
+  - **Equal-count bins split tied probabilities by row order**, which is by date. The baseline's P at 63 and 126 days is a single value per period (the "score ran backwards" rule), and a constant early booster makes every score tie. Both the calibrator's floor and ceiling and the calibration error then measured time slices, not probabilities.
+- **What changes:**
+  - **Monthly refit.** In the walk-forward, the P of each calendar month of each outer fold after the first comes from a calibrator fitted on every earlier prediction whose outcome ended before that month's first prediction day, from any fold.
+    - The first outer fold stays uncalibrated, as today.
+    - A month with no ended outcome has no P.
+  - **Tie-aware bins.** Bins still follow score order, but tied values are never split: a value's bin is (rows with a smaller value) × bins ÷ rows. They are used for the calibrator's floor and ceiling (its lowest and highest bins) and for the calibration error and largest bin gap.
+  - **Unchanged:**
+    - The range calibration stays per fold.
+    - The final model's calibrator is still fitted on every out-of-sample prediction; only its floor and ceiling bins change.
+    - Stored model files keep their format.
+- **Measured effect** (pooled calibration in points, baseline / ranker, on the quarter of US stocks and all coins, before the tie-aware error):
+
+  | | US 63 days | US 126 days | Crypto 7 days | Crypto 14 days |
+  |---|---|---|---|---|
+  | Per-fold map (today) | 4.4 / 5.4 | 6.3 / 5.4 | 3.7 / 3.7 | 4.1 / 5.4 |
+  | Monthly refit, tie-aware floor and ceiling | 3.8 / 2.5 | 5.1 / 4.1 | 3.1 / 3.1 | 3.6 / 3.1 |
+
+- **Caveats:**
+  - The fix was chosen on the same folds it was measured on. The next full benchmark confirms it.
+  - It moves every setup's scores, the baseline's included, and the calibration figure weekly training promotes on.
+  - With the refit, the baseline's crypto 30-day horizon may become usable. The ranker would then be held to it (5.6–6.0 in the measurement).
+- **Owner's decision, 2026-11-03.**
+
 ## Plans, in dependency order
 
 | Plan | Builds | Needs |
@@ -322,6 +350,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
 | **6e** | The policy search and the live use of accepted policies | 6a, ideally after 6c and 6d |
 | **6f** | The ranking booster: a `ranker` variant whose score ranks and gives P(beat) (§8) | 6a |
 | **6g** | More price features (`extras`) and seed averaging (`bagged`) as variants (§9) | 6a, 6f |
+| **6h** | Monthly probability calibration in the walk-forward, and tie-aware bins (§10) | 6a |
 
 The full ablation table becomes reportable once 6c, 6d and 6e land. Each plan's report states which ablation rows it could fill.
 

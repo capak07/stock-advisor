@@ -78,10 +78,12 @@ def _ended_before(
 class Calibrator:
     """Isotonic map from the classifier's score to a beat probability.
 
-    Clipped between the hit rates of the lowest- and highest-scored `MIN_BIN`-row bins: a handful of
-    lucky extreme scores must not turn into a promise the bulk of the data doesn't support. When the
-    score ran backwards (the lowest-scored bin beat more often than the highest), every score gets
-    the overall rate: the score told nothing about beating the benchmark.
+    Clipped between the hit rates of the lowest- and highest-scored bins of about `MIN_BIN` rows
+    each, with tied scores kept together: a handful of lucky extreme scores must not turn into a
+    promise the bulk of the data doesn't support. When the score ran backwards (the lowest-scored
+    bin beat more often than the highest), every score gets the overall rate: the score told
+    nothing about beating the benchmark. A constant score is one bin, so it gets the overall rate
+    too.
     """
 
     def __init__(self, xs: np.ndarray, ys: np.ndarray, lo: float, hi: float):
@@ -97,11 +99,11 @@ class Calibrator:
         # the fit is a step function: each step's two ends interpolate it exactly
         keep = np.ones(len(ys), dtype=bool)
         keep[1:-1] = (ys[1:-1] != ys[:-2]) | (ys[1:-1] != ys[2:])
-        bins = np.array_split(np.argsort(p_raw, kind="stable"), min(20, max(1, len(p_raw) // min_bin)))
+        which = _tie_bins(p_raw, min(20, max(1, len(p_raw) // min_bin)))
         # in score order: the best bin anywhere is no ceiling for the top scores. On US 63- and
         # 126-day data the lowest-scored bin beat most often, and its rate capped two lucky
         # top-scored rows at a 59% promise that 11-33% of picks then delivered
-        lo, hi = float(beat[bins[0]].mean()), float(beat[bins[-1]].mean())
+        lo, hi = float(beat[which == which.min()].mean()), float(beat[which == which.max()].mean())
         if lo > hi:
             lo = hi = float(beat.mean())
         return cls(xs[keep], ys[keep], lo, hi)
@@ -241,15 +243,30 @@ def _calibration_helps(raw: pd.DataFrame, calibrated: pd.DataFrame) -> dict[str,
     return {name: bool(after[name] < before[name]) for name in QUANTILE_NAMES}  # a NaN never is
 
 
+def _tie_bins(values: np.ndarray, bins: int) -> np.ndarray:
+    """Each row's bin, 0 to `bins` - 1: equal-count by rank, except that tied values share one bin.
+
+    A row's rank is the count of rows scored strictly below it, so a tie lands in the bin of its
+    first member. Splitting a tie by row order, which is by date, would put one era's outcomes in
+    the low bin and another's in the high.
+    """
+    values = np.asarray(values, float)
+    return np.searchsorted(np.sort(values), values, side="left") * bins // len(values)
+
+
 def _bin_gaps(p: np.ndarray, beat: np.ndarray, bins: int) -> tuple[np.ndarray, np.ndarray]:
+    """Per non-empty `_tie_bins` bin, in ascending order: |mean p - hit rate| in points, and the row count."""
     p, beat = np.asarray(p, float), np.asarray(beat, float)
-    parts = [b for b in np.array_split(np.argsort(p, kind="stable"), bins) if len(b)]
-    gaps = np.array([abs(p[b].mean() - beat[b].mean()) for b in parts]) * 100
-    return gaps, np.array([len(b) for b in parts])
+    which = _tie_bins(p, bins)
+    counts = np.bincount(which, minlength=bins)
+    filled = counts > 0
+    mean_p = np.bincount(which, weights=p, minlength=bins)[filled] / counts[filled]
+    hit_rate = np.bincount(which, weights=beat, minlength=bins)[filled] / counts[filled]
+    return np.abs(mean_p - hit_rate) * 100, counts[filled]
 
 
 def calibration_error(p: np.ndarray, beat: np.ndarray, bins: int = 10) -> float:
-    """Count-weighted mean over equal-count bins of |mean p - hit rate|, in percentage points."""
+    """Count-weighted mean over equal-count bins (tied values sharing one) of |mean p - hit rate|, in points."""
     gaps, weights = _bin_gaps(p, beat, bins)
     return float(np.average(gaps, weights=weights))
 

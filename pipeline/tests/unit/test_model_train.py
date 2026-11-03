@@ -9,6 +9,7 @@ from advisor.model.train import (
     Calibrator,
     Fold,
     TrainConfig,
+    _bin_gaps,
     calibration_error,
     fit_final,
     from_files,
@@ -77,6 +78,48 @@ def test_calibration_error_is_in_percentage_points():
     p = rng.uniform(0.2, 0.8, 50_000)
     assert calibration_error(p, rng.random(50_000) < p) < 1.0
     assert calibration_error(np.full(50_000, 0.8), rng.random(50_000) < 0.5) == pytest.approx(30, abs=1.5)
+
+
+def test_tied_probabilities_are_never_split_across_bins():
+    p = np.full(10_000, 0.5)
+    beat = np.arange(10_000) < 5_000  # the early rows beat, the later ones didn't
+    assert calibration_error(p, beat) == pytest.approx(0.0)
+    gaps, counts = _bin_gaps(p, beat, 10)
+    assert counts.tolist() == [10_000] and gaps.tolist() == pytest.approx([0.0])
+
+
+def test_calibration_error_does_not_depend_on_row_order():
+    rng = np.random.default_rng(4)
+    p = rng.choice([0.3, 0.45, 0.5, 0.62], 20_000)
+    beat = rng.random(20_000) < 0.45
+    perm = rng.permutation(20_000)
+    assert calibration_error(p[perm], beat[perm]) == pytest.approx(calibration_error(p, beat), abs=1e-9)
+
+
+def test_distinct_probabilities_still_get_equal_count_bins():
+    p = np.random.default_rng(5).uniform(0.2, 0.8, 10_000)
+    _, counts = _bin_gaps(p, p > 0.5, 10)
+    assert counts.tolist() == [1_000] * 10
+
+
+def test_the_floor_takes_every_row_tied_at_the_lowest_score():
+    # a constant booster's rows tie at one score: the floor is their whole hit rate, not the rate
+    # of whichever 1,000 of them came first (crypto's early folds, 2026-11-03)
+    rng = np.random.default_rng(6)
+    tied_beat = np.concatenate([np.arange(1_000) % 2 == 0, np.arange(9_000) < 2_500])  # 50% first, 30% overall
+    p_raw = np.concatenate([np.full(10_000, 0.2), rng.uniform(0.5, 0.9, 10_000)])
+    beat = np.concatenate([tied_beat, rng.random(10_000) < 0.7])
+    cal = Calibrator.fit(p_raw, beat)
+    assert cal.lo == pytest.approx(0.30)
+    assert cal(np.array([0.2]))[0] == pytest.approx(0.30, abs=0.01)
+
+
+def test_a_constant_score_gets_its_overall_hit_rate():
+    p_raw = np.full(20_000, 0.37)
+    beat = np.arange(20_000) >= 12_000  # 40%, all in the later rows
+    cal = Calibrator.fit(p_raw, beat)
+    assert cal.lo == pytest.approx(0.40) and cal.hi == pytest.approx(0.40)
+    assert cal(np.array([0.1, 0.37, 0.9])).tolist() == pytest.approx([0.40] * 3)
 
 
 def test_walk_forward_finds_a_real_signal_and_calibrates_out_of_sample(tmp_path):

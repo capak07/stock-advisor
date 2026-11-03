@@ -84,7 +84,9 @@ def test_a_rankers_period_never_sees_its_own_targets(market):
     after = walk_forward(replace(market, rows=rows), FAST, ranker=True).predictions
     last = (before["fold"] == before["fold"].max()) & (before["horizon"] == 5)
     pd.testing.assert_series_equal(before.loc[last, "score"], after.loc[last, "score"])
-    pd.testing.assert_series_equal(before.loc[last, "p"], after.loc[last, "p"])
+    # later months learn from the outcomes that ended earlier in the period (spec §10): only its first has none
+    first_month = last & (before["day"].dt.to_period("M") == last_start.to_period("M"))
+    pd.testing.assert_series_equal(before.loc[first_month, "p"], after.loc[first_month, "p"])
 
 
 def test_a_ranker_final_model_gives_p_from_its_ranking_booster_and_round_trips(market):

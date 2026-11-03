@@ -14,6 +14,10 @@ from advisor.model.backtest import MAX_CALIBRATION_PTS
 
 PINBALL_TOLERANCE = 0.005  # a candidate's pooled pinball loss may be at most 0.5% worse
 MIN_FOLDS_IMPROVED = 3  # of the 4 outer folds: one lucky period can't carry an addition
+# The accepted configuration keeps its place up to this calibration gap; a newcomer needs
+# MAX_CALIBRATION_PTS. Without the band, one more day of data moving a gap from 4.9 to 5.1
+# flips the accepted choice back and forth (owner's decision of 2026-11-03).
+INCUMBENT_CALIBRATION_PTS = MAX_CALIBRATION_PTS + 0.5
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,7 @@ def _usable(scores: Scores) -> list[int]:
     return sorted(h for h, pts in scores.calibration.items() if not _nan(pts) and pts <= MAX_CALIBRATION_PTS)
 
 
-def _calibration_failures(candidate: Scores, reference: Scores) -> list[str]:
+def _calibration_failures(candidate: Scores, reference: Scores, limit: float) -> list[str]:
     judged = _usable(reference)
     if not judged:  # nothing to hold the candidate to: it must bring honest probabilities itself
         return [] if _usable(candidate) else [f"no horizon has probabilities within {MAX_CALIBRATION_PTS:g} points"]
@@ -56,13 +60,16 @@ def _calibration_failures(candidate: Scores, reference: Scores) -> list[str]:
         pts = candidate.calibration.get(h)
         if _nan(pts):
             failures.append(f"horizon {h}: probabilities couldn't be measured")
-        elif not pts <= MAX_CALIBRATION_PTS:
-            failures.append(f"horizon {h}: probabilities off by {pts:.1f} points (limit {MAX_CALIBRATION_PTS:g})")
+        elif not pts <= limit:
+            failures.append(f"horizon {h}: probabilities off by {pts:.1f} points (limit {limit:g})")
     return failures
 
 
-def accept_model(candidate: Scores, reference: Scores) -> Decision:
-    """Every rule is checked and every failure listed, in plain words."""
+def accept_model(candidate: Scores, reference: Scores, calibration_limit: float = MAX_CALIBRATION_PTS) -> Decision:
+    """Every rule is checked and every failure listed, in plain words.
+
+    `calibration_limit` is the gap the candidate may have at each horizon the reference could use.
+    """
     failures = []
     c_ic, r_ic = candidate.rank_ic.get("pooled"), reference.rank_ic.get("pooled")
     if _nan(c_ic) or _nan(r_ic):
@@ -76,7 +83,7 @@ def accept_model(candidate: Scores, reference: Scores) -> Decision:
         worse = (candidate.pinball / reference.pinball - 1) * 100
         failures.append(f"pinball loss {worse:.1f}% worse (limit {PINBALL_TOLERANCE * 100:g}%)")
 
-    failures += _calibration_failures(candidate, reference)
+    failures += _calibration_failures(candidate, reference, calibration_limit)
 
     folds = [k for k in reference.rank_ic if k != "pooled"]
     better = sum(
@@ -100,7 +107,8 @@ def choose_model(
 ) -> tuple[str, dict[str, Decision]]:
     """The model to use, and each candidate's decision against the baseline.
 
-    `incumbent` is the accepted non-baseline configuration, scored in this same benchmark.
+    `incumbent` is the accepted non-baseline configuration, scored in this same benchmark. It is
+    held to INCUMBENT_CALIBRATION_PTS rather than MAX_CALIBRATION_PTS; every other rule is the same.
     `twins` maps a candidate to the row it must also beat: a bagged row to the same row without
     bagging, so seed averaging's triple cost is paid only for a measured gain (spec §9). A twin
     that wasn't scored fails the candidate closed.
@@ -120,7 +128,14 @@ def choose_model(
     best = max(passing, key=lambda name: candidates[name].rank_ic["pooled"]) if passing else None
     if incumbent is not None:
         name, scores = incumbent
-        if accept_model(scores, baseline).accepted:
+        kept = accept_model(scores, baseline, INCUMBENT_CALIBRATION_PTS)
+        if name in decisions and not decisions[name].accepted:
+            decisions[name] = kept if not kept.accepted else Decision(True, (
+                f"kept: the accepted configuration may be off by up to {INCUMBENT_CALIBRATION_PTS:g} points "
+                f"(a newcomer needs {MAX_CALIBRATION_PTS:g})",
+                *kept.reasons,
+            ))
+        if kept.accepted:
             if best is None or best == name or not accept_model(candidates[best], scores).accepted:
                 return name, decisions
     return best or "baseline", decisions

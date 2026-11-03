@@ -1,6 +1,6 @@
 import pytest
 
-from advisor.benchmark.accept import Scores, accept_model, choose_model
+from advisor.benchmark.accept import Decision, Scores, accept_model, choose_model
 
 
 def scores(ic=0.05, folds=(0.05, 0.05, 0.05, 0.05), pinball=0.010, cal=None):
@@ -149,3 +149,32 @@ def test_a_bagged_row_whose_twin_was_not_scored_fails_closed():
     name, decisions = choose_model(BASE, {"ranker+extras+bagged": scores(ic=0.06, folds=(0.06,) * 4)}, None, TWINS)
     assert name == "baseline"
     assert decisions["ranker+extras+bagged"].reasons == ("ranker+extras wasn't scored",)
+
+
+def test_the_accepted_config_keeps_its_place_through_a_small_calibration_miss():
+    ranker = scores(ic=0.075, folds=(0.075,) * 4, cal={5: 3.0, 63: 5.2})
+    name, decisions = choose_model(BASE, {"ranker": ranker}, ("ranker", ranker))
+    assert name == "ranker"
+    assert decisions["ranker"] == Decision(True, (
+        "kept: the accepted configuration may be off by up to 5.5 points (a newcomer needs 5)",
+        "rank IC 0.075 vs 0.040, better in 4 of 4 outer folds",
+    ))
+
+
+def test_a_newcomer_still_needs_the_strict_calibration_limit():
+    ranker = scores(ic=0.075, folds=(0.075,) * 4, cal={5: 3.0, 63: 5.2})
+    name, decisions = choose_model(BASE, {"ranker": ranker}, None)
+    assert name == "baseline"
+    assert "horizon 63: probabilities off by 5.2 points (limit 5)" in decisions["ranker"].reasons
+
+
+def test_the_accepted_config_is_dropped_past_the_looser_limit():
+    ranker = scores(ic=0.075, folds=(0.075,) * 4, cal={5: 3.0, 63: 5.6})
+    name, decisions = choose_model(BASE, {"ranker": ranker}, ("ranker", ranker))
+    assert name == "baseline"
+    assert "horizon 63: probabilities off by 5.6 points (limit 5.5)" in decisions["ranker"].reasons
+
+
+def test_the_looser_limit_does_not_excuse_the_other_rules():
+    ranker = scores(ic=0.039, folds=(0.039,) * 4, cal={5: 3.0, 63: 5.2})
+    assert choose_model(BASE, {"ranker": ranker}, ("ranker", ranker))[0] == "baseline"

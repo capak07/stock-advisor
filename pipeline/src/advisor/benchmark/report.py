@@ -203,7 +203,10 @@ def _how(constants: Mapping) -> list[str]:
         f"- calibration must be within {cal:g} points at every usable horizon",
         "- outer fold 0 has no calibration or policy score",
         "- a candidate must also beat the currently accepted configuration",
-    ]
+    ] + ([
+        f"- the accepted configuration keeps its place with calibration up to "
+        f"{constants['incumbent_calibration_pts']:g} points; a newcomer needs {cal:g}",
+    ] if "incumbent_calibration_pts" in constants else [])
 
 
 def render_markdown(report: Mapping) -> str:

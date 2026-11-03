@@ -21,6 +21,7 @@ import pandas as pd
 import psycopg
 
 from advisor.benchmark.accept import (
+    INCUMBENT_CALIBRATION_PTS,
     MIN_FOLDS_IMPROVED,
     PINBALL_TOLERANCE,
     Decision,
@@ -246,7 +247,8 @@ def _constants(config: TrainConfig) -> dict:
         "outer_folds": config.folds, "min_train_years": config.min_train_years,
         "inner_splits": INNER_SPLITS, "inner_min_train_years": INNER_MIN_TRAIN_YEARS,
         "pinball_tolerance": PINBALL_TOLERANCE, "min_folds_improved": MIN_FOLDS_IMPROVED,
-        "max_calibration_pts": MAX_CALIBRATION_PTS, "seed": config.params.get("seed"), "bag_seeds": list(BAG_SEEDS),
+        "max_calibration_pts": MAX_CALIBRATION_PTS, "incumbent_calibration_pts": INCUMBENT_CALIBRATION_PTS,
+        "seed": config.params.get("seed"), "bag_seeds": list(BAG_SEEDS),
         "rounds": config.rounds, "sample_every": SAMPLE_EVERY,
     }
 

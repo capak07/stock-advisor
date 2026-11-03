@@ -128,6 +128,10 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
     - pooled pinball loss is no worse (★ tolerance 0.5%);
     - calibration is ≤ 5 points at every usable horizon;
     - and rank IC improves in at least 3 of the 4 outer folds (★), so one lucky period can't carry it.
+  - **The accepted configuration keeps its place** with a calibration gap of up to 5.5 points at those horizons.
+    - Every other rule still applies to it, and a newcomer still needs 5 points.
+    - Why: on 2026-11-03 the US ranker went from passing to 5.2 points on one more day of data, and the weaker
+      baseline replaced it. A band stops the accepted choice flipping on noise (owner's decision, 2026-11-03).
   - **The full model + optimized policy** is accepted when all of these hold:
     - its outer-fold net Sharpe beats the accepted model's with the default policy;
     - it meets every hard limit;

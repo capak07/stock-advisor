@@ -37,6 +37,7 @@ REPORT = {
         "pinball_tolerance": 0.005,
         "min_folds_improved": 3,
         "max_calibration_pts": 5.0,
+        "incumbent_calibration_pts": 5.5,
         "seed": 7,
         "bag_seeds": [7, 8, 9],
         "rounds": 200,
@@ -80,6 +81,7 @@ def test_the_report_names_the_choice_the_survivorship_bias_and_the_rules(tmp_pat
     assert "nan" not in md.lower() and "None" not in md
     how = md[md.index("## How decisions are made"):]
     assert "0.5%" in how and "3 of 4" in how
+    assert "- the accepted configuration keeps its place with calibration up to 5.5 points" in how
     write_reports(REPORT, tmp_path)
     assert json.loads((tmp_path / "benchmark-report.json").read_text()) == REPORT
     assert (tmp_path / "benchmark-report.md").read_text() == md
@@ -181,3 +183,9 @@ def test_nan_and_none_render_as_dashes_not_the_words():
     messy["markets"]["TSX"]["variants"]["baseline"]["model"]["1"]["5"]["calibration_pts"] = math.nan
     md = render_markdown(messy)
     assert "nan" not in md.lower() and "None" not in md
+
+
+def test_an_older_report_without_the_incumbent_limit_still_renders():
+    old = {**REPORT, "constants": {k: v for k, v in REPORT["constants"].items() if k != "incumbent_calibration_pts"}}
+    how = render_markdown(old)[render_markdown(old).index("## How decisions are made"):]
+    assert "keeps its place" not in how

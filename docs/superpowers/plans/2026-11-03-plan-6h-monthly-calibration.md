@@ -17,6 +17,12 @@ Together they make the benchmark and weekly training judge probabilities as fres
 
 **Spec:** `docs/superpowers/specs/2026-10-28-prediction-upgrade-design.md`, §10.
 
+## Revision after the final review (owner's decision, 2026-11-03)
+
+- **Task 2's monthly refit was built (58ef669) and then reverted (2668688).** The final review measured it against Task 1 alone, and it made 13 of 22 horizon results worse.
+- **A fix wave changed Task 1's floor and ceiling (3611dee).** Each end bin now holds at least `rows // bins` rows, with ties kept whole. This is because a big tie just below the top had left the ceiling on 1–6 rows.
+- **Spec §10 was rewritten to match.** The tasks below are kept as the record of what was planned.
+
 ## Global Constraints
 
 - **Tests run in Docker,** from the repo root: `pipeline/scripts/in-docker.sh uv run pytest -q` and `pipeline/scripts/in-docker.sh uv run ruff check .`. Start Docker Desktop and `docker start advisor-pg` if they're down. Native pytest is blocked on this machine; `uv run --project pipeline python` works on the host for scripts that don't import psycopg.

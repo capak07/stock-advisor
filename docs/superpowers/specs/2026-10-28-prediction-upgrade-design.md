@@ -311,32 +311,52 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - The live run forecasts only a screened shortlist, about 100 stocks per market, and fetches SEC filings only for those. So a stock's rank among the whole market isn't known when it is forecast.
   - It needs the live run to compute features for the whole universe first, which would be its own plan.
 
-### 10. Probabilities calibrated the way the live model is (Plan 6h, added 2026-11-03)
+### 10. Tie-aware probability bins (Plan 6h, added 2026-11-03)
 
-- **Why:** on 2026-11-03 the ranker ranked better than the baseline but failed the calibration limit: 5.2 points at US 126 days, 5.4 at crypto 14 days. The owner asked why. A measurement on a quarter of US stocks and all coins found three causes:
-  - **The share of stocks that beat the benchmark moves between periods.** At US 126 days, the rate each period's map was fitted on, against the rate it met: 46.8% → 35.3%, 41.1% → 39.3%, 39.9% → 43.0%. Shifting P by each period's gap cuts the error from about 6 points to under 3, for the baseline and the ranker alike.
-  - **The walk-forward fitted one map per outer fold**, so a period's map lagged its outcomes by up to a whole fold: about 15 months in the US, 26 for coins. Weekly training refits every week, so the live map lags only about one horizon. The benchmark judged probabilities staler than the ones the app shows.
-  - **Equal-count bins split tied probabilities by row order**, which is by date. The baseline's P at 63 and 126 days is a single value per period (the "score ran backwards" rule), and a constant early booster makes every score tie. Both the calibrator's floor and ceiling and the calibration error then measured time slices, not probabilities.
+- **Why:** on 2026-11-03 the ranker ranked better than the baseline but failed the calibration limit: 5.2 points at US 126 days, 5.4 at crypto 14 days. The owner asked why. A measurement on a quarter of US stocks and all coins found two causes:
+  - **The share of stocks that beat the benchmark moves between periods.** At US 126 days, the rate each period's map was fitted on, against the rate it met: 46.8% → 35.3%, 41.1% → 39.3%, 39.9% → 43.0%. No model can foresee that, and it affects the baseline and the ranker alike.
+  - **Equal-count bins split tied probabilities by row order**, which is by date. The baseline's P at 63 and 126 days is often a single value per period (the "score ran backwards" rule), and a constant early booster makes every score tie. Both the calibrator's floor and ceiling and the calibration error then measured time slices, not probabilities.
 - **What changes:**
-  - **Monthly refit.** In the walk-forward, the P of each calendar month of each outer fold after the first comes from a calibrator fitted on every earlier prediction whose outcome ended before that month's first prediction day, from any fold.
-    - The first outer fold stays uncalibrated, as today.
-    - A month with no ended outcome has no P.
-  - **Tie-aware bins.** Bins still follow score order, but tied values are never split: a value's bin is (rows with a smaller value) × bins ÷ rows. They are used for the calibrator's floor and ceiling (its lowest and highest bins) and for the calibration error and largest bin gap.
+  - **Calibration error and largest bin gap.** Bins still follow score order, but tied values are never split: a value's bin is (rows with a smaller value) × 10 ÷ rows, rounded down.
+  - **The calibrator's floor and ceiling.**
+    - With `bins = min(20, max(1, rows // 500))` (unchanged) and `size = rows // bins`, the floor is the hit rate of every row scoring at or below the `size`-th lowest score. The ceiling is the hit rate of every row at or above the `size`-th highest.
+    - So each end holds at least a bin of rows, and a tie at its edge joins it whole. A handful of lucky top rows can't set the ceiling.
+    - If the floor is above the ceiling, both become the overall rate, as before. A constant score gets the overall rate.
   - **Unchanged:**
-    - The range calibration stays per fold.
-    - The final model's calibrator is still fitted on every out-of-sample prediction; only its floor and ceiling bins change.
-    - Stored model files keep their format.
-- **Measured effect** (pooled calibration in points, baseline / ranker, on the quarter of US stocks and all coins, before the tie-aware error):
+    - the per-fold probability map in the walk-forward;
+    - the per-fold range calibration;
+    - the final model's calibration data;
+    - the stored model files' format;
+    - every rank IC.
+- **Not done: a monthly refit of the probability map.**
+  - Fitting each month's map on every outcome known when the month began was built and measured, and then dropped (owner's decision, 2026-11-03).
+  - Measured against the tie-aware bins alone, it made 13 of 22 horizon results worse, most of all at short US horizons (US 5-day ranker 0.6 → 2.5, US 20-day ranker 1.9 → 4.3). It also cost crypto's 30- and 90-day horizons.
+- **Measured effect** (pooled calibration in points, baseline / ranker, limit 5; a quarter of US stocks and all coins; old code against this plan):
 
-  | | US 63 days | US 126 days | Crypto 7 days | Crypto 14 days |
-  |---|---|---|---|---|
-  | Per-fold map (today) | 4.4 / 5.4 | 6.3 / 5.4 | 3.7 / 3.7 | 4.1 / 5.4 |
-  | Monthly refit, tie-aware floor and ceiling | 3.8 / 2.5 | 5.1 / 4.1 | 3.1 / 3.1 | 3.6 / 3.1 |
+  | Horizon | Old code | This plan |
+  |---|---|---|
+  | US 5 | 2.97 / 1.76 | 2.00 / 0.57 |
+  | US 10 | 2.13 / 1.35 | 1.59 / 1.47 |
+  | US 20 | 4.65 / 2.56 | 3.15 / 1.93 |
+  | US 21 | 3.48 / 1.93 | 2.72 / 1.88 |
+  | US 63 | 4.41 / 5.43 | 3.50 / 3.90 |
+  | US 126 | 6.32 / 5.43 | 5.53 / 4.99 |
+  | Crypto 7 | 3.71 / 3.68 | 3.77 / 1.69 |
+  | Crypto 14 | 4.07 / 5.39 | 4.38 / 3.66 |
+  | Crypto 30 | 6.48 / 4.96 | 4.97 / 4.87 |
+  | Crypto 90 | 8.82 / 8.26 | 4.06 / 4.95 |
+  | Crypto 180 | 9.24 / 10.58 | 7.32 / 9.80 |
 
+  - **Rank IC and the rows with a probability are identical** to the old code everywhere.
+  - **Usable horizons (≤ 5 points), old → new:**
+    - US baseline: unchanged (5, 10, 20, 21, 63).
+    - US ranker: 5, 10, 20, 21 → all six.
+    - Crypto baseline: 7, 14 → 7, 14, 30, 90.
+    - Crypto ranker: 7, 30 → 7, 14, 30, 90.
 - **Caveats:**
-  - The fix was chosen on the same folds it was measured on. The next full benchmark confirms it.
-  - It moves every setup's scores, the baseline's included, and the calibration figure weekly training promotes on.
-  - With the refit, the baseline's crypto 30-day horizon may become usable. The ranker would then be held to it (5.6–6.0 in the measurement).
+  - Four usable results sit within 0.13 points of the limit: US ranker 126, crypto ranker 90, crypto baseline 30 and crypto ranker 30. One more period of data can move them across it.
+  - The measurement used the same folds the problem was found on. The next full benchmark confirms it.
+  - The change moves every setup's calibration figures, the baseline's included, and so the figure weekly training promotes on.
 - **Owner's decision, 2026-11-03.**
 
 ## Plans, in dependency order
@@ -350,7 +370,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
 | **6e** | The policy search and the live use of accepted policies | 6a, ideally after 6c and 6d |
 | **6f** | The ranking booster: a `ranker` variant whose score ranks and gives P(beat) (§8) | 6a |
 | **6g** | More price features (`extras`) and seed averaging (`bagged`) as variants (§9) | 6a, 6f |
-| **6h** | Monthly probability calibration in the walk-forward, and tie-aware bins (§10) | 6a |
+| **6h** | Tie-aware probability bins: calibration error and the calibrator's floor and ceiling (§10) | 6a |
 
 The full ablation table becomes reportable once 6c, 6d and 6e land. Each plan's report states which ablation rows it could fill.
 

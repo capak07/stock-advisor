@@ -10,7 +10,6 @@ from advisor.model.train import (
     Fold,
     TrainConfig,
     _bin_gaps,
-    calibrate_p,
     calibration_error,
     fit_final,
     from_files,
@@ -153,8 +152,8 @@ def test_a_final_model_round_trips_through_its_files(tmp_path):
     assert back.horizons == (5, 63) and back.features == data.features
 
 
-def test_each_month_is_calibrated_only_on_outcomes_known_when_it_began(tmp_path, monkeypatch):
-    write_market(tmp_path, Market.TSX, stocks=20, days=1700)
+def test_each_period_is_calibrated_only_on_outcomes_known_when_it_began(tmp_path, monkeypatch):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
     data = load_market(tmp_path, Market.TSX)
     seen = []
     fit = Calibrator.fit
@@ -167,35 +166,12 @@ def test_each_month_is_calibrated_only_on_outcomes_known_when_it_began(tmp_path,
     wf = walk_forward(data, TrainConfig(horizons=(63,), rounds=10, params=FAST.params))
     pred = wf.predictions
     position = data.calendar.searchsorted(pd.DatetimeIndex(pred["day"]))
-    month = pred["day"].dt.to_period("M")
-    groups = (
-        pred[pred["p"].notna()].assign(month=month).groupby(["fold", "month"])["day"].min().sort_index()
-    )
-    assert len(groups) > 3 * pred["fold"].nunique() and len(seen) == len(groups)  # a refit per month
-    own_fold_seen = False
-    for ((k, _), first), p_raw in zip(groups.items(), seen, strict=True):
-        known = position + 63 < data.calendar.searchsorted(first)
+    calibrated = sorted(pred.loc[pred["p"].notna(), "fold"].unique())
+    assert calibrated and len(seen) == len(calibrated)
+    for k, p_raw in zip(calibrated, seen, strict=True):
+        known = position + 63 < data.calendar.searchsorted(wf.folds[k].start)
+        assert known.sum() < (pred["fold"] < k).sum()  # the embargo drops the latest outcomes
         np.testing.assert_array_equal(p_raw, np.sort(pred.loc[known, "p_raw"].to_numpy()))
-        own_fold_seen |= bool((pred.loc[known, "fold"] == k).any())
-    assert own_fold_seen  # later months learn from outcomes earlier in their own period
-    assert pred.loc[pred["fold"] == 0, "p"].isna().all()
-
-
-def test_a_month_with_no_known_outcome_gets_no_probability():
-    calendar = pd.bdate_range("2021-01-04", periods=300)
-    rng = np.random.default_rng(7)
-    pred = pd.DataFrame({
-        "day": np.repeat(calendar, 4),
-        "fold": np.repeat((np.arange(300) >= 100).astype(int), 4),
-        "p_raw": rng.uniform(0.3, 0.7, 1_200),
-        "y": rng.normal(0, 0.05, 1_200),
-    })
-    p = calibrate_p(pred, calendar, 120)
-    assert p.index.equals(pred.index)
-    assert p[pred["fold"] == 0].isna().all()
-    first_month = (pred["fold"] == 1) & (pred["day"].dt.to_period("M") == calendar[100].to_period("M"))
-    assert p[first_month].isna().all()  # nothing from fold 0 had ended 120 sessions on
-    assert p[pred["day"] >= calendar[200]].between(0, 1).all()
 
 
 def test_contributions_name_the_features_that_moved_the_forecast(tmp_path):

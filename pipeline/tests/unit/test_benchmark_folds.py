@@ -56,20 +56,10 @@ def test_an_outer_fold_is_predicted_without_its_own_outcomes(tmp_path):
     for h in FAST.horizons:
         rows.loc[inside, f"y_{h}"] = -rows.loc[inside, f"y_{h}"]
     again = run_variant(replace(data, rows=rows), BASELINE, FAST)
-    cols = ["day", "symbol", "horizon", "fold", "q10", "q50", "q90", "p_raw"]
+    cols = ["day", "symbol", "horizon", "fold", "q10", "q50", "q90", "p_raw", "p"]
 
     def upto(p: pd.DataFrame) -> pd.DataFrame:
         return p.loc[p["fold"] <= k, cols].reset_index(drop=True)
 
-    def p_known_without_the_fold(p: pd.DataFrame) -> pd.Series:
-        """P of the earlier folds, and of the fold's first month: the later months learn from the
-        outcomes that ended earlier in their own fold (spec §10), so flipping the fold moves them."""
-        first = p.groupby(["horizon", "fold"])["day"].transform("min")
-        month = p["day"].dt.to_period("M") == first.dt.to_period("M")
-        return p.loc[(p["fold"] < k) | ((p["fold"] == k) & month), "p"].reset_index(drop=True)
-
     assert (wf.predictions["fold"] == k).any()
     pd.testing.assert_frame_equal(upto(wf.predictions), upto(again.predictions))
-    pd.testing.assert_series_equal(
-        p_known_without_the_fold(wf.predictions), p_known_without_the_fold(again.predictions)
-    )

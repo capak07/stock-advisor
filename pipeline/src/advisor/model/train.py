@@ -3,9 +3,8 @@
 Per horizon: three quantile boosters (the excess-return range) and one booster whose calibrated
 score is P(beat): a binary classifier (beats the benchmark?) or, with the ranker (spec §8), a
 booster that learns each stock's rank among that day's stocks. The walk-forward predicts each test period with boosters trained only on rows whose
-targets ended before it, and calibrates each month on the earlier predictions whose outcomes had
-ended when it began, so every metric is out of sample. The final model trains on every row with a
-target.
+targets ended before it, and calibrates each period on earlier periods' predictions, so every
+metric is out of sample. The final model trains on every row with a target.
 """
 
 import gzip
@@ -185,26 +184,6 @@ def _edge_pinball(frame: pd.DataFrame, columns: Sequence[str]) -> dict[str, floa
 
 def _as_range(frame: pd.DataFrame, names: Sequence[str]) -> pd.DataFrame:
     return frame[list(names)].set_axis(list(QUANTILE_NAMES), axis=1)
-
-
-def calibrate_p(pred: pd.DataFrame, calendar: pd.DatetimeIndex, horizon: int) -> pd.Series:
-    """P(beat) for one horizon's walk-forward predictions, refitted each calendar month.
-
-    Each month of each fold after the first is calibrated on every prediction, from any fold,
-    whose outcome ended before the month's first prediction day: the way weekly training refits the
-    live map, so it lags its outcomes by about a horizon, not a whole fold. The first fold has no
-    earlier predictions and a month with no ended outcome has none to learn from; both get NaN.
-    """
-    p = pd.Series(np.nan, index=pred.index)
-    beat = (pred["y"] > 0).to_numpy()
-    later = pred[pred["fold"] > 0]
-    for _, month in later.groupby([later["fold"], later["day"].dt.to_period("M")]):
-        known = _ended_before(pred["day"], calendar, horizon, month["day"].min())
-        if not known.any():
-            continue
-        fitted = Calibrator.fit(pred.loc[known, "p_raw"].to_numpy(), beat[known])
-        p.loc[month.index] = fitted(month["p_raw"].to_numpy())
-    return p
 
 
 def calibrate_ranges(
@@ -496,7 +475,15 @@ def walk_forward(
         if not parts:
             continue
         pred = pd.concat(parts, ignore_index=True)
-        pred["p"] = calibrate_p(pred, data.calendar, h)
+        pred["p"] = np.nan
+        for k in pred["fold"].unique():
+            # earlier predictions whose outcome was known when this period began
+            earlier = pred[_ended_before(pred["day"], data.calendar, h, folds[k].start)]
+            if earlier.empty:  # nothing out of sample to calibrate this period on
+                continue
+            calibrator = Calibrator.fit(earlier["p_raw"].to_numpy(), (earlier["y"] > 0).to_numpy())
+            here = pred["fold"] == k
+            pred.loc[here, "p"] = calibrator(pred.loc[here, "p_raw"].to_numpy())
         pred, ranges = calibrate_ranges(pred, data.calendar, h, folds)
         pred["score"] = pred["p_raw"] if ranker else pred["q50"]  # what this model ranks by
         frames.append(pred)

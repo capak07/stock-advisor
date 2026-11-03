@@ -114,6 +114,17 @@ def test_the_floor_takes_every_row_tied_at_the_lowest_score():
     assert cal(np.array([0.2]))[0] == pytest.approx(0.30, abs=0.01)
 
 
+def test_the_ceiling_never_rests_on_a_handful_above_a_tie():
+    # a big tie just below the top left Task 1's top bin with only the 5 rows above it, so 5 lucky
+    # rows set the ceiling (crypto's monthly fits, final review 2026-11-03)
+    rng = np.random.default_rng(8)
+    p_raw = np.concatenate([rng.uniform(0.1, 0.5, 15_000), np.full(4_995, 0.6), rng.uniform(0.7, 0.8, 5)])
+    beat = np.concatenate([rng.random(15_000) < 0.3, np.arange(4_995) % 2 == 0, np.ones(5, dtype=bool)])
+    cal = Calibrator.fit(p_raw, beat)
+    assert cal.hi == pytest.approx(0.5, abs=0.01)
+    assert cal(np.array([0.75]))[0] <= 0.51
+
+
 def test_a_constant_score_gets_its_overall_hit_rate():
     p_raw = np.full(20_000, 0.37)
     beat = np.arange(20_000) >= 12_000  # 40%, all in the later rows

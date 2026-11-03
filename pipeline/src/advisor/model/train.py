@@ -78,12 +78,12 @@ def _ended_before(
 class Calibrator:
     """Isotonic map from the classifier's score to a beat probability.
 
-    Clipped between the hit rates of the lowest- and highest-scored bins of about `MIN_BIN` rows
-    each, with tied scores kept together: a handful of lucky extreme scores must not turn into a
-    promise the bulk of the data doesn't support. When the score ran backwards (the lowest-scored
-    bin beat more often than the highest), every score gets the overall rate: the score told
-    nothing about beating the benchmark. A constant score is one bin, so it gets the overall rate
-    too.
+    Clipped between a floor and a ceiling: the hit rates of the lowest- and highest-scored rows,
+    at least `rows // bins` of each (about `MIN_BIN`), with tied scores kept whole. A handful of
+    lucky extreme scores must not turn into a promise the bulk of the data doesn't support. When
+    the score ran backwards (the floor is above the ceiling), every score gets the overall rate:
+    the score told nothing about beating the benchmark. A constant score is one tie, so it gets
+    the overall rate too.
     """
 
     def __init__(self, xs: np.ndarray, ys: np.ndarray, lo: float, hi: float):
@@ -99,11 +99,14 @@ class Calibrator:
         # the fit is a step function: each step's two ends interpolate it exactly
         keep = np.ones(len(ys), dtype=bool)
         keep[1:-1] = (ys[1:-1] != ys[:-2]) | (ys[1:-1] != ys[2:])
-        which = _tie_bins(p_raw, min(20, max(1, len(p_raw) // min_bin)))
+        bins = min(20, max(1, len(p_raw) // min_bin))
+        size, s = len(p_raw) // bins, np.sort(p_raw)
         # in score order: the best bin anywhere is no ceiling for the top scores. On US 63- and
         # 126-day data the lowest-scored bin beat most often, and its rate capped two lucky
-        # top-scored rows at a 59% promise that 11-33% of picks then delivered
-        lo, hi = float(beat[which == which.min()].mean()), float(beat[which == which.max()].mean())
+        # top-scored rows at a 59% promise that 11-33% of picks then delivered. Each end holds at
+        # least `size` rows and a tie at its edge joins it whole: a big tie just below the top
+        # must not leave a few lucky rows above it to set the ceiling
+        lo, hi = float(beat[p_raw <= s[size - 1]].mean()), float(beat[p_raw >= s[-size]].mean())
         if lo > hi:
             lo = hi = float(beat.mean())
         return cls(xs[keep], ys[keep], lo, hi)

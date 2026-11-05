@@ -1,3 +1,4 @@
+import copy
 import json
 import math
 import os
@@ -189,3 +190,28 @@ def test_an_older_report_without_the_incumbent_limit_still_renders():
     old = {**REPORT, "constants": {k: v for k, v in REPORT["constants"].items() if k != "incumbent_calibration_pts"}}
     how = render_markdown(old)[render_markdown(old).index("## How decisions are made"):]
     assert "keeps its place" not in how
+
+
+def test_a_garch_variant_reports_its_fallbacks_and_range_blend():
+    report = copy.deepcopy(REPORT)
+    variant = report["markets"]["TSX"]["variants"]["baseline"]
+    variant["garch"] = {
+        "fallbacks": 12,
+        "range": {"21": {"s": None, "adopted": False}, "5": {"s": 0.85, "adopted": True}},
+    }
+    md = render_markdown(report)
+    assert (
+        "GARCH: 12 assets without a fit (under 500 returns, or no stable fit); "
+        "range blend 5d s=0.85 (used), 21d not used."
+    ) in md
+
+
+def test_a_garch_variant_without_a_range_reports_only_its_fallbacks():
+    report = copy.deepcopy(REPORT)
+    variant = report["markets"]["TSX"]["variants"]["baseline"]
+    variant["garch"] = {"fallbacks": 0}
+    assert "GARCH: 0 assets without a fit (under 500 returns, or no stable fit)." in render_markdown(report)
+
+
+def test_variants_without_garch_render_as_before():
+    assert "GARCH:" not in render_markdown(REPORT)

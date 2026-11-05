@@ -209,6 +209,32 @@ def _how(constants: Mapping) -> list[str]:
     ] if "incumbent_calibration_pts" in constants else [])
 
 
+def _garch_line(variant: Mapping) -> str | None:
+    """One diagnostic line for a garch variant, or None when the key is absent."""
+    stored = variant.get("garch")
+    if not isinstance(stored, Mapping):
+        return None
+    fallbacks = stored.get("fallbacks", 0)
+    line = (
+        f"GARCH: {fallbacks} assets without a fit (under 500 returns, or no stable fit)"
+    )
+    ranges = stored.get("range")
+    if not isinstance(ranges, Mapping) or not ranges:
+        return line + "."
+    bits = []
+    for horizon in sorted(ranges, key=lambda h: int(h)):
+        info = ranges[horizon]
+        if not isinstance(info, Mapping):
+            continue
+        if info.get("adopted") and not _missing(info.get("s")):
+            bits.append(f"{horizon}d s={info['s']:g} (used)")
+        else:
+            bits.append(f"{horizon}d not used")
+    if not bits:
+        return line + "."
+    return line + "; range blend " + ", ".join(bits) + "."
+
+
 def render_markdown(report: Mapping) -> str:
     day = str(report["started_at"])[:10]
     sha = report.get("git_sha") or "—"
@@ -255,6 +281,8 @@ def render_markdown(report: Mapping) -> str:
                 lines.append(f"Kenneth French cross-check: {variant['french']}")
             if "alpha_rank_ic" in variant or variant.get("french"):
                 lines.append("")
+            if (garch_line := _garch_line(variant)) is not None:
+                lines += [garch_line, ""]
             if isinstance(variant.get("policy"), Mapping):
                 lines += _policy_table(variant)
                 lines.append("")

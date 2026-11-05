@@ -205,6 +205,12 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - it's applied only if outer-fold coverage error shrinks and calibration stays ≤ 5 points.
 - **Risk:** the risk score's realised-volatility component (`vol_60`, spec §6.4) can be replaced by `garch_vol_21`. This follows the same evidence rule, judged on how well the risk level ranks realised drawdowns.
 - **Stops stay ATR-based.** The GARCH volatility is offered to the policy search only as an alternative stop distance, and adopted only if the outer folds say so.
+- **Builder's calls (Plan 6d, 2026-11-04, for the owner to check):** `docs/superpowers/plans/2026-11-04-plan-6d-garch-volatility.md` records them.
+  - Each fit uses at most the last 2,520 returns.
+  - A fixed 250-return filter window, so live and training values match.
+  - One `garch_vol` column per horizon.
+  - The range scale is fitted on earlier periods' out-of-sample predictions, as today's range calibration is.
+  - The risk-score swap and the GARCH stop distance move to a follow-up plan.
 
 ### 5. The constrained policy search (Plan 6e)
 

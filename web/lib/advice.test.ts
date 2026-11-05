@@ -7,7 +7,7 @@ describe('advice text', () => {
       'dist_52w_high', 'dist_52w_low', 'volume_z', 'gap', 'jump_5d', 'log_adv20', 'ex_bench_21', 'ex_bench_63',
       'ex_sector_21', 'ex_sector_63', 'sector_rank_63', 'rev_growth', 'gross_margin', 'op_margin', 'gross_margin_trend',
       'op_margin_trend', 'eps_growth', 'earnings_yield', 'sales_yield', 'fcf_yield', 'debt_to_equity', 'log_mcap',
-      'sector_mom_12_1', 'sector_dist_52w_high', 'amihud_20']
+      'sector_mom_12_1', 'sector_dist_52w_high', 'amihud_20', 'garch_vol']
     expect(features.filter((f) => !(f in FACTORS))).toEqual([])
   })
 
@@ -25,6 +25,7 @@ describe('advice text', () => {
     expect(describeFactor('amihud_20', 0.0042, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.42%')
     expect(describeFactor('amihud_20', 0.0002, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.020%')
     expect(describeFactor('amihud_20', 0.000002, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.00020%')
+    expect(describeFactor('garch_vol', 0.034, 'SPY')).toBe('Forecast volatility over the horizon (GARCH) 3.4%')
   })
 
   it('sizes factor bars by contribution, at most half the bar', () => {

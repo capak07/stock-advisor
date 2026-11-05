@@ -41,7 +41,7 @@ from advisor.history import record as record_price_history
 from advisor.markets import BENCHMARKS, MARKETS, market_of
 from advisor.model.crypto import BTC, CRYPTO
 from advisor.model.crypto_live import coin_costs, forecast_coins
-from advisor.model.live import bars_frame, facts_frame, live_features, split_events
+from advisor.model.live import bars_frame, facts_frame, live_features, live_garch, split_events
 from advisor.model.market_run import Forecast, MarketModel, feature_day, model_failure
 from advisor.model.predict import load_active, predict_rows, screen_scores
 from advisor.model.weekly import KIND
@@ -356,10 +356,14 @@ def model_features(
     if market is Market.US and facts is None:
         facts = facts_frame([])
     table, tickers = facts if facts is not None else (None, None)
-    return live_features(
+    features = live_features(
         prices, market, day, sectors=model.sectors, partial_day=partial,
         events=events, facts=table, tickers=tickers,
     )
+    garch = getattr(model.active.model, "garch", None)
+    if garch is not None:  # a garch model reads each stock's GARCH volatility (Plan 6d); NaN without a fit
+        features = features.join(live_garch(prices, market, day, garch, model.active.model.horizons))
+    return features
 
 
 def screen_market(

@@ -15,6 +15,8 @@ from advisor.collectors.sec_xbrl import FinancialFact
 from advisor.collectors.yfinance_bars import LOOKBACK, Downloader
 from advisor.markets import MARKETS
 from advisor.model.dataset import feature_frames
+from advisor.model.features import to_wide
+from advisor.model.garch import GarchParams, live_garch_vol
 from advisor.models import DailyBar, Market
 from advisor.screener import ADV_WINDOW
 from advisor.training.prices import download_history, training_download
@@ -74,6 +76,26 @@ def _day_row(prices, events, sectors, market, day, facts, tickers, session: pd.T
     out["eligible"] = frames.eligible.loc[session].astype(bool)
     out["dollar_volume_20"] = frames.dollar_volume.rolling(ADV_WINDOW).mean().loc[session]
     return out
+
+
+def live_garch(
+    prices: pd.DataFrame,
+    market: Market,
+    day: pd.Timestamp,
+    params: Mapping[str, GarchParams | None],
+    horizons: Sequence[int],
+) -> pd.DataFrame:
+    """Symbol × `garch_vol_h` on `day` for a garch model (Plan 6d), from the bars up to and including it.
+
+    The closes sit on the market's calendar (its benchmark's bars), as in training, so a live value
+    matches the training value on the same day.
+    """
+    benchmark = MARKETS[market].benchmark
+    upto = prices[pd.to_datetime(prices["day"]) <= pd.Timestamp(day)]
+    close = to_wide(upto).close
+    close = close.loc[close.index[close[benchmark].notna()]]
+    symbols = [s for s in close.columns if s in params]
+    return live_garch_vol(close[symbols], params, horizons)
 
 
 def live_features(

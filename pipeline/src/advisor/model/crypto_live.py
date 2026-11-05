@@ -16,6 +16,7 @@ from advisor.model.crypto import (
     CRYPTO_WARMUP,
     crypto_frames,
 )
+from advisor.model.garch import live_garch_vol
 from advisor.model.train import FinalModel
 from advisor.models import DailyBar, PredictionRow
 from advisor.screener import ADV_WINDOW
@@ -73,6 +74,10 @@ def forecast_coins(
         return {}, reasons
 
     frame = pd.DataFrame({name: features[name].loc[last] for name in CRYPTO_FEATURES + CRYPTO_EXTRAS}).reindex(ready)
+    garch = getattr(model, "garch", None)
+    if garch is not None:  # a garch model reads each coin's GARCH volatility (Plan 6d); NaN without a fit
+        vols = live_garch_vol(wide.close[ready], garch, model.horizons)
+        frame = frame.join(vols)
     present = [name for name in model.features if name in frame.columns]
     finite = frame[present].map(math.isfinite).all(axis=1)
     frame = frame.loc[finite]

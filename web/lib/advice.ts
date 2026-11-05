@@ -37,6 +37,7 @@ export const FACTORS: Record<string, { label: string; format: Formatter }> = {
   sector_mom_12_1: { label: "Its sector's 12-month momentum, skipping the last month", format: 'signedPct' },
   sector_dist_52w_high: { label: "Its sector's distance from the 52-week high", format: 'signedPct' },
   amihud_20: { label: 'Price move per $1M traded, 20-day average', format: 'smallPct' },
+  garch_vol: { label: 'Forecast volatility over the horizon (GARCH)', format: 'pct' },
   // fundamentals
   rev_growth: { label: 'Revenue growth, year over year', format: 'signedPct' },
   gross_margin: { label: 'Gross margin', format: 'pct' },

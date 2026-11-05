@@ -6,7 +6,7 @@ training and live match. A fit at α + β = 1 is kept; the h-step sum is built
 step by step so it stays valid at the bound.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -145,3 +145,20 @@ def garch_vol(
             total = np.where(finite, acc, np.nan)
         data[f"garch_vol_{h}"] = np.sqrt(total)
     return pd.DataFrame(data, index=returns.index)
+
+
+def live_garch_vol(
+    closes: pd.DataFrame, params: Mapping[str, GarchParams | None], horizons: Sequence[int]
+) -> pd.DataFrame:
+    """Symbol × `garch_vol_h` on the last day of `closes` (a market-calendar × symbol frame).
+
+    The returns are the training data's (`dataset.log_returns`), so with the same parameters a live
+    value equals the training value on the same day. A symbol without parameters gets NaN.
+    """
+    returns = np.log(closes / closes.shift(1))
+    rows = {
+        symbol: garch_vol(returns[symbol], params.get(symbol), horizons).iloc[-1] if len(closes) else None
+        for symbol in closes.columns
+    }
+    cols = [f"garch_vol_{h}" for h in horizons]
+    return pd.DataFrame({s: (r if r is not None else pd.Series(np.nan, index=cols)) for s, r in rows.items()}).T[cols]

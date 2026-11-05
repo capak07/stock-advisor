@@ -180,7 +180,13 @@ def _benchmark_market(
             "model": model, "summary": means, "policy": policy,
         }
         if variant.garch:
-            variants[name]["garch"] = {"fallbacks": wf.garch_fallbacks}
+            variants[name]["garch"] = {
+                "fallbacks": wf.garch_fallbacks,
+                "range": {
+                    str(h): {"s": m["garch_range"]["scale"], "adopted": m["garch_range"]["adopted"]}
+                    for h, m in wf.metrics.items() if "garch_range" in m
+                },
+            }
         if variant.factors:
             variants[name]["alpha_rank_ic"] = wf.alpha_rank_ic
             variants[name]["fallback_count"] = wf.fallback_count

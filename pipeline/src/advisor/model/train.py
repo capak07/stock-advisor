@@ -414,6 +414,69 @@ def _metrics(scored: pd.DataFrame) -> dict:
     }
 
 
+# Plan 6d's range blend: q10' = (q10 + q50 - s*g)/2 and q90' = (q90 + q50 + s*g)/2, with s on this grid
+GARCH_SCALES = tuple(round(0.25 + 0.05 * i, 2) for i in range(56))  # 0.25 to 3.00
+TARGET_COVERAGE = 0.80
+
+
+def blend_edges(q10, q50, q90, g, s: float):
+    """The blended low and high edges: the model's own edges averaged with q50 ∓ s·g."""
+    return 0.5 * (q10 + q50 - s * g), 0.5 * (q90 + q50 + s * g)
+
+
+def _coverage(y, lo, hi) -> float:
+    y, lo, hi = (np.asarray(v, dtype=float) for v in (y, lo, hi))
+    return float(np.mean((y >= lo) & (y <= hi)))
+
+
+def _blend_error(frame: pd.DataFrame, s: float | None) -> float:
+    """|q10-q90 coverage - 80%| on `frame`, blended at scale `s` (None: the model's own range)."""
+    if s is None:
+        return abs(_coverage(frame["y"], frame["q10"], frame["q90"]) - TARGET_COVERAGE)
+    lo, hi = blend_edges(frame["q10"], frame["q50"], frame["q90"], frame["garch_vol"], s)
+    return abs(_coverage(frame["y"], lo, hi) - TARGET_COVERAGE)
+
+
+def fit_garch_scale(frame: pd.DataFrame) -> float | None:
+    """The grid scale whose blend covers closest to 80% on `frame` (the first on ties); None without rows."""
+    if frame.empty:
+        return None
+    errors = [_blend_error(frame, s) for s in GARCH_SCALES]
+    return GARCH_SCALES[int(np.argmin(errors))]
+
+
+def blend_ranges(
+    pred: pd.DataFrame, calendar: pd.DatetimeIndex, horizon: int, folds: Sequence[Fold]
+) -> tuple[pd.DataFrame, dict]:
+    """One horizon's predictions with each period's range blended with its GARCH range, where the
+    earlier periods' known outcomes say the blend covers closer to 80% (plan 6d, decision 5).
+
+    A row without `garch_vol` keeps its range. `adopted` says whether the blend helped over all
+    the periods it could be judged on; `scale` is then the scale fitted on every out-of-sample row,
+    what the final model applies.
+    """
+    out = pred.copy()
+    finite = np.isfinite(pred["garch_vol"].to_numpy(dtype=float))
+    info: dict = {"s": {}, "used": {}}
+    judged = np.zeros(len(pred), dtype=bool)
+    for k in sorted(int(f) for f in pred["fold"].unique()):
+        evidence = pred[_ended_before(pred["day"], calendar, horizon, folds[k].start) & finite]
+        scale = fit_garch_scale(evidence)
+        used = scale is not None and _blend_error(evidence, scale) < _blend_error(evidence, None)
+        info["s"][k], info["used"][k] = scale, bool(used)
+        if scale is not None:
+            judged |= (pred["fold"] == k).to_numpy() & finite
+        if used:
+            here = (pred["fold"] == k).to_numpy() & finite
+            lo, hi = blend_edges(pred.loc[here, "q10"], pred.loc[here, "q50"], pred.loc[here, "q90"],
+                                 pred.loc[here, "garch_vol"], scale)
+            out.loc[here, "q10"], out.loc[here, "q90"] = lo, hi
+    adopted = bool(judged.any()) and _blend_error(out[judged], None) < _blend_error(pred[judged], None)
+    info["adopted"] = adopted
+    info["scale"] = fit_garch_scale(pred[(pred["fold"] > 0).to_numpy() & finite]) if adopted else None
+    return out, info
+
+
 def fold_garch(data: MarketData, start: pd.Timestamp, horizons: Sequence[int]) -> tuple[dict, pd.DataFrame]:
     """A fold's GARCH parameters per symbol, fitted on the returns before `start`, and each sample
     day's forecast volatility per horizon (rows indexed by day and symbol).
@@ -512,7 +575,10 @@ def walk_forward(
                 raw["q50_alpha"] = q50_alpha
                 raw["alpha"] = alpha.loc[test.index].to_numpy(dtype=float)
                 fallbacks += fallback_count(test, h, names)
-            out = test[["day", "symbol", "sector", "dollar_volume_20", *jump]].assign(horizon=h, fold=k, y=test[target])
+            carried = ["garch_vol"] if garch else []
+            out = test[["day", "symbol", "sector", "dollar_volume_20", *jump, *carried]].assign(
+                horizon=h, fold=k, y=test[target]
+            )
             parts.append(out.join(raw))
         if not parts:
             continue
@@ -527,11 +593,14 @@ def walk_forward(
             here = pred["fold"] == k
             pred.loc[here, "p"] = calibrator(pred.loc[here, "p_raw"].to_numpy())
         pred, ranges = calibrate_ranges(pred, data.calendar, h, folds)
+        garch_range = None
+        if garch:
+            pred, garch_range = blend_ranges(pred, data.calendar, h, folds)
         pred["score"] = pred["p_raw"] if ranker else pred["q50"]  # what this model ranks by
         frames.append(pred)
         scored = pred[pred["p"].notna()]
         if not scored.empty:
-            metrics[h] = _metrics(scored) | {"range": ranges}
+            metrics[h] = _metrics(scored) | {"range": ranges} | ({"garch_range": garch_range} if garch else {})
     extra = ["q50_alpha", "alpha"] if names else []
     columns = [
         "day", "symbol", "sector", "dollar_volume_20", *jump, "horizon", "fold", "y", *QUANTILE_NAMES, *RAW_NAMES,
@@ -561,6 +630,7 @@ class FinalModel:
     ranges: dict = field(default_factory=dict)  # horizon → RangeCalibrator of the edges that beat the raw ones
     p_source: str = "beat"  # the booster P is calibrated from: "beat", or "rank" (spec §8)
     garch: dict | None = None  # symbol → GarchParams (or None) fitted on all returns; None = not a garch model
+    garch_scale: dict = field(default_factory=dict)  # horizon → the range blend's scale, where it was adopted
 
     def _for_horizon(self, frame: pd.DataFrame, horizon: int) -> pd.DataFrame:
         """A garch model reads horizon h's `garch_vol_h` column as its `garch_vol` feature."""
@@ -593,6 +663,13 @@ class FinalModel:
                     out[quantile] = out[quantile].to_numpy(dtype=float) + shift
             if h in self.ranges:
                 out[list(QUANTILE_NAMES)] = self.ranges[h](out[list(QUANTILE_NAMES)])
+            if h in self.garch_scale:
+                g = self._for_horizon(frame, h)["garch_vol"].to_numpy(dtype=float)
+                here = np.isfinite(g)
+                lo, hi = blend_edges(out["q10"].to_numpy(dtype=float), out["q50"].to_numpy(dtype=float),
+                                     out["q90"].to_numpy(dtype=float), g, self.garch_scale[h])
+                out["q10"] = np.where(here, lo, out["q10"])
+                out["q90"] = np.where(here, hi, out["q90"])
             out["p_beat"] = self.calibrators[h](out.pop("p_raw").to_numpy())
             out.insert(0, "horizon", h)
             frames.append(out)
@@ -692,6 +769,8 @@ def fit_final(
         feat, tuple(config.horizons), boosters, calibrators, screener, screener_features,
         dict(config.params), config.rounds, names, mu, betas, ranges, "rank" if ranker else "beat",
         garch_params,
+        {h: float(m["garch_range"]["scale"]) for h, m in wf.metrics.items()
+         if garch and h in config.horizons and (m.get("garch_range") or {}).get("adopted")},
     )
 
 
@@ -735,7 +814,10 @@ def to_files(model: FinalModel) -> dict[str, bytes]:
             "betas": model.betas,
         }))
     if model.garch is not None:
-        files["garch"] = _pack(json.dumps({s: None if p is None else p.to_json() for s, p in model.garch.items()}))
+        files["garch"] = _pack(json.dumps({
+            "params": {s: None if p is None else p.to_json() for s, p in model.garch.items()},
+            "scale": {str(h): s for h, s in model.garch_scale.items()},
+        }))
     return files
 
 
@@ -753,6 +835,7 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
         return Bag(boosters) if bag > 1 else boosters[0]
 
     stored = json.loads(_unpack(files["factors"])) if "factors" in files else None
+    stored_garch = json.loads(_unpack(files["garch"])) if "garch" in files else None
     if stored:
         factor_names = tuple(stored["names"])
         mu = {int(h): {name: float(value) for name, value in values.items()} for h, values in stored["mu"].items()}
@@ -773,6 +856,7 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
         if "ranges" in files else {},
         p_source,
         # a model saved before Plan 6d, or without garch, has no `garch` file
-        {s: None if v is None else GarchParams.from_json(v) for s, v in json.loads(_unpack(files["garch"])).items()}
-        if "garch" in files else None,
+        {s: None if v is None else GarchParams.from_json(v) for s, v in stored_garch["params"].items()}
+        if stored_garch is not None else None,
+        {int(h): float(s) for h, s in stored_garch["scale"].items()} if stored_garch is not None else {},
     )

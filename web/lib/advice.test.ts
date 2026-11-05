@@ -25,7 +25,7 @@ describe('advice text', () => {
     expect(describeFactor('amihud_20', 0.0042, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.42%')
     expect(describeFactor('amihud_20', 0.0002, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.020%')
     expect(describeFactor('amihud_20', 0.000002, 'SPY')).toBe('Price move per $1M traded, 20-day average 0.00020%')
-    expect(describeFactor('garch_vol', 0.034, 'SPY')).toBe('Forecast volatility over the horizon (GARCH) 3.4%')
+    expect(describeFactor('garch_vol', 0.034, 'SPY')).toBe('Forecast volatility, about a month ahead (GARCH) 3.4%')
   })
 
   it('sizes factor bars by contribution, at most half the bar', () => {

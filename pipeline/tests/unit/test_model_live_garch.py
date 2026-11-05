@@ -24,9 +24,9 @@ def test_live_garch_vol_is_the_windows_last_day_forecast():
         index=days,
     )
     out = live_garch_vol(closes, {"A": P, "B": None}, (5, 21))
-    assert list(out.index) == ["A", "B"] and list(out.columns) == ["garch_vol_5", "garch_vol_21"]
+    assert list(out.index) == ["A", "B"] and list(out.columns) == ["garch_vol_5", "garch_vol_21", "garch_vol"]
     expected = garch_vol(np.log(closes["A"] / closes["A"].shift(1)), P, (5, 21)).iloc[-1]
-    np.testing.assert_allclose(out.loc["A"].to_numpy(), expected.to_numpy(), rtol=1e-12)
+    np.testing.assert_allclose(out.loc["A", list(expected.index)].to_numpy(dtype=float), expected.to_numpy(), rtol=1e-12)
     assert out.loc["B"].isna().all()
     assert live_garch_vol(closes, {}, (5,)).isna().all().all()  # a symbol the model never fitted
 
@@ -45,7 +45,7 @@ def test_live_garch_matches_training_on_the_same_day(tmp_path):
         if params is None:
             continue
         trained = garch_vol(data.returns[symbol], params, FAST.horizons).loc[day]
-        np.testing.assert_allclose(live.loc[symbol].to_numpy(), trained.to_numpy(), rtol=1e-9)
+        np.testing.assert_allclose(live.loc[symbol, list(trained.index)].to_numpy(dtype=float), trained.to_numpy(), rtol=1e-9)
         compared += 1
     assert compared >= 10
 
@@ -85,3 +85,17 @@ def test_coins_carry_garch_columns_for_a_garch_model():
     assert {f"garch_vol_{h}" for h in CRYPTO_HORIZONS} <= set(x.columns)
     assert np.isfinite(x.loc["ETH", "garch_vol_7"]) and np.isnan(x.loc[BTC, "garch_vol_7"])
     assert "ETH" in rows and BTC in rows  # a coin without GARCH still gets its forecast
+
+
+def test_live_output_names_the_month_ahead_volatility_for_explanations():
+    days = pd.bdate_range("2024-01-01", periods=300)
+    closes = pd.DataFrame({"A": 50 * np.exp(np.cumsum(np.random.default_rng(5).normal(0, 0.01, 300)))}, index=days)
+    out = live_garch_vol(closes, {"A": P}, (5, 21, 63))
+    assert out.loc["A", "garch_vol"] == out.loc["A", "garch_vol_21"]  # the horizon nearest 21: what's stored
+    coins = live_garch_vol(closes, {"A": P}, CRYPTO_HORIZONS)
+    assert coins.loc["A", "garch_vol"] == coins.loc["A", "garch_vol_14"]
+
+
+def test_no_symbols_give_an_empty_frame_not_an_error():
+    out = live_garch_vol(pd.DataFrame(index=pd.bdate_range("2024-01-01", periods=5)), {}, (5, 21))
+    assert out.empty and list(out.columns) == ["garch_vol_5", "garch_vol_21", "garch_vol"]

@@ -150,15 +150,20 @@ def garch_vol(
 def live_garch_vol(
     closes: pd.DataFrame, params: Mapping[str, GarchParams | None], horizons: Sequence[int]
 ) -> pd.DataFrame:
-    """Symbol × `garch_vol_h` on the last day of `closes` (a market-calendar × symbol frame).
+    """Symbol × `garch_vol_h` on the last day of `closes` (a market-calendar × symbol frame), plus
+    `garch_vol`: the value for the horizon nearest 21, which features_live stores so the app can show
+    a number beside the feature in explanations (the model itself reads `garch_vol_h` per horizon).
 
     The returns are the training data's (`dataset.log_returns`), so with the same parameters a live
     value equals the training value on the same day. A symbol without parameters gets NaN.
     """
+    cols = [f"garch_vol_{h}" for h in horizons]
+    shown = f"garch_vol_{min(horizons, key=lambda h: (abs(h - 21), h))}"
     returns = np.log(closes / closes.shift(1))
     rows = {
-        symbol: garch_vol(returns[symbol], params.get(symbol), horizons).iloc[-1] if len(closes) else None
+        symbol: garch_vol(returns[symbol], params.get(symbol), horizons).iloc[-1]
+        if len(closes) else pd.Series(np.nan, index=cols)
         for symbol in closes.columns
     }
-    cols = [f"garch_vol_{h}" for h in horizons]
-    return pd.DataFrame({s: (r if r is not None else pd.Series(np.nan, index=cols)) for s, r in rows.items()}).T[cols]
+    out = pd.DataFrame.from_dict(rows, orient="index", columns=cols) if rows else pd.DataFrame(columns=cols, dtype=float)
+    return out.assign(garch_vol=out[shown])

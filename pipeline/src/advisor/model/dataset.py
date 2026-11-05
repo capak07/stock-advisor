@@ -5,9 +5,10 @@ Reads Plan 3a's weekly Parquet files. Every feature uses only bars up to its day
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from advisor.markets import MARKETS
@@ -51,6 +52,21 @@ class MarketData:
     calendar: pd.DatetimeIndex
     factors: FactorFrames | None = None
     extras: tuple[str, ...] = ()  # columns on the rows beyond `features`, for configs that name them
+    # daily log returns of the close on `calendar`, one column per symbol with rows (Plan 6d's GARCH)
+    returns: pd.DataFrame | None = None
+    # a fold start -> each symbol's GARCH parameters fitted before it, shared by the variants and folds
+    # that run on this data (spec §4: fitted once per asset per training fold)
+    garch_cache: dict = field(default_factory=dict, compare=False, repr=False)
+
+
+def log_returns(close: pd.DataFrame, symbols) -> pd.DataFrame:
+    """Daily log returns of the close for `symbols`, in sorted order: the series GARCH is fitted on.
+
+    The same definition as `vol_60`'s returns, so the two volatilities read the same moves.
+    """
+    columns = sorted(set(symbols))
+    close = close[columns]
+    return np.log(close / close.shift(1))
 
 
 @dataclass(frozen=True)
@@ -104,7 +120,7 @@ def feature_frames(
     return FeatureFrames(wide, calendar, names, list(EXTRA_FEATURES), features, dollar_volume, eligible(traded, dollar_volume))
 
 
-def load_market(data_dir: Path, market: Market, with_factors: bool = False) -> MarketData:
+def load_market(data_dir: Path, market: Market, with_factors: bool = False, with_garch: bool = False) -> MarketData:
     benchmark = MARKETS[market].benchmark
     etfs = sorted(SECTOR_ETFS[market].values())
     # the build ran during its last session, so that day's bar is partial
@@ -151,5 +167,6 @@ def load_market(data_dir: Path, market: Market, with_factors: bool = False) -> M
     rows = rows[columns].reset_index(drop=True)
     if factors is not None:
         rows = join_factor_columns(rows, betas, factors)
+    returns = log_returns(wide.close, rows["symbol"].unique()) if with_garch else None
     del built, wide, dollar_volume, frames, stacked  # the full-calendar frames are large
-    return MarketData(market, rows, names, calendar, factors, tuple(extras))
+    return MarketData(market, rows, names, calendar, factors, tuple(extras), returns)

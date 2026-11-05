@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from advisor.model.dataset import MarketData
+from advisor.model.dataset import MarketData, log_returns
 from advisor.model.factors import FACTORS, join_factor_columns, make_factors
 from advisor.model.features import (
     PRICE_FEATURES,
@@ -61,7 +61,7 @@ def _universe(close: pd.DataFrame, dollar_volume: pd.DataFrame, vol_60: pd.DataF
     return rank <= UNIVERSE
 
 
-def load_crypto(data_dir: Path, with_factors: bool = False) -> MarketData:
+def load_crypto(data_dir: Path, with_factors: bool = False, with_garch: bool = False) -> MarketData:
     manifest = json.loads((data_dir / "manifest.json").read_text())
     if "failed" in manifest:
         raise ValueError(f"the training data build failed: {manifest['failed']['error']}")
@@ -99,4 +99,5 @@ def load_crypto(data_dir: Path, with_factors: bool = False) -> MarketData:
             wide.close, {"size": size, "mom": mom}, universe, BTC, days, CRYPTO_HORIZONS, FACTORS[CRYPTO],
         )
         rows = join_factor_columns(rows, betas, factors)
-    return MarketData(CRYPTO, rows, list(CRYPTO_FEATURES), calendar, factors, tuple(CRYPTO_EXTRAS))
+    returns = log_returns(wide.close, rows["symbol"].unique()) if with_garch else None
+    return MarketData(CRYPTO, rows, list(CRYPTO_FEATURES), calendar, factors, tuple(CRYPTO_EXTRAS), returns)

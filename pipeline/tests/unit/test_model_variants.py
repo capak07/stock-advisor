@@ -30,7 +30,6 @@ def test_configs_name_themselves_and_round_trip():
 
 
 @pytest.mark.parametrize("stored, match", [
-    ({"version": 1, "factors": False, "garch": True, "policy": None}, "Plan 6d"),
     ({"version": 4, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
       "policy": None}, "version"),
     ({"version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "policy": None}, "bagged"),
@@ -77,9 +76,9 @@ def test_a_factors_config_can_be_stored_and_run():
     assert ModelConfig.from_json(config.to_json()) == config
 
 
-def test_unbuilt_variants_say_which_plan_builds_them(tmp_path):
+def test_a_garch_variant_needs_the_daily_returns(tmp_path):
     write_market(tmp_path, Market.TSX, stocks=20, days=1100)
-    with pytest.raises(NotImplementedError, match="Plan 6d"):
+    with pytest.raises(ValueError, match="with_garch=True"):
         run_variant(load_market(tmp_path, Market.TSX), ModelConfig(garch=True), FAST)
 
 

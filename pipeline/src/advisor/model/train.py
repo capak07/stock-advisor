@@ -20,7 +20,7 @@ from scipy.optimize import isotonic_regression
 from advisor.model.dataset import MarketData
 from advisor.model.factors import alpha_target, fallback_count
 from advisor.model.features import HORIZONS, PRICE_FEATURES, RS_FEATURES
-from advisor.model.garch import fit_all, garch_vol
+from advisor.model.garch import GarchParams, fit_all, garch_vol
 
 QUANTILES = (0.1, 0.5, 0.9)
 PARAMS = {
@@ -560,6 +560,16 @@ class FinalModel:
     betas: dict = field(default_factory=dict)  # symbol → factor → latest beta
     ranges: dict = field(default_factory=dict)  # horizon → RangeCalibrator of the edges that beat the raw ones
     p_source: str = "beat"  # the booster P is calibrated from: "beat", or "rank" (spec §8)
+    garch: dict | None = None  # symbol → GarchParams (or None) fitted on all returns; None = not a garch model
+
+    def _for_horizon(self, frame: pd.DataFrame, horizon: int) -> pd.DataFrame:
+        """A garch model reads horizon h's `garch_vol_h` column as its `garch_vol` feature."""
+        if self.garch is None:
+            return frame
+        column = f"garch_vol_{horizon}"
+        if column not in frame:
+            raise ValueError(f"a garch model needs a {column} column (Plan 6d live GARCH volatility)")
+        return frame.assign(garch_vol=frame[column])
 
     def _with_betas(self, x: pd.DataFrame) -> pd.DataFrame:
         if not self.factor_names:
@@ -576,7 +586,7 @@ class FinalModel:
         frame = self._with_betas(x)
         frames = []
         for h in self.horizons:
-            out = _predict(self.boosters[h], frame[self.features])
+            out = _predict(self.boosters[h], self._for_horizon(frame, h)[self.features])
             if self.factor_names:
                 shift = _factor_shift(frame, self.factor_names, self.mu.get(h, {}))
                 for quantile in QUANTILE_NAMES:
@@ -592,7 +602,7 @@ class FinalModel:
         """The `top` features that moved each row's median forecast most (by absolute size),
         from LightGBM's per-feature contributions; keyed by the index of `x`. When quantile boosters
         cross, `_predict` sorts them, so the explained booster may not be the displayed q50."""
-        frame = self._with_betas(x)
+        frame = self._for_horizon(self._with_betas(x), horizon)
         contrib = self.boosters[horizon]["q50"].predict(frame[self.features], pred_contrib=True)[:, :-1]  # last = bias
         # a factor exposure (beta_*) says how the stock moves with a factor, not what moved this
         # forecast; explanations name only the stock's own features
@@ -632,10 +642,14 @@ def fit_final(
     factor_names: Sequence[str] | None = None,
     extra_features: Sequence[str] = (),
     bag: bool = False,
+    garch: bool = False,
 ) -> FinalModel:
     rows = data.rows
     names = tuple(factor_names or ())
-    feat = _feature_list(data, extra_features, names)
+    feat = _feature_list(data, extra_features, names) + (["garch_vol"] if garch else [])
+    garch_params, vols = None, None
+    if garch:  # fitted on every return the data has, as the walk-forward's folds were on theirs
+        garch_params, vols = fold_garch(data, data.calendar[-1] + pd.Timedelta(days=1), config.horizons)
     seeds = BAG_SEEDS if bag else ()
     boosters, calibrators, ranges = {}, {}, {}
     # the calibrators were fitted on the walk-forward's scores, so the final boosters follow it
@@ -650,6 +664,8 @@ def fit_final(
         if edges:
             ranges[h] = RangeCalibrator.fit(_as_range(oos, RAW_NAMES).assign(y=oos["y"]), names=edges)
         train = rows[rows[f"y_{h}"].notna()]
+        if garch:
+            train = train.assign(garch_vol=_garch_column(vols, train, h))
         ranks = daily_rank(train, f"y_{h}") if ranker else None
         if names:
             boosters[h] = _fit_horizon(
@@ -675,6 +691,7 @@ def fit_final(
     return FinalModel(
         feat, tuple(config.horizons), boosters, calibrators, screener, screener_features,
         dict(config.params), config.rounds, names, mu, betas, ranges, "rank" if ranker else "beat",
+        garch_params,
     )
 
 
@@ -717,6 +734,8 @@ def to_files(model: FinalModel) -> dict[str, bytes]:
             "mu": {str(h): dict(values) for h, values in model.mu.items()},
             "betas": model.betas,
         }))
+    if model.garch is not None:
+        files["garch"] = _pack(json.dumps({s: None if p is None else p.to_json() for s, p in model.garch.items()}))
     return files
 
 
@@ -753,4 +772,7 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
         {int(h): RangeCalibrator.from_json(d) for h, d in json.loads(_unpack(files["ranges"])).items()}
         if "ranges" in files else {},
         p_source,
+        # a model saved before Plan 6d, or without garch, has no `garch` file
+        {s: None if v is None else GarchParams.from_json(v) for s, v in json.loads(_unpack(files["garch"])).items()}
+        if "garch" in files else None,
     )

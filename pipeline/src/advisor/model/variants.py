@@ -1,9 +1,8 @@
 """A model configuration (a variant), and the one seam every variant trains through.
 
 The benchmark compares variants on identical folds; weekly training runs the market's accepted
-one. GARCH (Plan 6d) is named here so a stored configuration can refer to it, but running it
-before its plan lands is refused, never silently treated as the baseline. A tuned policy is a
-`Policy` value. `ranker` (Plan 6f) swaps the beat classifier for a ranking booster (spec §8).
+one. `garch` (Plan 6d) trains each horizon on its GARCH forecast volatility (spec §4); the data
+must be loaded with `with_garch=True`. A tuned policy is a `Policy` value. `ranker` (Plan 6f) swaps the beat classifier for a ranking booster (spec §8).
 `extras` adds the market's extra features and `bagged` averages three seeds per booster (spec §9).
 """
 
@@ -74,9 +73,8 @@ BASELINE = ModelConfig()
 
 
 def unbuilt(config: ModelConfig) -> str | None:
-    """The plan that builds the config's first missing part, or None when it can run."""
-    if config.garch:
-        return "Plan 6d"
+    """The plan that builds the config's first missing part, or None when it can run. Every part
+    is built today; the seam stays for the next part a plan names before building it."""
     return None
 
 
@@ -105,6 +103,7 @@ def run_variant(
     return walk_forward(
         data, train_config, folds=folds, known_before=known_before, factor_names=_factor_names(data, config),
         ranker=config.ranker, extra_features=data.extras if config.extras else (), bag=config.bagged,
+        garch=config.garch,
     )
 
 
@@ -114,5 +113,5 @@ def fit_variant(data: MarketData, wf: WalkForward, config: ModelConfig, train_co
     _require_built(config)
     return fit_final(
         data, wf, train_config, factor_names=_factor_names(data, config),
-        extra_features=data.extras if config.extras else (), bag=config.bagged,
+        extra_features=data.extras if config.extras else (), bag=config.bagged, garch=config.garch,
     )

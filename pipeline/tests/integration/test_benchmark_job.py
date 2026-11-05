@@ -24,7 +24,8 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     assert tsx["variants"]["factors"]["status"] == "run"
     assert tsx["variants"]["ranker"]["status"] == "run"
     assert tsx["variants"]["ranker+extras+bagged"]["status"] == "run"
-    assert tsx["variants"]["garch"] == {"status": "not built", "plan": "Plan 6d"}
+    assert tsx["variants"]["garch"]["status"] == "run" and tsx["variants"]["factors+garch"]["status"] == "run"
+    assert tsx["variants"]["garch"]["garch"]["fallbacks"] >= 0
     assert tsx["variants"]["full+policy"]["status"] == "run"
     assert tsx["variants"]["baseline"]["status"] == "run"
     folds = {r["fold"] for r in db.execute("select fold from benchmark_results where variant = 'baseline'").fetchall()}
@@ -36,7 +37,7 @@ def test_a_first_benchmark_scores_the_baseline_and_accepts_it(db, tmp_path):
     assert active.config == BASELINE.to_json() and active.reason == "first benchmark: today's model"
     assert active.benchmark_run_id == run["id"]
     text = render_markdown(report)  # the real report renders, with nothing unmeasured shown as nan
-    assert "| baseline | run |" in text and "| garch | arrives with Plan 6d |" in text
+    assert "| baseline | run |" in text and "| garch | run |" in text and "GARCH: " in text
     assert "| ranker | run |" in text and "| ranker+extras+bagged | run |" in text
     policy_folds = {r["fold"] for r in db.execute("select fold from benchmark_results where variant = 'full+policy'").fetchall()}
     assert policy_folds == {"1", "2", "3", "pooled"}

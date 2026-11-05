@@ -146,8 +146,8 @@ def _train_market(
     if coins:
         config = replace(config, horizons=CRYPTO_HORIZONS)
     data = (
-        load_crypto(data_dir, with_factors=model_config.factors)
-        if coins else load_market(data_dir, market, with_factors=model_config.factors)
+        load_crypto(data_dir, with_factors=model_config.factors, with_garch=model_config.garch)
+        if coins else load_market(data_dir, market, with_factors=model_config.factors, with_garch=model_config.garch)
     )
     loaded = time.monotonic()
     wf = run_variant(data, model_config, config)

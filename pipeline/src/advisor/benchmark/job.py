@@ -144,7 +144,10 @@ def _benchmark_market(
     data_dir: Path, market: Market | str, conn: psycopg.Connection, run_id: int, now: datetime, config: TrainConfig
 ) -> dict:
     coins = market == CRYPTO
-    data = load_crypto(data_dir, with_factors=True) if coins else load_market(data_dir, market, with_factors=True)
+    data = (
+        load_crypto(data_dir, with_factors=True, with_garch=True)
+        if coins else load_market(data_dir, market, with_factors=True, with_garch=True)
+    )
     if coins:
         config = replace(config, horizons=CRYPTO_HORIZONS)
     usd_fx_fee_pct = repo.fee_settings(conn)[1 if coins else 0]  # coins pay the crypto fee instead
@@ -176,6 +179,8 @@ def _benchmark_market(
             "status": "run", "seconds": round(time.monotonic() - began, 1),
             "model": model, "summary": means, "policy": policy,
         }
+        if variant.garch:
+            variants[name]["garch"] = {"fallbacks": wf.garch_fallbacks}
         if variant.factors:
             variants[name]["alpha_rank_ic"] = wf.alpha_rank_ic
             variants[name]["fallback_count"] = wf.fallback_count

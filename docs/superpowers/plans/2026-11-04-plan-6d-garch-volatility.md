@@ -27,20 +27,22 @@
 - **Don't change the pick gate:** don't lower `DEFAULT_POLICY.p_buy` or the 30-pick rule, don't set `picks_enabled` by hand, and don't write accepted configs to the production database.
 - **The baseline must not move:** with `garch` off, every prediction, metric and stored file is what it is today. That covers baseline, ranker, extras and bagged.
 - **Point in time:** a GARCH value on day t uses only returns dated t or earlier. A fold's parameters use only returns dated before the fold starts.
-- **Never fail the run over GARCH:** an asset with fewer than 500 returns, a failed fit, or a non-stationary fit gets NaN. LightGBM handles NaN. The asset is never dropped, and it is counted.
+- **Never fail the run over GARCH:** an asset with fewer than 500 returns, or a fit that didn't converge, gets NaN. LightGBM handles NaN. The asset is never dropped, and it is counted.
 - **Exact values (spec §4 ★, and this plan's fixed constants):**
   - **Model:** GARCH(1,1), constant mean, Student-t errors, fitted with `arch` on 100 × daily log returns, with `rescale=False`.
   - **Starting values,** fixed, in percent units (mu, omega, alpha, beta, nu): `(0.05, 0.05, 0.08, 0.90, 8.0)`.
   - **`GARCH_MIN_RETURNS = 500`.**
   - **`FIT_WINDOW = 2520`:** a fit uses at most the asset's last 2,520 finite returns before the cut-off, about 10 years.
-  - **`FILTER_WINDOW = 250`:** a day's variance is filtered over the 250 returns ending that day, starting from the unconditional variance. Sessions for stocks, days for coins.
+  - **`FILTER_WINDOW = 250`:** a day's variance is filtered over the 250 returns ending that day, starting from `var0`, the variance of the returns the parameters were fitted on. Sessions for stocks, days for coins.
   - **The feature:** `garch_vol_h = sqrt(Σ_{k=1..h} E[σ²_{t+k}])`, in decimal return units, not annualised.
+    - E[σ²ₜ₊₁] is the filtered value.
+    - For k ≥ 2, E[σ²ₜ₊ₖ] = ω + (α + β)·E[σ²ₜ₊ₖ₋₁], summed step by step, so the sum stays valid at α + β = 1.
   - **Range blend:** q10′ = ½(q10 + q50 − s·g) and q90′ = ½(q90 + q50 + s·g), where g = `garch_vol_h`. `s` is searched on a fixed grid, 0.25 to 3.00 in steps of 0.05, for q10–q90 coverage closest to 80%.
 
 ## Decisions this plan makes where the spec leaves room
 
 1. **Parameters per fold** are fitted on the asset's returns dated before the fold's start, at most the last 2,520. Returns just before the start are known before the test period. Only test-period outcomes are off limits, and the leakage test pins that.
-2. **A fixed 250-return filter window, started at the unconditional variance.** The live run loads about 275 sessions (`LIVE_WINDOW`, 400 days), so a full-history filter couldn't be reproduced live. With a fixed window, training and live give the same value on the same day, to rounding.
+2. **A fixed 250-return filter window, started at the fit's own return variance** (`var0`, stored with the parameters). The live run loads about 275 sessions (`LIVE_WINDOW`, 400 days), so a full-history filter couldn't be reproduced live. With a fixed window, training and live give the same value on the same day, to rounding.
 3. **One column per horizon:** horizon h's boosters train on `garch_vol` = `garch_vol_h`, not on every horizon's value.
 4. **A return missing inside the window** (a halt, or a gap in the bars) makes that day's value NaN.
 5. **The range adjustment's "inner folds"** are the earlier periods' out-of-sample predictions whose outcomes ended before each period began. That's the same evidence today's range calibration uses (`calibrate_ranges`), and it avoids nested walk-forwards for one scale.
@@ -52,6 +54,14 @@
    - **GARCH as an alternative stop distance** in the policy search. The policy search (`benchmark/policy_search.py`) has no stop-distance hook today; its grid is ATR multipliers only.
 
    Stops stay ATR-based in this plan.
+7. **A fit at the α + β = 1 bound is kept** (changed 2026-11-05, after a measurement on 57 real US stocks).
+   - 11 of them fit at the bound, and refusing those would blank about 20% of stocks.
+   - The unconditional variance doesn't exist at the bound, so the filter starts at `var0` and the forecast is summed step by step.
+   - Only a fit that didn't converge, or has a non-finite, zero or negative parameter, is refused.
+   - The same measurement:
+     - 0.03 s per fit, so about 3 minutes per fold for every US stock;
+     - 1 fit in 57 didn't converge;
+     - `arch` 7.2.0 can't import with the project's pandas 3.0.6, so the pin is `arch==8.0.0` (released 2025-10-21).
 
 ## Review Focus
 
@@ -66,29 +76,29 @@
 ### Task 1 (Cursor): the `arch` dependency and the pure GARCH module
 
 **Files:**
-- Modify: `pipeline/pyproject.toml`, adding `"arch==7.2.0"` to `dependencies`, and `pipeline/uv.lock`. Run plain `uv lock` from `pipeline/` on the host, because `in-docker.sh` runs `uv sync --locked` first and fails until the lock matches.
+- Modify: `pipeline/pyproject.toml`, adding `"arch==8.0.0"` to `dependencies` (7.2.0 fails to import with pandas 3), and `pipeline/uv.lock`. Run plain `uv lock` from `pipeline/` on the host, because `in-docker.sh` runs `uv sync --locked` first and fails until the lock matches.
 - Create: `pipeline/src/advisor/model/garch.py`
 - Test: `pipeline/tests/unit/test_model_garch.py`
 
 **Interfaces (Produces):**
 - Constants: `GARCH_MIN_RETURNS = 500`, `FIT_WINDOW = 2520`, `FILTER_WINDOW = 250`, `STARTING_VALUES = (0.05, 0.05, 0.08, 0.90, 8.0)`.
 - `@dataclass(frozen=True) class GarchParams`:
-  - fields `mu, omega, alpha, beta, nu: float`, in decimal return units (`mu` = fitted mu / 100, `omega` = fitted omega / 10,000);
-  - `unconditional -> float` (property): `omega / (1 - alpha - beta)`;
-  - `to_json() -> list[float]`, which is `[mu, omega, alpha, beta, nu]`;
+  - fields `mu, omega, alpha, beta, nu, var0: float`, in decimal return units (`mu` = fitted mu / 100, `omega` = fitted omega / 10,000, `var0` = the population variance, `ddof=0`, of the decimal returns that were fitted);
+  - `to_json() -> list[float]`, which is `[mu, omega, alpha, beta, nu, var0]`;
   - `from_json(v) -> GarchParams` (classmethod).
 - The module imports `from arch import arch_model` at module level, because the tests patch `advisor.model.garch.arch_model`.
 - `fit_params(returns: pd.Series) -> GarchParams | None`:
   - Drop NaN and keep the last `FIT_WINDOW` values. With fewer than `GARCH_MIN_RETURNS`, or with every value equal, return None without calling `arch_model`.
   - Fit `arch_model(100 * r, mean="Constant", vol="GARCH", p=1, q=1, dist="t", rescale=False).fit(disp="off", show_warning=False, starting_values=np.array(STARTING_VALUES))`.
   - Read the fit's parameters by name from `result.params`: `mu`, `omega`, `alpha[1]`, `beta[1]`, `nu`.
-  - Return None if any of these is true: an exception was raised; `result.convergence_flag != 0`; a parameter is non-finite; `omega <= 0`; `alpha < 0`; `beta < 0`; `alpha + beta >= 1`.
+  - Return None if any of these is true: an exception was raised; `result.convergence_flag != 0`; a parameter is non-finite; `omega <= 0`; `alpha < 0`; `beta < 0`. A fit at α + β = 1 is kept (decision 7).
 - `fit_all(returns: pd.DataFrame, before: pd.Timestamp, symbols: Iterable[str]) -> dict[str, GarchParams | None]`:
   - For each symbol in sorted order, fit on `returns.loc[returns.index < before, symbol]`.
   - A symbol not in `returns.columns` gets None.
 - `garch_vol(returns: pd.Series, params: GarchParams | None, horizons: Sequence[int]) -> pd.DataFrame`:
   - Indexed like `returns`, with columns `garch_vol_{h}`.
-  - With φ = α + β, σ̄² = `params.unconditional` and ε = r − μ: start at σ̄² for the first return of the window, run σ²₊₁ = ω + α ε² + β σ² through the 250 returns ending at day t, then take Σₖ₌₁..ₕ E[σ²ₜ₊ₖ] = h σ̄² + (σ²ₜ₊₁ − σ̄²)(1 − φʰ)/(1 − φ), and its square root.
+  - With ε = r − μ: start at `var0` for the first return of the window, and run σ²₊₁ = ω + α ε² + β σ² through the 250 returns ending at day t, which gives E[σ²ₜ₊₁].
+  - Then for k ≥ 2, E[σ²ₜ₊ₖ] = ω + (α + β)·E[σ²ₜ₊ₖ₋₁]. Sum the h terms and take the square root.
   - NaN when `params` is None, or when any of the 250 returns is NaN, or there are fewer than 250 returns.
   - Vectorise it, for example with a convolution of ε² with the kernel βʲ (j = 0..249). It must equal the explicit loop.
 
@@ -105,6 +115,7 @@ def test_a_fit_recovers_the_parameters_it_was_simulated_with():
     assert p is not None
     assert p.alpha == pytest.approx(0.08, abs=0.04) and p.beta == pytest.approx(0.90, abs=0.05)
     assert p.alpha + p.beta < 1 and p.omega > 0
+    assert p.var0 == pytest.approx(simulate(3000).iloc[-2520:].var(ddof=0))
 
 
 def test_under_500_returns_gives_no_fit_and_never_calls_arch(monkeypatch):
@@ -124,17 +135,28 @@ def test_a_degenerate_series_gives_none_not_an_error():
     assert fit_params(flat) is None
 
 
-def test_a_non_stationary_fit_is_refused(monkeypatch):
+def _fake_fit(monkeypatch, flag, alpha, beta):
     class Result:
-        convergence_flag = 0
-        params = pd.Series({"mu": 0.05, "omega": 0.05, "alpha[1]": 0.20, "beta[1]": 0.85, "nu": 6.0})
+        convergence_flag = flag
+        params = pd.Series({"mu": 0.05, "omega": 0.05, "alpha[1]": alpha, "beta[1]": beta, "nu": 6.0})
 
     class Model:
         def fit(self, *a, **k):
             return Result()
 
     monkeypatch.setattr(garch, "arch_model", lambda *a, **k: Model())
-    assert fit_params(simulate(800)) is None  # alpha + beta = 1.05
+
+
+def test_a_fit_at_the_alpha_plus_beta_bound_is_kept_and_forecasts(monkeypatch):
+    _fake_fit(monkeypatch, 0, 0.10, 0.90)
+    p = fit_params(simulate(800))
+    assert p is not None and p.alpha + p.beta == pytest.approx(1.0)
+    assert garch_vol(simulate(800), p, (5, 21)).iloc[300:].notna().all().all()
+
+
+def test_a_fit_that_did_not_converge_is_refused(monkeypatch):
+    _fake_fit(monkeypatch, 1, 0.08, 0.90)
+    assert fit_params(simulate(800)) is None
 
 
 def test_a_fit_is_deterministic():
@@ -159,15 +181,17 @@ def test_fit_all_uses_only_returns_before_the_cut_off():
 
 def test_garch_vol_equals_the_explicit_recursion():
     r = simulate(600)
-    p = GarchParams(mu=0.0003, omega=2e-6, alpha=0.08, beta=0.90, nu=6.0)
+    p = GarchParams(mu=0.0003, omega=2e-6, alpha=0.08, beta=0.90, nu=6.0, var0=1.5e-4)
     out = garch_vol(r, p, (1, 21))
     t = 400
     window = r.iloc[t - 249: t + 1].to_numpy()
-    s2 = p.unconditional
+    s2 = p.var0
     for x in window:
         s2 = p.omega + p.alpha * (x - p.mu) ** 2 + p.beta * s2
-    phi = p.alpha + p.beta
-    total = 21 * p.unconditional + (s2 - p.unconditional) * (1 - phi**21) / (1 - phi)
+    total, step = 0.0, s2
+    for _ in range(21):
+        total += step
+        step = p.omega + (p.alpha + p.beta) * step
     assert out["garch_vol_1"].iloc[t] == pytest.approx(np.sqrt(s2), rel=1e-9)
     assert out["garch_vol_21"].iloc[t] == pytest.approx(np.sqrt(total), rel=1e-9)
     assert out["garch_vol_1"].iloc[:249].isna().all() and out["garch_vol_1"].iloc[249:].notna().all()
@@ -175,7 +199,7 @@ def test_garch_vol_equals_the_explicit_recursion():
 
 def test_garch_vol_on_a_day_ignores_later_returns():
     r = simulate(600)
-    p = GarchParams(mu=0.0, omega=2e-6, alpha=0.08, beta=0.90, nu=6.0)
+    p = GarchParams(mu=0.0, omega=2e-6, alpha=0.08, beta=0.90, nu=6.0, var0=1.5e-4)
     later = r.copy()
     later.iloc[401:] = 0.4
     pd.testing.assert_frame_equal(garch_vol(later, p, (5,)).iloc[:401], garch_vol(r, p, (5,)).iloc[:401])
@@ -184,7 +208,7 @@ def test_garch_vol_on_a_day_ignores_later_returns():
 def test_a_missing_return_blanks_only_the_windows_that_hold_it():
     r = simulate(700)
     r.iloc[300] = np.nan
-    out = garch_vol(r, GarchParams(0.0, 2e-6, 0.08, 0.90, 6.0), (5,))["garch_vol_5"]
+    out = garch_vol(r, GarchParams(0.0, 2e-6, 0.08, 0.90, 6.0, 1.5e-4), (5,))["garch_vol_5"]
     assert out.iloc[300:550].isna().all()
     assert pd.notna(out.iloc[299]) and out.iloc[550:].notna().all()
 
@@ -194,7 +218,7 @@ def test_no_parameters_give_nan():
 
 
 def test_parameters_round_trip_through_json():
-    p = GarchParams(0.0003, 2e-6, 0.08, 0.90, 6.0)
+    p = GarchParams(0.0003, 2e-6, 0.08, 0.90, 6.0, 1.5e-4)
     assert GarchParams.from_json(p.to_json()) == p
 ```
 

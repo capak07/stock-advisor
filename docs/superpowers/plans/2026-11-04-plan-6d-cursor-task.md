@@ -22,9 +22,9 @@ Use `git add <path>` for your own files only, never `git add -A` or `git add .`.
 
 - **Test-first:** write the plan's tests, see them fail, implement, then see them pass. Never weaken an assertion or change a fixed value (the 500, 2,520 and 250 limits, the starting values, the seeds, the tolerances). If one looks wrong, stop and say why.
 - **The dependency:**
-  - Add `"arch==7.2.0"` to `pipeline/pyproject.toml`'s `dependencies`.
+  - Add `"arch==8.0.0"` to `pipeline/pyproject.toml`'s `dependencies`.
   - Update `pipeline/uv.lock` by running plain `uv lock` from `pipeline/` on the host, not through `in-docker.sh`. The Docker script runs `uv sync --locked` first, which fails until the lock matches.
-  - If 7.2.0 won't resolve with the locked numpy, stop and report the error. Don't pick another version yourself.
+  - If 8.0.0 won't resolve, stop and report the error. Don't pick another version yourself. (7.2.0 can't import with pandas 3.0.6.)
 - **From `pipeline/`:** `scripts/in-docker.sh uv run pytest -q` and `scripts/in-docker.sh uv run ruff check .` must pass before every commit. Start Docker Desktop and `docker start advisor-pg` if they're down. Don't run two suites at once.
 - **Committing:**
   - run `git commit` in its own command, never with `--no-verify`;

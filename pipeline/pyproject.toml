@@ -13,6 +13,7 @@ dependencies = [
   "tzdata>=2024.1",
   "pyarrow>=17",
   "lightgbm>=4.5",
+  "arch==8.0.0",
 ]
 
 [project.optional-dependencies]

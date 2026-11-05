@@ -20,6 +20,7 @@ from scipy.optimize import isotonic_regression
 from advisor.model.dataset import MarketData
 from advisor.model.factors import alpha_target, fallback_count
 from advisor.model.features import HORIZONS, PRICE_FEATURES, RS_FEATURES
+from advisor.model.garch import fit_all, garch_vol
 
 QUANTILES = (0.1, 0.5, 0.9)
 PARAMS = {
@@ -295,6 +296,8 @@ class WalkForward:
     fallback_count: int = 0
     alpha_rank_ic: float | None = None
     ranker: bool = False  # P and `score` come from the ranking booster
+    garch: bool = False  # each horizon trained on its GARCH forecast volatility (Plan 6d)
+    garch_fallbacks: int = 0  # (fold, symbol) pairs scored without GARCH parameters (spec §6)
 
 
 def daily_rank(rows: pd.DataFrame, target: str) -> pd.Series:
@@ -411,6 +414,32 @@ def _metrics(scored: pd.DataFrame) -> dict:
     }
 
 
+def fold_garch(data: MarketData, start: pd.Timestamp, horizons: Sequence[int]) -> tuple[dict, pd.DataFrame]:
+    """A fold's GARCH parameters per symbol, fitted on the returns before `start`, and each sample
+    day's forecast volatility per horizon (rows indexed by day and symbol).
+
+    Cached on `data`, so the variants and the nested folds that share a start fit once (spec §4:
+    fitted once per asset per training fold).
+    """
+    if data.returns is None:
+        raise ValueError("a garch run needs the daily returns; load the market with with_garch=True")
+    key = (pd.Timestamp(start), tuple(horizons))
+    if key not in data.garch_cache:
+        params = fit_all(data.returns, key[0], data.returns.columns)
+        days = pd.DatetimeIndex(sorted(data.rows["day"].unique()))
+        vols = pd.concat(
+            {symbol: garch_vol(data.returns[symbol], p, horizons).reindex(days) for symbol, p in params.items()},
+            names=["symbol", "day"],
+        ).swaplevel().sort_index()
+        data.garch_cache[key] = (params, vols)
+    return data.garch_cache[key]
+
+
+def _garch_column(vols: pd.DataFrame, frame: pd.DataFrame, horizon: int) -> np.ndarray:
+    keys = pd.MultiIndex.from_arrays([frame["day"], frame["symbol"]])
+    return vols[f"garch_vol_{horizon}"].reindex(keys).to_numpy(dtype=float)
+
+
 def walk_forward(
     data: MarketData,
     config: TrainConfig = TrainConfig(),  # noqa: B008
@@ -420,6 +449,7 @@ def walk_forward(
     ranker: bool = False,
     extra_features: Sequence[str] = (),
     bag: bool = False,
+    garch: bool = False,
 ) -> WalkForward:
     """Out-of-sample predictions per fold (default: `make_folds`).
 
@@ -430,11 +460,15 @@ def walk_forward(
     With `ranker`, a ranking booster learns `daily_rank` in place of the beat booster, and its
     score ranks (`score`) and is calibrated into P. Otherwise `score` is the published q50.
     `extra_features` (each in `data.extras`) join the features; with `bag`, every booster is a
-    mean of `BAG_SEEDS` seeds.
+    mean of `BAG_SEEDS` seeds. With `garch`, each horizon also trains on `garch_vol`, that
+    horizon's GARCH forecast volatility from parameters fitted before each fold (`fold_garch`).
     """
     rows = data.rows
     names = tuple(factor_names or ())
-    feat = _feature_list(data, extra_features, names)
+    feat = _feature_list(data, extra_features, names) + (["garch_vol"] if garch else [])
+    if garch and data.returns is None:
+        raise ValueError("a garch run needs the daily returns; load the market with with_garch=True")
+    unfit: set[tuple[int, str]] = set()
     seeds = BAG_SEEDS if bag else ()
     if folds is None:
         folds = make_folds(pd.DatetimeIndex(rows["day"].unique()), config)
@@ -456,6 +490,11 @@ def walk_forward(
             if train.empty or test.empty:  # the last periods of long horizons have no targets yet
                 continue
             ranks = None if rank is None else rank.loc[train.index]
+            if garch:
+                params, vols = fold_garch(data, fold.start, config.horizons)
+                train = train.assign(garch_vol=_garch_column(vols, train, h))
+                test = test.assign(garch_vol=_garch_column(vols, test, h))
+                unfit |= {(k, s) for s in test["symbol"].unique() if params.get(s) is None}
             if names:
                 boosters = _fit_horizon(
                     train[feat], alpha.loc[train.index], config, beat=train[target], rank=ranks, seeds=seeds
@@ -503,7 +542,7 @@ def walk_forward(
     if names and not predictions.empty:
         comparable = predictions.dropna(subset=["q50_alpha", "alpha"])
         alpha_ic = rank_ic_by_horizon(comparable, "q50_alpha", "alpha") if not comparable.empty else float("nan")
-    return WalkForward(predictions, metrics, folds, fallbacks, alpha_ic, ranker)
+    return WalkForward(predictions, metrics, folds, fallbacks, alpha_ic, ranker, garch, len(unfit))
 
 
 @dataclass(frozen=True)

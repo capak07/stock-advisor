@@ -166,7 +166,7 @@ def _train_market(
             **pick_metrics(simulate_picks(calibrated, market, usd_fx_fee_pct, policy)),
             "funnel": pick_funnel(calibrated, market, usd_fx_fee_pct, policy),
         }
-        picks_enabled, picks_reason = gate(backtest, calibration_pts)
+        picks_enabled, picks_reason = gate(backtest, calibration_pts, rank_mode=policy.top_n is not None)
     model = fit_variant(data, wf, model_config, config)
     files = to_files(model)
     seconds = {

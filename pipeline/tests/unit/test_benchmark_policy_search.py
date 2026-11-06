@@ -42,7 +42,7 @@ def test_the_search_is_staged_and_deterministic():
     pred, pnl, periods = market()
     tuned = tune(pred, pnl, Market.TSX, 1.5, periods)
     assert tuned.policy is not None and tuned.policy.p_buy == 0.60
-    assert tuned.tried == 42 + 80 + 5
+    assert tuned.tried == (42 + 3 * 6) + 80 + 5  # stage 1 also tries top_n 3, 5, 10 once each (spec §11)
     assert tuned.objective > 0
     assert tune(pred, pnl, Market.TSX, 1.5, periods) == tuned
 

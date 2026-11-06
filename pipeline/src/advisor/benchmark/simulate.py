@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from advisor.markets import MARKETS
-from advisor.model.backtest import PER_SECTOR, PICKS_PER_STYLE, round_trip_cost, swing_horizons
+from advisor.model.backtest import PER_SECTOR, PICKS_PER_STYLE, in_top_n, round_trip_cost, swing_horizons
 from advisor.model.crypto import BTC, CRYPTO
 from advisor.model.features import _wilder, to_wide, true_range
 from advisor.models import Market
@@ -72,7 +72,8 @@ def _candidates(rows: pd.DataFrame, policy: Policy, market: Market, fee: float) 
     df = rows.copy()
     df["cost"] = round_trip_cost(market, df["dollar_volume_20"].to_numpy(), fee)
     width = df["q90"] - df["q10"]
-    ok = (df["p"] >= policy.p_buy) & (df["q50"] > df["cost"]) & (width > 0)
+    qualified = in_top_n(df, policy.top_n) if policy.top_n is not None else df["p"] >= policy.p_buy
+    ok = qualified & (df["q50"] > df["cost"]) & (width > 0)
     if policy.horizons is not None:
         ok &= df["horizon"].isin(policy.horizons)
     if "jump_5d" in df:

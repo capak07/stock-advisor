@@ -146,7 +146,7 @@ def _policy_bits(raw: Mapping) -> str:
     return (
         f"p_buy {raw['p_buy']:.2f}, p_sell {raw['p_sell']:.2f}, swing_atr {raw['swing_atr']}, "
         f"position_atr {raw['position_atr']}, trail_atr {raw['trail_atr']}, rule {raw['rule']}, "
-        f"horizons {days}"
+        f"horizons {days}" + (f", top_n {raw['top_n']}" if raw.get("top_n") is not None else "")
     )
 
 

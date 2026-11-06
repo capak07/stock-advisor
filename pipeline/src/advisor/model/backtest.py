@@ -54,6 +54,22 @@ def _priced(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) ->
     return df
 
 
+def in_top_n(df: pd.DataFrame, n: int) -> pd.Series:
+    """Whether each row is among the top `n` by P(beat) for its horizon (and day, when the frame
+    has one), ties by symbol; a NaN P never ranks. The live rule is `recommend.picks.top_by_horizon`."""
+    keys = [k for k in ("day", "horizon") if k in df]
+    ranked = df[df["p"].notna()].sort_values(["p", "symbol"], ascending=[False, True], kind="stable")
+    place = ranked.groupby(keys, sort=False).cumcount() + 1
+    out = pd.Series(False, index=df.index)
+    out[place.index] = place.to_numpy() <= n
+    return out
+
+
+def _qualified(df: pd.DataFrame, policy: Policy) -> pd.Series:
+    """The P floor, or with `top_n` the top-N rank (spec §11); a NaN P passes neither."""
+    return in_top_n(df, policy.top_n) if policy.top_n is not None else df["p"] >= policy.p_buy
+
+
 def pick_funnel(
     predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float, policy: Policy = DEFAULT_POLICY
 ) -> dict[str, Any]:
@@ -62,7 +78,7 @@ def pick_funnel(
     if policy.horizons is not None:
         df = df[df["horizon"].isin(policy.horizons)]
     p = df["p"]
-    confident = p >= policy.p_buy  # a NaN P never is
+    confident = _qualified(df, policy)  # a NaN P never is
     affordable = df["q50"] > df["cost"]
     known = p.notna().any()
     return {
@@ -87,9 +103,10 @@ def simulate_picks(
     A stock is a separate bet only once its earlier pick's hold has ended.
     """
     df = _priced(predictions, market, usd_fx_fee_pct)
+    df = df[_qualified(df, policy)]  # ranked over every forecast, as live, before the horizon filter
     if policy.horizons is not None:
         df = df[df["horizon"].isin(policy.horizons)]
-    df = df[(df["p"] >= policy.p_buy) & (df["q50"] > df["cost"]) & df["ratio"].notna()]
+    df = df[(df["q50"] > df["cost"]) & df["ratio"].notna()]
     if df.empty:
         return pd.DataFrame(columns=PICK_COLUMNS)
 
@@ -140,8 +157,12 @@ def pick_metrics(picks: pd.DataFrame) -> dict[str, dict]:
     }
 
 
-def gate(metrics: Mapping[str, Any], calibration_pts: float) -> tuple[bool, str]:
-    """Whether a market's picks may be shown, and the plain-words reason."""
+def gate(metrics: Mapping[str, Any], calibration_pts: float, rank_mode: bool = False) -> tuple[bool, str]:
+    """Whether a market's picks may be shown, and the plain-words reason.
+
+    In rank mode (spec §11) picks are judged on their after-cost returns only: P isn't shown as
+    their promise, and the model's calibration was checked when it was accepted.
+    """
     overall = metrics["all"]
     n = overall["picks"]
     if n < MIN_PICKS:
@@ -151,6 +172,8 @@ def gate(metrics: Mapping[str, Any], calibration_pts: float) -> tuple[bool, str]
         if net is not None and net == net:
             return False, f"backtest picks lost {abs(net):.2f}% after costs"
         return False, "backtest picks couldn't be scored"
+    if rank_mode:
+        return True, f"{n} backtest picks gained {net:.2f}% after costs"
     if calibration_pts != calibration_pts:
         return False, "probabilities couldn't be checked (no calibrated predictions)"
     if not calibration_pts <= MAX_CALIBRATION_PTS:

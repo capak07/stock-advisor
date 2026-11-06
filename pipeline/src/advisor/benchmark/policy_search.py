@@ -25,13 +25,14 @@ from advisor.policy import DEFAULT_POLICY, Policy
 GRID = {
     "p_buy": (0.54, 0.56, 0.58, 0.60, 0.62, 0.64, 0.66),
     "rule": ("ratio", "p"),
+    "top_n": (None, 3, 5, 10),  # spec §11: the top N by rank instead of a P floor
     "horizons": (None, (5, 10, 20), (21, 63, 126)),
     "swing_atr": (1.5, 2.0, 2.5, 3.0),
     "position_atr": (2.0, 2.5, 3.0, 3.5, 4.0),
     "trail_atr": (2.0, 2.5, 3.0, 3.5),
     "p_sell": (0.38, 0.40, 0.42, 0.44, 0.46),
 }
-STAGES = (("p_buy", "rule", "horizons"), ("swing_atr", "position_atr", "trail_atr"), ("p_sell",))
+STAGES = (("p_buy", "top_n", "rule", "horizons"), ("swing_atr", "position_atr", "trail_atr"), ("p_sell",))
 MIN_TRADES = 30
 MAX_DRAWDOWN = 0.25
 MAX_TRADES_PER_MONTH = 20
@@ -111,16 +112,27 @@ def score_each(
             "objective": objective}
 
 
+def stage_policies(best: Policy, names: Sequence[str]) -> list[Policy]:
+    """The stage's grid as policies on top of `best`. A rank policy ignores `p_buy`, so it is tried
+    once, at the grid's first `p_buy`; a sell line at or over the buy line is skipped."""
+    out = []
+    for values in product(*(GRID[name] for name in names)):
+        policy = replace(best, **dict(zip(names, values, strict=True)))
+        if not policy.p_sell < policy.p_buy:
+            continue
+        if policy.top_n is not None and "p_buy" in names and policy.p_buy != GRID["p_buy"][0]:
+            continue
+        out.append(policy)
+    return out
+
+
 def tune(pred: pd.DataFrame, panel: DailyPanel, market: Market, fee: float, periods: Sequence[Fold]) -> Tuned:
     """The best feasible policy, stage by stage; on ties the earlier grid value wins."""
     best, tried = DEFAULT_POLICY, 0
     objective = None
     for n, names in enumerate(STAGES, start=1):
         found, most = None, None
-        for values in product(*(GRID[name] for name in names)):
-            policy = replace(best, **dict(zip(names, values, strict=True)))
-            if not policy.p_sell < policy.p_buy:
-                continue
+        for policy in stage_policies(best, names):
             s = score(pred, panel, policy, market, fee, periods)
             tried += 1
             if s["feasible"] and (found is None or s["objective"] > found[1]):

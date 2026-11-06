@@ -15,7 +15,13 @@ import numpy as np
 import pandas as pd
 
 from advisor.markets import MARKETS
-from advisor.model.backtest import PER_SECTOR, PICKS_PER_STYLE, in_top_n, round_trip_cost, swing_horizons
+from advisor.model.backtest import (
+    PER_SECTOR,
+    PICKS_PER_STYLE,
+    in_top_n,
+    round_trip_cost,
+    swing_horizons,
+)
 from advisor.model.crypto import BTC, CRYPTO
 from advisor.model.features import _wilder, to_wide, true_range
 from advisor.models import Market

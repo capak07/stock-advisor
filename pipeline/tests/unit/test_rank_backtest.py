@@ -47,3 +47,15 @@ def test_the_rank_gate_ignores_p_accuracy_but_needs_30_profitable_picks():
     assert gate(_metrics(29, 1.6), 1.0, rank_mode=True) == (False, "only 29 backtest picks (needs 30)")
     assert not gate(_metrics(40, -0.2), 1.0, rank_mode=True)[0]
     assert not gate(_metrics(40, 1.6), 1.0)[0]  # P mode still checks the claimed P
+
+
+def test_a_jump_day_never_takes_a_top_n_place_in_the_search():
+    from advisor.benchmark.simulate import _candidates
+    from advisor.models import Market
+    rows = pd.DataFrame({
+        "symbol": ["J", "A", "B"], "horizon": [21, 21, 21], "p": [0.60, 0.49, 0.48],
+        "q10": [-0.05] * 3, "q50": [0.05] * 3, "q90": [0.10] * 3, "dollar_volume_20": [5e7] * 3,
+        "jump_5d": [1.0, 0.0, 0.0],
+    })
+    picked = _candidates(rows, RANK, Market.TSX, 1.5)
+    assert sorted(picked["symbol"]) == ["A", "B"]  # J's jump keeps it out of the ranking itself

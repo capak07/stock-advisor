@@ -63,6 +63,12 @@ def top_by_horizon(rows: Sequence[PredictionRow], n: int) -> dict[int, dict[str,
     return out
 
 
+def rankable(population: Mapping[str, Sequence[PredictionRow]], sane: Mapping[str, bool]) -> list[PredictionRow]:
+    """The forecasts a rank policy ranks: only stocks that passed the sanity checks (a confirmed
+    jump, a wide ATR or a missing row never takes a top-N place), as the backtest ranks (spec §11)."""
+    return [r for s, rows in population.items() if sane.get(s) for r in rows]
+
+
 def choose(
     rows: Sequence[PredictionRow], cost: float, sane: bool, policy: Policy = DEFAULT_POLICY,
     top: Mapping[int, Mapping[str, tuple[int, int]]] | None = None,

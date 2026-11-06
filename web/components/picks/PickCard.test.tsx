@@ -50,6 +50,14 @@ describe('PickCard rank', () => {
     expect(text).not.toContain('62%')
   })
 
+  it('a rank row without its place falls back to the P line', () => {
+    const html = renderToStaticMarkup(
+      <PickCard pick={{ ...pick(null), chosenBy: 'rank', scoreRank: null, scoreOf: null }} portfolioCad={null} usdFxFeePct={1.5} />,
+    )
+    expect(html).toContain('62%')
+    expect(html).not.toContain('Ranked #')
+  })
+
   it('renders a P pick as before', () => {
     const html = renderToStaticMarkup(
       <PickCard pick={{ ...pick(null), chosenBy: 'p', scoreRank: null, scoreOf: null }} portfolioCad={null} usdFxFeePct={1.5} />,

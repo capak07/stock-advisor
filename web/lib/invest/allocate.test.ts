@@ -318,3 +318,24 @@ describe('allocate: the details', () => {
     expect(out.stocks[0].cost).toBeCloseTo(0.031)
   })
 })
+
+describe('allocate: who may take a top-N place (matches the pipeline)', () => {
+  const four = ['A', 'B', 'C', 'D'].map((s, i) => stock(`${s}.TO`, { rows: [row(21, 0.05, 0.49 - i / 100)] }))
+  const qualified = (cands: Candidate[], topN: number) =>
+    allocate(input(cands, { topN })).stocks.filter((l) => l.qualifies).map((l) => l.symbol)
+
+  it('a stock with an unconfirmed jump never takes a place', () => {
+    const jumped = stock('J.TO', { rows: [row(21, 0.05, 0.6)], jump5d: 1 })
+    expect(qualified([jumped, ...four], 2)).toEqual(['A.TO', 'B.TO'])
+  })
+
+  it('a NaN P never takes a place', () => {
+    const blank = stock('N.TO', { rows: [row(21, 0.05, Number.NaN)] })
+    expect(qualified([blank, ...four], 2)).toEqual(['A.TO', 'B.TO'])
+  })
+
+  it('ties break by code point, as Python compares symbols', () => {
+    const tied = [stock('a.TO', { rows: [row(21, 0.05, 0.49)] }), stock('B.TO', { rows: [row(21, 0.05, 0.49)] })]
+    expect(qualified(tied, 1)).toEqual(['B.TO']) // 'B' (66) sorts before 'a' (97)
+  })
+})

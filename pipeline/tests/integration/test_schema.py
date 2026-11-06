@@ -504,3 +504,20 @@ def test_a_rank_pick_is_stored_with_its_place(db):
     assert [tuple(r.values()) for r in rows] == [("rank", 2, 380), ("p", None, None)]
     with pytest.raises(psycopg.errors.CheckViolation):
         db.execute(cols.format(extra=", chosen_by", values=", 'luck'"), (run_id,))
+
+
+@pytest.mark.parametrize("extra, values", [
+    (", chosen_by", ", 'rank'"),  # a rank pick without its place
+    (", chosen_by, score_rank, score_of", ", 'rank', 5, 3"),  # a place past the count
+    (", score_rank, score_of", ", 1, 3"),  # a P pick with a place
+])
+def test_a_half_filled_rank_row_is_refused(db, extra, values):
+    run_id = _run(db)
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            "insert into picks (run_id, symbol, market, style, horizon_days, exit_by, entry_ref_price,"
+            f" stop, risk_level, risk_score, max_position_pct, rank, feature_day, bench_ref_price{extra})"
+            " values (%s, 'RY.TO', 'TSX', 'swing', 21, '2026-12-07', 10, 9, 'low', 0.1, 5, 1,"
+            f" '2026-11-06', 500{values})",
+            (run_id,),
+        )

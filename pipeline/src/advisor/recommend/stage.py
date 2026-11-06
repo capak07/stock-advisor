@@ -33,7 +33,14 @@ from advisor.models import (
     RunKind,
 )
 from advisor.policy import DEFAULT_POLICY, Policy, policy_of
-from advisor.recommend.picks import best_horizon, choose, rank_picks, stop_price, top_by_horizon
+from advisor.recommend.picks import (
+    best_horizon,
+    choose,
+    rank_picks,
+    rankable,
+    stop_price,
+    top_by_horizon,
+)
 from advisor.recommend.risk import disagreement, risk_levels
 from advisor.recommend.verdicts import TSX_BASIS, Verdict, coin_verdict, stock_verdict
 from advisor.schedule import sessions_after
@@ -243,7 +250,7 @@ def recommend_market(
     policy = policy_of(model.metrics)
     population = {s: rows for s, rows in inputs.rows.items() if rows}
     # a rank policy (spec §11) ranks the market's forecasts per horizon first
-    top = top_by_horizon([r for rows in population.values() for r in rows], policy.top_n) if policy.top_n else None
+    top = top_by_horizon(rankable(population, inputs.sane), policy.top_n) if policy.top_n else None
     choices = {
         s: c for s, rows in population.items()
         if (c := choose(rows, inputs.cost[s], inputs.sane[s], policy, top)) is not None

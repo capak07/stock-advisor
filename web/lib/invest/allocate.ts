@@ -195,11 +195,19 @@ function capped(weights: readonly number[], cap: number): number[] {
   }
 }
 
-/** Per horizon, the symbols in the top `n` by P(beat), ties by symbol. Every candidate with that horizon is ranked. */
+/** Code-point order, as Python compares strings (localeCompare would order "." and case differently). */
+const byCodePoint = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+/**
+ * Per horizon, the symbols in the top `n` by P(beat), ties by symbol in code-point order, as the
+ * pipeline ranks (spec §11). A stock with an unconfirmed jump, or a NaN P, never takes a place.
+ */
 function topSymbols(candidates: readonly Candidate[], n: number): Map<number, Set<string>> {
   const byHorizon = new Map<number, Map<string, number>>()
   for (const c of candidates) {
+    if (c.jump5d !== 0) continue
     for (const r of c.rows) {
+      if (!Number.isFinite(r.pBeat)) continue
       const scores = byHorizon.get(r.horizonDays) ?? new Map<string, number>()
       const prev = scores.get(c.symbol)
       if (prev === undefined || r.pBeat > prev) scores.set(c.symbol, r.pBeat)
@@ -208,7 +216,7 @@ function topSymbols(candidates: readonly Candidate[], n: number): Map<number, Se
   }
   const tops = new Map<number, Set<string>>()
   for (const [horizon, scores] of byHorizon) {
-    const ordered = [...scores].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    const ordered = [...scores].sort((a, b) => b[1] - a[1] || byCodePoint(a[0], b[0]))
     tops.set(horizon, new Set(ordered.slice(0, n).map(([symbol]) => symbol)))
   }
   return tops

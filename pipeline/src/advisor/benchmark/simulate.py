@@ -77,13 +77,12 @@ class _Open:
 def _candidates(rows: pd.DataFrame, policy: Policy, market: Market, fee: float) -> pd.DataFrame:
     df = rows.copy()
     df["cost"] = round_trip_cost(market, df["dollar_volume_20"].to_numpy(), fee)
-    width = df["q90"] - df["q10"]
+    if "jump_5d" in df:  # an unconfirmed jump never trades, and never takes a top-N place
+        df = df[df["jump_5d"].fillna(0) != 1]
     qualified = in_top_n(df, policy.top_n) if policy.top_n is not None else df["p"] >= policy.p_buy
-    ok = qualified & (df["q50"] > df["cost"]) & (width > 0)
+    ok = qualified & (df["q50"] > df["cost"]) & (df["q90"] - df["q10"] > 0)
     if policy.horizons is not None:
         ok &= df["horizon"].isin(policy.horizons)
-    if "jump_5d" in df:
-        ok &= df["jump_5d"].fillna(0) != 1
     df = df[ok].copy()
     df["key"] = df["p"] if policy.rule == "p" else df["q50"] / (df["q90"] - df["q10"])
     # each symbol's best row; a tie goes to the shorter horizon

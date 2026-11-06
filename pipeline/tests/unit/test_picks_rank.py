@@ -53,3 +53,10 @@ def test_rank_mode_takes_the_top_n_that_clear_costs():
 def test_verdicts_and_holding_actions_keep_the_p_rule_under_a_rank_policy():
     from advisor.recommend.picks import p_rule
     assert p_rule(RANK) == DEFAULT_POLICY and p_rule(DEFAULT_POLICY) is DEFAULT_POLICY
+
+
+def test_a_stock_that_failed_its_sanity_checks_never_takes_a_place():
+    from advisor.recommend.picks import rankable
+    population = {"A.TO": [row("A.TO", 0.60)], "B.TO": [row("B.TO", 0.49)], "C.TO": [row("C.TO", 0.48)]}
+    top = top_by_horizon(rankable(population, {"A.TO": False, "B.TO": True, "C.TO": True}), 2)
+    assert top[21] == {"B.TO": (1, 2), "C.TO": (2, 2)}

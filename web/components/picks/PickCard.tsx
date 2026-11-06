@@ -66,7 +66,7 @@ export function PickCard({
         </div>
       )}
       <dl className="pick-facts">
-        {p.chosenBy === 'rank' ? (
+        {p.chosenBy === 'rank' && p.scoreRank != null && p.scoreOf != null ? (
           <div>
             <dt>Place</dt>
             <dd className="num" style={{ fontWeight: 600 }}>

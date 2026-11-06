@@ -1,6 +1,7 @@
 import 'server-only'
 import { addDays } from '../dates'
 import type { Candidate, ForecastRow } from '../invest/allocate'
+import { topNOf } from '../invest/policy'
 import { stopRulesOf, type StopRules } from '../orders'
 import { buildLedger } from '../portfolio/ledger'
 import { assetKey, type Market } from '../portfolio/types'
@@ -30,6 +31,8 @@ export interface InvestData {
   cryptoFeePct: number
   /** Each market's stop rule for a bracket's stop loss: its active model's tuned one, else today's. */
   stopRules: Partial<Record<Market, StopRules>>
+  /** Each market's accepted `top_n`, or null when that model still picks by P. */
+  topN: Partial<Record<Market, number | null>>
 }
 
 const num = (value: unknown): number | null => {
@@ -232,5 +235,6 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     usdFxFeePct: Number(settings.usd_fx_fee_pct),
     cryptoFeePct: Number(settings.crypto_fee_pct),
     stopRules: Object.fromEntries(models.map((m) => [m.kind === 'stock_us' ? 'US' : 'TSX', stopRulesOf(m.metrics)])),
+    topN: Object.fromEntries(models.map((m) => [m.kind === 'stock_us' ? 'US' : 'TSX', topNOf(m.metrics)])),
   }
 }

@@ -78,6 +78,8 @@ export default async function InvestPage({ searchParams }: Props) {
               cryptoFeePct: data.cryptoFeePct,
               candidates: inputs.asset === 'crypto' ? data.coins : data.stocks,
               held: inputs.asset === 'crypto' ? data.heldCoins : data.heldStocks,
+              topN: null,
+              topNByMarket: inputs.asset === 'stocks' ? data.topN : undefined,
             })}
           />
         )

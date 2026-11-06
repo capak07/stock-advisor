@@ -85,6 +85,17 @@ export interface InvestInput {
   candidates: Candidate[]
   /** Names already held: they get holding actions on My Portfolio instead. */
   held: ReadonlySet<string>
+  /**
+   * The accepted policy's `top_n`. With it set, a row qualifies by being in the top N by P(beat)
+   * for its horizon (ties by symbol) and clearing its costs, instead of P >= 0.58.
+   * Null keeps today's rule. One number ranks every candidate together.
+   */
+  topN: number | null
+  /**
+   * Each market's `top_n` when US and TSX are split in one list. Used only when `topN` is null.
+   * A market with null, and every coin, keeps the P floor.
+   */
+  topNByMarket?: Partial<Record<Market, number | null>>
 }
 
 export type Volatility = 'low' | 'medium' | 'high' | 'very high'
@@ -184,8 +195,35 @@ function capped(weights: readonly number[], cap: number): number[] {
   }
 }
 
+/** Per horizon, the symbols in the top `n` by P(beat), ties by symbol. Every candidate with that horizon is ranked. */
+function topSymbols(candidates: readonly Candidate[], n: number): Map<number, Set<string>> {
+  const byHorizon = new Map<number, Map<string, number>>()
+  for (const c of candidates) {
+    for (const r of c.rows) {
+      const scores = byHorizon.get(r.horizonDays) ?? new Map<string, number>()
+      const prev = scores.get(c.symbol)
+      if (prev === undefined || r.pBeat > prev) scores.set(c.symbol, r.pBeat)
+      byHorizon.set(r.horizonDays, scores)
+    }
+  }
+  const tops = new Map<number, Set<string>>()
+  for (const [horizon, scores] of byHorizon) {
+    const ordered = [...scores].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    tops.set(horizon, new Set(ordered.slice(0, n).map(([symbol]) => symbol)))
+  }
+  return tops
+}
+
 /** The stocks to show, in order: qualifying ones first, then forecasts at even odds or better that clear their costs, to fill five. */
 function choose(input: InvestInput) {
+  const globalTops = input.topN != null ? topSymbols(input.candidates, input.topN) : null
+  const marketTops = new Map<Market, Map<number, Set<string>>>()
+  if (globalTops == null && input.topNByMarket) {
+    for (const market of ['US', 'TSX'] as const) {
+      const n = input.topNByMarket[market]
+      if (n != null) marketTops.set(market, topSymbols(input.candidates.filter((c) => c.market === market), n))
+    }
+  }
   const ranked = input.candidates.flatMap((c) => {
     if (input.held.has(c.symbol) || c.jump5d !== 0) return []
     const venue = c.assetType === 'crypto' ? 'crypto' : c.market
@@ -193,7 +231,8 @@ function choose(input: InvestInput) {
     const cost = roundTripCost(venue, c.dollarVolume20, c.assetType === 'crypto' ? input.cryptoFeePct : input.usdFxFeePct)
     const allowed = input.horizons
     const rows = allowed ? c.rows.filter((r) => allowed.includes(r.horizonDays)) : c.rows
-    const qualifying = best(rows, (r) => r.pBeat >= P_MIN && r.q50 > cost)
+    const tops = globalTops ?? (c.market ? marketTops.get(c.market) : undefined)
+    const qualifying = best(rows, (r) => (tops ? tops.get(r.horizonDays)?.has(c.symbol) === true : r.pBeat >= P_MIN) && r.q50 > cost)
     // a filler must still be more likely to beat its benchmark than lag it, and expected to clear
     // its costs: a high median beside a sub-50% chance is the range leaning high, not an edge
     const pick = qualifying ?? best(rows, (r) => r.pBeat >= FILL_P_MIN && r.q50 > cost)

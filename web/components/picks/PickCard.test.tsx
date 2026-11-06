@@ -30,6 +30,35 @@ const pick = (basis: string | null): PickView => ({
   benchmark: basis ? 'XIU.TO' : 'SPY',
   atrPct: null,
   dollarVolume20: null,
+  chosenBy: 'p',
+  scoreRank: null,
+  scoreOf: null,
+})
+
+describe('PickCard rank', () => {
+  it('shows a rank pick by its place, not a percentage', () => {
+    const html = renderToStaticMarkup(
+      <PickCard
+        pick={{ ...pick(null), chosenBy: 'rank', scoreRank: 2, scoreOf: 40, pBeat: 0.62 }}
+        portfolioCad={null}
+        usdFxFeePct={1.5}
+      />,
+    )
+    const text = html.replaceAll('&#x27;', "'")
+    expect(text).toContain('Ranked #2 of 40 by the model')
+    expect(text).toContain("Chosen by rank: its probabilities run high, so it's shown by its place in the ranking.")
+    expect(text).not.toContain('62%')
+  })
+
+  it('renders a P pick as before', () => {
+    const html = renderToStaticMarkup(
+      <PickCard pick={{ ...pick(null), chosenBy: 'p', scoreRank: null, scoreOf: null }} portfolioCad={null} usdFxFeePct={1.5} />,
+    )
+    expect(html).toContain('Beats SPY')
+    expect(html).toContain('62%')
+    expect(html).not.toContain('Ranked #')
+    expect(html).not.toContain('Chosen by rank')
+  })
 })
 
 describe('PickCard basis', () => {

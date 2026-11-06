@@ -36,6 +36,7 @@ const input = (candidates: Candidate[], over: Partial<InvestInput> = {}): Invest
   cryptoFeePct: 2,
   candidates,
   held: new Set(),
+  topN: null,
   ...over,
 })
 
@@ -124,6 +125,52 @@ describe('allocate: choosing the stocks', () => {
     const loners = ['X', 'Y'].map((s) => stock(`${s}.TO`, { sector: null, rows: [row(21, 0.02, 0.6)] }))
     const out = allocate(input([...banks, ...loners]))
     expect(out.stocks.map((l) => l.symbol)).toEqual(['A.TO', 'B.TO', 'X.TO', 'Y.TO'])
+  })
+})
+
+describe('allocate: rank mode', () => {
+  const four = ['A', 'B', 'C', 'D'].map((s, i) => stock(`${s}.TO`, { rows: [row(21, 0.05, 0.49 - i / 100)] }))
+
+  it('with topN, qualifies the top N by P per horizon that clear their costs', () => {
+    const out = allocate(input(four, { topN: 2 }))
+    expect(out.stocks.map((l) => [l.symbol, l.qualifies])).toEqual([
+      ['A.TO', true],
+      ['B.TO', true],
+    ])
+  })
+
+  it('with topN, a top stock that does not clear its costs is not taken', () => {
+    const out = allocate(
+      input(
+        [
+          stock('A.TO', { rows: [row(21, 0, 0.9)] }),
+          stock('B.TO', { rows: [row(21, 0.05, 0.48)] }),
+          stock('C.TO', { rows: [row(21, 0.05, 0.47)] }),
+        ],
+        { topN: 2 },
+      ),
+    )
+    expect(out.stocks.map((l) => l.symbol)).not.toContain('A.TO')
+    expect(out.stocks.map((l) => [l.symbol, l.qualifies])).toEqual([['B.TO', true]])
+  })
+
+  it('ties rank by symbol', () => {
+    const out = allocate(
+      input(
+        [
+          stock('M.TO', { rows: [row(21, 0.05, 0.49)] }),
+          stock('A.TO', { rows: [row(21, 0.05, 0.49)] }),
+          stock('Z.TO', { rows: [row(21, 0.05, 0.4)] }),
+        ],
+        { topN: 1 },
+      ),
+    )
+    expect(out.stocks.map((l) => [l.symbol, l.qualifies])).toEqual([['A.TO', true]])
+  })
+
+  it('without topN, behaves as today', () => {
+    const out = allocate(input([...four, stock('OK.TO', { rows: [row(21, 0.05, 0.6)] })], { topN: null }))
+    expect(out.stocks.map((l) => [l.symbol, l.qualifies])).toEqual([['OK.TO', true]])
   })
 })
 

@@ -10,7 +10,7 @@ from datetime import date
 
 from advisor.models import AssetType, PredictionRow
 from advisor.policy import DEFAULT_POLICY, Policy
-from advisor.recommend.picks import best_horizon, choose
+from advisor.recommend.picks import best_horizon, choose, p_rule
 
 GAIN_TRIM = 0.25
 MOMENTUM_TRIM = 40.0
@@ -85,7 +85,7 @@ def _action(action: str, h: Holding, row: PredictionRow | None, reasons: list[st
 
 def decide(h: Holding) -> Action:
     """The first rule that fires wins: sell, then trim, then add, else hold."""
-    choice = choose(h.rows, h.cost, h.sane, h.policy)
+    choice = choose(h.rows, h.cost, h.sane, p_rule(h.policy))
     # the horizon that qualifies, so a stock the picks call a Buy is never sold for a weaker row
     best = next((r for r in h.rows if r.horizon_days == choice.horizon), None) if choice else None
     best = best or best_horizon(h.rows)

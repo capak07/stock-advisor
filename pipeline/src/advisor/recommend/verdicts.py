@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from advisor.markets import market_of
 from advisor.models import Market, PredictionRow
 from advisor.policy import DEFAULT_POLICY, Policy
-from advisor.recommend.picks import best_horizon, choose
+from advisor.recommend.picks import best_horizon, choose, p_rule
 
 TSX_BASIS = (
     "Price and sector only: TSX stocks have no company filings in this model, so weigh this call accordingly."
@@ -57,7 +57,7 @@ def stock_verdict(
     if not rows:
         return Verdict(symbol, "stock", "hold", [why_no_forecast or "no forecast yet"])
     benchmark = rows[0].benchmark
-    choice = choose(rows, cost, sane, policy)
+    choice = choose(rows, cost, sane, p_rule(policy))
     if choice is not None:
         reasons = [
             f"P(beat {benchmark}) {choice.p_beat:.2f} over {choice.horizon} trading days",

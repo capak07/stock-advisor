@@ -353,13 +353,14 @@ def write_picks(conn: psycopg.Connection, run_id: int, rows: Sequence[PickRow]) 
         cur.executemany(
             "insert into picks (run_id, symbol, asset_type, market, style, horizon_days, exit_by,"
             " entry_ref_price, stop, risk_level, risk_score, max_position_pct, rank, top_factors, catalysts,"
-            " feature_day, bench_ref_price)"
-            " values (%s, %s, 'stock', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " feature_day, bench_ref_price, chosen_by, score_rank, score_of)"
+            " values (%s, %s, 'stock', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 (
                     run_id, r.symbol, r.market.value, r.style, r.horizon_days, r.exit_by, r.entry_ref_price,
                     r.stop, r.risk_level, r.risk_score, r.max_position_pct, r.rank,
                     Jsonb(r.top_factors), Jsonb(r.catalysts), r.feature_day, r.bench_ref_price,
+                    r.chosen_by, r.score_rank, r.score_of,
                 )
                 for r in rows
             ],

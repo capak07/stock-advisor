@@ -490,3 +490,17 @@ def test_malformed_benchmark_results_are_rejected(db, column, value):
         db.execute("insert into benchmark_results (run_id, market, variant, fold, metrics) values (%s, %s, %s, %s, '{}')",
                    (run_id, row["market"], row["variant"], row["fold"]))
 
+
+
+def test_a_rank_pick_is_stored_with_its_place(db):
+    run_id = _run(db)
+    cols = ("insert into picks (run_id, symbol, market, style, horizon_days, exit_by, entry_ref_price,"
+            " stop, risk_level, risk_score, max_position_pct, rank, feature_day, bench_ref_price{extra})"
+            " values (%s, 'RY.TO', 'TSX', 'swing', 21, '2026-12-07', 10, 9, 'low', 0.1, 5, 1,"
+            " '2026-11-06', 500{values})")
+    db.execute(cols.format(extra=", chosen_by, score_rank, score_of", values=", 'rank', 2, 380"), (run_id,))
+    db.execute(cols.format(extra="", values=""), (run_id,))  # an older writer: chosen by P
+    rows = db.execute("select chosen_by, score_rank, score_of from picks order by id").fetchall()
+    assert [tuple(r.values()) for r in rows] == [("rank", 2, 380), ("p", None, None)]
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(cols.format(extra=", chosen_by", values=", 'luck'"), (run_id,))

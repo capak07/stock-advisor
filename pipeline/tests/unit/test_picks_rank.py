@@ -48,3 +48,8 @@ def test_rank_mode_takes_the_top_n_that_clear_costs():
     assert choose([rows[0]], 0.002, True, DEFAULT_POLICY) is None  # P mode: under 0.58
     p_pick = choose([row("A.TO", 0.60)], 0.002, True, DEFAULT_POLICY)
     assert p_pick is not None and p_pick.score_rank is None and p_pick.score_of is None
+
+
+def test_verdicts_and_holding_actions_keep_the_p_rule_under_a_rank_policy():
+    from advisor.recommend.picks import p_rule
+    assert p_rule(RANK) == DEFAULT_POLICY and p_rule(DEFAULT_POLICY) is DEFAULT_POLICY

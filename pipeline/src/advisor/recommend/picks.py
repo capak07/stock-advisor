@@ -4,7 +4,7 @@ The qualify, ratio and sector rules mirror `simulate_picks`, so the backtest gat
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from advisor.model.backtest import (
     CRYPTO_SWING_HORIZONS,
@@ -110,6 +110,12 @@ def best_horizon(rows: Sequence[PredictionRow]) -> PredictionRow | None:
         if best is None or ratio > best[0] or (ratio == best[0] and r.horizon_days < best[1].horizon_days):
             best = (ratio, r)
     return best[1] if best else None
+
+
+def p_rule(policy: Policy) -> Policy:
+    """The policy for a single stock's verdict or holding action: always the P floor, because a
+    rank needs the whole market's forecasts and spec §11 leaves verdicts and actions unchanged."""
+    return policy if policy.top_n is None else replace(policy, top_n=None)
 
 
 def stop_price(style: str, entry: float, atr_pct: float, policy: Policy = DEFAULT_POLICY) -> float:

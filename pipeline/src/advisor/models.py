@@ -117,6 +117,9 @@ class PickRow:
     catalysts: list[dict[str, Any]]  # JSON-ready
     feature_day: date  # the market's feature day, the day entry_ref_price closed
     bench_ref_price: float  # the market's benchmark close on that day
+    chosen_by: str = "p"  # "p" (the P floor) or "rank" (the model's top N, spec §11)
+    score_rank: int | None = None  # a rank pick's place for its horizon (1 = best)
+    score_of: int | None = None  # how many stocks were ranked for that horizon
 
 
 @dataclass(frozen=True)

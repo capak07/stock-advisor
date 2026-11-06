@@ -33,7 +33,7 @@ from advisor.models import (
     RunKind,
 )
 from advisor.policy import DEFAULT_POLICY, Policy, policy_of
-from advisor.recommend.picks import best_horizon, choose, rank_picks, stop_price
+from advisor.recommend.picks import best_horizon, choose, rank_picks, stop_price, top_by_horizon
 from advisor.recommend.risk import disagreement, risk_levels
 from advisor.recommend.verdicts import TSX_BASIS, Verdict, coin_verdict, stock_verdict
 from advisor.schedule import sessions_after
@@ -242,9 +242,11 @@ def recommend_market(
     day = inputs.day
     policy = policy_of(model.metrics)
     population = {s: rows for s, rows in inputs.rows.items() if rows}
+    # a rank policy (spec §11) ranks the market's forecasts per horizon first
+    top = top_by_horizon([r for rows in population.values() for r in rows], policy.top_n) if policy.top_n else None
     choices = {
         s: c for s, rows in population.items()
-        if (c := choose(rows, inputs.cost[s], inputs.sane[s], policy)) is not None
+        if (c := choose(rows, inputs.cost[s], inputs.sane[s], policy, top)) is not None
     }
     # decision 2: the chosen horizon, else the best-ratio one, sets the risk width and event window
     horizon: dict[str, int] = {}
@@ -321,7 +323,7 @@ def recommend_market(
         picks.append(PickRow(
             c.symbol, market, c.style, c.horizon, exits[c.horizon], d["entry_ref_price"], d["stop"],
             d["risk_level"], d["risk_score"], d["max_position_pct"], rank, d["top_factors"], d["catalysts"],
-            day, bench_close,
+            day, bench_close, "rank" if c.score_rank is not None else "p", c.score_rank, c.score_of,
         ))
     counts = {style: sum(1 for p in picks if p.style == style) for style in ("swing", "position")}
     return picks, details, counts, risk, explanations

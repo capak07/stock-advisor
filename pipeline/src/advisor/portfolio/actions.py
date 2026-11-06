@@ -5,12 +5,13 @@ Tax warnings never change the action.
 """
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 
 from advisor.models import AssetType, PredictionRow
 from advisor.policy import DEFAULT_POLICY, Policy
-from advisor.recommend.picks import best_horizon, choose, p_rule
+from advisor.recommend.picks import because, best_horizon, choose_for_stock
 
 GAIN_TRIM = 0.25
 MOMENTUM_TRIM = 40.0
@@ -43,6 +44,8 @@ class Holding:
     review: list[str]  # the Review badge's reasons
     sold_at_loss_on: date | None  # newest taxable loss within 30 days of this asset, any account
     policy: Policy = DEFAULT_POLICY
+    # the market's ranking under a rank policy (`picks.market_top`), so Add follows the picks
+    top: Mapping | None = None
 
 
 @dataclass(frozen=True)
@@ -85,7 +88,7 @@ def _action(action: str, h: Holding, row: PredictionRow | None, reasons: list[st
 
 def decide(h: Holding) -> Action:
     """The first rule that fires wins: sell, then trim, then add, else hold."""
-    choice = choose(h.rows, h.cost, h.sane, p_rule(h.policy))
+    choice = choose_for_stock(h.rows, h.cost, h.sane, h.policy, h.top)
     # the horizon that qualifies, so a stock the picks call a Buy is never sold for a weaker row
     best = next((r for r in h.rows if r.horizon_days == choice.horizon), None) if choice else None
     best = best or best_horizon(h.rows)
@@ -122,8 +125,7 @@ def decide(h: Holding) -> Action:
 
     if choice is not None and (share is None or share < h.max_position_pct):
         reason = (
-            f"would be a Buy today: P(beat {benchmark}) {choice.p_beat:.2f} "
-            f"over {choice.horizon} trading days, below its max size"
+            f"would be a Buy today: {because(choice, benchmark)}, below its max size"
         )
         if h.sold_at_loss_on is not None:
             warnings.append(

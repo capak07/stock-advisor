@@ -33,6 +33,7 @@ from advisor.policy import DEFAULT_POLICY, Policy, policy_of
 from advisor.portfolio.actions import TAXABLE, Holding, decide
 from advisor.portfolio.ledger import Loss, Position, build_ledger
 from advisor.portfolio.stops import atr_pct, trailing_stop
+from advisor.recommend.picks import market_top
 from advisor.recommend.risk import LEVELS
 from advisor.recommend.stage import (
     RECOMMENDER_FAILED,
@@ -271,6 +272,7 @@ def holding_inputs(
             review=_review(p, s, view),
             sold_at_loss_on=_sold_at_loss_on(p, losses, view.today),
             policy=policy,
+            top=market_top(advice.inputs.rows, advice.inputs.sane, policy) if advice and market else None,
         ))
     return out
 

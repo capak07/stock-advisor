@@ -385,6 +385,8 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - A rank-chosen pick shows "Ranked #k of N by the model" and no percentage.
   - Invest follows the same rule for the accepted policy.
   - Picks store `chosen_by`, `score_rank` and `score_of` (migration 0011).
+  - **Verdicts and holding actions follow the picks** (owner's decision, 2026-11-06). Under a rank policy, a stock in its market's top N that clears costs is a Buy on its own page, and Add on a holding, with the reason "ranked #k of N by the model". Without a market ranking they keep the P rule.
+  - Only stocks that passed the sanity checks are ranked: an unconfirmed jump never takes a place. This holds live, in the backtest, in the policy search and in Invest.
 - **Owner's decision, 2026-11-06.**
 
 ## Plans, in dependency order

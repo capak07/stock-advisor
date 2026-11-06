@@ -179,3 +179,15 @@ def test_ordinals_and_size_decimals():
         assert a.reasons == [f"up 25% and its 21-day momentum is at the {word} percentile"]
     a = decide(_holding(value_cad=5300.0, cost_cad=5300.0, max_position_pct=5.0))
     assert a.warnings == ["5.3% of the portfolio; Medium risk allows 5%"]
+
+
+def test_a_holding_the_rank_picks_take_can_add():
+    # owner's decision 2026-11-06: Add follows the picks under a rank policy
+    from advisor.recommend.picks import top_by_horizon
+    rank = replace(DEFAULT_POLICY, top_n=1)
+    mine = _row(p=0.49, q50=0.0051)
+    top = top_by_horizon([mine, replace(mine, symbol="ZZZ", p_beat=0.40)], 1)
+    a = decide(_holding(rows=[mine], policy=rank, top=top))
+    assert a.action == "add"
+    assert a.reasons == ["would be a Buy today: ranked #1 of 2 by the model over 10 trading days, below its max size"]
+    assert decide(_holding(rows=[mine], policy=rank)).action != "add"  # no ranking given: the P rule

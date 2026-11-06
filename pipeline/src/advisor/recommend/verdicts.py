@@ -3,13 +3,13 @@
 A buy qualifies by exactly the pick rule (`choose`), so the watchlist never disagrees with the picks.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from advisor.markets import market_of
 from advisor.models import Market, PredictionRow
 from advisor.policy import DEFAULT_POLICY, Policy
-from advisor.recommend.picks import best_horizon, choose, p_rule
+from advisor.recommend.picks import because, best_horizon, choose_for_stock
 
 TSX_BASIS = (
     "Price and sector only: TSX stocks have no company filings in this model, so weigh this call accordingly."
@@ -53,14 +53,16 @@ def stock_verdict(
     pick_details: dict | None,
     why_no_forecast: str | None,
     policy: Policy = DEFAULT_POLICY,
+    top: Mapping[int, Mapping[str, tuple[int, int]]] | None = None,
 ) -> Verdict:
+    """`top` is the market's ranking under a rank policy (`picks.market_top`), so a rank pick is a Buy."""
     if not rows:
         return Verdict(symbol, "stock", "hold", [why_no_forecast or "no forecast yet"])
     benchmark = rows[0].benchmark
-    choice = choose(rows, cost, sane, p_rule(policy))
+    choice = choose_for_stock(rows, cost, sane, policy, top)
     if choice is not None:
         reasons = [
-            f"P(beat {benchmark}) {choice.p_beat:.2f} over {choice.horizon} trading days",
+            because(choice, benchmark),
             f"expected {choice.q50:.1%} against {cost:.1%} round-trip costs",
         ]
         details = dict(pick_details or {})

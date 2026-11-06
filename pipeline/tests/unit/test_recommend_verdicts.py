@@ -129,3 +129,16 @@ def test_a_coin_the_model_could_not_forecast_says_why():
     from advisor.recommend.verdicts import NO_COIN_MODEL, coin_verdict
     assert coin_verdict("NEW").reasons == [NO_COIN_MODEL]
     assert coin_verdict("NEW", why="only 120 days of history (needs 252)").reasons == ["only 120 days of history (needs 252)"]
+
+
+def test_a_rank_pick_is_a_buy_on_its_own_page_with_its_place():
+    # owner's decision 2026-11-06: under a rank policy a stock the picks take is a Buy here too
+    from advisor.recommend.picks import top_by_horizon
+    rank = replace(DEFAULT_POLICY, top_n=1)
+    rows = [row(21, 0.49)]
+    top = top_by_horizon([*rows, replace(row(21, 0.40), symbol="ZZZ")], 1)
+    v = stock_verdict(rows[0].symbol, rows, 0.002, True, None, None, rank, top)
+    assert v.verdict == "buy"
+    assert v.reasons[0] == "ranked #1 of 2 by the model over 21 trading days"
+    assert stock_verdict(rows[0].symbol, rows, 0.002, True, None, None, rank, None).verdict != "buy"
+    assert stock_verdict(rows[0].symbol, rows, 0.002, True, None, None, DEFAULT_POLICY, top).verdict != "buy"

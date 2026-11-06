@@ -36,6 +36,7 @@ from advisor.policy import DEFAULT_POLICY, Policy, policy_of
 from advisor.recommend.picks import (
     best_horizon,
     choose,
+    market_top,
     rank_picks,
     rankable,
     stop_price,
@@ -395,6 +396,7 @@ def watch_verdicts(
             verdict = stock_verdict(
                 ref.symbol, given.rows.get(ref.symbol, []), given.cost.get(ref.symbol, 0.0),
                 given.sane.get(ref.symbol, False), details.get(market, {}).get(ref.symbol), why, policy,
+                market_top(given.rows, given.sane, policy),
             )
         flag = {"market_picks_enabled": enabled.get(market, False)}
         if ref.symbol in held:

@@ -119,9 +119,36 @@ def best_horizon(rows: Sequence[PredictionRow]) -> PredictionRow | None:
 
 
 def p_rule(policy: Policy) -> Policy:
-    """The policy for a single stock's verdict or holding action: always the P floor, because a
-    rank needs the whole market's forecasts and spec §11 leaves verdicts and actions unchanged."""
+    """The P-floor version of a policy, for a verdict or action given no market ranking."""
     return policy if policy.top_n is None else replace(policy, top_n=None)
+
+
+def market_top(
+    rows: Mapping[str, Sequence[PredictionRow]], sane: Mapping[str, bool], policy: Policy
+) -> dict[int, dict[str, tuple[int, int]]] | None:
+    """The market's top-N ranking under a rank policy, the one its picks use; None for a P policy."""
+    if policy.top_n is None:
+        return None
+    return top_by_horizon(rankable({s: r for s, r in rows.items() if r}, sane), policy.top_n)
+
+
+def choose_for_stock(
+    rows: Sequence[PredictionRow], cost: float, sane: bool, policy: Policy,
+    top: Mapping[int, Mapping[str, tuple[int, int]]] | None,
+) -> Choice | None:
+    """One stock's choice for its verdict or holding action: under a rank policy the picks' own
+    rule, so a rank pick is a Buy on its page too (owner's decision, 2026-11-06); the P floor when
+    no market ranking is given."""
+    if policy.top_n is not None and top is not None:
+        return choose(rows, cost, sane, policy, top)
+    return choose(rows, cost, sane, p_rule(policy))
+
+
+def because(choice: Choice, benchmark: str) -> str:
+    """Why a choice qualified: its place in the ranking, or its P."""
+    if choice.score_rank is not None:
+        return f"ranked #{choice.score_rank} of {choice.score_of} by the model over {choice.horizon} trading days"
+    return f"P(beat {benchmark}) {choice.p_beat:.2f} over {choice.horizon} trading days"
 
 
 def stop_price(style: str, entry: float, atr_pct: float, policy: Policy = DEFAULT_POLICY) -> float:

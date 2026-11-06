@@ -126,7 +126,7 @@ def test_ablation_rows_print_in_a_fixed_order_whatever_order_the_dict_arrives_in
     assert names == [
         "baseline", "factors", "ranker", "extras", "ranker+extras", "ranker+extras+bagged", "garch",
         "factors+garch", "full+policy",
-    ]
+    ]  # garch+ranker isn't in this fixture; its place is after factors+garch
 
 
 def _score(pooled: dict) -> dict:

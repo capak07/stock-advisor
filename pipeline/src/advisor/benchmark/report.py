@@ -8,7 +8,7 @@ from pathlib import Path
 
 _ABLATION_ORDER = (
     "baseline", "factors", "ranker", "extras", "ranker+extras", "ranker+extras+bagged", "garch", "factors+garch",
-    "full+policy",
+    "garch+ranker", "full+policy",
 )
 
 SURVIVORSHIP = (

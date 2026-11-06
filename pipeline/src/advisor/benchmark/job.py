@@ -57,6 +57,7 @@ ABLATIONS: dict[str, ModelConfig | None] = {
     "ranker+extras+bagged": ModelConfig(ranker=True, extras=True, bagged=True),
     "garch": ModelConfig(garch=True),
     "factors+garch": ModelConfig(factors=True, garch=True),
+    "garch+ranker": ModelConfig(ranker=True, garch=True),
     "full+policy": None,
 }
 POLICY_ROW = "full+policy"
@@ -180,13 +181,7 @@ def _benchmark_market(
             "model": model, "summary": means, "policy": policy,
         }
         if variant.garch:
-            variants[name]["garch"] = {
-                "fallbacks": wf.garch_fallbacks,
-                "range": {
-                    str(h): {"s": m["garch_range"]["scale"], "adopted": m["garch_range"]["adopted"]}
-                    for h, m in wf.metrics.items() if "garch_range" in m
-                },
-            }
+            variants[name]["garch"] = {"fallbacks": wf.garch_fallbacks}
         if variant.factors:
             variants[name]["alpha_rank_ic"] = wf.alpha_rank_ic
             variants[name]["fallback_count"] = wf.fallback_count

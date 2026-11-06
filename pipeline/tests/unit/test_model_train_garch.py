@@ -89,3 +89,9 @@ def test_a_symbol_without_enough_returns_is_counted_not_dropped(market):
 def test_garch_needs_the_daily_returns(market):
     with pytest.raises(ValueError, match="with_garch=True"):
         walk_forward(load_market(market, Market.TSX), FAST, garch=True)
+
+
+def test_garch_leaves_the_models_own_ranges(market):
+    # the range blend was measured to worsen pinball loss in every market and was dropped (spec §4)
+    wf = walk_forward(load_market(market, Market.TSX, with_garch=True), FAST, garch=True)
+    assert all("garch_range" not in m for m in wf.metrics.values())

@@ -211,6 +211,10 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - One `garch_vol` column per horizon.
   - The range scale is fitted on earlier periods' out-of-sample predictions, as today's range calibration is.
   - The risk-score swap and the GARCH stop distance move to a follow-up plan.
+- **The range adjustment was dropped (owner's decision, 2026-11-06).** GARCH rows now keep the model's own range.
+  - In the 2026-11-06 benchmark the blend was used at every US and TSX horizon. It widened the ranges toward 80% coverage, but the pooled pinball loss got worse: US +1.2%, TSX +1.0%, against a limit of +0.5%.
+  - Measured locally without the blend, GARCH's pinball cost fell from +0.48% to +0.07% (US) and from +5.1% to +0.58% (TSX). Its rank IC was unchanged: US 0.052 → 0.058, TSX 0.023 → 0.032.
+  - A `garch+ranker` row was added, so the ranker, the accepted US model, is also judged with GARCH.
 
 ### 5. The constrained policy search (Plan 6e)
 

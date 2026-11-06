@@ -32,6 +32,9 @@ const pick = (over: Partial<PickView> = {}): PickView => ({
   benchmark: 'XIU.TO',
   atrPct: 0.02,
   dollarVolume20: 5e6,
+  chosenBy: 'p',
+  scoreRank: null,
+  scoreOf: null,
   ...over,
 })
 

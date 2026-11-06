@@ -7,6 +7,7 @@ import type { HeldCall } from '../verdicts'
 import { loadHeldCalls } from './actions'
 import { fetchAll, must } from './fetch'
 import { lastPublishedRun } from './runs'
+import { chosenFrom } from './pick-row'
 import { loadNames, loadSectors } from './symbols'
 
 export type Style = 'swing' | 'position'
@@ -58,6 +59,12 @@ export interface PickView {
   /** For order guidance (lib/orders.ts): the 14-day daily range as a fraction, and 20-day dollar volume. */
   atrPct: number | null
   dollarVolume20: number | null
+  /** 'rank' when the accepted policy picked by place; 'p' for a probability pick, including rows stored before that. */
+  chosenBy: 'p' | 'rank'
+  /** 1 = best that horizon. Null when `chosenBy` is 'p'. */
+  scoreRank: number | null
+  /** How many stocks were ranked for that horizon. Null when `chosenBy` is 'p'. */
+  scoreOf: number | null
 }
 
 /** A pick the run told the owner to exit early (Plan 4c), with its graded outcome. */
@@ -109,7 +116,9 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
   const [picks, models, verdictRows, exits, graded, held] = await Promise.all([
     supabase
       .from('picks')
-      .select('id, symbol, market, style, horizon_days, exit_by, entry_ref_price, stop, risk_level, max_position_pct, rank, top_factors, catalysts')
+      .select(
+        'id, symbol, market, style, horizon_days, exit_by, entry_ref_price, stop, risk_level, max_position_pct, rank, top_factors, catalysts, chosen_by, score_rank, score_of',
+      )
       .eq('run_id', run.id)
       .order('rank'),
     supabase.from('models').select('kind, metrics').eq('active', true),
@@ -141,6 +150,9 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
     rank: number
     top_factors: { feature: string; contribution: number }[]
     catalysts: Catalyst[]
+    chosen_by?: string | null
+    score_rank?: number | string | null
+    score_of?: number | string | null
   }[]
   const symbols = [...new Set(pickRows.map((p) => p.symbol))]
 
@@ -195,6 +207,7 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
       benchmark: q?.benchmark ?? (p.market === 'TSX' ? 'XIU.TO' : 'SPY'),
       atrPct: num(f.atr_14_pct) ?? null,
       dollarVolume20: adv === undefined ? null : Math.expm1(adv), // the pipeline stores log1p(ADV)
+      ...chosenFrom(p),
     }
   }
 

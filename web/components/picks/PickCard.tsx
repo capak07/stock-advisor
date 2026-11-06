@@ -66,11 +66,14 @@ export function PickCard({
         </div>
       )}
       <dl className="pick-facts">
-        {p.pBeat !== null && (
+        {p.chosenBy === 'rank' ? (
           <div>
-            <dt>Beats {p.benchmark}</dt>
+            <dt>Place</dt>
             <dd className="num" style={{ fontWeight: 600 }}>
-              {Math.round(p.pBeat * 100)}%
+              Ranked #{p.scoreRank} of {p.scoreOf} by the model
+            </dd>
+            <dd className="sub" data-rank style={{ fontWeight: 400 }}>
+              Chosen by rank: its probabilities run high, so it&apos;s shown by its place in the ranking.
             </dd>
             {p.basis && (
               <dd className="sub" data-basis style={{ fontWeight: 400 }}>
@@ -78,6 +81,20 @@ export function PickCard({
               </dd>
             )}
           </div>
+        ) : (
+          p.pBeat !== null && (
+            <div>
+              <dt>Beats {p.benchmark}</dt>
+              <dd className="num" style={{ fontWeight: 600 }}>
+                {Math.round(p.pBeat * 100)}%
+              </dd>
+              {p.basis && (
+                <dd className="sub" data-basis style={{ fontWeight: 400 }}>
+                  {p.basis}
+                </dd>
+              )}
+            </div>
+          )
         )}
         <div>
           <dt>Hold</dt>

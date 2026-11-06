@@ -369,6 +369,24 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - The change moves every setup's calibration figures, the baseline's included, and so the figure weekly training promotes on.
 - **Owner's decision, 2026-11-03.**
 
+### 11. Picks by rank (Plan 6i, added 2026-11-06)
+
+- **Why:** P never reaches the 0.58 buy line in the US, so the US has no picks.
+  - On TSX, stocks that reached it beat the market less often than claimed: in the 2026-11-06 benchmark the ranker's book claimed 59% and beat 45% of the time.
+  - The models still rank well. TSX's top-ranked stocks under today's rules netted 1.62% per trade, a net Sharpe of 0.48.
+  - Picks are empty because the rule asks P for a promise it can't keep, not because the ranking is useless.
+- **What:** a policy may set `top_n`. A stock then qualifies by being among the market's top N by P(beat) for a horizon that day (ranking by P within a horizon is ranking by the model's score), with q50 above its costs.
+  - The horizon rule, the per-style and per-sector limits and the stops are unchanged.
+- **Evidence first:**
+  - The policy search tries `top_n` ∈ {none, 3, 5, 10} in its first stage.
+  - A rank policy goes live only through the `full+policy` row, as any tuned policy does.
+  - Its picks gate needs at least 30 backtest picks with a positive mean after costs. P's accuracy isn't checked there, because P isn't shown as a promise.
+- **Display:**
+  - A rank-chosen pick shows "Ranked #k of N by the model" and no percentage.
+  - Invest follows the same rule for the accepted policy.
+  - Picks store `chosen_by`, `score_rank` and `score_of` (migration 0011).
+- **Owner's decision, 2026-11-06.**
+
 ## Plans, in dependency order
 
 | Plan | Builds | Needs |
@@ -381,6 +399,7 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
 | **6f** | The ranking booster: a `ranker` variant whose score ranks and gives P(beat) (§8) | 6a |
 | **6g** | More price features (`extras`) and seed averaging (`bagged`) as variants (§9) | 6a, 6f |
 | **6h** | Tie-aware probability bins: calibration error and the calibrator's floor and ceiling (§10) | 6a |
+| **6i** | Picks by rank: a `top_n` policy, its benchmark search and picks gate, and the app's wording (§11) | 6e |
 
 The full ablation table becomes reportable once 6c, 6d and 6e land. Each plan's report states which ablation rows it could fill.
 

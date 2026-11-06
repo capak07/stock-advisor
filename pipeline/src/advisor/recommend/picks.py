@@ -31,6 +31,8 @@ class Choice:
     q90: float
     ratio: float
     cost: float
+    score_rank: int | None = None  # a rank-chosen pick's place among the horizon's forecasts (1 = best)
+    score_of: int | None = None  # how many stocks were ranked for that horizon
 
 
 def _ratio(row: PredictionRow) -> float | None:
@@ -44,20 +46,44 @@ def _style(horizon: int) -> str:
     return "swing" if horizon in SWING_HORIZONS | CRYPTO_SWING_HORIZONS else "position"
 
 
+def top_by_horizon(rows: Sequence[PredictionRow], n: int) -> dict[int, dict[str, tuple[int, int]]]:
+    """Per horizon, the top `n` symbols by P(beat) (ties by symbol) → (rank, how many were ranked).
+
+    `rows` are the market's forecasts, so a stock without one never takes a place. Within a horizon
+    P is a monotone map of the model's score, so this is the model's own ranking (spec §11).
+    """
+    by_h: dict[int, list[PredictionRow]] = {}
+    for r in rows:
+        if r.p_beat == r.p_beat:  # a NaN P isn't ranked
+            by_h.setdefault(r.horizon_days, []).append(r)
+    out: dict[int, dict[str, tuple[int, int]]] = {}
+    for h, its in by_h.items():
+        ordered = sorted(its, key=lambda r: (-r.p_beat, r.symbol))
+        out[h] = {r.symbol: (i + 1, len(ordered)) for i, r in enumerate(ordered[:n])}
+    return out
+
+
 def choose(
-    rows: Sequence[PredictionRow], cost: float, sane: bool, policy: Policy = DEFAULT_POLICY
+    rows: Sequence[PredictionRow], cost: float, sane: bool, policy: Policy = DEFAULT_POLICY,
+    top: Mapping[int, Mapping[str, tuple[int, int]]] | None = None,
 ) -> Choice | None:
     """The best horizon that qualifies, or None (also None when the sanity checks failed).
 
     `rule="ratio"` ranks by expected return per unit of range; `"p"` ranks by P(beat).
     A tie goes to the shorter horizon. `horizons`, when set, is the only set considered.
+    With `policy.top_n`, a row qualifies by being in `top` (`top_by_horizon`) for its horizon
+    instead of by P >= `p_buy`.
     """
     if not sane:
         return None
     best: tuple[float, int, PredictionRow, float] | None = None
     for r in rows:
         ratio = _ratio(r)
-        if ratio is None or not (r.p_beat >= policy.p_buy and r.q50 > cost):  # written so NaN fails
+        if policy.top_n is not None:
+            placed = (top or {}).get(r.horizon_days, {}).get(r.symbol)
+            if ratio is None or placed is None or not r.q50 > cost:
+                continue
+        elif ratio is None or not (r.p_beat >= policy.p_buy and r.q50 > cost):  # written so NaN fails
             continue
         if policy.horizons is not None and r.horizon_days not in policy.horizons:
             continue
@@ -67,7 +93,11 @@ def choose(
     if best is None:
         return None
     _, _, r, ratio = best
-    return Choice(r.symbol, r.horizon_days, _style(r.horizon_days), r.p_beat, r.q10, r.q50, r.q90, ratio, cost)
+    placed = (top or {}).get(r.horizon_days, {}).get(r.symbol) if policy.top_n is not None else None
+    return Choice(
+        r.symbol, r.horizon_days, _style(r.horizon_days), r.p_beat, r.q10, r.q50, r.q90, ratio, cost,
+        *(placed if placed else (None, None)),
+    )
 
 
 def best_horizon(rows: Sequence[PredictionRow]) -> PredictionRow | None:

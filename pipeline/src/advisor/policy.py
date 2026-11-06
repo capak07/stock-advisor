@@ -1,5 +1,8 @@
 """The recommendation policy: buy and sell lines, stop multipliers, and the horizon rule.
 
+With `top_n` set (Plan 6i, spec §11) a pick qualifies by being among the market's top N by P(beat)
+for its horizon that day, instead of by P >= `p_buy`.
+
 `DEFAULT_POLICY` is today's rules. A stored policy that this code can't read falls back to it.
 """
 from collections.abc import Mapping
@@ -26,10 +29,12 @@ class Policy:
     trail_atr: float
     rule: str
     horizons: tuple[int, ...] | None
+    top_n: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         horizons = None if self.horizons is None else list(self.horizons)
-        return {
+        rank = {} if self.top_n is None else {"top_n": self.top_n}  # a P policy is stored as before
+        return rank | {
             "p_buy": self.p_buy,
             "p_sell": self.p_sell,
             "swing_atr": self.swing_atr,
@@ -43,8 +48,8 @@ class Policy:
     def from_json(cls, d: Any) -> "Policy":
         if not isinstance(d, Mapping):
             raise ValueError(f"a policy must be a mapping, not {type(d).__name__}")
-        if set(d) != set(_KEYS):
-            odd = sorted(set(d) ^ set(_KEYS))
+        if set(d) - {"top_n"} != set(_KEYS):
+            odd = sorted((set(d) - {"top_n"}) ^ set(_KEYS))
             raise ValueError(f"a policy has unexpected or missing keys: {', '.join(odd)}")
         p_buy, p_sell = _number(d["p_buy"], "p_buy"), _number(d["p_sell"], "p_sell")
         if p_sell >= p_buy:
@@ -54,8 +59,11 @@ class Policy:
             raise ValueError("stop multipliers must be positive")
         if d["rule"] not in _RULES:
             raise ValueError(f"rule must be 'ratio' or 'p', not {d['rule']!r}")
+        top_n = d.get("top_n")
+        if top_n is not None and (isinstance(top_n, bool) or not isinstance(top_n, int) or top_n < 1):
+            raise ValueError(f"top_n must be a positive whole number, or null, not {top_n!r}")
         return cls(p_buy, p_sell, multipliers["swing_atr"], multipliers["position_atr"],
-                   multipliers["trail_atr"], d["rule"], _horizons(d["horizons"]))
+                   multipliers["trail_atr"], d["rule"], _horizons(d["horizons"]), top_n)
 
 
 def _horizons(value: Any) -> tuple[int, ...] | None:

@@ -72,11 +72,10 @@ def failures(per_period: Sequence[dict], pooled: dict, rank_mode: bool = False) 
             out.append(f"period {k} trades a month couldn't be measured")
         elif m["trades_per_month"] > MAX_TRADES_PER_MONTH:
             out.append(f"period {k} made {m['trades_per_month']:.0f} trades a month (limit {MAX_TRADES_PER_MONTH})")
-    if rank_mode:
-        pass
-    elif _bad(pooled["claimed_gap_pts"]):
+    # folds that mix rank and P policies are held to P's accuracy, the stricter reading
+    if not rank_mode and _bad(pooled["claimed_gap_pts"]):
         out.append("picks' claimed P couldn't be checked")
-    elif pooled["claimed_gap_pts"] > MAX_CALIBRATION_PTS:
+    elif not rank_mode and pooled["claimed_gap_pts"] > MAX_CALIBRATION_PTS:
         out.append(
             f"picks claimed {pooled['mean_p']:.0%} but beat {pooled['beat_rate']:.0%} "
             f"(limit {MAX_CALIBRATION_PTS:g} points)"

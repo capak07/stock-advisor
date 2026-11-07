@@ -112,7 +112,7 @@ export interface StockLine extends ForecastRow {
   amount: number
   /** Approximate shares, or coin units, at the latest CAD price; null without a price. */
   shares: number | null
-  /** Whether the chosen horizon passes the picks' bar (P >= 0.58 and q50 above cost). */
+  /** Whether the chosen horizon passes the picks' bar (P >= 0.58, or the top N, and q50 above cost plus the margin). */
   qualifies: boolean
   /** Round-trip cost as a fraction. */
   cost: number

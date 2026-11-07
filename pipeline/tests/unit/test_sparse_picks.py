@@ -47,3 +47,13 @@ def test_the_search_tries_sparse_and_margin_rules():
     assert policy_search.GRID["top_n"] == (None, 1, 2, 3, 5, 10)
     assert policy_search.GRID["min_edge"] == (0.0, 0.02)
     assert "min_edge" in policy_search.STAGES[0]
+
+
+def test_a_verdict_names_the_margin_when_it_is_the_blocker():
+    from advisor.recommend.verdicts import _first_failing_check
+    margin = replace(DEFAULT_POLICY, min_edge=0.02)
+    rows = [PredictionRow("A.TO", 21, -0.05, 0.015, 0.08, 0.60, "XIU.TO", "v1")]
+    assert _first_failing_check(rows, 0.002, True, margin) == (
+        "expected 1.5% does not clear 0.2% round-trip costs plus the 2.0% margin"
+    )
+    assert _first_failing_check(rows, 0.02, True, DEFAULT_POLICY) == "expected 1.5% does not clear 2.0% round-trip costs"

@@ -96,7 +96,7 @@ describe('PickCard track record', () => {
       />,
     )
     const text = html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'")
-    expect(text).toContain('Backtest: 648 past picks netted +1.7% each after costs and beat XIU.TO 47% of the time.')
+    expect(text).toContain('Backtest: 648 past picks beat XIU.TO by +1.7% each after costs, and beat it before costs 47% of the time.')
   })
 
   it('shows no track record line when there is none', () => {

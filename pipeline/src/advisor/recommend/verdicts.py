@@ -40,8 +40,9 @@ def _first_failing_check(
         return f"P(beat {benchmark}) {max_p:.2f} is under {policy.p_buy:.2f} at every horizon"
     likely = [r for r in rows if r.p_beat >= policy.p_buy]
     max_q50 = max(r.q50 for r in likely)
-    if not max_q50 > cost:
-        return f"expected {max_q50:.1%} does not clear {cost:.1%} round-trip costs"
+    if not max_q50 > cost + policy.min_edge:
+        margin = f" plus the {policy.min_edge:.1%} margin" if policy.min_edge else ""
+        return f"expected {max_q50:.1%} does not clear {cost:.1%} round-trip costs{margin}"
     return "the forecast range has no width"
 
 

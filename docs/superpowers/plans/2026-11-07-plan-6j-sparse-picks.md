@@ -42,9 +42,9 @@
 - **`web/lib/data/picks.ts`:** for each pick's market, read the active stock model's `metrics.backtest.all` (`models.kind` `stock_us` / `stock_tsx`, `active = true`). Add `trackRecord: { picks: number; meanNetPct: number; beatRate: number } | null` to the pick view. It is null when the record is missing, `picks` is 0, or a number is null. Put the mapping in a pure, testable function in `web/lib/data/pick-row.ts`.
 - **`web/components/picks/PickCard.tsx`:** when `trackRecord` is set, add one line under the pick's facts:
 
-  `Backtest: {picks} past picks netted {meanNetPct, signed, 1 decimal}% each after costs and beat {benchmark} {beatRate as a whole %} of the time.`
+  `Backtest: {picks} past picks beat {benchmark} by {meanNetPct, signed, 1 decimal}% each after costs, and beat it before costs {beatRate as a whole %} of the time.` (`mean_net_pct` is the return over the benchmark after costs; `beat_rate` is before costs.)
 
-  For example: `Backtest: 648 past picks netted +1.7% each after costs and beat XIU.TO 47% of the time.` Show it on every pick, P or rank.
+  For example: `Backtest: 648 past picks beat XIU.TO by +1.7% each after costs, and beat it before costs 47% of the time.` Show it on every pick, P or rank.
 - **Tests,** test-first:
   - `it('shows the model's backtest track record against the benchmark')`;
   - `it('shows no track record line when there is none')`;

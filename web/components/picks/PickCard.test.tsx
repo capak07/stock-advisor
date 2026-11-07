@@ -33,6 +33,7 @@ const pick = (basis: string | null): PickView => ({
   chosenBy: 'p',
   scoreRank: null,
   scoreOf: null,
+  trackRecord: null,
 })
 
 describe('PickCard rank', () => {
@@ -82,5 +83,24 @@ describe('PickCard basis', () => {
     const html = renderToStaticMarkup(<PickCard pick={pick(null)} portfolioCad={null} usdFxFeePct={1.5} />)
     expect(html).not.toContain(NOTE)
     expect(html).not.toContain('data-basis')
+  })
+})
+
+describe('PickCard track record', () => {
+  it("shows the model's backtest track record against the benchmark", () => {
+    const html = renderToStaticMarkup(
+      <PickCard
+        pick={{ ...pick('filed'), trackRecord: { picks: 648, meanNetPct: 1.73, beatRate: 0.47 } }}
+        portfolioCad={null}
+        usdFxFeePct={1.5}
+      />,
+    )
+    const text = html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'")
+    expect(text).toContain('Backtest: 648 past picks netted +1.7% each after costs and beat XIU.TO 47% of the time.')
+  })
+
+  it('shows no track record line when there is none', () => {
+    const html = renderToStaticMarkup(<PickCard pick={pick(null)} portfolioCad={null} usdFxFeePct={1.5} />)
+    expect(html).not.toContain('Backtest:')
   })
 })

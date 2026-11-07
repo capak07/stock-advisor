@@ -121,6 +121,13 @@ export function PickCard({
           </div>
         )}
       </dl>
+      {p.trackRecord && (
+        <p className="sub" data-track style={{ margin: 0 }}>
+          Backtest: {p.trackRecord.picks} past picks netted {p.trackRecord.meanNetPct >= 0 ? '+' : '−'}
+          {Math.abs(p.trackRecord.meanNetPct).toFixed(1)}% each after costs and beat {p.benchmark}{' '}
+          {Math.round(p.trackRecord.beatRate * 100)}% of the time.
+        </p>
+      )}
       {p.topFactors.length > 0 && (
         <ul className="pick-why">
           {p.topFactors.map((f, i) => (

@@ -35,6 +35,7 @@ const pick = (over: Partial<PickView> = {}): PickView => ({
   chosenBy: 'p',
   scoreRank: null,
   scoreOf: null,
+  trackRecord: null,
   ...over,
 })
 

@@ -1,7 +1,7 @@
 import 'server-only'
 import { addDays } from '../dates'
 import type { Candidate, ForecastRow } from '../invest/allocate'
-import { topNOf } from '../invest/policy'
+import { minEdgeOf, topNOf } from '../invest/policy'
 import { stopRulesOf, type StopRules } from '../orders'
 import { buildLedger } from '../portfolio/ledger'
 import { assetKey, type Market } from '../portfolio/types'
@@ -33,6 +33,8 @@ export interface InvestData {
   stopRules: Partial<Record<Market, StopRules>>
   /** Each market's accepted `top_n`, or null when that model still picks by P. */
   topN: Partial<Record<Market, number | null>>
+  /** Each market's accepted `min_edge` (0 when none). */
+  minEdge: Partial<Record<Market, number>>
 }
 
 const num = (value: unknown): number | null => {
@@ -236,5 +238,6 @@ export async function loadInvestData(supabase: Supabase): Promise<InvestData | n
     cryptoFeePct: Number(settings.crypto_fee_pct),
     stopRules: Object.fromEntries(models.map((m) => [m.kind === 'stock_us' ? 'US' : 'TSX', stopRulesOf(m.metrics)])),
     topN: Object.fromEntries(models.map((m) => [m.kind === 'stock_us' ? 'US' : 'TSX', topNOf(m.metrics)])),
+    minEdge: Object.fromEntries(models.map((m) => [m.kind === 'stock_us' ? 'US' : 'TSX', minEdgeOf(m.metrics)])),
   }
 }

@@ -19,3 +19,22 @@ export function chosenFrom(row: { chosen_by?: unknown; score_rank?: unknown; sco
     scoreOf: whole(row.score_of),
   }
 }
+
+/** The active model's picks backtest (`metrics.backtest.all`), as a pick shows it. */
+export interface TrackRecord {
+  picks: number
+  meanNetPct: number
+  beatRate: number
+}
+
+/** Null when the record is missing, has no picks, or a number is missing. */
+export function trackRecordFrom(metrics: unknown): TrackRecord | null {
+  const all = (metrics as { backtest?: { all?: Record<string, unknown> } } | null)?.backtest?.all
+  if (!all) return null
+  const picks = all.picks
+  const net = all.mean_net_pct
+  const beat = all.beat_rate
+  if (typeof picks !== 'number' || picks <= 0) return null
+  if (typeof net !== 'number' || !Number.isFinite(net) || typeof beat !== 'number' || !Number.isFinite(beat)) return null
+  return { picks, meanNetPct: net, beatRate: beat }
+}

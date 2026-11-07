@@ -339,3 +339,17 @@ describe('allocate: who may take a top-N place (matches the pipeline)', () => {
     expect(qualified(tied, 1)).toEqual(['B.TO']) // 'B' (66) sorts before 'a' (97)
   })
 })
+
+describe('allocate: the accepted margin over costs', () => {
+  it('with minEdge, a qualifying stock must clear its costs by the margin', () => {
+    const near = stock('A.TO', { rows: [row(21, 0.015, 0.6)] })
+    const clear = stock('B.TO', { rows: [row(21, 0.03, 0.6)] })
+    const out = allocate(input([near, clear], { minEdgeByMarket: { TSX: 0.02 } }))
+    expect(out.stocks.filter((l) => l.qualifies).map((l) => l.symbol)).toEqual(['B.TO'])
+  })
+
+  it('without minEdge, behaves as today', () => {
+    const near = stock('A.TO', { rows: [row(21, 0.015, 0.6)] })
+    expect(allocate(input([near])).stocks.filter((l) => l.qualifies).map((l) => l.symbol)).toEqual(['A.TO'])
+  })
+})

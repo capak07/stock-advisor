@@ -96,6 +96,8 @@ export interface InvestInput {
    * A market with null, and every coin, keeps the P floor.
    */
   topNByMarket?: Partial<Record<Market, number | null>>
+  /** Each market's `min_edge`: a qualifying stock's q50 must clear its costs by this much (spec §11). Missing = 0. */
+  minEdgeByMarket?: Partial<Record<Market, number>>
 }
 
 export type Volatility = 'low' | 'medium' | 'high' | 'very high'
@@ -240,7 +242,11 @@ function choose(input: InvestInput) {
     const allowed = input.horizons
     const rows = allowed ? c.rows.filter((r) => allowed.includes(r.horizonDays)) : c.rows
     const tops = globalTops ?? (c.market ? marketTops.get(c.market) : undefined)
-    const qualifying = best(rows, (r) => (tops ? tops.get(r.horizonDays)?.has(c.symbol) === true : r.pBeat >= P_MIN) && r.q50 > cost)
+    const edge = (c.market ? input.minEdgeByMarket?.[c.market] : undefined) ?? 0
+    const qualifying = best(
+      rows,
+      (r) => (tops ? tops.get(r.horizonDays)?.has(c.symbol) === true : r.pBeat >= P_MIN) && r.q50 > cost + edge,
+    )
     // a filler must still be more likely to beat its benchmark than lag it, and expected to clear
     // its costs: a high median beside a sub-50% chance is the range leaning high, not an edge
     const pick = qualifying ?? best(rows, (r) => r.pBeat >= FILL_P_MIN && r.q50 > cost)

@@ -7,7 +7,7 @@ import type { HeldCall } from '../verdicts'
 import { loadHeldCalls } from './actions'
 import { fetchAll, must } from './fetch'
 import { lastPublishedRun } from './runs'
-import { chosenFrom } from './pick-row'
+import { chosenFrom, trackRecordFrom, type TrackRecord } from './pick-row'
 import { loadNames, loadSectors } from './symbols'
 
 export type Style = 'swing' | 'position'
@@ -65,6 +65,8 @@ export interface PickView {
   scoreRank: number | null
   /** How many stocks were ranked for that horizon. Null when `chosenBy` is 'p'. */
   scoreOf: number | null
+  /** The market's active model's picks backtest, so a pick isn't read as beating the market when it only rose with it. */
+  trackRecord: TrackRecord | null
 }
 
 /** A pick the run told the owner to exit early (Plan 4c), with its graded outcome. */
@@ -177,6 +179,12 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
   const prediction = new Map(predictions.map((p) => [`${p.symbol}:${p.horizon_days}`, p]))
   const featuresOf = new Map(features.map((f) => [f.symbol, f.features]))
 
+  const records = new Map(
+    (must(models) as { kind: string; metrics: Record<string, unknown> }[]).map((m) => [
+      m.kind === 'stock_us' ? 'US' : m.kind === 'stock_tsx' ? 'TSX' : m.kind,
+      trackRecordFrom(m.metrics),
+    ]),
+  )
   const view = (p: (typeof pickRows)[number]): PickView => {
     const f = featuresOf.get(p.symbol) ?? {}
     const advice = (f.advice ?? {}) as { round_trip_cost?: unknown; basis?: unknown }
@@ -208,6 +216,7 @@ export async function loadPicks(supabase: Supabase): Promise<{ run: Run | null; 
       atrPct: num(f.atr_14_pct) ?? null,
       dollarVolume20: adv === undefined ? null : Math.expm1(adv), // the pipeline stores log1p(ADV)
       ...chosenFrom(p),
+      trackRecord: records.get(p.market) ?? null,
     }
   }
 

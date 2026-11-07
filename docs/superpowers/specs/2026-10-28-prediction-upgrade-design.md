@@ -387,6 +387,11 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - Picks store `chosen_by`, `score_rank` and `score_of` (migration 0011).
   - **Verdicts and holding actions follow the picks** (owner's decision, 2026-11-06). Under a rank policy, a stock in its market's top N that clears costs is a Buy on its own page, and Add on a holding, with the reason "ranked #k of N by the model". Without a market ranking they keep the P rule.
   - Only stocks that passed the sanity checks are ranked: an unconfirmed jump never takes a place. This holds live, in the backtest, in the policy search and in Invest.
+- **Addendum, 2026-11-07 (Plan 6j, owner's decision): sparse picks, honestly labelled.**
+  - Research on 2026-11-06 found TSX rank rules that pass every hard limit. Example: top 3, q50 clearing costs by 2 points; 648 trades, +1.7% each, worst drawdown 19%. But buy-and-hold XIU beat every rule, and no US rule passed (drawdown of at least 33%).
+  - The search therefore also tries `top_n` 1 and 2, and `min_edge` ∈ {0, 0.02}: q50 must clear costs by that margin.
+  - Rank rules aren't held to P's accuracy in the search, matching the live gate.
+  - Every pick shows its model's backtest record: how many past picks, their net return after costs, and how often they beat the benchmark. A pick that rises with the market is then not read as one that beats it.
 - **Owner's decision, 2026-11-06.**
 
 ## Plans, in dependency order

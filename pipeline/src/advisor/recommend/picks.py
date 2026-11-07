@@ -87,9 +87,9 @@ def choose(
         ratio = _ratio(r)
         if policy.top_n is not None:
             placed = (top or {}).get(r.horizon_days, {}).get(r.symbol)
-            if ratio is None or placed is None or not r.q50 > cost:
+            if ratio is None or placed is None or not r.q50 > cost + policy.min_edge:
                 continue
-        elif ratio is None or not (r.p_beat >= policy.p_buy and r.q50 > cost):  # written so NaN fails
+        elif ratio is None or not (r.p_beat >= policy.p_buy and r.q50 > cost + policy.min_edge):  # NaN fails
             continue
         if policy.horizons is not None and r.horizon_days not in policy.horizons:
             continue

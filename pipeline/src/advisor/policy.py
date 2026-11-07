@@ -30,10 +30,12 @@ class Policy:
     rule: str
     horizons: tuple[int, ...] | None
     top_n: int | None = None
+    min_edge: float = 0.0  # q50 must clear the round-trip cost by this much (spec §11)
 
     def to_json(self) -> dict[str, Any]:
         horizons = None if self.horizons is None else list(self.horizons)
         rank = {} if self.top_n is None else {"top_n": self.top_n}  # a P policy is stored as before
+        rank |= {} if self.min_edge == 0.0 else {"min_edge": self.min_edge}
         return rank | {
             "p_buy": self.p_buy,
             "p_sell": self.p_sell,
@@ -48,8 +50,8 @@ class Policy:
     def from_json(cls, d: Any) -> "Policy":
         if not isinstance(d, Mapping):
             raise ValueError(f"a policy must be a mapping, not {type(d).__name__}")
-        if set(d) - {"top_n"} != set(_KEYS):
-            odd = sorted((set(d) - {"top_n"}) ^ set(_KEYS))
+        if set(d) - {"top_n", "min_edge"} != set(_KEYS):
+            odd = sorted((set(d) - {"top_n", "min_edge"}) ^ set(_KEYS))
             raise ValueError(f"a policy has unexpected or missing keys: {', '.join(odd)}")
         p_buy, p_sell = _number(d["p_buy"], "p_buy"), _number(d["p_sell"], "p_sell")
         if p_sell >= p_buy:
@@ -62,8 +64,11 @@ class Policy:
         top_n = d.get("top_n")
         if top_n is not None and (isinstance(top_n, bool) or not isinstance(top_n, int) or top_n < 1):
             raise ValueError(f"top_n must be a positive whole number, or null, not {top_n!r}")
+        min_edge = d.get("min_edge", 0.0)
+        if isinstance(min_edge, bool) or not isinstance(min_edge, (int, float)) or not 0 <= min_edge < 1:
+            raise ValueError(f"min_edge must be a number from 0 up to 1, not {min_edge!r}")
         return cls(p_buy, p_sell, multipliers["swing_atr"], multipliers["position_atr"],
-                   multipliers["trail_atr"], d["rule"], _horizons(d["horizons"]), top_n)
+                   multipliers["trail_atr"], d["rule"], _horizons(d["horizons"]), top_n, float(min_edge))
 
 
 def _horizons(value: Any) -> tuple[int, ...] | None:

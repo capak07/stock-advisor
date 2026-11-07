@@ -80,7 +80,7 @@ def _candidates(rows: pd.DataFrame, policy: Policy, market: Market, fee: float) 
     if "jump_5d" in df:  # an unconfirmed jump never trades, and never takes a top-N place
         df = df[df["jump_5d"].fillna(0) != 1]
     qualified = in_top_n(df, policy.top_n) if policy.top_n is not None else df["p"] >= policy.p_buy
-    ok = qualified & (df["q50"] > df["cost"]) & (df["q90"] - df["q10"] > 0)
+    ok = qualified & (df["q50"] > df["cost"] + policy.min_edge) & (df["q90"] - df["q10"] > 0)
     if policy.horizons is not None:
         ok &= df["horizon"].isin(policy.horizons)
     df = df[ok].copy()

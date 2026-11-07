@@ -25,14 +25,15 @@ from advisor.policy import DEFAULT_POLICY, Policy
 GRID = {
     "p_buy": (0.54, 0.56, 0.58, 0.60, 0.62, 0.64, 0.66),
     "rule": ("ratio", "p"),
-    "top_n": (None, 3, 5, 10),  # spec §11: the top N by rank instead of a P floor
+    "top_n": (None, 1, 2, 3, 5, 10),  # spec §11: the top N by rank instead of a P floor; 1-2 for sparse books
+    "min_edge": (0.0, 0.02),  # q50 must clear costs by this margin (research of 2026-11-06)
     "horizons": (None, (5, 10, 20), (21, 63, 126)),
     "swing_atr": (1.5, 2.0, 2.5, 3.0),
     "position_atr": (2.0, 2.5, 3.0, 3.5, 4.0),
     "trail_atr": (2.0, 2.5, 3.0, 3.5),
     "p_sell": (0.38, 0.40, 0.42, 0.44, 0.46),
 }
-STAGES = (("p_buy", "top_n", "rule", "horizons"), ("swing_atr", "position_atr", "trail_atr"), ("p_sell",))
+STAGES = (("p_buy", "top_n", "min_edge", "rule", "horizons"), ("swing_atr", "position_atr", "trail_atr"), ("p_sell",))
 MIN_TRADES = 30
 MAX_DRAWDOWN = 0.25
 MAX_TRADES_PER_MONTH = 20
@@ -52,8 +53,12 @@ def _bad(x: float | None) -> bool:
     return x is None or x != x
 
 
-def failures(per_period: Sequence[dict], pooled: dict) -> list[str]:
-    """Every hard limit the book breaks, in plain words; empty when it meets them all."""
+def failures(per_period: Sequence[dict], pooled: dict, rank_mode: bool = False) -> list[str]:
+    """Every hard limit the book breaks, in plain words; empty when it meets them all.
+
+    A rank rule (spec §11) doesn't show P as its promise, so its picks aren't held to P's accuracy,
+    the same as the live picks gate in rank mode.
+    """
     out = []
     if not pooled["trades"] >= MIN_TRADES:
         out.append(f"only {pooled['trades']} trades (needs {MIN_TRADES})")
@@ -67,7 +72,9 @@ def failures(per_period: Sequence[dict], pooled: dict) -> list[str]:
             out.append(f"period {k} trades a month couldn't be measured")
         elif m["trades_per_month"] > MAX_TRADES_PER_MONTH:
             out.append(f"period {k} made {m['trades_per_month']:.0f} trades a month (limit {MAX_TRADES_PER_MONTH})")
-    if _bad(pooled["claimed_gap_pts"]):
+    if rank_mode:
+        pass
+    elif _bad(pooled["claimed_gap_pts"]):
         out.append("picks' claimed P couldn't be checked")
     elif pooled["claimed_gap_pts"] > MAX_CALIBRATION_PTS:
         out.append(
@@ -104,7 +111,7 @@ def score_each(
         pd.concat([b.daily for b in books]).sort_index(),
     ))
     per_period = [book_metrics(b) for b in books]
-    failed = failures(per_period, pooled)
+    failed = failures(per_period, pooled, rank_mode=all(p.top_n is not None for p in policies))
     objective = None
     if not failed:
         objective = pooled["sharpe"] - DD_PENALTY * max(0.0, pooled["max_drawdown"] - DD_SOFT)

@@ -79,7 +79,7 @@ def pick_funnel(
         df = df[df["horizon"].isin(policy.horizons)]
     p = df["p"]
     confident = _qualified(df, policy)  # a NaN P never is
-    affordable = df["q50"] > df["cost"]
+    affordable = df["q50"] > df["cost"] + policy.min_edge
     known = p.notna().any()
     return {
         "forecasts": len(df),
@@ -106,7 +106,7 @@ def simulate_picks(
     df = df[_qualified(df, policy)]  # ranked over every forecast, as live, before the horizon filter
     if policy.horizons is not None:
         df = df[df["horizon"].isin(policy.horizons)]
-    df = df[(df["q50"] > df["cost"]) & df["ratio"].notna()]
+    df = df[(df["q50"] > df["cost"] + policy.min_edge) & df["ratio"].notna()]
     if df.empty:
         return pd.DataFrame(columns=PICK_COLUMNS)
 

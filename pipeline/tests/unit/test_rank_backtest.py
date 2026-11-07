@@ -28,12 +28,12 @@ def test_rank_mode_simulates_the_top_n():
 
 def test_the_search_tries_each_top_n_once():
     stage = policy_search.STAGES[0]
-    assert "top_n" in stage and policy_search.GRID["top_n"] == (None, 3, 5, 10)
+    assert "top_n" in stage and policy_search.GRID["top_n"] == (None, 1, 2, 3, 5, 10)
     policies = policy_search.stage_policies(DEFAULT_POLICY, stage)
     ranked = [p for p in policies if p.top_n is not None]
     assert {p.p_buy for p in ranked} == {policy_search.GRID["p_buy"][0]}
-    per_n = len(policy_search.GRID["rule"]) * len(policy_search.GRID["horizons"])
-    assert len(ranked) == 3 * per_n
+    per_n = len(policy_search.GRID["rule"]) * len(policy_search.GRID["horizons"]) * len(policy_search.GRID["min_edge"])
+    assert len(ranked) == 5 * per_n
     assert len([p for p in policies if p.top_n is None]) == len(policy_search.GRID["p_buy"]) * per_n
 
 

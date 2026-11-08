@@ -67,6 +67,7 @@ test('an amount is split only over stocks that pass the rule, and the rest stays
   for (const filler of ['AAPL', 'XOM', 'JNJ', 'PFE']) await expect(stockRows(page).filter({ hasText: filler })).toHaveCount(0)
   const ry = stockRows(page).filter({ hasText: 'RY.TO' })
   await expect(ry).toContainText('Royal Bank of Canada · TSX · Financial Services')
+  await expect(ry.locator('.chip[data-market="TSX"]')).toHaveText('TSX') // US and TSX share one list, each badged
   await expect(ry).toContainText('Likely −2.0% to +8.0% relative to XIU.TO over 21 trading days · median +3.0%')
   await expect(ry).toContainText('round-trip cost +0.1%')
   await expect(ry.getByRole('link', { name: 'RY.TO' })).toHaveAttribute('href', '/ticker/RY.TO')

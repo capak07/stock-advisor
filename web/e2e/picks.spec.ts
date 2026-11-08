@@ -104,8 +104,13 @@ test('a TSX pick shows the filings note and a US pick does not', async ({ page }
   })
   await page.goto('/picks')
   await expect(usCard(page, 'AAPL')).not.toContainText(TSX_BASIS)
-  await page.getByRole('tab', { name: 'TSX' }).click()
   await expect(page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })).toContainText(TSX_BASIS)
+  // both markets are on the page at once, each under its own heading: no tab to miss (2026-11-08)
+  await expect(page.getByRole('heading', { name: /^US picks/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^TSX picks/ })).toBeVisible()
+  await expect(usCard(page, 'AAPL')).toBeVisible()
+  await expect(page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'TSX' })).toHaveCount(0)
 })
 
 test('a US pick card shows its range, rule, hold, stop, size and cost', async ({ page }) => {
@@ -179,7 +184,6 @@ test('a disabled market shows its gate reason and still lists verdicts', async (
     maxPct: 5,
   })
   await page.goto('/picks')
-  await page.getByRole('tab', { name: 'TSX' }).click()
   const tsx = page.locator('[data-panel="tsx"]')
   await expect(tsx.getByText('No TSX picks today: model check failed')).toBeVisible()
   await expect(tsx).toContainText('only 12 backtest picks (needs 30)')
@@ -196,7 +200,6 @@ test('a market with a passing gate and no picks says nothing cleared the bar', a
   await page.goto('/picks')
   await expect(page.locator('[data-panel="us"]').getByText('No US picks today', { exact: true })).toBeVisible()
   await expect(page.locator('[data-panel="us"]')).toContainText('Nothing cleared the bar this run')
-  await page.getByRole('tab', { name: 'TSX' }).click()
   await expect(page.locator('[data-panel="tsx"]').getByText('No TSX picks yet')).toBeVisible()
   await expect(page.locator('[data-panel="tsx"]')).toContainText('TSX has no trained model yet.')
 })
@@ -226,7 +229,6 @@ test('an exited pick shows in the Exit early card', async ({ page }) => {
   await expect(card).toContainText('Swing · 10d')
   await expect(card).toContainText('P fell to 0.42 or below · exited at US$174.24 · −3.2%')
   // none for TSX, so its card is hidden
-  await page.getByRole('tab', { name: 'TSX' }).click()
   await expect(page.locator('#exit-early-tsx')).toHaveCount(0)
 })
 

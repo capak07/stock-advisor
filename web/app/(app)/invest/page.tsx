@@ -222,6 +222,11 @@ function Line({
           <Link className="sym" href={tickerHref(line.symbol, line.assetType)}>
             {line.symbol}
           </Link>
+          {!coin && line.market && (
+            <span className="chip" data-market={line.market}>
+              {line.market}
+            </span>
+          )}
           <span className="sub">{about}</span>
           {mixed && line.qualifies && <span className="chip buy">passes the bar</span>}
         </div>

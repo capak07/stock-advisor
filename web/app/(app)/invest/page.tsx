@@ -167,7 +167,8 @@ function Result({
       )}
       {uninvested > 0 && !(asset === 'crypto' && scored === 0) && (
         <p className="i-uninvested" id="invest-uninvested">
-          <b className="num">{fmtMoney(uninvested)}</b> not invested: no {noun} is expected to beat its benchmark today.
+          <b className="num">{fmtMoney(uninvested)}</b> not invested: no {noun} passes the picks&apos; rule today. Holding the
+          index ({asset === 'crypto' ? 'BTC' : 'XIU.TO for Canada, SPY for the US'}) is the plain alternative.
         </p>
       )}
       <div className="invest-foot">
@@ -225,9 +226,9 @@ function Line({
           {mixed && line.qualifies && <span className="chip buy">passes the bar</span>}
         </div>
         <p className="i-line">
-          <span className="num">{pct(line.q50)}</span> (likely <span className="num">{pct(line.q10)}</span> to{' '}
-          <span className="num">{pct(line.q90)}</span>) over {line.horizonDays} {coin ? 'days' : 'trading days'} vs {line.benchmark} · P(beat){' '}
-          <span className="num">{Math.round(line.pBeat * 100)}%</span>
+          Likely <span className="num">{pct(line.q10)}</span> to <span className="num">{pct(line.q90)}</span> relative to{' '}
+          {line.benchmark} over {line.horizonDays} {coin ? 'days' : 'trading days'} · median{' '}
+          <span className="num">{pct(line.q50)}</span>
         </p>
         <p className="i-line sub">
           {line.volatility !== null && line.vol60 !== null && (

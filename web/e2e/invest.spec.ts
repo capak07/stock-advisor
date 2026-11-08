@@ -72,7 +72,7 @@ test('an amount is split over five stocks, under the Not validated warning', asy
   await expect(page.locator('#invest-lines .chip.buy')).toHaveCount(2)
   const ry = stockRows(page).filter({ hasText: 'RY.TO' })
   await expect(ry).toContainText('Royal Bank of Canada · TSX · Financial Services')
-  await expect(ry).toContainText('+3.0% (likely −2.0% to +8.0%) over 21 trading days vs XIU.TO · P(beat) 62%')
+  await expect(ry).toContainText('Likely −2.0% to +8.0% relative to XIU.TO over 21 trading days · median +3.0%')
   await expect(ry).toContainText('round-trip cost +0.1%')
   await expect(ry.getByRole('link', { name: 'RY.TO' })).toHaveAttribute('href', '/ticker/RY.TO')
   await expect(stockRows(page).filter({ hasText: 'AAPL' })).toContainText('(incl. currency fee)')
@@ -105,7 +105,7 @@ test('crypto is ranked like stocks, and a coin expected to lag is left out', asy
   await expect(coins).toHaveCount(2)
   await expect(page.locator('#invest-lines .invest-row.stock')).toHaveCount(0)
   await expect(coins.nth(0)).toContainText('Ethereum · Crypto')
-  await expect(coins.nth(0)).toContainText('+8.0% (likely +3.0% to +13.0%) over 14 days vs BTC · P(beat) 70%')
+  await expect(coins.nth(0)).toContainText('Likely +3.0% to +13.0% relative to BTC over 14 days · median +8.0%')
   await expect(coins.nth(0)).toContainText('≈ 0.125 ETH')
   await expect(coins.nth(0)).toContainText('(incl. crypto fee)')
   await expect(coins.nth(0).getByRole('link', { name: 'ETH' })).toHaveAttribute('href', '/ticker/ETH?asset=crypto')
@@ -117,7 +117,7 @@ test('crypto is ranked like stocks, and a coin expected to lag is left out', asy
   await expect(page.getByText(/recurring buy/)).toHaveCount(0)
 
   await page.goto('/invest?amount=1000&asset=crypto&stocks=5&hold=30')
-  await expect(page.locator('#invest-uninvested')).toContainText('no coin is expected to beat its benchmark today')
+  await expect(page.locator('#invest-uninvested')).toContainText("no coin passes the picks' rule today")
 })
 
 test('each Invest line says how to place it', async ({ page }) => {

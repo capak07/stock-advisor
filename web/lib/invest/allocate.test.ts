@@ -75,25 +75,23 @@ describe('allocate: choosing the stocks', () => {
         stock('OK.TO', { rows: [row(21, 0.01, 0.58)] }),
       ]),
     )
-    expect(out.stocks.map((l) => [l.symbol, l.qualifies])).toEqual([
-      ['OK.TO', true],
-      ['LOWP.TO', false], // fills: even odds or better, and clears its costs
-    ]) // CHEAP doesn't even fill: its 3% median doesn't cover the 3.1% US round trip
-    expect(out.notValidated).toBe(true)
+    // only stocks that pass the picks' rule are shown: no fillers (owner decision 2026-11-08, after KEEL.TO)
+    expect(out.stocks.map((l) => [l.symbol, l.qualifies])).toEqual([['OK.TO', true]])
+    expect(out.notValidated).toBe(false)
   })
 
-  it('fills from the best positive forecasts when fewer than five qualify, never a stock expected to lag', () => {
+  it('never fills with a stock that does not pass the rule, even at even odds (KEEL.TO, 2026-11-08)', () => {
     const out = allocate(
       input([
         stock('LAG.TO', { rows: [row(5, -0.01, 0.45), row(21, -0.02, 0.4)] }),
         stock('WEAK.TO', { rows: [row(5, -0.01, 0.45), row(21, 0.01, 0.5)] }),
       ]),
     )
-    expect(out.stocks.map((l) => [l.symbol, l.horizonDays, l.qualifies])).toEqual([['WEAK.TO', 21, false]])
-    expect(out.notValidated).toBe(true)
+    expect(out.stocks).toEqual([])
+    expect(out.notValidated).toBe(false)
   })
 
-  it('never fills with a stock more likely to lag, or one whose median does not cover its costs', () => {
+  it('never shows a stock that misses the rule: more likely to lag, under its costs, or a coin flip', () => {
     const out = allocate(
       input([
         stock('SOIL.TO', { rows: [row(126, 0.23, 0.47, 0.9)] }), // a high median, but more likely to lag
@@ -101,7 +99,7 @@ describe('allocate: choosing the stocks', () => {
         stock('CNQ.TO', { rows: [row(5, 0.019, 0.53, 0.055)] }),
       ]),
     )
-    expect(out.stocks.map((l) => l.symbol)).toEqual(['CNQ.TO'])
+    expect(out.stocks.map((l) => l.symbol)).toEqual([]) // CNQ.TO's 0.53 used to fill; no fillers now
   })
 
   it('leaves out held stocks, unconfirmed jumps and flat ranges', () => {

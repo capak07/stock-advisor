@@ -8,8 +8,6 @@
 import type { Market } from '../portfolio/types'
 
 export const P_MIN = 0.58
-/** A filler is at least even odds to beat its benchmark. */
-export const FILL_P_MIN = 0.5
 export const STOCKS = 5
 export const PER_SECTOR = 2
 export const MAX_SHARE = 0.4
@@ -224,7 +222,10 @@ function topSymbols(candidates: readonly Candidate[], n: number): Map<number, Se
   return tops
 }
 
-/** The stocks to show, in order: qualifying ones first, then forecasts at even odds or better that clear their costs, to fill five. */
+/**
+ * The stocks to show: only those that pass the picks' own rule. Fillers were dropped (owner decision
+ * 2026-11-08): a coin-flip stock with a huge range, KEEL.TO, read as a recommendation and lost.
+ */
 function choose(input: InvestInput) {
   const globalTops = input.topN != null ? topSymbols(input.candidates, input.topN) : null
   const marketTops = new Map<Market, Map<number, Set<string>>>()
@@ -247,9 +248,7 @@ function choose(input: InvestInput) {
       rows,
       (r) => (tops ? tops.get(r.horizonDays)?.has(c.symbol) === true : r.pBeat >= P_MIN) && r.q50 > cost + edge,
     )
-    // a filler must still be more likely to beat its benchmark than lag it, and expected to clear
-    // its costs: a high median beside a sub-50% chance is the range leaning high, not an edge
-    const pick = qualifying ?? best(rows, (r) => r.pBeat >= FILL_P_MIN && r.q50 > cost)
+    const pick = qualifying
     return pick ? [{ candidate: c, cost, row: pick.row, ratio: pick.ratio, qualifies: qualifying !== null }] : []
   })
   ranked.sort(

@@ -53,7 +53,7 @@ test('Invest is in the navigation and starts with the form only', async ({ page 
   await expect(page.locator('#invest-lines')).toHaveCount(0)
 })
 
-test('an amount is split over five stocks, under the Not validated warning', async ({ page }) => {
+test('an amount is split only over stocks that pass the rule, and the rest stays uninvested', async ({ page }) => {
   await seedForecasts()
   await page.goto('/invest')
   await page.getByLabel('Amount (C$)').fill('1,000')
@@ -61,21 +61,15 @@ test('an amount is split over five stocks, under the Not validated warning', asy
   await expect(page).toHaveURL(/\/invest\?amount=1%2C000&asset=stocks&stocks=5&hold=any$/)
 
   await expect(page.getByText(/^From the Pre-open run of .+ · returns are vs SPY \(US\) or XIU\.TO \(TSX\), not plain gains$/)).toBeVisible()
-  // two of the five pass, so the warning points at their chips
-  await expect(page.getByRole('alert').filter({ hasText: 'Not validated: only the stocks marked “passes the bar” meet' })).toBeVisible()
-  await expect(stockRows(page)).toHaveCount(5)
-  await expect(stockRows(page).filter({ hasText: 'PFE' })).toHaveCount(0)
-
-  // qualifying stocks come first, each marked as passing the bar
-  await expect(stockRows(page).nth(0).locator('.chip.buy')).toHaveText('passes the bar')
-  await expect(stockRows(page).nth(1).locator('.chip.buy')).toHaveText('passes the bar')
-  await expect(page.locator('#invest-lines .chip.buy')).toHaveCount(2)
+  // only RY.TO and SHOP.TO (P 0.62) pass the picks' rule: no fillers (owner decision 2026-11-08)
+  await expect(page.getByRole('alert').filter({ hasText: 'Not validated' })).toHaveCount(0)
+  await expect(stockRows(page)).toHaveCount(2)
+  for (const filler of ['AAPL', 'XOM', 'JNJ', 'PFE']) await expect(stockRows(page).filter({ hasText: filler })).toHaveCount(0)
   const ry = stockRows(page).filter({ hasText: 'RY.TO' })
   await expect(ry).toContainText('Royal Bank of Canada · TSX · Financial Services')
   await expect(ry).toContainText('Likely −2.0% to +8.0% relative to XIU.TO over 21 trading days · median +3.0%')
   await expect(ry).toContainText('round-trip cost +0.1%')
   await expect(ry.getByRole('link', { name: 'RY.TO' })).toHaveAttribute('href', '/ticker/RY.TO')
-  await expect(stockRows(page).filter({ hasText: 'AAPL' })).toContainText('(incl. currency fee)')
 
   await expect(page.locator('#invest-lines .invest-row.coin')).toHaveCount(0)
 
@@ -223,7 +217,7 @@ test.describe('on a phone', () => {
     await seedForecasts()
     await sql`update symbols set name = 'Royal Bank of Canada Global Diversified Holdings and Trust Incorporated' where symbol = 'RY.TO'`
     await page.goto('/invest?amount=1000&asset=stocks')
-    await expect(stockRows(page)).toHaveCount(5)
+    await expect(stockRows(page)).toHaveCount(2)
     await expect(page.getByRole('navigation', { name: 'Main' }).last().getByRole('link', { name: 'Invest' })).toHaveAttribute('aria-current', 'page')
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)

@@ -108,7 +108,7 @@ test('a TSX pick shows the filings note and a US pick does not', async ({ page }
   await expect(page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })).toContainText(TSX_BASIS)
 })
 
-test('a US pick card shows its range, odds, hold, stop, size and cost', async ({ page }) => {
+test('a US pick card shows its range, rule, hold, stop, size and cost', async ({ page }) => {
   await seedPicksRun()
   await page.goto('/picks')
   await expect(page.getByText(/^From the \d\d:\d\d pre-close run · at most 10 Swing and 10 Position picks per market, 3 per sector$/)).toBeVisible()
@@ -117,7 +117,8 @@ test('a US pick card shows its range, odds, hold, stop, size and cost', async ({
   await expect(card).toContainText('Apple Inc.')
   await expect(card).toContainText('Likely 63-day return relative to SPY')
   await expect(card.getByRole('img', { name: /^Likely range relative to SPY: q10 −6\.8%, median \+4\.9%, q90 \+16\.0%$/ })).toBeVisible()
-  await expect(card.locator('.pick-facts')).toContainText('Beats SPY62%')
+  await expect(card.locator('.pick-facts')).toContainText("Chosen byThe model's rule: P(beat) at least 0.58")
+  await expect(card.locator('.pick-facts')).not.toContainText('62%') // no P promise (owner decision 2026-11-07)
   await expect(card).toContainText('~3 months · exit by Jan 19')
   await expect(card).toContainText('US$205.10')
   await expect(card.locator('.pick-facts')).toContainText(/Max size3% · C\$[\d,]+/)

@@ -392,6 +392,11 @@ A crypto model is to be built too (owner decision 2026-10-28), so all three mark
   - The search therefore also tries `top_n` 1 and 2, and `min_edge` ∈ {0, 0.02}: q50 must clear costs by that margin.
   - Rank rules aren't held to P's accuracy in the search, matching the live gate.
   - Every pick shows its model's backtest record: how many past picks, their net return after costs, and how often they beat the benchmark. A pick that rises with the market is then not read as one that beats it.
+- **Addendum, 2026-11-07 (owner's decision): no pick shows P as its promise.**
+  - The picks gate and the policy search no longer check claimed P against the realised beat rate. That check was the only thing blocking TSX: in the 2026-11-07 benchmark, today's rule made 162 trades at +3.8% each over XIU after costs, a net Sharpe of 1.12 and a worst drawdown of 20%, while claiming 59% and beating 48% of the time.
+  - Every other limit stays: at least 30 picks, a positive mean net return, the model's own calibration ≤ 5 points, and drawdown ≤ 25% in the search.
+  - A missing beat rate still blocks, because each card needs it for its track record.
+  - A pick card shows how it was chosen (its rank, or "the model's rule: P(beat) at least 0.58 and an expected return above costs") and its backtest record, never a percentage chance of beating the benchmark.
 - **Owner's decision, 2026-11-06.**
 
 ## Plans, in dependency order

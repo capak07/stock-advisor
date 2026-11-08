@@ -178,10 +178,9 @@ def gate(metrics: Mapping[str, Any], calibration_pts: float, rank_mode: bool = F
         return False, "probabilities couldn't be checked (no calibrated predictions)"
     if not calibration_pts <= MAX_CALIBRATION_PTS:
         return False, f"probabilities off by {calibration_pts:.1f} points (limit {MAX_CALIBRATION_PTS:g})"
-    claimed, beat = overall["mean_p"], overall["beat_rate"]
-    gap_pts = abs(claimed - beat) * 100
-    if gap_pts != gap_pts:
+    # picks don't show P as their promise (owner decision 2026-11-07): each card shows the backtest
+    # record instead, so a gap between claimed P and the beat rate no longer blocks them
+    beat = overall["beat_rate"]
+    if beat is None or beat != beat:  # the card's track record needs it
         return False, "backtest picks couldn't be scored"
-    if not gap_pts <= MAX_CALIBRATION_PTS:
-        return False, f"picks claimed {claimed:.0%} but beat their benchmark {beat:.0%} of the time"
     return True, f"{n} backtest picks gained {net:.2f}% after costs"

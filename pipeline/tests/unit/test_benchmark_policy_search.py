@@ -65,14 +65,14 @@ def test_each_hard_limit_rejects():
     assert failures([ok(), ok(max_drawdown=0.31)], ok(trades=40)) == ["period 2 drew down 31% (limit 25%)"]
     assert failures([ok(trades_per_month=24.0)], ok(trades=40)) == ["period 1 made 24 trades a month (limit 20)"]
     claimed = ok(trades=40, claimed_gap_pts=9.0, mean_p=0.64, beat_rate=0.55)
-    assert failures([ok()], claimed) == ["picks claimed 64% but beat 55% (limit 5 points)"]
+    assert failures([ok()], claimed) == []  # P's accuracy isn't a limit (owner decision 2026-11-07)
 
 
 def test_a_nan_never_passes_a_limit():
     nan = float("nan")
     assert failures([ok()], ok(trades=40, sharpe=nan)) == ["net Sharpe couldn't be measured"]
     assert failures([ok(max_drawdown=nan)], ok(trades=40)) == ["period 1 drawdown couldn't be measured"]
-    assert failures([ok()], ok(trades=40, claimed_gap_pts=None)) == ["picks' claimed P couldn't be checked"]
+    assert failures([ok()], ok(trades=40, claimed_gap_pts=None)) == []
 
 
 def test_score_pools_the_periods():

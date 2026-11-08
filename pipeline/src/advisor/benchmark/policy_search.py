@@ -15,7 +15,6 @@ import pandas as pd
 from advisor.benchmark.folds import inner_walk_forward
 from advisor.benchmark.metrics import calibrated_horizons, model_metrics
 from advisor.benchmark.simulate import Book, DailyPanel, book_metrics, simulate_book
-from advisor.model.backtest import MAX_CALIBRATION_PTS
 from advisor.model.dataset import MarketData
 from advisor.model.train import Fold, TrainConfig
 from advisor.model.variants import ModelConfig
@@ -53,11 +52,11 @@ def _bad(x: float | None) -> bool:
     return x is None or x != x
 
 
-def failures(per_period: Sequence[dict], pooled: dict, rank_mode: bool = False) -> list[str]:
+def failures(per_period: Sequence[dict], pooled: dict) -> list[str]:
     """Every hard limit the book breaks, in plain words; empty when it meets them all.
 
-    A rank rule (spec §11) doesn't show P as its promise, so its picks aren't held to P's accuracy,
-    the same as the live picks gate in rank mode.
+    Picks aren't held to P's accuracy: no pick shows P as its promise (owner decision 2026-11-07),
+    the same as the live picks gate.
     """
     out = []
     if not pooled["trades"] >= MIN_TRADES:
@@ -72,14 +71,6 @@ def failures(per_period: Sequence[dict], pooled: dict, rank_mode: bool = False) 
             out.append(f"period {k} trades a month couldn't be measured")
         elif m["trades_per_month"] > MAX_TRADES_PER_MONTH:
             out.append(f"period {k} made {m['trades_per_month']:.0f} trades a month (limit {MAX_TRADES_PER_MONTH})")
-    # folds that mix rank and P policies are held to P's accuracy, the stricter reading
-    if not rank_mode and _bad(pooled["claimed_gap_pts"]):
-        out.append("picks' claimed P couldn't be checked")
-    elif not rank_mode and pooled["claimed_gap_pts"] > MAX_CALIBRATION_PTS:
-        out.append(
-            f"picks claimed {pooled['mean_p']:.0%} but beat {pooled['beat_rate']:.0%} "
-            f"(limit {MAX_CALIBRATION_PTS:g} points)"
-        )
     if _bad(pooled["sharpe"]):
         out.append("net Sharpe couldn't be measured")
     return out
@@ -110,7 +101,7 @@ def score_each(
         pd.concat([b.daily for b in books]).sort_index(),
     ))
     per_period = [book_metrics(b) for b in books]
-    failed = failures(per_period, pooled, rank_mode=all(p.top_n is not None for p in policies))
+    failed = failures(per_period, pooled)
     objective = None
     if not failed:
         objective = pooled["sharpe"] - DD_PENALTY * max(0.0, pooled["max_drawdown"] - DD_SOFT)

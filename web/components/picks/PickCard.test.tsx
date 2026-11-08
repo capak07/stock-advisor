@@ -51,20 +51,23 @@ describe('PickCard rank', () => {
     expect(text).not.toContain('62%')
   })
 
-  it('a rank row without its place falls back to the P line', () => {
+  it('a rank row without its place falls back to the rule line, still without a percentage', () => {
     const html = renderToStaticMarkup(
       <PickCard pick={{ ...pick(null), chosenBy: 'rank', scoreRank: null, scoreOf: null }} portfolioCad={null} usdFxFeePct={1.5} />,
     )
-    expect(html).toContain('62%')
+    expect(html).toContain("The model&#x27;s rule")
+    expect(html).not.toContain('62%')
     expect(html).not.toContain('Ranked #')
   })
 
-  it('renders a P pick as before', () => {
+  it('shows a P pick by its rule, not a percentage (owner decision 2026-11-07)', () => {
     const html = renderToStaticMarkup(
       <PickCard pick={{ ...pick(null), chosenBy: 'p', scoreRank: null, scoreOf: null }} portfolioCad={null} usdFxFeePct={1.5} />,
     )
-    expect(html).toContain('Beats SPY')
-    expect(html).toContain('62%')
+    const text = html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'")
+    expect(text).toContain("The model's rule: P(beat) at least 0.58 and an expected return above costs")
+    expect(text).toContain('No chance of beating SPY is shown: the backtest below says how its picks did.')
+    expect(html).not.toContain('62%')
     expect(html).not.toContain('Ranked #')
     expect(html).not.toContain('Chosen by rank')
   })
@@ -73,7 +76,7 @@ describe('PickCard rank', () => {
 describe('PickCard basis', () => {
   it('renders the filings note under P(beat) when the pick carries one', () => {
     const html = renderToStaticMarkup(<PickCard pick={pick(NOTE)} portfolioCad={null} usdFxFeePct={1.5} />)
-    const beats = html.indexOf('Beats')
+    const beats = html.indexOf('Chosen by')
     const note = html.indexOf(NOTE)
     expect(beats).toBeGreaterThan(-1)
     expect(note).toBeGreaterThan(beats)

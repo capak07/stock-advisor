@@ -46,7 +46,7 @@ def test_the_rank_gate_ignores_p_accuracy_but_needs_30_profitable_picks():
     assert ok and why == "40 backtest picks gained 1.60% after costs"
     assert gate(_metrics(29, 1.6), 1.0, rank_mode=True) == (False, "only 29 backtest picks (needs 30)")
     assert not gate(_metrics(40, -0.2), 1.0, rank_mode=True)[0]
-    assert not gate(_metrics(40, 1.6), 1.0)[0]  # P mode still checks the claimed P
+    assert gate(_metrics(40, 1.6), 1.0)[0]  # P mode no longer gates on claimed P (owner decision 2026-11-07)
 
 
 def test_a_jump_day_never_takes_a_top_n_place_in_the_search():

@@ -39,8 +39,8 @@ def test_the_search_book_uses_the_margin_too():
 def test_rank_rules_are_not_held_to_p_accuracy_in_the_search():
     period = {"max_drawdown": 0.1, "trades_per_month": 3.0}
     pooled = {"trades": 40, "claimed_gap_pts": 12.0, "mean_p": 0.59, "beat_rate": 0.47, "sharpe": 0.8}
-    assert any("claimed" in f for f in policy_search.failures([period], pooled))
-    assert policy_search.failures([period], pooled, rank_mode=True) == []
+    # no rule is held to P's accuracy now: picks don't show P as their promise (owner decision 2026-11-07)
+    assert policy_search.failures([period], pooled) == []
 
 
 def test_the_search_tries_sparse_and_margin_rules():

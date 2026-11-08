@@ -82,19 +82,19 @@ export function PickCard({
             )}
           </div>
         ) : (
-          p.pBeat !== null && (
-            <div>
-              <dt>Beats {p.benchmark}</dt>
-              <dd className="num" style={{ fontWeight: 600 }}>
-                {Math.round(p.pBeat * 100)}%
+          // owner decision 2026-11-07: a pick shows how it was chosen and its backtest, never a P promise
+          <div>
+            <dt>Chosen by</dt>
+            <dd style={{ fontWeight: 600 }}>The model&apos;s rule: P(beat) at least 0.58 and an expected return above costs</dd>
+            <dd className="sub" data-rule style={{ fontWeight: 400 }}>
+              No chance of beating {p.benchmark} is shown: the backtest below says how its picks did.
+            </dd>
+            {p.basis && (
+              <dd className="sub" data-basis style={{ fontWeight: 400 }}>
+                {p.basis}
               </dd>
-              {p.basis && (
-                <dd className="sub" data-basis style={{ fontWeight: 400 }}>
-                  {p.basis}
-                </dd>
-              )}
-            </div>
-          )
+            )}
+          </div>
         )}
         <div>
           <dt>Hold</dt>

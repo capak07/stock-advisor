@@ -94,7 +94,7 @@ def test_the_gate_needs_enough_profitable_honestly_calibrated_picks():
     assert gate(m(40, -1.2, 0.62, 0.60), 3.0) == (False, "backtest picks lost 1.20% after costs")
     assert gate(m(40, 0.8, 0.62, 0.60), 6.1) == (False, "probabilities off by 6.1 points (limit 5)")
     assert gate(m(40, 0.8, 0.66, 0.51), 3.0) == (
-        False, "picks claimed 66% but beat their benchmark 51% of the time",
+        True, "40 backtest picks gained 0.80% after costs",  # claimed P no longer gates (owner decision 2026-11-07)
     )
     assert gate(pick_metrics(pd.DataFrame(columns=["style", "net", "y", "p"])), 2.0) == (
         False, "only 0 backtest picks (needs 30)",
@@ -108,7 +108,7 @@ def test_the_gate_fails_closed_on_missing_numbers():
     nan = float("nan")
     assert gate(m(0.8, 0.62, 0.60), nan) == (False, "probabilities couldn't be checked (no calibrated predictions)")
     assert gate(m(nan, 0.62, 0.60), 3.0) == (False, "backtest picks couldn't be scored")
-    assert gate(m(0.8, nan, 0.60), 3.0) == (False, "backtest picks couldn't be scored")
+    assert gate(m(0.8, nan, 0.60), 3.0)[0]  # a missing claimed P no longer blocks (owner decision 2026-11-07)
     assert gate(m(0.8, 0.62, nan), 3.0) == (False, "backtest picks couldn't be scored")
 
 

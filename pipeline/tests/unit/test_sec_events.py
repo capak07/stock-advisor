@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from advisor.collectors.sec import TICKERS_URL
-from advisor.collectors.sec_events import SecEvents
+from advisor.collectors.sec_events import MaterialEvent, SecEvents, filing_url
 from fakes import fake_sec, sec_routes
 
 AS_OF = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
@@ -52,3 +52,18 @@ def test_an_8k_accepted_after_as_of_is_left_out(fixtures_dir):
     assert date(2026, 7, 30) not in {e.filing_date for e in before}
     after = SecEvents(sec).fetch(["AAPL"], datetime(2026, 7, 30, 21, 0, tzinfo=UTC))
     assert ("8-K", date(2026, 7, 30)) in {(e.form, e.filing_date) for e in after}
+
+
+def test_events_carry_the_cik_and_document_and_link_to_sec(fixtures_dir):
+    events = SecEvents(fake_sec(sec_routes(fixtures_dir))).fetch(["AAPL"], AS_OF)
+    earnings = events[1]
+    assert (earnings.cik, earnings.primary_document) == (320193, "aapl-20260730.htm")
+    assert filing_url(earnings) == (
+        "https://www.sec.gov/Archives/edgar/data/320193/000032019326000018/aapl-20260730.htm"
+    )
+
+
+def test_filing_url_is_none_without_a_document_or_cik():
+    base = dict(symbol="AAPL", accession="0000320193-26-000018", form="8-K", filing_date=date(2026, 7, 30))
+    assert filing_url(MaterialEvent(**base, cik=320193)) is None
+    assert filing_url(MaterialEvent(**base, primary_document="a.htm")) is None

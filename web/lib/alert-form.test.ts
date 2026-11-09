@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alertCurrency, alertTitle, parseAlert } from './alert-form'
+import { alertCurrency, alertTitle, fmtLevel, parseAlert } from './alert-form'
 
 const good = { symbol: 'TSLA', assetType: 'stock', direction: 'above', level: '400', note: '' }
 
@@ -48,5 +48,12 @@ describe('alertTitle', () => {
   it('names the direction and level', () => {
     expect(alertTitle('above', 400)).toBe('crossed above $400.00 by the last run')
     expect(alertTitle('below', 0.5)).toBe('crossed below $0.50 by the last run')
+  })
+})
+
+describe('fmtLevel', () => {
+  it('keeps the digits of a sub-cent price', () => {
+    expect(fmtLevel(400)).toBe('$400.00')
+    expect(fmtLevel(0.00000123)).toBe('$0.00000123')
   })
 })

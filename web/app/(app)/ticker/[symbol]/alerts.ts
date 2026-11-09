@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { MAX_ACTIVE_ALERTS, parseAlert } from '@/lib/alert-form'
+import { countActiveAlerts, isKnownAsset } from '@/lib/data/alerts'
 import { createClient } from '@/lib/supabase/server'
 import type { FormState } from '@/lib/trade-form'
 
@@ -27,14 +28,16 @@ export async function addAlert(_prev: FormState, data: FormData): Promise<FormSt
   if (!parsed.ok) return { errors: parsed.errors, at: Date.now() }
   const { symbol, assetType, direction, level, note } = parsed.value
   const supabase = await createClient()
-  const { count, error: countError } = await supabase
-    .from('price_alerts')
-    .select('id', { count: 'exact', head: true })
-    .eq('symbol', symbol)
-    .eq('asset_type', assetType)
-    .is('hit_at', null)
-  if (countError) return { message: `It wasn't saved: ${countError.message}`, at: Date.now() }
-  if ((count ?? 0) >= MAX_ACTIVE_ALERTS) {
+  if (!(await isKnownAsset(supabase, symbol, assetType))) {
+    return { errors: { symbol: `${symbol} is not a stock or coin this app knows.` }, at: Date.now() }
+  }
+  let active: number
+  try {
+    active = await countActiveAlerts(supabase, symbol, assetType)
+  } catch (e) {
+    return { message: `It wasn't saved: ${e instanceof Error ? e.message : 'unknown error'}`, at: Date.now() }
+  }
+  if (active >= MAX_ACTIVE_ALERTS) {
     return { message: `${symbol} already has ${MAX_ACTIVE_ALERTS} active alerts. Delete one first.`, at: Date.now() }
   }
   const { error } = await supabase.from('price_alerts').insert({ symbol, asset_type: assetType, direction, level, note })

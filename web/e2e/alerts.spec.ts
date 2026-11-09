@@ -54,6 +54,28 @@ test('an alert on a coin does not show on a stock with the same symbol', async (
   await seedAlert({ symbol: 'ETH', assetType: 'crypto', direction: 'below', level: 2000 })
   await page.goto('/ticker/ETH?asset=crypto')
   await expect(page.getByRole('region', { name: 'Alerts' }).getByTestId('alert-row')).toHaveCount(1)
+  // the stock page with the same symbol does not list the coin's alert
+  await page.goto('/ticker/ETH?asset=stock')
+  await expect(page.getByRole('region', { name: 'Alerts' }).getByTestId('alert-row')).toHaveCount(0)
+})
+
+test('a sub-cent coin hit keeps its digits on My Portfolio', async ({ page }) => {
+  await seedAlert({ symbol: 'ETH', assetType: 'crypto', direction: 'below', level: 0.00000123, hit: { hoursAgo: 1, price: 0.00000119 } })
+  await page.goto('/')
+  const item = page.getByRole('region', { name: FEED }).getByTestId('monitor-item')
+  await expect(item).toContainText('crossed below $0.00000123 by the last run')
+  await expect(item).toContainText('$0.00000119')
+})
+
+test('an unknown symbol is refused', async ({ page }) => {
+  await page.goto('/ticker/AAPL')
+  const card = page.getByRole('region', { name: 'Alerts' })
+  await card.getByLabel('Level (USD)').fill('10')
+  await card.locator('input[name="symbol"]').evaluate((el) => ((el as HTMLInputElement).value = 'ZZZZ'))
+  await card.getByRole('button', { name: 'Add alert' }).click()
+  await expect(card.getByText('ZZZZ is not a stock or coin this app knows.')).toBeVisible()
+  await page.goto('/ticker/AAPL')
+  await expect(page.getByRole('region', { name: 'Alerts' }).getByTestId('alert-row')).toHaveCount(0)
 })
 
 test('a hit alert on an unheld stock shows on My Portfolio, past the since window, until dismissed', async ({ page }) => {
@@ -78,7 +100,7 @@ test('a hit alert on the ticker page can be dismissed and then disappears', asyn
   await seedAlert({ symbol: 'TSLA', direction: 'above', level: 400, hit: { hoursAgo: 2, price: 402.1 } })
   await page.goto('/ticker/TSLA')
   const card = page.getByRole('region', { name: 'Alerts' })
-  await expect(card.getByTestId('alert-row')).toContainText(/Crossed above \$400\.00 by the last run, at \$402\.10 on /)
+  await expect(card.getByTestId('alert-row')).toContainText(/Crossed above \$400\.00 USD by the last run, at \$402\.10 on /)
   await card.getByRole('button', { name: 'Dismiss' }).click()
   await expect(card.getByTestId('alert-row')).toHaveCount(0)
 

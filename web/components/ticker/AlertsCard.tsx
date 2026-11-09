@@ -61,17 +61,16 @@ export function AlertsCard({ symbol, assetType, alerts }: { symbol: string; asse
               <span>
                 {a.hitAt ? (
                   <>
-                    Crossed {a.direction} {fmtLevel(a.level)} by the last run
+                    Crossed {a.direction} {fmtLevel(a.level)} <span className="sub">{currency}</span> by the last run
                     {a.hitPrice !== null && `, at ${fmtLevel(a.hitPrice)}`} on {shortDay(todayInToronto(new Date(a.hitAt)))}
+                    {a.note && <span className="sub"> · {a.note}</span>}
                   </>
                 ) : (
                   <>
-                    {a.direction === 'above' ? 'Above' : 'Below'} {fmtLevel(a.level)}
+                    {a.direction === 'above' ? 'Above' : 'Below'} {fmtLevel(a.level)} <span className="sub">{currency}</span>
                     {a.note && ` · ${a.note}`}
                   </>
-                )}{' '}
-                <span className="sub">{currency}</span>
-                {a.hitAt && a.note && <span className="sub"> · {a.note}</span>}
+                )}
               </span>
               <span />
               <span className="flex gap-2">

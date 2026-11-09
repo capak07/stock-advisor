@@ -1,5 +1,5 @@
 import 'server-only'
-import { alertTitle } from '../alert-form'
+import { alertTitle, fmtLevel } from '../alert-form'
 import { addDays, shortDay, todayInToronto } from '../dates'
 import type { Quarter } from '../earnings'
 import { isImportant, itemLabels } from '../filings'
@@ -89,7 +89,7 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
         symbol: r.symbol,
         at: r.hit_at,
         title: alertTitle(r.direction, Number(r.level)),
-        detail: hit === null ? undefined : dollars(hit),
+        detail: hit === null ? undefined : fmtLevel(hit),
       }
     },
   )

@@ -491,7 +491,13 @@ def execute_run(
         crypto = priority_order(held, watch, AssetType.CRYPTO)
         # Assets with an active price alert that aren't held or watched, alphabetical: they're priced
         # and their closes stored, so the holding monitor can check the alert; nothing more.
-        alerted = repo.alert_symbols(conn)
+        # The lookup belongs to the display-only monitor: a failure is recorded, never fails the run.
+        monitor_error: str | None = None
+        try:
+            alerted = repo.alert_symbols(conn)
+        except Exception as exc:
+            alerted = set()
+            monitor_error = f"{type(exc).__name__}: {exc}"[:200]
         alert_coins = sorted({r.symbol for r in alerted if r.asset_type is AssetType.CRYPTO} - set(crypto))
         # the largest coins are priced and forecast too, so the Invest page has coins to choose from;
         # only held and watched ones get enrichment, news, verdicts and actions, or can degrade the run
@@ -603,7 +609,6 @@ def execute_run(
         actions_summary: dict = {"skipped": "the run can't publish"}
         graded_summary: dict = {"skipped": "the run can't publish"}
         monitor_summary: dict | None = {"skipped": "the run can't publish"}
-        monitor_error: str | None = None
         if enriched:
             results = run_enrichment(
                 tracker,

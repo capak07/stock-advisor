@@ -567,3 +567,11 @@ def test_pipeline_may_only_set_alert_hits(owned_db):
             owned_db.execute("update price_alerts set level = 2")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             owned_db.execute(ALERT)
+
+
+def test_pipeline_cannot_delete_price_alerts(owned_db):
+    owned_db.execute(ALERT)
+    with acting_as(owned_db, "pipeline_rw"):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute("delete from price_alerts")
+    assert owned_db.execute("select count(*) as n from price_alerts").fetchone()["n"] == 1

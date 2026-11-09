@@ -2008,6 +2008,35 @@ def test_a_monitor_stage_that_raises_is_recorded_and_the_run_publishes(db, tmp_p
     assert run_row(db, outcome.run_id)["published"] is True
 
 
+def test_a_failed_alert_lookup_is_recorded_and_the_run_publishes(db, tmp_path, monkeypatch):
+    hold(db, "RY.TO")
+
+    def broken(conn):
+        raise RuntimeError("alerts broke")
+
+    monkeypatch.setattr(repo, "alert_symbols", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS  # the run goes on without alert-only symbols
+    assert outcome.summary["holding_monitor_error"] == "RuntimeError: alerts broke"
+    assert outcome.summary["holding_monitor"]["alerts_hit"] == 0
+    assert outcome.summary["actions"]["written"] == 1  # the holding was still priced and acted on
+    assert run_row(db, outcome.run_id)["published"] is True
+
+
+def test_a_failed_alert_lookup_does_not_hide_a_later_monitor_error(db, tmp_path, monkeypatch):
+    def broken_lookup(conn):
+        raise RuntimeError("alerts broke")
+
+    def broken_stage(conn, results, now_utc):
+        raise RuntimeError("monitor broke")
+
+    monkeypatch.setattr(repo, "alert_symbols", broken_lookup)
+    monkeypatch.setattr("advisor.run.monitor_stage", broken_stage)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["holding_monitor_error"] == "RuntimeError: monitor broke"
+
+
 def test_a_monitor_sql_error_is_rolled_back_and_the_later_stages_still_run(db, tmp_path, monkeypatch):
     hold(db, "RY.TO")
     seed_alert(db, "RY.TO", "above", 9.5)

@@ -62,6 +62,13 @@ def resolve_run_kind(now_utc: datetime) -> RunKind | None:
     return None
 
 
+def overdue_kinds(now_utc: datetime) -> list[RunKind]:
+    """Today's slots whose run window has closed (past LATE_TOLERANCE), however long ago.
+    GitHub has created scheduled runs hours late, so a trigger checks every closed slot."""
+    now_et = now_utc.astimezone(ET)
+    return [kind for kind, scheduled in _todays_slots(now_et) if now_et > scheduled + LATE_TOLERANCE]
+
+
 def missed_run_kind(now_utc: datetime) -> RunKind | None:
     """The slot whose own trigger arrived too late to run (past LATE_TOLERANCE), if any."""
     now_et = now_utc.astimezone(ET)

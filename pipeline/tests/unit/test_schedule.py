@@ -8,6 +8,7 @@ from advisor.schedule import (
     freshness_floor,
     market_close_et,
     missed_run_kind,
+    overdue_kinds,
     previous_sessions,
     resolve_run_kind,
     sessions_after,
@@ -130,3 +131,20 @@ def test_exit_by_counts_the_markets_own_trading_days():
 def test_sessions_after_needs_a_positive_count():
     with pytest.raises(ValueError):
         sessions_after(Market.US, date(2026, 11, 25), 0)
+
+
+@pytest.mark.parametrize(
+    ("now", "overdue"),
+    [
+        ("2026-11-09T14:28:00", [RunKind.PRE_OPEN]),                      # 09:28 EST: pre-open's window closed at 08:45
+        ("2026-11-06T19:25:00", [RunKind.PRE_OPEN]),                      # 14:25 ET: GitHub's 12:15 cron, 7 h late
+        ("2026-11-07T00:06:00", [RunKind.PRE_OPEN, RunKind.PRE_CLOSE]),   # 19:06 ET on 11-06: the 20:15 cron, 4 h late
+        ("2026-11-27T22:05:00", [RunKind.PRE_OPEN, RunKind.EARLY_CLOSE, RunKind.PRE_CLOSE]),  # Black Friday
+        ("2026-10-14T12:30:00", []),                                       # 08:30 EDT: inside the window
+        ("2026-12-02T12:15:00", []),                                       # 07:15 EST: the EDT cron, too early
+        ("2026-10-17T20:00:00", []),                                       # Saturday
+        ("2026-12-25T20:00:00", []),                                       # Christmas: both closed
+    ],
+)
+def test_overdue_kinds_are_todays_slots_whose_window_has_closed(now, overdue):
+    assert overdue_kinds(utc(now)) == overdue

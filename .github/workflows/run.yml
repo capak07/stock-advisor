@@ -2,6 +2,8 @@ name: run
 
 # Each run has an EDT and an EST cron (GitHub cron is UTC). advisor.run checks the NYSE and
 # TSX calendars and the current ET time, then does nothing unless this is the right slot.
+# GitHub creates these scheduled runs hours late, so supabase/manual/run_dispatch_cron.sql has
+# Supabase pg_cron dispatch kind=auto on time; the crons below stay as a backstop.
 on:
   schedule:
     - cron: "15 12 * * 1-5"  # pre-open, EDT
@@ -13,10 +15,14 @@ on:
   workflow_dispatch:
     inputs:
       kind:
-        description: Run kind to force (ignores the schedule guard)
+        description: auto = obey the schedule guard (what the outside scheduler sends); any other kind forces that run
         type: choice
-        options: [pre_open, pre_close, early_close]
-        default: pre_open
+        options:
+          - auto
+          - pre_open
+          - pre_close
+          - early_close
+        default: auto
 
 permissions:
   contents: read
@@ -53,7 +59,8 @@ jobs:
           ADVISOR_CACHE_DIR: .cache
           FORCE_KIND: ${{ inputs.kind }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # kind=auto (the outside scheduler) takes the guarded path: slot window + once per kind per ET date
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$FORCE_KIND" != "auto" ]; then
             uv run python -m advisor.run --force-kind "$FORCE_KIND"
           else
             uv run python -m advisor.run

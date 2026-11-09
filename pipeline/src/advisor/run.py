@@ -53,7 +53,7 @@ from advisor.policy import DEFAULT_POLICY, policy_of
 from advisor.portfolio.stage import advise_stage
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.recommend.stage import recommend_stage
-from advisor.schedule import freshness_floor, missed_run_kind, resolve_run_kind
+from advisor.schedule import freshness_floor, overdue_kinds, resolve_run_kind
 from advisor.screener import ScreenRow
 from advisor.store import repo
 from advisor.store.db import connect
@@ -780,6 +780,24 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _check_overdue(now: datetime) -> int:
+    """A trigger outside every window: fail (exit 1 emails the owner) if a slot whose window
+    closed today has no published run, else exit quietly."""
+    overdue = overdue_kinds(now)
+    if not overdue:
+        print(f"{now.isoformat()}: outside every run window or market closed; nothing to do.")
+        return 0
+    today = now.astimezone(ET).date()
+    with connect(Settings.from_env().database_url) as conn:
+        never_ran = [kind for kind in overdue if not repo.has_published_run(conn, kind, today)]
+    if never_ran:
+        for kind in never_ran:
+            print(f"{now.isoformat()}: {kind.value} run for {today} never ran (its trigger came late or not at all).")
+        return 1
+    print(f"{now.isoformat()}: outside every run window; today's due runs are published; nothing to do.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     now = datetime.fromisoformat(args.now) if args.now else datetime.now(UTC)
@@ -788,15 +806,7 @@ def main(argv: list[str] | None = None) -> int:
 
     kind = RunKind(args.force_kind) if args.force_kind else resolve_run_kind(now)
     if kind is None:
-        missed = missed_run_kind(now)
-        if missed is not None:  # exit 1 fails the GitHub job, so the owner gets an email
-            print(
-                f"{now.isoformat()}: {missed.value} run window missed"
-                " (trigger arrived too late); no run."
-            )
-            return 1
-        print(f"{now.isoformat()}: outside every run window or market closed; nothing to do.")
-        return 0
+        return _check_overdue(now)
 
     settings = Settings.from_env()
     with connect(settings.database_url) as conn:

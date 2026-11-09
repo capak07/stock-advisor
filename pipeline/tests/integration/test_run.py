@@ -112,6 +112,7 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         "picks": {"US": {"skipped": "no active model"}, "TSX": {"skipped": "no active model"}},
         "actions": {"written": 0, "by_action": {"sell": 0, "trim": 0, "add": 0, "hold": 0}},
         "graded": {"picks": 0, "exited_early": 0, "actions": 0},
+        "holding_monitor": {"filings": 0, "quarters": 0, "earnings": 0, "insider_trades": 0, "alerts_hit": 0},
     }
     # The benchmarks and sector ETFs are priced with the holdings, then one call covers both markets.
     assert deps.collectors["yfinance_bars"].calls == [FUNDS, EVERYONE]
@@ -1879,3 +1880,114 @@ def test_the_largest_coins_are_priced_for_the_invest_page_even_if_nobody_holds_t
     ).fetchall()
     assert [r["symbol"] for r in rows] == ["BTC", "ETH"]
     assert (outcome.summary["crypto"], outcome.summary["crypto_unquoted"]) == (0, [])  # held and watched only
+
+
+def add_alert(db, symbol, direction, level, asset_type="stock"):
+    return db.execute(
+        "insert into price_alerts (symbol, asset_type, direction, level) values (%s, %s, %s, %s) returning id",
+        (symbol, asset_type, direction, level),
+    ).fetchone()["id"]
+
+
+def alert_hit(db, alert_id):
+    row = db.execute("select hit_at, hit_price from price_alerts where id = %s", (alert_id,)).fetchone()
+    return row["hit_at"], None if row["hit_price"] is None else float(row["hit_price"])
+
+
+def test_the_holding_monitor_stores_8ks_and_earnings_from_enrichment(db, tmp_path):
+    hold(db, "AAA")
+    event = MaterialEvent(
+        symbol="AAA", accession="0000000001-26-000001", form="8-K", filing_date=date(2026, 10, 9),
+        cik=1, primary_document="a.htm", items=["2.02"],
+    )
+    extra = {
+        "sec_8k": FakeCollector("sec_8k", core=False, record_type=MaterialEvent, records_for=lambda s: [event]),
+        "yfinance_earnings": FakeCollector(
+            "yfinance_earnings", core=False, record_type=EarningsReport,
+            records_for=lambda s: [EarningsReport(symbol="AAA", report_at=datetime(2026, 10, 29, 20, 30, tzinfo=UTC))],
+        ),
+    }
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["holding_monitor"] == {
+        "filings": 1, "quarters": 0, "earnings": 1, "insider_trades": 0, "alerts_hit": 0,
+    }
+    assert db.execute("select symbol, url from filings").fetchone()["url"].endswith("/000000000126000001/a.htm")
+
+
+def test_a_stock_with_only_an_active_alert_is_priced_and_stored_without_actions_or_verdicts(db, tmp_path):
+    alert = add_alert(db, "OTCX", "above", 9.5)  # the fake histories close at 10
+    deps = make_deps(db, tmp_path)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert deps.collectors["yfinance_bars"].calls == [["OTCX", *FUNDS], EVERYONE]
+    stored = db.execute("select count(*) as n from daily_closes where symbol = 'OTCX'").fetchone()["n"]
+    assert stored == 70
+    assert alert_hit(db, alert) == (NOW, 10.0)
+    assert outcome.summary["holding_monitor"]["alerts_hit"] == 1
+    # it isn't held or watched: no features, actions or verdicts, and it isn't counted as priority
+    assert outcome.summary["priority"] == 0 and outcome.summary["actions"]["written"] == 0
+    assert "OTCX" not in market_features(db, outcome.run_id)
+    assert holding_actions(db, outcome.run_id) == {}
+    assert db.execute("select count(*) as n from watchlist_verdicts").fetchone()["n"] == 0
+
+
+def test_an_alerted_stock_already_held_is_priced_once(db, tmp_path):
+    hold(db, "OTCX")
+    add_alert(db, "OTCX", "below", 5)
+    deps = make_deps(db, tmp_path)
+    outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert deps.collectors["yfinance_bars"].calls == [["OTCX", *FUNDS], EVERYONE]
+    assert outcome.summary["priority"] == 1
+    assert outcome.summary["holding_monitor"]["alerts_hit"] == 0
+
+
+def test_a_coin_with_only_an_active_alert_is_priced_and_its_closes_stored(db, tmp_path):
+    alert = add_alert(db, "ETH", "above", 80000, "crypto")
+    extra = crypto_sources(quoted=("ETH",))
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert extra["coingecko"].calls == [["ETH"]]
+    row = db.execute(
+        "select count(*) as n from daily_closes where symbol = 'ETH' and asset_type = 'crypto'"
+    ).fetchone()
+    assert row["n"] == 30
+    assert alert_hit(db, alert) == (NOW, 82000.0)
+    assert (outcome.summary["crypto"], outcome.summary["crypto_unquoted"]) == (0, [])
+    assert holding_actions(db, outcome.run_id) == {}
+
+
+def test_a_monitor_stage_that_raises_is_recorded_and_the_run_publishes(db, tmp_path, monkeypatch):
+    def broken(conn, results, now_utc):
+        raise RuntimeError("monitor broke")
+
+    monkeypatch.setattr("advisor.run.monitor_stage", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS  # display only: it never degrades the run
+    assert outcome.summary["holding_monitor_error"] == "RuntimeError: monitor broke"
+    assert "holding_monitor" not in outcome.summary
+    assert run_row(db, outcome.run_id)["published"] is True
+
+
+def test_a_monitor_sql_error_is_rolled_back_and_the_later_stages_still_run(db, tmp_path, monkeypatch):
+    hold(db, "RY.TO")
+    add_alert(db, "RY.TO", "above", 9.5)
+
+    def broken(conn, hits, now):
+        conn.execute("select 1 / 0")
+
+    monkeypatch.setattr(repo, "mark_alerts_hit", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["holding_monitor_error"].startswith("DivisionByZero")
+    assert outcome.summary["actions"]["written"] == 1  # the holdings stage ran on the same connection
+    assert outcome.summary["graded"] == {"picks": 0, "exited_early": 0, "actions": 0}
+    assert run_row(db, outcome.run_id)["published"] is True
+
+
+def test_a_run_that_cannot_publish_skips_the_holding_monitor(db, tmp_path):
+    alert = add_alert(db, "AAA", "above", 1)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe={Market.US: 3, Market.TSX: 300})
+    assert outcome.status is RunStatus.FAILED
+    assert outcome.summary["holding_monitor"] == {"skipped": "the run can't publish"}
+    assert alert_hit(db, alert) == (None, None)

@@ -46,6 +46,7 @@ from advisor.model.market_run import Forecast, MarketModel, feature_day, model_f
 from advisor.model.predict import load_active, predict_rows, screen_scores
 from advisor.model.weekly import KIND
 from advisor.models import ET, AssetRef, AssetType, DailyBar, Market, RunKind, RunStatus, SymbolInfo
+from advisor.monitor.stage import monitor_stage
 from advisor.news.mapping import TickerMap
 from advisor.news.sentiment import Scorer, load_finbert
 from advisor.news.stage import RECENT, WINDOW, process_news
@@ -488,17 +489,25 @@ def execute_run(
         held, watch = repo.load_held_symbols(conn), repo.load_watchlist(conn)
         priority = priority_order(held, watch, AssetType.STOCK)
         crypto = priority_order(held, watch, AssetType.CRYPTO)
+        # Assets with an active price alert that aren't held or watched, alphabetical: they're priced
+        # and their closes stored, so the holding monitor can check the alert; nothing more.
+        alerted = repo.alert_symbols(conn)
+        alert_coins = sorted({r.symbol for r in alerted if r.asset_type is AssetType.CRYPTO} - set(crypto))
         # the largest coins are priced and forecast too, so the Invest page has coins to choose from;
         # only held and watched ones get enrichment, news, verdicts and actions, or can degrade the run
-        priced_coins = list(dict.fromkeys([*crypto, *repo.top_coins(conn, INVEST_COINS)]))
-        # Stocks grading waits on that aren't held or watched, such as one the owner has sold: they're
-        # priced and their closes stored, and get no actions or verdicts.
+        priced_coins = list(dict.fromkeys([*crypto, *alert_coins, *repo.top_coins(conn, INVEST_COINS)]))
+        # Stocks grading waits on that aren't held or watched, such as one the owner has sold, and
+        # stocks with only an alert: they're priced and their closes stored, and get no actions or verdicts.
         to_grade = [s for s in repo.symbols_to_grade(conn) if s not in priority]
+        alert_stocks = sorted(
+            {r.symbol for r in alerted if r.asset_type is AssetType.STOCK} - {*priority, *to_grade}
+        )
+        price_only = [*to_grade, *alert_stocks]
 
         # Phase 1: holdings and watchlist of both markets are priced and saved before anything
         # else can fail. The benchmarks come along for the dashboard's price history and, with the
         # sector ETFs, for the model's relative-strength features.
-        first = fetch_prices(list(dict.fromkeys([*priority, *to_grade, *BENCHMARKS, *SECTOR_FUNDS])))
+        first = fetch_prices(list(dict.fromkeys([*priority, *price_only, *BENCHMARKS, *SECTOR_FUNDS])))
         bars, flagged = dict(first.bars), dict(first.flagged)
         priority_rows = [screener.price_stats(s, bars[s]) for s in priority if s in bars]
         repo.write_features_live(
@@ -535,7 +544,7 @@ def execute_run(
         # A run that cannot publish skips the bulk fetch (about 7,400 Yahoo requests during a
         # TMX outage) but still retries the owner's unpriced holdings.
         universe_ok = all(len(universes[m]) >= limits[m] for m in Market)
-        fetched = {*priority, *(s for s in to_grade if s in bars)}  # a stock to grade isn't fetched twice
+        fetched = {*priority, *(s for s in price_only if s in bars)}  # a price-only stock isn't fetched twice
         rest = (
             sorted({r.symbol for u in universes.values() for r in u} - fetched)
             if universe_ok
@@ -592,6 +601,8 @@ def execute_run(
         verdicts_failure: dict | None = None
         actions_summary: dict = {"skipped": "the run can't publish"}
         graded_summary: dict = {"skipped": "the run can't publish"}
+        monitor_summary: dict | None = {"skipped": "the run can't publish"}
+        monitor_error: str | None = None
         if enriched:
             results = run_enrichment(
                 tracker,
@@ -604,8 +615,17 @@ def execute_run(
             news = news_stage(deps, run_id, results, targets, coin_names, now_utc, deadline_at)
             # Price history for the dashboard (Plan 5a), only from a run that can publish: a failed
             # run's prices may be why it failed. Its errors land in the summary, never fail the run.
-            stocks = list(dict.fromkeys([*priority, *to_grade, *targets.ranked_stocks, *BENCHMARKS]))
-            price_history = record_history(deps, now_utc, bars, candles, stocks, crypto, results)
+            stocks = list(dict.fromkeys([*priority, *price_only, *targets.ranked_stocks, *BENCHMARKS]))
+            price_history = record_history(deps, now_utc, bars, candles, stocks, [*crypto, *alert_coins], results)
+
+            # The holding monitor: 8-Ks, quarters, earnings dates and insider trades from enrichment,
+            # then the price alerts, checked against the closes just stored. Display only: a failure
+            # is recorded in the summary and never degrades or fails the run.
+            try:
+                monitor_summary = monitor_stage(conn, results, now_utc)
+            except Exception as exc:
+                monitor_summary = None
+                monitor_error = f"{type(exc).__name__}: {exc}"[:200]
 
             # Phase 3.5: forecasts for each market's holdings, watchlist and ranked shortlist, once
             # enrichment has brought the US filings. Each symbol is forecast once.
@@ -726,6 +746,10 @@ def execute_run(
             "actions": actions_summary,
             "graded": graded_summary,
         }
+        if monitor_summary is not None:
+            summary["holding_monitor"] = monitor_summary
+        if monitor_error is not None:
+            summary["holding_monitor_error"] = monitor_error
         if verdicts_failure is not None:
             summary["verdicts"] = verdicts_failure
         model_version = ",".join(m["version"] for m in model_summary.values() if "version" in m)

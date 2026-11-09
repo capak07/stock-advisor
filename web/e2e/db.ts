@@ -12,7 +12,8 @@ export const sql = postgres(DB_URL, { onnotice: () => {} })
 /** Everything the owner or a run writes, emptied between tests. Users and app_config stay. */
 export async function resetData() {
   // runs cascades to source_health, features_live, predictions, picks and verdicts; models to model_files
-  await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols, news_items, sources, models
+  await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols, news_items, sources, models,
+            filings, financial_quarters, earnings_reports, insider_trades, price_alerts
             restart identity cascade`
   await sql`update settings set usd_fx_fee_pct = 1.5, crypto_fee_pct = 2.0, tfsa_round_trips_warn = 24,
             tfsa_short_hold_share_warn = 0.5, updated_at = now() where id = 1`

@@ -521,3 +521,49 @@ def test_a_half_filled_rank_row_is_refused(db, extra, values):
             f" '2026-11-06', 500{values})",
             (run_id,),
         )
+
+
+MONITOR_TABLES = ("filings", "financial_quarters", "earnings_reports", "insider_trades", "price_alerts")
+ALERT = (
+    "insert into price_alerts (symbol, asset_type, direction, level)"
+    " values ('AAPL', 'stock', 'above', 250)"
+)
+
+
+def test_holding_monitor_tables_exist(db):
+    rows = db.execute(
+        "select tablename from pg_tables where schemaname = 'public' and tablename = any(%s)",
+        (list(MONITOR_TABLES),),
+    ).fetchall()
+    assert sorted(r["tablename"] for r in rows) == sorted(MONITOR_TABLES)
+
+
+def test_owner_cannot_write_pipeline_monitor_tables(owned_db):
+    with acting_as(owned_db, "authenticated", OWNER):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute(
+                "insert into filings (accession, symbol, form, filed_at, url)"
+                " values ('0000000000-26-000001', 'AAPL', '8-K', now(), 'https://sec.gov/x')"
+            )
+
+
+def test_owner_manages_price_alerts(owned_db):
+    with acting_as(owned_db, "authenticated", OWNER):
+        owned_db.execute(ALERT)
+        updated = owned_db.execute("update price_alerts set dismissed_at = now()")
+        assert updated.rowcount == 1
+        assert owned_db.execute("delete from price_alerts").rowcount == 1
+    with acting_as(owned_db, "authenticated", STRANGER):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute(ALERT)
+
+
+def test_pipeline_may_only_set_alert_hits(owned_db):
+    owned_db.execute(ALERT)
+    with acting_as(owned_db, "pipeline_rw"):
+        hit = owned_db.execute("update price_alerts set hit_at = now(), hit_price = 1")
+        assert hit.rowcount == 1
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute("update price_alerts set level = 2")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute(ALERT)

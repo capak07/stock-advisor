@@ -22,6 +22,8 @@ from advisor.models import (
     RunStatus,
     SymbolInfo,
 )
+from advisor.monitor.quarters import QuarterRow
+from advisor.monitor.rows import EarningsRow, FilingRow, InsiderRow
 from advisor.news.stage import NewsRow, StoredNews
 from advisor.recommend.verdicts import Verdict
 from advisor.store import repo
@@ -729,3 +731,130 @@ def test_the_top_coins_are_the_largest_listed_ones_without_stablecoins(db):
     ], now)
     assert repo.top_coins(db, 3) == ["BTC", "ETH", "SOL"]
     assert repo.top_coins(db, 10) == ["BTC", "ETH", "SOL", "NEW"]  # no market cap last
+
+
+def as_pipeline(db):
+    db.execute("set role pipeline_rw")
+
+
+def filing(accession="a1", symbol="AAPL", days_ago=1.0):
+    return FilingRow(accession, symbol, "8-K", NOW - timedelta(days=days_ago), DAY, ["2.02"], "https://x/" + accession)
+
+
+def quarter(symbol="AAPL", months_ago=0, revenue=100.0):
+    end = date(2026, 9, 30) - timedelta(days=91 * months_ago)
+    return QuarterRow(symbol, end - timedelta(days=90), end, end.year, "Q3", revenue, 50.0, 20.0, 10.0, 1.5,
+                      "10-Q", end + timedelta(days=30), "acc", False)
+
+
+def test_filings_are_idempotent_and_pruned_after_400_days(db):
+    as_pipeline(db)
+    try:
+        repo.write_filings(db, [filing("a1"), filing("old", days_ago=401), filing("keep", days_ago=399)])
+        repo.write_filings(db, [filing("a1")])
+        repo.write_filings(db, [])
+        repo.prune_holding_monitor(db, NOW)
+    finally:
+        db.execute("reset role")
+    got = [r["accession"] for r in db.execute("select accession from filings order by accession").fetchall()]
+    assert got == ["a1", "keep"]
+
+
+def test_a_restated_quarter_replaces_values_and_only_12_are_kept(db):
+    as_pipeline(db)
+    try:
+        repo.write_financial_quarters(db, [quarter(months_ago=i) for i in range(13)] + [quarter("MSFT")])
+        repo.write_financial_quarters(db, [quarter(months_ago=0, revenue=120.0)])
+    finally:
+        db.execute("reset role")
+    aapl = db.execute(
+        "select period_end, revenue from financial_quarters where symbol = 'AAPL' order by period_end desc"
+    ).fetchall()
+    assert len(aapl) == 12 and float(aapl[0]["revenue"]) == 120.0
+    assert aapl[-1]["period_end"] > quarter(months_ago=12).period_end
+    assert db.execute("select count(*) as n from financial_quarters where symbol = 'MSFT'").fetchone()["n"] == 1
+
+
+def test_earnings_reports_upsert_and_prune_after_3_years(db):
+    def report(day, actual=None):
+        return EarningsRow("AAPL", day, datetime.combine(day, datetime.min.time(), tzinfo=UTC), 1.0, actual, None)
+
+    as_pipeline(db)
+    try:
+        repo.write_earnings_reports(db, [report(date(2026, 10, 30)), report(date(2023, 9, 1))])
+        repo.write_earnings_reports(db, [report(date(2026, 10, 30), actual=1.2)])
+        repo.prune_holding_monitor(db, NOW)
+    finally:
+        db.execute("reset role")
+    rows = db.execute("select report_date, eps_actual from earnings_reports").fetchall()
+    assert [(r["report_date"], float(r["eps_actual"])) for r in rows] == [(date(2026, 10, 30), 1.2)]
+
+
+def test_insider_trades_are_idempotent_and_pruned_after_400_days(db):
+    def trade(line, days_ago=1.0, accession="i1"):
+        return InsiderRow(accession, line, "AAPL", NOW - timedelta(days=days_ago), DAY, "A B", "CEO", "P",
+                          10.0, 5.0, 50.0, False)
+
+    as_pipeline(db)
+    try:
+        repo.write_insider_trades(db, [trade(0), trade(1), trade(0, 401, "old"), trade(0, 399, "keep")])
+        repo.write_insider_trades(db, [trade(0), trade(1)])
+        repo.prune_holding_monitor(db, NOW)
+    finally:
+        db.execute("reset role")
+    got = db.execute("select accession, line from insider_trades order by accession, line").fetchall()
+    assert [(r["accession"], r["line"]) for r in got] == [("i1", 0), ("i1", 1), ("keep", 0)]
+
+
+def seed_alert(db, symbol, direction, level, asset_type="stock", hit=False, dismissed=False):
+    return db.execute(
+        "insert into price_alerts (symbol, asset_type, direction, level, hit_at, dismissed_at)"
+        " values (%s, %s, %s, %s, %s, %s) returning id",
+        (symbol, asset_type, direction, level, NOW if hit else None, NOW if dismissed else None),
+    ).fetchone()["id"]
+
+
+def test_active_alerts_skip_hit_and_dismissed_ones(db):
+    a = seed_alert(db, "AAPL", "above", 200)
+    seed_alert(db, "MSFT", "below", 300, hit=True)
+    seed_alert(db, "NVDA", "below", 100, dismissed=True)
+    c = seed_alert(db, "BTC", "above", 90000, "crypto")
+    as_pipeline(db)
+    try:
+        alerts = repo.active_price_alerts(db)
+        symbols = repo.alert_symbols(db)
+    finally:
+        db.execute("reset role")
+    assert sorted((x.id, x.symbol, x.asset_type, x.direction, x.level) for x in alerts) == [
+        (a, "AAPL", "stock", "above", 200.0), (c, "BTC", "crypto", "above", 90000.0)]
+    assert symbols == {AssetRef("AAPL", AssetType.STOCK), AssetRef("BTC", AssetType.CRYPTO)}
+
+
+def test_latest_closes_returns_each_assets_newest_day(db):
+    aapl, btc = AssetRef("AAPL", AssetType.STOCK), AssetRef("BTC", AssetType.CRYPTO)
+    repo.write_daily_closes(db, [
+        DailyClose(aapl, DAY - timedelta(days=1), 100.0, "USD"), DailyClose(aapl, DAY, 110.0, "USD"),
+        DailyClose(btc, DAY - timedelta(days=2), 5.0, "USD"),
+    ])
+    as_pipeline(db)
+    try:
+        got = repo.latest_closes(db, [aapl, btc, AssetRef("ZZZ", AssetType.STOCK)])
+        assert repo.latest_closes(db, []) == {}
+    finally:
+        db.execute("reset role")
+    assert got == {("AAPL", "stock"): 110.0, ("BTC", "crypto"): 5.0}
+
+
+def test_mark_alerts_hit_never_overwrites_an_earlier_hit(db):
+    first = seed_alert(db, "AAPL", "above", 100)
+    second = seed_alert(db, "MSFT", "above", 100)
+    as_pipeline(db)
+    try:
+        repo.mark_alerts_hit(db, [(first, 101.0)], NOW)
+        repo.mark_alerts_hit(db, [(first, 150.0), (second, 102.0)], NOW + timedelta(days=1))
+        repo.mark_alerts_hit(db, [], NOW)
+    finally:
+        db.execute("reset role")
+    rows = {r["id"]: r for r in db.execute("select id, hit_at, hit_price from price_alerts").fetchall()}
+    assert (rows[first]["hit_at"], float(rows[first]["hit_price"])) == (NOW, 101.0)
+    assert (rows[second]["hit_at"], float(rows[second]["hit_price"])) == (NOW + timedelta(days=1), 102.0)

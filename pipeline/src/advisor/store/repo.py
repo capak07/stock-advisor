@@ -31,6 +31,8 @@ from advisor.models import (
     StoredModel,
     SymbolInfo,
 )
+from advisor.monitor.quarters import QuarterRow
+from advisor.monitor.rows import EarningsRow, FilingRow, InsiderRow, PriceAlert
 from advisor.news.stage import NewsRow, StoredNews
 from advisor.portfolio.ledger import Trade
 from advisor.recommend.verdicts import Verdict
@@ -71,6 +73,10 @@ class ActionToGrade:
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
 NEWS_KEPT = timedelta(days=90)  # spec §10: news is pruned after 90 days
+FILINGS_KEPT = timedelta(days=400)
+INSIDER_KEPT = timedelta(days=400)
+EARNINGS_KEPT = timedelta(days=3 * 365)
+QUARTERS_KEPT = 12  # newest quarters kept per symbol
 
 
 def create_run(conn: psycopg.Connection, kind: RunKind, et_date: date) -> int:
@@ -630,6 +636,139 @@ def write_news_items(conn: psycopg.Connection, rows: Sequence[NewsRow]) -> None:
 def prune_news_items(conn: psycopg.Connection, now: datetime, kept: timedelta = NEWS_KEPT) -> int:
     """Delete news published more than 90 days before `now`; returns how many rows went."""
     return conn.execute("delete from news_items where published_at < %s", (now - kept,)).rowcount
+
+
+# --- Holding monitor: filings, quarters, earnings dates, insider trades and price alerts ---
+
+
+def write_filings(conn: psycopg.Connection, rows: Sequence[FilingRow]) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into filings (accession, symbol, form, filed_at, report_date, items, url)"
+            " values (%s, %s, %s, %s, %s, %s, %s)"
+            " on conflict (accession) do update set symbol = excluded.symbol, form = excluded.form,"
+            " filed_at = excluded.filed_at, report_date = excluded.report_date,"
+            " items = excluded.items, url = excluded.url",
+            [(r.accession, r.symbol, r.form, r.filed_at, r.report_date, r.items, r.url) for r in rows],
+        )
+
+
+def write_financial_quarters(conn: psycopg.Connection, rows: Sequence[QuarterRow]) -> None:
+    """Upsert quarters (a restatement replaces every column), then keep each written symbol's newest 12."""
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into financial_quarters (symbol, period_end, period_start, fiscal_year,"
+            " fiscal_period, revenue, gross_profit, operating_income, net_income, eps_diluted,"
+            " form, filed, accession, derived)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " on conflict (symbol, period_end) do update set period_start = excluded.period_start,"
+            " fiscal_year = excluded.fiscal_year, fiscal_period = excluded.fiscal_period,"
+            " revenue = excluded.revenue, gross_profit = excluded.gross_profit,"
+            " operating_income = excluded.operating_income, net_income = excluded.net_income,"
+            " eps_diluted = excluded.eps_diluted, form = excluded.form, filed = excluded.filed,"
+            " accession = excluded.accession, derived = excluded.derived",
+            [
+                (
+                    r.symbol, r.period_end, r.period_start, r.fiscal_year, r.fiscal_period,
+                    r.revenue, r.gross_profit, r.operating_income, r.net_income, r.eps_diluted,
+                    r.form, r.filed, r.accession, r.derived,
+                )
+                for r in rows
+            ],
+        )
+        cur.execute(
+            "delete from financial_quarters q where q.symbol = any(%s) and q.period_end <"
+            " (select min(period_end) from (select period_end from financial_quarters"
+            "   where symbol = q.symbol order by period_end desc limit %s) newest)",
+            (sorted({r.symbol for r in rows}), QUARTERS_KEPT),
+        )
+
+
+def write_earnings_reports(conn: psycopg.Connection, rows: Sequence[EarningsRow]) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into earnings_reports (symbol, report_date, report_at, eps_estimate, eps_actual,"
+            " surprise_pct) values (%s, %s, %s, %s, %s, %s)"
+            " on conflict (symbol, report_date) do update set report_at = excluded.report_at,"
+            " eps_estimate = excluded.eps_estimate, eps_actual = excluded.eps_actual,"
+            " surprise_pct = excluded.surprise_pct",
+            [
+                (r.symbol, r.report_date, r.report_at, r.eps_estimate, r.eps_actual, r.surprise_pct)
+                for r in rows
+            ],
+        )
+
+
+def write_insider_trades(conn: psycopg.Connection, rows: Sequence[InsiderRow]) -> None:
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into insider_trades (accession, line, symbol, filed_at, trade_date, owner, role,"
+            " code, shares, price, value, planned) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " on conflict do nothing",
+            [
+                (
+                    r.accession, r.line, r.symbol, r.filed_at, r.trade_date, r.owner, r.role,
+                    r.code, r.shares, r.price, r.value, r.planned,
+                )
+                for r in rows
+            ],
+        )
+
+
+def prune_holding_monitor(conn: psycopg.Connection, now: datetime) -> None:
+    conn.execute("delete from filings where filed_at < %s", (now - FILINGS_KEPT,))
+    conn.execute("delete from insider_trades where filed_at < %s", (now - INSIDER_KEPT,))
+    conn.execute("delete from earnings_reports where report_date < %s", ((now - EARNINGS_KEPT).date(),))
+
+
+def active_price_alerts(conn: psycopg.Connection) -> list[PriceAlert]:
+    rows = conn.execute(
+        "select id, symbol, asset_type, direction, level from price_alerts"
+        " where hit_at is null and dismissed_at is null order by id"
+    ).fetchall()
+    return [
+        PriceAlert(r["id"], r["symbol"], r["asset_type"], r["direction"], float(r["level"])) for r in rows
+    ]
+
+
+def alert_symbols(conn: psycopg.Connection) -> set[AssetRef]:
+    return {AssetRef(a.symbol, AssetType(a.asset_type)) for a in active_price_alerts(conn)}
+
+
+def latest_closes(conn: psycopg.Connection, refs: Iterable[AssetRef]) -> dict[tuple[str, str], float]:
+    """Each asset's newest stored close, keyed (symbol, asset_type)."""
+    wanted = set(refs)
+    if not wanted:
+        return {}
+    rows = conn.execute(
+        "select distinct on (symbol, asset_type) symbol, asset_type, close from daily_closes"
+        " where symbol = any(%s) order by symbol, asset_type, day desc",
+        (sorted({ref.symbol for ref in wanted}),),
+    ).fetchall()
+    return {
+        (r["symbol"], r["asset_type"]): float(r["close"])
+        for r in rows
+        if AssetRef(r["symbol"], AssetType(r["asset_type"])) in wanted
+    }
+
+
+def mark_alerts_hit(conn: psycopg.Connection, hits: Sequence[tuple[int, float]], now: datetime) -> None:
+    """Record each alert's hit; one that already hit keeps its first hit."""
+    if not hits:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "update price_alerts set hit_at = %s, hit_price = %s where id = %s and hit_at is null",
+            [(now, price, alert_id) for alert_id, price in hits],
+        )
 
 
 def news_daily_counts(

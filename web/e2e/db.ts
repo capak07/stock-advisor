@@ -302,11 +302,22 @@ export async function seedPortfolio() {
   await seedSell({ account: 'crypto', symbol: 'ETH', asset_type: 'crypto', qty: 1, price: 3900, currency: 'CAD', sold_at: daysAgo(5) })
 }
 
-/** An 8-K (or other form) as the pipeline's filings stage writes it. */
-export async function seedFiling(f: { accession: string; symbol: string; hoursAgo: number; items: string[]; form?: string; url?: string }) {
-  await sql`insert into filings (accession, symbol, form, filed_at, report_date, items, url)
-            values (${f.accession}, ${f.symbol}, ${f.form ?? '8-K'}, ${new Date(Date.now() - f.hoursAgo * 3_600_000)}, null,
-                    ${f.items}, ${f.url ?? `https://www.sec.gov/Archives/edgar/data/${f.accession}.htm`})`
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000)
+
+/** An 8-K (or other form) as the pipeline's filings stage writes it, stored `addedHoursAgo` (default: when filed). */
+export async function seedFiling(f: {
+  accession: string
+  symbol: string
+  hoursAgo: number
+  addedHoursAgo?: number
+  items: string[]
+  form?: string
+  url?: string
+}) {
+  await sql`insert into filings (accession, symbol, form, filed_at, report_date, items, url, added_at)
+            values (${f.accession}, ${f.symbol}, ${f.form ?? '8-K'}, ${hoursAgo(f.hoursAgo)}, null,
+                    ${f.items}, ${f.url ?? `https://www.sec.gov/Archives/edgar/data/${f.accession}.htm`},
+                    ${hoursAgo(f.addedHoursAgo ?? f.hoursAgo)})`
 }
 
 /** One quarter's financials; the period runs three months to `periodEnd`. */
@@ -344,11 +355,12 @@ export async function seedEarnings(e: {
             values (${e.symbol}, ${todayInToronto(at)}, ${at}, ${e.epsEstimate ?? null}, ${e.epsActual ?? null}, ${e.surprisePct ?? null})`
 }
 
-/** An insider open-market buy (P) or sell (S) from a Form 4. */
+/** An insider open-market buy (P) or sell (S) from a Form 4, stored `addedHoursAgo` (default: when filed). */
 export async function seedInsider(t: {
   accession: string
   symbol: string
   hoursAgo: number
+  addedHoursAgo?: number
   owner: string
   role: string
   code: 'P' | 'S'
@@ -356,10 +368,10 @@ export async function seedInsider(t: {
   price: number | null
   planned?: boolean
 }) {
-  const filed = new Date(Date.now() - t.hoursAgo * 3_600_000)
-  await sql`insert into insider_trades (accession, line, symbol, filed_at, trade_date, owner, role, code, shares, price, value, planned)
+  const filed = hoursAgo(t.hoursAgo)
+  await sql`insert into insider_trades (accession, line, symbol, filed_at, trade_date, owner, role, code, shares, price, value, planned, added_at)
             values (${t.accession}, 0, ${t.symbol}, ${filed}, ${todayInToronto(filed)}, ${t.owner}, ${t.role}, ${t.code}, ${t.shares},
-                    ${t.price}, ${t.price === null ? null : t.shares * t.price}, ${t.planned ?? false})`
+                    ${t.price}, ${t.price === null ? null : t.shares * t.price}, ${t.planned ?? false}, ${hoursAgo(t.addedHoursAgo ?? t.hoursAgo)})`
 }
 
 /** A price alert; `hit` marks it crossed at that price. */

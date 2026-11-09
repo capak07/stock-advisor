@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { daysAgo, resetData, seedEarnings, seedFiling, seedInsider, seedNews, seedPortfolio, seedQuarter } from './db'
+import { daysAgo, resetData, seedEarnings, seedFiling, seedInsider, seedNews, seedPortfolio, seedQuarter, seedRun } from './db'
 
 const FEED = "What's new on your stocks"
 
@@ -26,6 +26,28 @@ test('My Portfolio lists a headline, an important 8-K, an insider buy and an upc
   await expect(card.getByText('Earnings report due')).toBeVisible()
   await expect(card.getByText(/EPS estimate \$1\.23/)).toBeVisible()
   await expect(card.getByTestId('monitor-item')).toHaveCount(4)
+})
+
+test('the feed shows filings and insider trades stored since the previous run, even when filed earlier', async ({ page }) => {
+  // the previous published run started 30h15m ago; the latest one finished an hour ago
+  await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 30 * 3_600_000).toISOString() })
+  await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+  // filed 3 days ago, first stored by the latest run (a daily source, or a failed fetch caught up)
+  await seedFiling({ accession: '0000320193-26-000011', symbol: 'AAPL', hoursAgo: 72, addedHoursAgo: 2, items: ['5.02'] })
+  await seedInsider({ accession: '0000320193-26-000012', symbol: 'AAPL', hoursAgo: 40, addedHoursAgo: 2, owner: 'Late Filer', role: 'CEO', code: 'P', shares: 10, price: 5 })
+  // filed 3 days ago and already stored before the previous run: shown then, not new now
+  await seedFiling({ accession: '0000320193-26-000013', symbol: 'AAPL', hoursAgo: 72, addedHoursAgo: 40, items: ['2.02'] })
+  await seedInsider({ accession: '0000320193-26-000014', symbol: 'AAPL', hoursAgo: 72, addedHoursAgo: 40, owner: 'Old News', role: 'CFO', code: 'S', shares: 10, price: 5 })
+  // stored by the latest run but filed 20 days ago: a first backfill, not news
+  await seedFiling({ accession: '0000320193-26-000015', symbol: 'AAPL', hoursAgo: 20 * 24, addedHoursAgo: 2, items: ['8.01'] })
+
+  await page.goto('/')
+  const card = page.getByRole('region', { name: FEED })
+  await expect(card.getByText('8-K: director or officer change')).toBeVisible()
+  await expect(card.getByText('Late Filer (CEO) bought 10 shares at $5.00')).toBeVisible()
+  await expect(card.getByTestId('monitor-item')).toHaveCount(2)
+  await expect(card.getByText(/earnings results/)).toHaveCount(0)
+  await expect(card.getByText(/Old News/)).toHaveCount(0)
 })
 
 test('an empty feed says so', async ({ page }) => {
@@ -76,8 +98,12 @@ test('a US stock page shows the Earnings table with year-ago values, Filings and
 
 test('a US stock without filings or insider trades shows the empty states', async ({ page }) => {
   await page.goto('/ticker/AAPL')
-  await expect(page.getByText('No 8-K in the last 90 days.')).toBeVisible()
-  await expect(page.getByText('No insider buys or sells in the last 90 days.')).toBeVisible()
+  await expect(
+    page.getByText('No 8-K stored for the last 90 days. Filings are collected for stocks you hold, watch or that a run shortlists.'),
+  ).toBeVisible()
+  await expect(
+    page.getByText('No insider buys or sells stored for the last 90 days. They are collected for stocks you hold, watch or that a run shortlists.'),
+  ).toBeVisible()
 })
 
 test('a TSX stock page has an earnings date but no Filings or Insider cards', async ({ page }) => {

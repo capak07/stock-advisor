@@ -12,7 +12,7 @@ export function InsidersCard({ trades }: { trades: InsiderTrade[] }) {
       </div>
       {trades.length === 0 ? (
         <p className="sub" style={{ margin: '6px 0 0' }}>
-          No insider buys or sells in the last 90 days.
+          No insider buys or sells stored for the last 90 days. They are collected for stocks you hold, watch or that a run shortlists.
         </p>
       ) : (
         <div className="table-scroll">

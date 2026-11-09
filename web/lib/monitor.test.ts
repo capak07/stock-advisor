@@ -11,6 +11,14 @@ describe('buildFeed', () => {
     expect(buildFeed({ ...empty, filings }, opts).map((f) => f.at)).toEqual(['2026-11-05T00:00:00Z'])
   })
 
+  it('cuts filings and insider trades by when they were stored, and sorts them by when they were filed', () => {
+    const late = { ...item('filing', 'A', '2026-10-28T00:00:00Z'), addedAt: '2026-11-08T00:00:00Z' }
+    const stale = { ...item('insider', 'A', '2026-10-29T00:00:00Z'), addedAt: '2026-10-31T00:00:00Z' }
+    const lateTrade = { ...item('insider', 'B', '2026-10-30T00:00:00Z'), addedAt: '2026-11-02T00:00:00Z' }
+    const feed = buildFeed({ ...empty, filings: [late], insiders: [stale, lateTrade] }, opts)
+    expect(feed.map((f) => f.kind + f.symbol)).toEqual(['insiderB', 'filingA'])
+  })
+
   it('keeps the 3 newest news items per symbol', () => {
     const news = ['02', '03', '04', '05'].map((d) => item('news', 'A', `2026-11-${d}T00:00:00Z`))
     news.push(item('news', 'B', '2026-11-02T00:00:00Z'))

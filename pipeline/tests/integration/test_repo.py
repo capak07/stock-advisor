@@ -790,6 +790,53 @@ def test_earnings_reports_upsert_and_prune_after_3_years(db):
     assert [(r["report_date"], float(r["eps_actual"])) for r in rows] == [(date(2026, 10, 30), 1.2)]
 
 
+def test_a_moved_upcoming_earnings_date_replaces_the_old_one(db):
+    def report(symbol, day, actual=None):
+        return EarningsRow(symbol, day, datetime.combine(day, datetime.min.time(), tzinfo=UTC), 1.0, actual, None)
+
+    as_pipeline(db)
+    try:
+        repo.write_earnings_reports(db, [
+            report("AAPL", date(2026, 7, 30), actual=1.1), report("AAPL", date(2026, 11, 20)),
+            report("MSFT", date(2026, 11, 21)),
+        ])
+        # Yahoo moves AAPL's next report; MSFT isn't fetched this time
+        repo.write_earnings_reports(db, [report("AAPL", date(2026, 7, 30), actual=1.1), report("AAPL", date(2026, 11, 25))])
+    finally:
+        db.execute("reset role")
+    rows = db.execute("select symbol, report_date, eps_actual from earnings_reports order by symbol, report_date").fetchall()
+    assert [(r["symbol"], r["report_date"], r["eps_actual"] is not None) for r in rows] == [
+        ("AAPL", date(2026, 7, 30), True), ("AAPL", date(2026, 11, 25), False), ("MSFT", date(2026, 11, 21), False),
+    ]
+
+
+def insider(line, days_ago=1.0, accession="i1"):
+    return InsiderRow(accession, line, "AAPL", NOW - timedelta(days=days_ago), DAY, "A B", "CEO", "P",
+                      10.0, 5.0, 50.0, False)
+
+
+def test_a_rewritten_filing_or_insider_trade_keeps_when_it_was_first_stored(db):
+    first = NOW - timedelta(days=3)
+    as_pipeline(db)
+    try:
+        repo.write_filings(db, [filing("a1")])
+        repo.write_insider_trades(db, [insider(0)])
+    finally:
+        db.execute("reset role")
+    db.execute("update filings set added_at = %s", (first,))
+    db.execute("update insider_trades set added_at = %s", (first,))
+    as_pipeline(db)
+    try:
+        repo.write_filings(db, [replace(filing("a1"), items=["2.02", "9.01"]), filing("a2")])
+        repo.write_insider_trades(db, [insider(0), insider(1)])
+    finally:
+        db.execute("reset role")
+    filings = {r["accession"]: r["added_at"] for r in db.execute("select accession, added_at from filings").fetchall()}
+    trades = {r["line"]: r["added_at"] for r in db.execute("select line, added_at from insider_trades").fetchall()}
+    assert filings["a1"] == first and filings["a2"] > first
+    assert trades[0] == first and trades[1] > first
+
+
 def test_insider_trades_are_idempotent_and_pruned_after_400_days(db):
     def trade(line, days_ago=1.0, accession="i1"):
         return InsiderRow(accession, line, "AAPL", NOW - timedelta(days=days_ago), DAY, "A B", "CEO", "P",

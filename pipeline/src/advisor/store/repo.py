@@ -642,6 +642,7 @@ def prune_news_items(conn: psycopg.Connection, now: datetime, kept: timedelta = 
 
 
 def write_filings(conn: psycopg.Connection, rows: Sequence[FilingRow]) -> None:
+    """Upsert filings; a rewrite keeps `added_at`, when the row was first stored."""
     if not rows:
         return
     with conn.cursor() as cur:
@@ -689,8 +690,13 @@ def write_financial_quarters(conn: psycopg.Connection, rows: Sequence[QuarterRow
 
 
 def write_earnings_reports(conn: psycopg.Connection, rows: Sequence[EarningsRow]) -> None:
+    """Upsert reports, then drop each written symbol's reports without an actual EPS that this fetch
+    no longer lists: Yahoo's upcoming dates are estimates, and a moved one must not linger."""
     if not rows:
         return
+    fresh: dict[str, list[date]] = {}
+    for r in rows:
+        fresh.setdefault(r.symbol, []).append(r.report_date)
     with conn.cursor() as cur:
         cur.executemany(
             "insert into earnings_reports (symbol, report_date, report_at, eps_estimate, eps_actual,"
@@ -702,6 +708,11 @@ def write_earnings_reports(conn: psycopg.Connection, rows: Sequence[EarningsRow]
                 (r.symbol, r.report_date, r.report_at, r.eps_estimate, r.eps_actual, r.surprise_pct)
                 for r in rows
             ],
+        )
+        cur.executemany(
+            "delete from earnings_reports where symbol = %s and eps_actual is null"
+            " and report_date <> all(%s)",
+            sorted(fresh.items()),
         )
 
 

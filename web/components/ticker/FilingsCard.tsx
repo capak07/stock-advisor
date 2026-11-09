@@ -13,7 +13,7 @@ export function FilingsCard({ filings }: { filings: FilingRow[] }) {
       </div>
       {filings.length === 0 ? (
         <p className="sub" style={{ margin: '6px 0 0' }}>
-          No 8-K in the last 90 days.
+          No 8-K stored for the last 90 days. Filings are collected for stocks you hold, watch or that a run shortlists.
         </p>
       ) : (
         <div className="table-scroll">

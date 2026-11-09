@@ -10,6 +10,9 @@ export type FeedItem = {
   assetType?: 'stock' | 'crypto'
   /** A hit alert's row id, for its Dismiss button. */
   alertId?: number
+  /** When the pipeline first stored a filing or insider trade: the `since` cut-off applies to this,
+   * since a filing can be learned about runs after it was filed. `at` (when filed) still sorts. */
+  addedAt?: string
 }
 
 export type FeedParts = {
@@ -27,7 +30,8 @@ const EARNINGS_DAYS = 14
 const time = (item: FeedItem): number => Date.parse(item.at)
 
 /** One "what's new" list: upcoming earnings (next 14 days, soonest first), then everything since
- * `since` newest first, with at most 3 news items per symbol. */
+ * `since` newest first, with at most 3 news items per symbol. Filings and insider trades count from
+ * when they were stored (`addedAt`, else `at`). */
 export const buildFeed = (parts: FeedParts, opts: { since: string; now: string }): FeedItem[] => {
   const since = Date.parse(opts.since)
   const now = Date.parse(opts.now)
@@ -47,7 +51,7 @@ export const buildFeed = (parts: FeedParts, opts: { since: string; now: string }
     })
 
   // a hit alert stays until the owner dismisses it, so `since` does not cut it
-  const rest = [...news, ...[...parts.filings, ...parts.insiders].filter((i) => time(i) >= since), ...parts.alerts]
+  const rest = [...news, ...[...parts.filings, ...parts.insiders].filter((i) => Date.parse(i.addedAt ?? i.at) >= since), ...parts.alerts]
     .sort((a, b) => time(b) - time(a))
 
   return [...upcoming, ...rest]

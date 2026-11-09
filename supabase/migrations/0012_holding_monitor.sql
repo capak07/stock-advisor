@@ -7,7 +7,10 @@ create table filings (
   filed_at timestamptz not null,
   report_date date,
   items text[] not null default '{}',
-  url text not null
+  url text not null,
+  -- when the pipeline first stored the row (kept on rewrite): the web's "what's new" cut-off, since a
+  -- filing can be learned about runs after its filed_at (a daily source, a failed fetch)
+  added_at timestamptz not null default now()
 );
 create index filings_by_symbol on filings (symbol, filed_at desc);
 
@@ -52,6 +55,7 @@ create table insider_trades (
   price numeric,
   value numeric,
   planned boolean not null,
+  added_at timestamptz not null default now(), -- when first stored, as for filings
   primary key (accession, line)
 );
 create index insider_trades_by_symbol on insider_trades (symbol, trade_date desc);

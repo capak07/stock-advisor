@@ -16,6 +16,9 @@ const HOUR_MS = 3_600_000
 const DAY_MS = 24 * HOUR_MS
 const FALLBACK_HOURS = 48
 const EARNINGS_DAYS = 14
+/** A filing or insider trade stored since the last run shows only if filed within this many days, so
+ * the first fetch for a newly held or watched stock doesn't fill the feed with months-old filings. */
+const FEED_FILED_DAYS = 14
 const DETAIL_DAYS = 90
 
 const num = (value: unknown): number | null => {
@@ -51,7 +54,8 @@ export async function feedSince(supabase: Supabase, now: Date): Promise<string> 
   return runs.length >= 2 ? runs[1].started_at : new Date(now.getTime() - FALLBACK_HOURS * HOUR_MS).toISOString()
 }
 
-/** What arrived on held and watched stocks and coins since the previous published run. */
+/** What arrived on held and watched stocks and coins since the previous published run (filings and
+ * insider trades: stored since then and filed in the last 14 days). */
 export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
   const now = new Date()
   const [trades, fx, watch, since] = await Promise.all([
@@ -96,6 +100,9 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
   if (all.length === 0) return buildFeed({ news: [], filings: [], insiders: [], earnings: [], alerts }, opts)
 
   const horizon = new Date(now.getTime() + EARNINGS_DAYS * DAY_MS).toISOString()
+  // Filings and insider trades are "new" when the pipeline stored them after `since`, not when they were
+  // filed: Form 4s are fetched once a day and a failed SEC fetch is caught up later.
+  const filedFloor = new Date(now.getTime() - FEED_FILED_DAYS * DAY_MS).toISOString()
   const [newsRows, filingRows, insiderRows, earningsRows] = await Promise.all([
     fetchAll((from, to) =>
       supabase
@@ -111,9 +118,10 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
       ? fetchAll((from, to) =>
           supabase
             .from('filings')
-            .select('accession, symbol, form, filed_at, items, url')
+            .select('accession, symbol, form, filed_at, items, url, added_at')
             .in('symbol', stocks)
-            .gte('filed_at', since)
+            .gte('added_at', since)
+            .gte('filed_at', filedFloor)
             .order('filed_at', { ascending: false })
             .order('accession')
             .range(from, to),
@@ -123,9 +131,10 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
       ? fetchAll((from, to) =>
           supabase
             .from('insider_trades')
-            .select('accession, line, symbol, filed_at, owner, role, code, shares, price, planned')
+            .select('accession, line, symbol, filed_at, owner, role, code, shares, price, planned, added_at')
             .in('symbol', stocks)
-            .gte('filed_at', since)
+            .gte('added_at', since)
+            .gte('filed_at', filedFloor)
             .order('filed_at', { ascending: false })
             .order('accession')
             .order('line')
@@ -148,26 +157,28 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
   const news = (newsRows as { symbol: string; asset_type: AssetType; published_at: string; outlet: string; url: string; title: string }[])
     .filter((r) => keys.has(assetKey(r.asset_type, r.symbol)))
     .map((r): FeedItem => ({ kind: 'news', assetType: r.asset_type, symbol: r.symbol, at: r.published_at, title: r.title, url: r.url, detail: r.outlet }))
-  const filings = (filingRows as { symbol: string; form: string; filed_at: string; items: string[] | null; url: string }[]).map((r): FeedItem => {
+  const filings = (filingRows as { symbol: string; form: string; filed_at: string; items: string[] | null; url: string; added_at: string }[]).map((r): FeedItem => {
     const labels = itemLabels(r.items ?? [])
     return {
       kind: 'filing',
       assetType: 'stock',
       symbol: r.symbol,
       at: r.filed_at,
+      addedAt: r.added_at,
       title: labels.length ? `${r.form}: ${labels.join(', ')}` : r.form,
       url: r.url,
       important: isImportant(r.items ?? []),
     }
   })
   const insiders = (
-    insiderRows as { symbol: string; filed_at: string; owner: string; role: string; code: 'P' | 'S'; shares: unknown; price: unknown; planned: boolean }[]
+    insiderRows as { symbol: string; filed_at: string; owner: string; role: string; code: 'P' | 'S'; shares: unknown; price: unknown; planned: boolean; added_at: string }[]
   ).map(
     (r): FeedItem => ({
       kind: 'insider',
       assetType: 'stock',
       symbol: r.symbol,
       at: r.filed_at,
+      addedAt: r.added_at,
       title: insiderTitle({ owner: r.owner, role: r.role, code: r.code, shares: Number(r.shares), price: num(r.price) }),
       detail: r.planned ? '(10b5-1 plan)' : undefined,
     }),

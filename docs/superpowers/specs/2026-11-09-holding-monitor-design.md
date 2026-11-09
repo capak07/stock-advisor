@@ -61,10 +61,10 @@ One migration, `0012_holding_monitor.sql`. Pipeline tables follow the `0006`/`00
 
 | table | key | columns | written | kept |
 | --- | --- | --- | --- | --- |
-| `filings` | `accession` | `symbol, form, filed_at (timestamptz, accepted time or filing date), report_date, items text[], url` | every run, from `sec_8k` records, every enriched US symbol | 400 days |
+| `filings` | `accession` | `symbol, form, filed_at (timestamptz, accepted time or filing date), report_date, items text[], url, added_at (first stored; kept on rewrite)` | every run, from `sec_8k` records, every enriched US symbol | 400 days |
 | `financial_quarters` | `(symbol, period_end)` | `period_start, fiscal_year, fiscal_period, revenue, gross_profit, operating_income, net_income, eps_diluted, form, filed, accession, derived bool` | every run, from `sec_xbrl` records, every enriched US symbol | the latest 12 per symbol |
-| `earnings_reports` | `(symbol, report_date)` | `report_at, eps_estimate, eps_actual, surprise_pct` | every run, from `yfinance_earnings` records | 3 years |
-| `insider_trades` | `(accession, line)` | `symbol, filed_at, trade_date, owner, role, code (P/S), shares, price, value, planned` | every run, from `sec_form4` records with code P or S and not derivative | 400 days |
+| `earnings_reports` | `(symbol, report_date)` | `report_at, eps_estimate, eps_actual, surprise_pct` | every run, from `yfinance_earnings` records; a written symbol's reports without an actual that the fetch no longer lists (a moved date) are deleted | 3 years |
+| `insider_trades` | `(accession, line)` | `symbol, filed_at, trade_date, owner, role, code (P/S), shares, price, value, planned, added_at (first stored; kept on rewrite)` | every run, from `sec_form4` records with code P or S and not derivative | 400 days |
 | `price_alerts` (owner table) | `id` | `symbol, asset_type, direction (above/below), level, note, created_at, hit_at, hit_price, dismissed_at` | the owner inserts, edits, dismisses and deletes; the pipeline sets only `hit_at` and `hit_price` | until deleted |
 
 - `filings.url`: `https://www.sec.gov/Archives/edgar/data/<cik>/<accession without dashes>/<primary
@@ -92,7 +92,9 @@ One migration, `0012_holding_monitor.sql`. Pipeline tables follow the `0006`/`00
 ## Web
 
 - `web/lib/data/monitor.ts` — loader for the portfolio card: held + watched symbols, items since the
-  previous published run's start (or the last 48 hours when there is no previous run).
+  previous published run's start (or the last 48 hours when there is no previous run). Filings and
+  insider trades count from `added_at` (a daily source or a failed fetch stores them late), and only
+  those filed in the last 14 days, so a first backfill doesn't flood the card.
 - `web/lib/earnings.ts` — pure: year-ago matching (same period end ± 10 days a year earlier), margins,
   TTM (4 quarters spanning under 300 days), "what changed" sentences. Unit-tested with Vitest.
 - `web/lib/filings.ts` — pure: 8-K item labels and the important set.

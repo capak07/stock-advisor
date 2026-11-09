@@ -206,7 +206,7 @@
 **Interfaces:**
 - Consumes: Task 7 helpers; tables from Task 1.
 - Produces: `loadMonitorFeed(supabase): Promise<FeedItem[]>` (held + watched symbols; since = previous published run's `started_at`, else now − 48 h); `loadHoldingData(supabase, symbol): Promise<{ quarters: Quarter[]; latestFiling: {form: string; filed: string} | null; earnings: {...}[]; filings: {...}[]; insiders: {...}[]; alerts: {...}[] }>`.
-- Copy: card titles "What's new on your stocks", "Earnings", "Filings (8-K)", "Insider trades"; empty states "Nothing new since the last run.", "No 8-K in the last 90 days.", "No insider buys or sells in the last 90 days."; insider rows say "bought"/"sold" and "(10b5-1 plan)".
+- Copy: card titles "What's new on your stocks", "Earnings", "Filings (8-K)", "Insider trades"; empty states "Nothing new since the last run.", "No 8-K stored for the last 90 days. Filings are collected for stocks you hold, watch or that a run shortlists.", "No insider buys or sells stored for the last 90 days. They are collected for stocks you hold, watch or that a run shortlists."; insider rows say "bought"/"sold" and "(10b5-1 plan)".
 - [ ] **Step 1: Failing e2e** (`monitor.spec.ts`): seeded holding with a news item, an important 8-K, an insider buy and an earnings date in 5 days shows all four on My Portfolio; the ticker page of a US stock shows the Earnings table with a year-ago column and the Filings and Insider cards; a TSX stock's ticker page has no Filings card.
 - [ ] **Step 2: Run** `npx playwright test e2e/monitor.spec.ts` from the main checkout (the worktree junction breaks Turbopack) — Expected: FAIL.
 - [ ] **Step 3: Implement** loaders and cards following `NewsCard.tsx` / `Cards.tsx` styles.

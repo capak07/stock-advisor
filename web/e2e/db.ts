@@ -301,3 +301,79 @@ export async function seedPortfolio() {
   await seedLot({ account: 'crypto', symbol: 'ETH', asset_type: 'crypto', qty: 2, price: 4200, currency: 'CAD', bought_at: days[0] })
   await seedSell({ account: 'crypto', symbol: 'ETH', asset_type: 'crypto', qty: 1, price: 3900, currency: 'CAD', sold_at: daysAgo(5) })
 }
+
+/** An 8-K (or other form) as the pipeline's filings stage writes it. */
+export async function seedFiling(f: { accession: string; symbol: string; hoursAgo: number; items: string[]; form?: string; url?: string }) {
+  await sql`insert into filings (accession, symbol, form, filed_at, report_date, items, url)
+            values (${f.accession}, ${f.symbol}, ${f.form ?? '8-K'}, ${new Date(Date.now() - f.hoursAgo * 3_600_000)}, null,
+                    ${f.items}, ${f.url ?? `https://www.sec.gov/Archives/edgar/data/${f.accession}.htm`})`
+}
+
+/** One quarter's financials; the period runs three months to `periodEnd`. */
+export async function seedQuarter(q: {
+  symbol: string
+  periodEnd: string
+  fiscalPeriod?: string | null
+  revenue: number | null
+  grossProfit?: number | null
+  operatingIncome?: number | null
+  netIncome?: number | null
+  epsDiluted?: number | null
+  form?: string
+  filed?: string
+  derived?: boolean
+}) {
+  const start = addDays(q.periodEnd, -89)
+  await sql`insert into financial_quarters (symbol, period_start, period_end, fiscal_year, fiscal_period, revenue, gross_profit,
+              operating_income, net_income, eps_diluted, form, filed, accession, derived)
+            values (${q.symbol}, ${start}, ${q.periodEnd}, ${Number(q.periodEnd.slice(0, 4))}, ${q.fiscalPeriod ?? null}, ${q.revenue},
+                    ${q.grossProfit ?? null}, ${q.operatingIncome ?? null}, ${q.netIncome ?? null}, ${q.epsDiluted ?? null},
+                    ${q.form ?? '10-Q'}, ${q.filed ?? q.periodEnd}, ${`q-${q.symbol}-${q.periodEnd}`}, ${q.derived ?? false})`
+}
+
+/** An earnings report `daysFromNow` days away (negative: past, with actual EPS and surprise). */
+export async function seedEarnings(e: {
+  symbol: string
+  daysFromNow: number
+  epsEstimate?: number | null
+  epsActual?: number | null
+  surprisePct?: number | null
+}) {
+  const at = new Date(Date.now() + e.daysFromNow * 86_400_000)
+  await sql`insert into earnings_reports (symbol, report_date, report_at, eps_estimate, eps_actual, surprise_pct)
+            values (${e.symbol}, ${todayInToronto(at)}, ${at}, ${e.epsEstimate ?? null}, ${e.epsActual ?? null}, ${e.surprisePct ?? null})`
+}
+
+/** An insider open-market buy (P) or sell (S) from a Form 4. */
+export async function seedInsider(t: {
+  accession: string
+  symbol: string
+  hoursAgo: number
+  owner: string
+  role: string
+  code: 'P' | 'S'
+  shares: number
+  price: number | null
+  planned?: boolean
+}) {
+  const filed = new Date(Date.now() - t.hoursAgo * 3_600_000)
+  await sql`insert into insider_trades (accession, line, symbol, filed_at, trade_date, owner, role, code, shares, price, value, planned)
+            values (${t.accession}, 0, ${t.symbol}, ${filed}, ${todayInToronto(filed)}, ${t.owner}, ${t.role}, ${t.code}, ${t.shares},
+                    ${t.price}, ${t.price === null ? null : t.shares * t.price}, ${t.planned ?? false})`
+}
+
+/** A price alert; `hit` marks it crossed at that price. */
+export async function seedAlert(a: {
+  symbol: string
+  assetType?: 'stock' | 'crypto'
+  direction: 'above' | 'below'
+  level: number
+  note?: string | null
+  hit?: { hoursAgo: number; price: number }
+  dismissed?: boolean
+}) {
+  await sql`insert into price_alerts (symbol, asset_type, direction, level, note, hit_at, hit_price, dismissed_at)
+            values (${a.symbol}, ${a.assetType ?? 'stock'}, ${a.direction}, ${a.level}, ${a.note ?? null},
+                    ${a.hit ? new Date(Date.now() - a.hit.hoursAgo * 3_600_000) : null}, ${a.hit?.price ?? null},
+                    ${a.dismissed ? new Date() : null})`
+}

@@ -3,9 +3,11 @@ import { OrderDisclaimer } from '@/components/OrderGuide'
 import { ActionsCard, BreakdownCard, HoldingsCard, WarningsCard, type HoldingGuides } from '@/components/portfolio/Cards'
 import { TradeButtons } from '@/components/portfolio/TradeForms'
 import { TradeList } from '@/components/portfolio/TradeList'
+import { MonitorCard } from '@/components/portfolio/MonitorCard'
 import { ValueCard } from '@/components/portfolio/ValueCard'
 import { ownerClient } from '@/lib/auth'
 import { loadHoldingActions } from '@/lib/data/actions'
+import { loadMonitorFeed } from '@/lib/data/monitor'
 import { loadPortfolio } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
 import { holdingGuides } from '@/lib/guidance'
@@ -19,7 +21,7 @@ export const metadata: Metadata = { title: 'My Portfolio' }
 export default async function PortfolioPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
-  const [data, latest] = await Promise.all([loadPortfolio(supabase), loadHoldingActions(supabase)])
+  const [data, latest, feed] = await Promise.all([loadPortfolio(supabase), loadHoldingActions(supabase), loadMonitorFeed(supabase)])
   const today = todayInToronto()
   const view = portfolioView(
     {
@@ -62,7 +64,10 @@ export default async function PortfolioPage() {
       </div>
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>
-        <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} />
+        <div className="grid gap-4">
+          <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} />
+          <MonitorCard items={feed} />
+        </div>
         <aside className="grid gap-4">
           <WarningsCard warnings={view.warnings} />
           <BreakdownCard byRisk={view.byRisk} byMarket={view.byMarket} byAccount={view.byAccount} />

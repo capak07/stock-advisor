@@ -35,7 +35,7 @@ from advisor.recommend.risk import risk_levels
 from advisor.run import RunDeps, empty_news_summary, execute_run
 from advisor.store import repo
 from advisor.training.sectors import all_sector_etfs
-from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history
+from fakes import FRESH_START, FakeCollector, bar, fake_price_collectors, history, seed_alert
 from model_data import write_market
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
@@ -1882,13 +1882,6 @@ def test_the_largest_coins_are_priced_for_the_invest_page_even_if_nobody_holds_t
     assert (outcome.summary["crypto"], outcome.summary["crypto_unquoted"]) == (0, [])  # held and watched only
 
 
-def add_alert(db, symbol, direction, level, asset_type="stock"):
-    return db.execute(
-        "insert into price_alerts (symbol, asset_type, direction, level) values (%s, %s, %s, %s) returning id",
-        (symbol, asset_type, direction, level),
-    ).fetchone()["id"]
-
-
 def alert_hit(db, alert_id):
     row = db.execute("select hit_at, hit_price from price_alerts where id = %s", (alert_id,)).fetchone()
     return row["hit_at"], None if row["hit_price"] is None else float(row["hit_price"])
@@ -1916,7 +1909,7 @@ def test_the_holding_monitor_stores_8ks_and_earnings_from_enrichment(db, tmp_pat
 
 
 def test_a_stock_with_only_an_active_alert_is_priced_and_stored_without_actions_or_verdicts(db, tmp_path):
-    alert = add_alert(db, "OTCX", "above", 9.5)  # the fake histories close at 10
+    alert = seed_alert(db, "OTCX", "above", 9.5)  # the fake histories close at 10
     deps = make_deps(db, tmp_path)
     outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     assert outcome.status is RunStatus.SUCCESS
@@ -1934,7 +1927,7 @@ def test_a_stock_with_only_an_active_alert_is_priced_and_stored_without_actions_
 
 def test_an_alerted_stock_already_held_is_priced_once(db, tmp_path):
     hold(db, "OTCX")
-    add_alert(db, "OTCX", "below", 5)
+    seed_alert(db, "OTCX", "below", 5)
     deps = make_deps(db, tmp_path)
     outcome = execute_run(deps, RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     assert deps.collectors["yfinance_bars"].calls == [["OTCX", *FUNDS], EVERYONE]
@@ -1942,19 +1935,65 @@ def test_an_alerted_stock_already_held_is_priced_once(db, tmp_path):
     assert outcome.summary["holding_monitor"]["alerts_hit"] == 0
 
 
-def test_a_coin_with_only_an_active_alert_is_priced_and_its_closes_stored(db, tmp_path):
-    alert = add_alert(db, "ETH", "above", 80000, "crypto")
+def coin_closes(db, symbol):
+    return db.execute(
+        "select count(*) as n from daily_closes where symbol = %s and asset_type = 'crypto'", (symbol,)
+    ).fetchone()["n"]
+
+
+def crypto_features(db, run_id):
+    rows = db.execute(
+        "select symbol from features_live where run_id = %s and asset_type = 'crypto' order by symbol", (run_id,)
+    ).fetchall()
+    return [r["symbol"] for r in rows]
+
+
+def test_a_coin_with_only_an_active_alert_gets_its_closes_and_nothing_more(db, tmp_path):
+    alert = seed_alert(db, "ETH", "above", 80000, "crypto")
     extra = crypto_sources(quoted=("ETH",))
     outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
     assert outcome.status is RunStatus.SUCCESS
-    assert extra["coingecko"].calls == [["ETH"]]
-    row = db.execute(
-        "select count(*) as n from daily_closes where symbol = 'ETH' and asset_type = 'crypto'"
-    ).fetchone()
-    assert row["n"] == 30
+    # its candles only (BTC's come along, as always): no quote and no price check
+    assert [extra[name].calls for name in ("coingecko", "coinbase_candles", "kraken_ohlc")] == [
+        [], [["ETH", "BTC"]], [],
+    ]
+    assert coin_closes(db, "ETH") == 30
     assert alert_hit(db, alert) == (NOW, 82000.0)
+    # display only: no features, verdict or action, and it isn't counted as held or watched crypto
+    assert crypto_features(db, outcome.run_id) == []
     assert (outcome.summary["crypto"], outcome.summary["crypto_unquoted"]) == (0, [])
     assert holding_actions(db, outcome.run_id) == {}
+    assert db.execute("select count(*) as n from watchlist_verdicts").fetchone()["n"] == 0
+
+
+def test_an_alert_only_coin_is_never_forecast(db, tmp_path, monkeypatch):
+    repo.upsert_coins(db, [("BTC", "Bitcoin", 2e12)], NOW)  # BTC is forecast for the Invest page
+    seed_alert(db, "ETH", "below", 90000, "crypto")
+
+    class Active:
+        model, usable, version = object(), (7,), "crypto-test"
+
+    class Stub:
+        active, metrics = Active(), {}
+
+    forecast_for: list[list[str]] = []
+
+    def recording(model, history, spy_close, now_utc):
+        forecast_for.append(sorted(history))
+        return {}, {}
+
+    monkeypatch.setattr("advisor.run.load_crypto_model", lambda conn: (Stub(), {"version": "crypto-test"}))
+    monkeypatch.setattr("advisor.run.forecast_coins", recording)
+    extra = crypto_sources(quoted=("BTC",))
+    outcome = execute_run(make_deps(db, tmp_path, extra=extra), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert forecast_for == [["BTC"]]  # ETH's candles were fetched, but only for its closes
+    assert extra["coingecko"].calls == [["BTC"]]
+    assert extra["coinbase_candles"].calls == [["BTC", "ETH"]]
+    assert crypto_features(db, outcome.run_id) == ["BTC"]
+    assert coin_closes(db, "ETH") == 30 and coin_closes(db, "BTC") == 0  # a top coin's closes aren't stored
+    assert outcome.summary["holding_monitor"]["alerts_hit"] == 1
+    assert db.execute("select count(*) as n from predictions where symbol = 'ETH'").fetchone()["n"] == 0
 
 
 def test_a_monitor_stage_that_raises_is_recorded_and_the_run_publishes(db, tmp_path, monkeypatch):
@@ -1971,7 +2010,7 @@ def test_a_monitor_stage_that_raises_is_recorded_and_the_run_publishes(db, tmp_p
 
 def test_a_monitor_sql_error_is_rolled_back_and_the_later_stages_still_run(db, tmp_path, monkeypatch):
     hold(db, "RY.TO")
-    add_alert(db, "RY.TO", "above", 9.5)
+    seed_alert(db, "RY.TO", "above", 9.5)
 
     def broken(conn, hits, now):
         conn.execute("select 1 / 0")
@@ -1986,7 +2025,7 @@ def test_a_monitor_sql_error_is_rolled_back_and_the_later_stages_still_run(db, t
 
 
 def test_a_run_that_cannot_publish_skips_the_holding_monitor(db, tmp_path):
-    alert = add_alert(db, "AAA", "above", 1)
+    alert = seed_alert(db, "AAA", "above", 1)
     outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe={Market.US: 3, Market.TSX: 300})
     assert outcome.status is RunStatus.FAILED
     assert outcome.summary["holding_monitor"] == {"skipped": "the run can't publish"}

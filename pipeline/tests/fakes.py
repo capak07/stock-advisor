@@ -175,3 +175,11 @@ def sec_routes(fixtures_dir: Path) -> dict[str, bytes]:
     for cik, accession in schedules:
         routes[archive_url(cik, accession, "primary_doc.xml")] = read("schedule13g_A_sample_primary_doc.xml")
     return routes
+
+
+def seed_alert(db, symbol: str, direction: str, level: float, asset_type: str = "stock") -> int:
+    """An active price alert, as the owner adds it on a ticker page; returns its id."""
+    return db.execute(
+        "insert into price_alerts (symbol, asset_type, direction, level) values (%s, %s, %s, %s) returning id",
+        (symbol, asset_type, direction, level),
+    ).fetchone()["id"]

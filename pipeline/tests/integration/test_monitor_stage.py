@@ -12,6 +12,7 @@ from advisor.models import AssetRef, AssetType, DailyClose
 from advisor.monitor.rows import filing_rows
 from advisor.monitor.stage import monitor_stage
 from advisor.store import repo
+from fakes import seed_alert
 
 NOW = datetime(2026, 10, 14, 12, 15, tzinfo=UTC)
 DAY = date(2026, 10, 13)
@@ -62,13 +63,6 @@ def all_results():
         "yfinance_earnings": result("yfinance_earnings", [earnings(), earnings("MSFT")]),
         "sec_form4": result("sec_form4", [trade("P"), trade("S"), trade("A"), trade("P", derivative=True)]),
     }
-
-
-def seed_alert(db, symbol, direction, level, asset_type="stock"):
-    return db.execute(
-        "insert into price_alerts (symbol, asset_type, direction, level) values (%s, %s, %s, %s) returning id",
-        (symbol, asset_type, direction, level),
-    ).fetchone()["id"]
 
 
 def count(db, table):

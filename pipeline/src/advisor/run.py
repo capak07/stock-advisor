@@ -495,7 +495,7 @@ def execute_run(
         alert_coins = sorted({r.symbol for r in alerted if r.asset_type is AssetType.CRYPTO} - set(crypto))
         # the largest coins are priced and forecast too, so the Invest page has coins to choose from;
         # only held and watched ones get enrichment, news, verdicts and actions, or can degrade the run
-        priced_coins = list(dict.fromkeys([*crypto, *alert_coins, *repo.top_coins(conn, INVEST_COINS)]))
+        priced_coins = list(dict.fromkeys([*crypto, *repo.top_coins(conn, INVEST_COINS)]))
         # Stocks grading waits on that aren't held or watched, such as one the owner has sold, and
         # stocks with only an alert: they're priced and their closes stored, and get no actions or verdicts.
         to_grade = [s for s in repo.symbols_to_grade(conn) if s not in priority]
@@ -518,15 +518,16 @@ def execute_run(
         quotes: dict[str, CryptoQuote] = {}
         candles: dict[str, list[DailyBar]] = {}
         crypto_features: dict[str, dict] = {}  # the holdings stage reads a coin's price check here
-        if priced_coins:
+        if priced_coins or alert_coins:
 
             def crypto_records(name: str, symbols: Sequence[str] | None = None) -> list:
                 asked = list(priced_coins if symbols is None else symbols)
-                return list(tracker.run(name, asked).records) if name in deps.collectors else []
+                return list(tracker.run(name, asked).records) if asked and name in deps.collectors else []
 
             quotes = {quote.symbol: quote for quote in crypto_records(QUOTES)}
             # BTC's candles come along even when it isn't held: altcoin features are excess over BTC.
-            candle_symbols = list(dict.fromkeys([*priced_coins, BTC]))
+            # An alert-only coin gets its candles alone, for its stored closes: no quote, features or forecast.
+            candle_symbols = list(dict.fromkeys([*priced_coins, *alert_coins, BTC]))
             candles, checks = group_bars(crypto_records(BARS, candle_symbols)), group_bars(crypto_records(CHECK))
             coin_rows = crypto_feature_rows(priced_coins, quotes, candles, checks, now_utc)
             repo.write_features_live(conn, run_id, coin_rows, now_utc)

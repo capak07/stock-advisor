@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { DismissAlert } from '@/components/portfolio/DismissAlert'
 import { timeOrDate } from '@/lib/dates'
 import type { FeedItem } from '@/lib/monitor'
 import { safeLink, tickerHref } from '@/lib/ticker'
@@ -48,6 +49,12 @@ export function MonitorCard({ items }: { items: FeedItem[] }) {
                   {item.detail}
                   {item.detail && item.kind !== 'earnings' && ' · '}
                   {item.kind !== 'earnings' && timeOrDate(item.at)}
+                  {item.kind === 'alert' && item.alertId !== undefined && (
+                    <>
+                      {' '}
+                      <DismissAlert id={item.alertId} />
+                    </>
+                  )}
                 </span>
               </div>
             )

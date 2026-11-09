@@ -1,4 +1,5 @@
 import 'server-only'
+import { alertTitle } from '../alert-form'
 import { addDays, shortDay, todayInToronto } from '../dates'
 import type { Quarter } from '../earnings'
 import { isImportant, itemLabels } from '../filings'
@@ -69,7 +70,30 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
   const stocks = symbolsOf('stock')
   const all = [...stocks, ...symbolsOf('crypto')]
   const opts = { since, now: now.toISOString() }
-  if (all.length === 0) return buildFeed({ news: [], filings: [], insiders: [], earnings: [], alerts: [] }, opts)
+  // hit alerts show for any symbol, held or watched or not, until dismissed
+  const alertRows = must(
+    await supabase
+      .from('price_alerts')
+      .select('id, symbol, asset_type, direction, level, hit_at, hit_price')
+      .not('hit_at', 'is', null)
+      .is('dismissed_at', null)
+      .order('hit_at', { ascending: false }),
+  ) as { id: number; symbol: string; asset_type: AssetType; direction: 'above' | 'below'; level: unknown; hit_at: string; hit_price: unknown }[]
+  const alerts = alertRows.map(
+    (r): FeedItem => {
+      const hit = num(r.hit_price)
+      return {
+        kind: 'alert',
+        assetType: r.asset_type,
+        alertId: r.id,
+        symbol: r.symbol,
+        at: r.hit_at,
+        title: alertTitle(r.direction, Number(r.level)),
+        detail: hit === null ? undefined : dollars(hit),
+      }
+    },
+  )
+  if (all.length === 0) return buildFeed({ news: [], filings: [], insiders: [], earnings: [], alerts }, opts)
 
   const horizon = new Date(now.getTime() + EARNINGS_DAYS * DAY_MS).toISOString()
   const [newsRows, filingRows, insiderRows, earningsRows] = await Promise.all([
@@ -159,7 +183,7 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
       detail: estimate === null ? shortDay(r.report_date) : `${shortDay(r.report_date)} · EPS estimate ${dollars(estimate)}`,
     }
   })
-  return buildFeed({ news, filings, insiders, earnings, alerts: [] }, opts)
+  return buildFeed({ news, filings, insiders, earnings, alerts }, opts)
 }
 
 export interface EarningsReport {
@@ -199,7 +223,6 @@ export interface HoldingData {
   earnings: EarningsReport[]
   filings: FilingRow[]
   insiders: InsiderTrade[]
-  alerts: PriceAlert[]
 }
 
 type QuarterRow = {
@@ -233,7 +256,7 @@ export async function loadHoldingData(supabase: Supabase, symbol: string, { us }
   const since = addDays(todayInToronto(), -DETAIL_DAYS)
   const reports = () =>
     supabase.from('earnings_reports').select('report_date, report_at, eps_estimate, eps_actual, surprise_pct').eq('symbol', symbol)
-  const [quarterRows, filingRows, insiderRows, upcoming, past, alertRows] = await Promise.all([
+  const [quarterRows, filingRows, insiderRows, upcoming, past] = await Promise.all([
     us
       ? supabase
           .from('financial_quarters')
@@ -266,11 +289,6 @@ export async function loadHoldingData(supabase: Supabase, symbol: string, { us }
       : [],
     reports().gte('report_at', nowIso).order('report_at').limit(1),
     reports().lt('report_at', nowIso).order('report_at', { ascending: false }).limit(4),
-    supabase
-      .from('price_alerts')
-      .select('id, direction, level, note, created_at, hit_at, hit_price, dismissed_at')
-      .eq('symbol', symbol)
-      .order('id', { ascending: false }),
   ])
 
   const qrows = (quarterRows ? must(quarterRows) : []) as QuarterRow[]
@@ -313,26 +331,36 @@ export async function loadHoldingData(supabase: Supabase, symbol: string, { us }
       value: num(r.value),
       planned: r.planned,
     })),
-    alerts: (
-      must(alertRows) as {
-        id: number
-        direction: 'above' | 'below'
-        level: unknown
-        note: string | null
-        created_at: string
-        hit_at: string | null
-        hit_price: unknown
-        dismissed_at: string | null
-      }[]
-    ).map((r) => ({
-      id: r.id,
-      direction: r.direction,
-      level: Number(r.level),
-      note: r.note,
-      createdAt: r.created_at,
-      hitAt: r.hit_at,
-      hitPrice: num(r.hit_price),
-      dismissedAt: r.dismissed_at,
-    })),
   }
+}
+
+/** The owner's alerts on one asset (stock or coin), newest first. */
+export async function loadAlerts(supabase: Supabase, symbol: string, assetType: AssetType): Promise<PriceAlert[]> {
+  const rows = must(
+    await supabase
+      .from('price_alerts')
+      .select('id, direction, level, note, created_at, hit_at, hit_price, dismissed_at')
+      .eq('symbol', symbol)
+      .eq('asset_type', assetType)
+      .order('id', { ascending: false }),
+  ) as {
+    id: number
+    direction: 'above' | 'below'
+    level: unknown
+    note: string | null
+    created_at: string
+    hit_at: string | null
+    hit_price: unknown
+    dismissed_at: string | null
+  }[]
+  return rows.map((r) => ({
+    id: r.id,
+    direction: r.direction,
+    level: Number(r.level),
+    note: r.note,
+    createdAt: r.created_at,
+    hitAt: r.hit_at,
+    hitPrice: num(r.hit_price),
+    dismissedAt: r.dismissed_at,
+  }))
 }

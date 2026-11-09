@@ -41,3 +41,10 @@ describe('buildFeed', () => {
     expect(feed.map((f) => f.kind + f.symbol)).toEqual(['earningsC', 'earningsB', 'insiderA', 'newsA', 'filingA'])
   })
 })
+
+describe('buildFeed alerts', () => {
+  it('keeps a hit alert older than since', () => {
+    const alerts = [item('alert', 'A', '2026-10-01T00:00:00Z')]
+    expect(buildFeed({ ...empty, alerts }, opts).map((f) => f.kind)).toEqual(['alert'])
+  })
+})

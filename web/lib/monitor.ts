@@ -8,6 +8,8 @@ export type FeedItem = {
   important?: boolean
   /** Which kind of asset the symbol is, so a link can open a coin rather than a stock of the same symbol. */
   assetType?: 'stock' | 'crypto'
+  /** A hit alert's row id, for its Dismiss button. */
+  alertId?: number
 }
 
 export type FeedParts = {
@@ -44,7 +46,8 @@ export const buildFeed = (parts: FeedParts, opts: { since: string; now: string }
       return count <= NEWS_PER_SYMBOL
     })
 
-  const rest = [...news, ...[...parts.filings, ...parts.insiders, ...parts.alerts].filter((i) => time(i) >= since)]
+  // a hit alert stays until the owner dismisses it, so `since` does not cut it
+  const rest = [...news, ...[...parts.filings, ...parts.insiders].filter((i) => time(i) >= since), ...parts.alerts]
     .sort((a, b) => time(b) - time(a))
 
   return [...upcoming, ...rest]

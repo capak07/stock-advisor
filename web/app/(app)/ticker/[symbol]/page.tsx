@@ -4,13 +4,14 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ForecastCard, ForecastProvider } from '@/components/ticker/ForecastCard'
 import { NewsCard, type HeadlineView, type NewsKpi } from '@/components/ticker/NewsCard'
+import { AlertsCard } from '@/components/ticker/AlertsCard'
 import { EarningsCard } from '@/components/ticker/EarningsCard'
 import { FilingsCard } from '@/components/ticker/FilingsCard'
 import { InsidersCard } from '@/components/ticker/InsidersCard'
 import { PriceCard } from '@/components/ticker/PriceCard'
 import { WatchToggle } from '@/components/ticker/WatchToggle'
 import { ownerClient } from '@/lib/auth'
-import { loadHoldingData } from '@/lib/data/monitor'
+import { loadAlerts, loadHoldingData } from '@/lib/data/monitor'
 import { loadSettings } from '@/lib/data/settings'
 import { loadSourceHealth } from '@/lib/data/sources'
 import { loadTicker, resolveAssetType } from '@/lib/data/ticker'
@@ -66,7 +67,10 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const coin = assetType === 'crypto'
   // Filings, insider trades and quarterly numbers exist for US stocks only; earnings dates for US and TSX.
   const us = !coin && data.market === 'US'
-  const holding = coin ? null : await loadHoldingData(supabase, symbol, { us })
+  const [holding, alerts] = await Promise.all([
+    coin ? null : loadHoldingData(supabase, symbol, { us }),
+    loadAlerts(supabase, symbol, assetType),
+  ])
   const series = priceSeries(data.closes, assetType, data.fx)
   const move = lastMove(series)
   // A TSX stock trades on the TSX; a US stock names its exchange (NYSE, Nasdaq…).
@@ -158,6 +162,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 </div>
               </section>
             )}
+            <AlertsCard symbol={symbol} assetType={assetType} alerts={alerts} />
             {holding && (
               <EarningsCard
                 quarters={holding.quarters}

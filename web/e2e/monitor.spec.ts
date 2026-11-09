@@ -87,3 +87,23 @@ test('a TSX stock page has an earnings date but no Filings or Insider cards', as
   await expect(page.getByRole('region', { name: 'Filings (8-K)' })).toHaveCount(0)
   await expect(page.getByRole('region', { name: 'Insider trades' })).toHaveCount(0)
 })
+
+test("a coin's entry links to its crypto page, a stock's to the stock page", async ({ page }) => {
+  await seedNews([
+    { symbol: 'ETH', asset_type: 'crypto', hoursAgo: 2, outlet: 'CoinDesk', url: 'https://example.com/eth', title: 'Ether rallies', sentiment: 0.5 },
+    { symbol: 'AAPL', asset_type: 'stock', hoursAgo: 3, outlet: 'Reuters', url: 'https://example.com/aapl', title: 'Apple story', sentiment: 0.1 },
+  ])
+  await page.goto('/')
+  const items = page.getByRole('region', { name: FEED }).getByTestId('monitor-item')
+  await expect(items.filter({ hasText: 'Ether rallies' }).getByRole('link', { name: 'ETH', exact: true })).toHaveAttribute('href', '/ticker/ETH?asset=crypto')
+  await expect(items.filter({ hasText: 'Apple story' }).getByRole('link', { name: 'AAPL', exact: true })).toHaveAttribute('href', '/ticker/AAPL')
+})
+
+test('an 8-K/A shows its own form and a negative EPS estimate keeps its sign', async ({ page }) => {
+  await seedFiling({ accession: '0000320193-26-000009', symbol: 'AAPL', hoursAgo: 2, items: ['2.02'], form: '8-K/A' })
+  await seedEarnings({ symbol: 'AAPL', daysFromNow: 3, epsEstimate: -0.12 })
+  await page.goto('/')
+  const card = page.getByRole('region', { name: FEED })
+  await expect(card.getByText('8-K/A: earnings results')).toBeVisible()
+  await expect(card.getByText(/EPS estimate -\$0\.12/)).toBeVisible()
+})

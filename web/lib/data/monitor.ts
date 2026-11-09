@@ -24,7 +24,7 @@ const num = (value: unknown): number | null => {
 }
 
 const grouped = (value: number): string => value.toLocaleString('en-CA', { maximumFractionDigits: 4 })
-const dollars = (value: number): string => `$${value.toFixed(2)}`
+const dollars = (value: number): string => `${value < 0 ? '-' : ''}$${Math.abs(value).toFixed(2)}`
 
 export interface InsiderTrade {
   tradeDate: string
@@ -123,14 +123,15 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
 
   const news = (newsRows as { symbol: string; asset_type: AssetType; published_at: string; outlet: string; url: string; title: string }[])
     .filter((r) => keys.has(assetKey(r.asset_type, r.symbol)))
-    .map((r): FeedItem => ({ kind: 'news', symbol: r.symbol, at: r.published_at, title: r.title, url: r.url, detail: r.outlet }))
-  const filings = (filingRows as { symbol: string; filed_at: string; items: string[] | null; url: string }[]).map((r): FeedItem => {
+    .map((r): FeedItem => ({ kind: 'news', assetType: r.asset_type, symbol: r.symbol, at: r.published_at, title: r.title, url: r.url, detail: r.outlet }))
+  const filings = (filingRows as { symbol: string; form: string; filed_at: string; items: string[] | null; url: string }[]).map((r): FeedItem => {
     const labels = itemLabels(r.items ?? [])
     return {
       kind: 'filing',
+      assetType: 'stock',
       symbol: r.symbol,
       at: r.filed_at,
-      title: labels.length ? `8-K: ${labels.join(', ')}` : '8-K',
+      title: labels.length ? `${r.form}: ${labels.join(', ')}` : r.form,
       url: r.url,
       important: isImportant(r.items ?? []),
     }
@@ -140,6 +141,7 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
   ).map(
     (r): FeedItem => ({
       kind: 'insider',
+      assetType: 'stock',
       symbol: r.symbol,
       at: r.filed_at,
       title: insiderTitle({ owner: r.owner, role: r.role, code: r.code, shares: Number(r.shares), price: num(r.price) }),
@@ -150,6 +152,7 @@ export async function loadMonitorFeed(supabase: Supabase): Promise<FeedItem[]> {
     const estimate = num(r.eps_estimate)
     return {
       kind: 'earnings',
+      assetType: 'stock',
       symbol: r.symbol,
       at: r.report_at,
       title: 'Earnings report due',
@@ -249,15 +252,18 @@ export async function loadHoldingData(supabase: Supabase, symbol: string, { us }
           .order('accession')
       : null,
     us
-      ? supabase
-          .from('insider_trades')
-          .select('filed_at, trade_date, owner, role, code, shares, price, value, planned')
-          .eq('symbol', symbol)
-          .gte('trade_date', since)
-          .order('trade_date', { ascending: false })
-          .order('accession')
-          .order('line')
-      : null,
+      ? fetchAll((from, to) =>
+          supabase
+            .from('insider_trades')
+            .select('filed_at, trade_date, owner, role, code, shares, price, value, planned')
+            .eq('symbol', symbol)
+            .gte('trade_date', since)
+            .order('trade_date', { ascending: false })
+            .order('accession')
+            .order('line')
+            .range(from, to),
+        )
+      : [],
     reports().gte('report_at', nowIso).order('report_at').limit(1),
     reports().lt('report_at', nowIso).order('report_at', { ascending: false }).limit(4),
     supabase
@@ -285,7 +291,7 @@ export async function loadHoldingData(supabase: Supabase, symbol: string, { us }
       (r) => ({ accession: r.accession, form: r.form, filedAt: r.filed_at, items: r.items ?? [], url: r.url }),
     ),
     insiders: (
-      (insiderRows ? must(insiderRows) : []) as {
+      insiderRows as {
         filed_at: string
         trade_date: string
         owner: string

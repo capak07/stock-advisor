@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { timeOrDate } from '@/lib/dates'
 import type { FeedItem } from '@/lib/monitor'
-import { safeLink } from '@/lib/ticker'
+import { safeLink, tickerHref } from '@/lib/ticker'
 
 const KIND_LABELS: Record<FeedItem['kind'], string> = {
   news: 'News',
@@ -31,7 +31,7 @@ export function MonitorCard({ items }: { items: FeedItem[] }) {
               <div key={`${item.kind}-${item.symbol}-${item.at}-${i}`} className="news-item" data-testid="monitor-item" data-kind={item.kind}>
                 <span className={`badge${item.important ? ' attention' : ''}`}>{KIND_LABELS[item.kind]}</span>
                 <span>
-                  <Link className="text-link num" href={`/ticker/${encodeURIComponent(item.symbol)}`}>
+                  <Link className="text-link num" href={tickerHref(item.symbol, item.assetType ?? 'stock')}>
                     {item.symbol}
                   </Link>{' '}
                   {link ? (

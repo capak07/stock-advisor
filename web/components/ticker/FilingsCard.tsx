@@ -21,6 +21,7 @@ export function FilingsCard({ filings }: { filings: FilingRow[] }) {
             <tbody>
               {filings.map((f) => {
                 const labels = itemLabels(f.items)
+                const label = labels.length ? `${f.form}: ${labels.join(', ')}` : f.form
                 const link = safeLink(f.url)
                 return (
                   <tr key={f.accession} data-testid="filing-row">
@@ -28,12 +29,10 @@ export function FilingsCard({ filings }: { filings: FilingRow[] }) {
                     <td>
                       {link ? (
                         <a href={link} target="_blank" rel="noopener noreferrer">
-                          {labels.length ? labels.join(', ') : f.form}
+                          {label}
                         </a>
-                      ) : labels.length ? (
-                        labels.join(', ')
                       ) : (
-                        f.form
+                        label
                       )}
                       {isImportant(f.items) && <span className="chip review" style={{ marginLeft: 6 }}>Important</span>}
                     </td>

@@ -6,6 +6,8 @@ export type FeedItem = {
   detail?: string
   url?: string
   important?: boolean
+  /** Which kind of asset the symbol is, so a link can open a coin rather than a stock of the same symbol. */
+  assetType?: 'stock' | 'crypto'
 }
 
 export type FeedParts = {

@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from advisor.collectors.sec_xbrl import METRICS as XBRL_METRICS
 from advisor.collectors.sec_xbrl import FinancialFact
 
 QUARTER_DAYS = range(80, 101)
@@ -48,29 +49,58 @@ def _plus_year(d: date) -> date:
         return d.replace(year=d.year + 1, day=28)
 
 
-def _by_period(facts: Sequence[FinancialFact]) -> dict[Period, dict[str, FinancialFact]]:
-    """Per (start, end) and metric, the fact with the latest filing; gross profit falls back."""
-    best: dict[tuple[str, Period], FinancialFact] = {}
+_RANK = {
+    (metric, f"{taxonomy}:{concept}"): i
+    for metric, concepts in XBRL_METRICS.items()
+    for i, (taxonomy, concept, _unit) in enumerate(concepts)
+}  # same order as the model's priority: the order of sec_xbrl.METRICS
+
+
+def _rank(fact: FinancialFact) -> int:
+    return _RANK.get((fact.metric, fact.concept), 99)
+
+
+def _by_period(
+    facts: Sequence[FinancialFact],
+) -> dict[Period, dict[str, dict[str, FinancialFact]]]:
+    """Per (start, end), metric and concept, the fact with the latest filing.
+
+    Gross profit falls back to revenue - cost of revenue (one synthetic concept) when the
+    period has no GrossProfit fact; the fallback's form, filed and accession come from the
+    later-filed of its two inputs.
+    """
+    out: dict[Period, dict[str, dict[str, FinancialFact]]] = defaultdict(lambda: defaultdict(dict))
     for f in facts:
         if f.start is None or f.metric not in (*METRICS, "cost_of_revenue"):
             continue
-        key = (f.metric, (f.start, f.end))
-        if key not in best or f.filed > best[key].filed:
-            best[key] = f
-    out: dict[Period, dict[str, FinancialFact]] = defaultdict(dict)
-    for (metric, period), f in best.items():
-        out[period][metric] = f
+        slot = out[(f.start, f.end)][f.metric]
+        if f.concept not in slot or f.filed > slot[f.concept].filed:
+            slot[f.concept] = f
     for by_metric in out.values():
-        rev, cost = by_metric.get("revenue"), by_metric.get("cost_of_revenue")
-        if "gross_profit" not in by_metric and rev and cost:
-            by_metric["gross_profit"] = rev.model_copy(
+        if "gross_profit" in by_metric or "revenue" not in by_metric:
+            continue
+        if "cost_of_revenue" not in by_metric:
+            continue
+        rev = min(by_metric["revenue"].values(), key=lambda f: (_rank(f), -f.filed.toordinal()))
+        cost = min(
+            by_metric["cost_of_revenue"].values(), key=lambda f: (_rank(f), -f.filed.toordinal())
+        )
+        later = rev if rev.filed >= cost.filed else cost
+        by_metric["gross_profit"] = {
+            "derived:revenue-cost": later.model_copy(
                 update={
                     "metric": "gross_profit",
+                    "concept": "derived:revenue-cost",
                     "value": rev.value - cost.value,
-                    "filed": max(rev.filed, cost.filed),
                 }
             )
+        }
     return out
+
+
+def _best(by_concept: dict[str, FinancialFact]) -> FinancialFact:
+    """Highest-priority concept, then the latest filing (one fact per concept already)."""
+    return min(by_concept.values(), key=_rank)
 
 
 def single_quarters(facts: Sequence[FinancialFact], keep: int = 12) -> list[QuarterRow]:
@@ -79,15 +109,15 @@ def single_quarters(facts: Sequence[FinancialFact], keep: int = 12) -> list[Quar
     if not by_period:
         return []
     symbol = facts[0].symbol
-    quarters = sorted(p for p in by_period if _days(p) in QUARTER_DAYS)
-    annuals = sorted(p for p in by_period if _days(p) in ANNUAL_DAYS)
+    has_metric = {p for p, m in by_period.items() if any(k in METRICS for k in m)}
+    quarters = sorted(p for p in has_metric if _days(p) in QUARTER_DAYS)
+    annuals = sorted(p for p in has_metric if _days(p) in ANNUAL_DAYS)
 
     # period -> (metric values, facts used, derived)
     rows: dict[Period, tuple[dict[str, float], list[FinancialFact], bool]] = {}
     for p in quarters:
-        used = [f for m, f in by_period[p].items() if m in METRICS]
-        if used:
-            rows[p] = ({f.metric: f.value for f in used}, used, False)
+        used = [_best(c) for m, c in by_period[p].items() if m in METRICS]
+        rows[p] = ({f.metric: f.value for f in used}, used, False)
 
     for a in annuals:
         if any(q[1] == a[1] for q in quarters):  # a real 3-month Q4 exists
@@ -99,12 +129,14 @@ def single_quarters(facts: Sequence[FinancialFact], keep: int = 12) -> list[Quar
         vals: dict[str, float] = {}
         used = []
         for m in METRICS:
-            annual = by_period[a].get(m)
-            parts = [by_period[q].get(m) for q in three]
-            if annual is None or any(x is None for x in parts):
+            sets = [set(by_period[p].get(m, {})) for p in (a, *three)]
+            common = set.intersection(*sets)  # one concept for the annual and all three quarters
+            if not common:
                 continue
-            vals[m] = annual.value - sum(x.value for x in parts if x is not None)
-            used.append(annual)
+            ann = by_period[a][m]
+            concept = min(common, key=lambda c: _rank(ann[c]))
+            vals[m] = ann[concept].value - sum(by_period[q][m][concept].value for q in three)
+            used.append(ann[concept])
         if vals:
             rows[(three[-1][1] + timedelta(days=1), a[1])] = (vals, used, True)
 
@@ -121,7 +153,7 @@ def single_quarters(facts: Sequence[FinancialFact], keep: int = 12) -> list[Quar
         fiscal_year = label = None
         if year is not None:
             fiscal_year = year[1]
-            n = sum(1 for q in quarters if q[0] >= year[0] and q[1] <= period[1])
+            n = round((period[1] - year[0]).days / 91.3)  # placed by date, not by what is present
             label = "Q4" if derived else f"Q{min(max(n, 1), 4)}"
         src = max(used, key=lambda f: f.filed)
         out.append(

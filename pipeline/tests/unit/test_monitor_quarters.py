@@ -4,11 +4,13 @@ from advisor.collectors.sec_xbrl import FinancialFact
 from advisor.monitor.quarters import single_quarters
 
 
-def fact(metric, start, end, value, filed=None, form="10-Q", accession="a-1"):
+def fact(
+    metric, start, end, value, filed=None, form="10-Q", accession="a-1", concept="us-gaap:X"
+):
     return FinancialFact(
         symbol="AAA",
         metric=metric,
-        concept="us-gaap:X",
+        concept=concept,
         unit="USD",
         start=start,
         end=end,
@@ -137,3 +139,50 @@ def test_keeps_newest_twelve_oldest_first():
     assert len(rows) == 12
     assert [r.revenue for r in rows] == [float(i) for i in range(4, 16)]
     assert single_quarters(facts, keep=3)[0].revenue == 13.0
+
+
+def test_missing_first_quarter_does_not_shift_labels():
+    facts = [
+        fact("revenue", date(2023, 10, 1), date(2024, 9, 30), 50, form="10-K"),
+        fact("revenue", date(2024, 1, 1), date(2024, 3, 31), 11),
+        fact("revenue", date(2024, 4, 1), date(2024, 6, 30), 12),
+    ]
+    rows = [r for r in single_quarters(facts) if not r.derived]
+    assert [r.fiscal_period for r in rows] == ["Q2", "Q3"]
+
+
+def test_higher_priority_concept_wins_over_later_filing():
+    s, e = date(2024, 4, 1), date(2024, 6, 30)
+    facts = [
+        fact("net_income", s, e, 5, filed=date(2024, 8, 1), concept="us-gaap:NetIncomeLoss"),
+        fact("net_income", s, e, 9, filed=date(2024, 9, 1), concept="us-gaap:ProfitLoss"),
+    ]
+    assert single_quarters(facts)[0].net_income == 5
+
+
+def test_derived_q4_does_not_mix_concepts():
+    nil, pl = "us-gaap:NetIncomeLoss", "us-gaap:ProfitLoss"
+    facts = [
+        fact("net_income", date(2024, 1, 1), date(2024, 3, 31), 1, concept=nil),
+        fact("net_income", date(2024, 4, 1), date(2024, 6, 30), 2, concept=nil),
+        fact("net_income", date(2024, 7, 1), date(2024, 9, 30), 3, concept=nil),
+        fact("net_income", date(2024, 1, 1), date(2024, 12, 31), 100, concept=pl, form="10-K"),
+    ]
+    assert not any(r.derived for r in single_quarters(facts))
+    facts.append(fact("net_income", date(2024, 1, 1), date(2024, 12, 31), 10, concept=nil))
+    assert single_quarters(facts)[-1].net_income == 4
+
+
+def test_gross_profit_fallback_takes_provenance_from_one_fact():
+    s, e = date(2024, 4, 1), date(2024, 6, 30)
+    facts = [
+        fact("revenue", s, e, 100, filed=date(2024, 8, 1), form="10-Q", accession="r"),
+        fact("cost_of_revenue", s, e, 60, filed=date(2024, 9, 1), form="10-Q/A", accession="c"),
+    ]
+    row = single_quarters(facts)[0]
+    assert (row.form, row.filed, row.accession) == ("10-Q/A", date(2024, 9, 1), "c")
+
+
+def test_cost_only_period_is_not_a_quarter():
+    s, e = date(2024, 4, 1), date(2024, 6, 30)
+    assert single_quarters([fact("cost_of_revenue", s, e, 60)]) == []

@@ -17,6 +17,7 @@ from advisor.schedule import market_close_et
 RANGE_BARS = 3
 TARGET_R = 2
 CENT = Decimal("0.01")
+MIN_RISK_PCT = Decimal("0.05")  # the skill: a stop tighter than 0.05% of the price is refused
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ def plan_for(trigger: Trigger, rng: OpeningRange, s: Session) -> Plan | None:
     mid = (Decimal(repr(rng.high)) + Decimal(repr(rng.low))) / 2
     stop = mid.quantize(CENT, rounding=ROUND_FLOOR)
     risk = entry - stop
-    if stop <= 0 or risk < CENT:
+    if stop <= 0 or risk < max(CENT, entry * MIN_RISK_PCT / 100):
         return None
     target = (entry + TARGET_R * risk).quantize(CENT, rounding=ROUND_HALF_UP)
     return Plan(

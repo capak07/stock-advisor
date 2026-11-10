@@ -198,3 +198,94 @@ def test_gives_up_after_five_failed_batches_in_a_row():
     r = scan(fake, ls, NOW)
     assert fake.asked == ["batch"] * 5
     assert (r.errors, r.scanned, r.found) == (200, 0, [])
+
+
+def test_candidates_past_the_cap_are_charted_in_later_cycles_and_never_twice_without_a_breakout():
+    # Five candidates that close at the range's top close (10.00) but never above its high (10.01).
+    day = NOW.date()
+    closes = [10.0] * 14  # 9:30 to 10:35
+    charts = {f"S{i}": _flat(day, closes, 1000 + i) for i in range(5)}
+    fake = FakeClient(charts)
+    ls = [Listing(s, Market.US) for s in charts]
+    memory = None
+    calls = []
+    for k in range(4):
+        fake.chart_calls = []
+        r = scan(fake, ls, NOW + timedelta(minutes=5 * k), min_volume_x=0, max_confirm=2, charted=memory)
+        assert len(r.candidates) == 5
+        calls.append(fake.chart_calls)
+        memory = r.charted
+    # Most traded first, at most 2 a cycle; each charted once, then left until a bar closes above its high.
+    assert calls == [["S4", "S3"], ["S2", "S1"], ["S0"], []]
+    assert memory["S0"] == (10.01, datetime(2026, 10, 19, 10, 25, tzinfo=ET))
+
+
+def test_a_charted_candidate_is_charted_again_only_when_a_new_bar_closes_above_its_range_high():
+    day = NOW.date()
+    flat = [10.0] * 3 + [10.0] * 6  # 9:30 to 10:10, never above the range high 10.01
+    charts = {
+        "UP": _flat(day, flat + [10.5, 10.5], 1000),  # the 10:15 bar closes above the range high
+        "FLAT": _flat(day, flat + [10.0, 10.0], 1000),  # new bars, all under it
+        # Closed above the high at 9:45 on thin volume (no trigger); its new bars are under it.
+        "OLD": _flat(day, [10.0] * 3 + [10.5] + [10.0] * 7, 1000),
+    }
+    fake = FakeClient(charts)
+    ls = [Listing(s, Market.US) for s in charts]
+    r1 = scan(fake, ls, NOW, min_volume_x=1.5)
+    assert sorted(fake.chart_calls) == ["FLAT", "OLD", "UP"]
+    assert r1.found == []
+    assert r1.charted["UP"] == (10.01, datetime(2026, 10, 19, 10, 10, tzinfo=ET))
+
+    fake.chart_calls = []
+    r2 = scan(fake, ls, NOW + timedelta(minutes=5), min_volume_x=0, charted=r1.charted)
+    assert fake.chart_calls == ["UP"]
+    assert [f.listing.symbol for f in r2.found] == ["UP"]
+    assert r2.charted["FLAT"] == (10.01, datetime(2026, 10, 19, 10, 15, tzinfo=ET))
+
+
+class ChartsDown(FakeClient):
+    def chart(self, symbol, rng, interval):
+        self.chart_calls.append(symbol)
+        raise YahooError("Yahoo answered HTTP 429 for /v8/finance/chart")
+
+
+def test_stage_two_gives_up_after_five_failed_charts_in_a_row():
+    day = NOW.date()
+    base = [10.0] * 3 + [10.5] * 6
+    charts = {f"S{i}": _flat(day, base, 1000 + i) for i in range(8)}
+    fake = ChartsDown(charts)
+    r = scan(fake, [Listing(s, Market.US) for s in charts], NOW, min_volume_x=0)
+    assert fake.chart_calls == ["S7", "S6", "S5", "S4", "S3"]
+    assert (r.errors, r.confirm, r.confirm_failed, r.found) == (8, 8, 8, [])
+    assert r.charted == {}  # nothing charted: all are tried again next cycle
+
+
+def test_a_chart_that_works_restarts_the_failure_count():
+    day = NOW.date()
+    base = [10.0] * 3 + [10.5] * 6
+
+    class Flaky(FakeClient):
+        def chart(self, symbol, rng, interval):
+            self.chart_calls.append(symbol)
+            if symbol in ("S9", "S7", "S6", "S5", "S4"):
+                raise YahooError("down")
+            return self.charts[symbol]
+
+    charts = {f"S{i}": _flat(day, base, 1000 + i) for i in range(10)}
+    fake = Flaky(charts)
+    r = scan(fake, [Listing(s, Market.US) for s in charts], NOW, min_volume_x=0)
+    # S9 fails, S8 works (the streak restarts), then S7..S4 fail: four in a row, so S3..S0 are charted.
+    assert fake.chart_calls == [f"S{i}" for i in range(9, -1, -1)]
+    assert (r.errors, r.confirm, r.confirm_failed) == (5, 10, 5)
+    assert len(r.found) == 5
+
+
+def test_a_spark_column_longer_than_its_timestamps_is_counted_not_raised():
+    def item(sym, n_close):
+        quote = {"close": [10.0] * n_close, "volume": [5, 5]}
+        return {"symbol": sym, "response": [{"timestamp": [1792416600, 1792416900], "indicators": {"quote": [quote]}}]}
+
+    doc = {"spark": {"result": [item("OK", 2), item("BAD", 3)], "error": None}}
+    client = YahooClient(get=lambda url: json.dumps(doc), sleep=lambda s: None)
+    r = scan(client, [Listing("OK", Market.US), Listing("BAD", Market.US)], NOW)
+    assert (r.scanned, r.errors) == (1, 1)

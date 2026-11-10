@@ -171,9 +171,9 @@ def _parse_spark_series(text: str) -> dict[str, SparkSeries]:
         if not sym:
             continue
         stamps, cols = _series(resp[0])
-        points = [
-            (_to_et(t), float(c)) for t, c in zip(stamps, cols["close"], strict=True) if c is not None
-        ]
+        if len(cols["close"]) != len(stamps) or len(cols["volume"]) != len(stamps):
+            continue  # a column longer than its timestamps: no series for it (the scan counts it)
+        points = [(_to_et(t), float(c)) for t, c in zip(stamps, cols["close"], strict=True) if c is not None]
         vols = [v for v in cols["volume"] if v is not None]
         meta_vol = (resp[0].get("meta") or {}).get("regularMarketVolume")
         volume = float(sum(vols)) if vols else float(meta_vol or 0)

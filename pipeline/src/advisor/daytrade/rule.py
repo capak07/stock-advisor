@@ -113,7 +113,10 @@ def _cents(x: Decimal) -> float:
 
 def plan_for(trigger: Trigger, rng: OpeningRange, s: Session) -> Plan | None:
     entry = Decimal(repr(trigger.entry))
-    mid = (Decimal(repr(rng.high)) + Decimal(repr(rng.low))) / 2
+    # The skill rounds the range high and low to the cent first (exit.py: cents(or_high), cents(or_low)).
+    high = Decimal(repr(rng.high)).quantize(CENT, rounding=ROUND_HALF_UP)
+    low = Decimal(repr(rng.low)).quantize(CENT, rounding=ROUND_HALF_UP)
+    mid = (high + low) / 2
     stop = mid.quantize(CENT, rounding=ROUND_FLOOR)
     risk = entry - stop
     if stop <= 0 or risk < max(CENT, entry * MIN_RISK_PCT / 100):

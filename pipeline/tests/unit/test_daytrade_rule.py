@@ -160,3 +160,16 @@ def test_zero_avg_volume_range():
     assert find_trigger(bars, s, rng, min_volume_x=1.5) is None
     t = find_trigger(bars, s, rng, min_volume_x=0)
     assert t is not None and t.volume_x == 0.0
+
+
+def test_stop_rounds_the_range_to_cents_before_the_midpoint_like_the_skill():
+    # The skill (exit.py plan --entry 10.20 --or-high 10.0151 --or-low 9.9951) gives the range
+    # $10.02-$10.00, stop 10.01, target 10.58. The raw midpoint 10.0051 would floor to 10.00.
+    s = session_for(DAY, Market.US)
+    assert s is not None
+    t0 = s.open + timedelta(minutes=15)
+    rng = OpeningRange(high=10.0151, low=9.9951, avg_volume=1)
+    p = plan_for(Trigger(Bar(t0, 1, 1, 1, 10.2, 1), t0 + timedelta(minutes=5), 10.2, 2.0), rng, s)
+    assert p is not None
+    assert (p.stop, p.target) == (10.01, 10.58)
+    assert p.risk == pytest.approx(0.19)

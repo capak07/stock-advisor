@@ -457,14 +457,18 @@ def test_job_exits_at_once_when_both_markets_are_closed(db, monkeypatch, capsys)
 @pytest.mark.parametrize(
     ("job", "at", "ok"),
     [
+        ("morning", et(9, 14), False),  # more than 20 minutes early
+        ("morning", et(9, 15), True),
         ("morning", et(9, 35), True),
-        ("morning", et(9, 55), True),
-        ("morning", et(9, 56), False),  # more than 20 minutes late
-        ("morning", et(10, 35), False),  # the other DST dispatch in summer
-        ("morning", et(8, 35), False),  # the other DST dispatch in winter
+        ("morning", et(9, 56), True),  # late: it runs the rest of its window
+        ("morning", et(10, 35), True),  # inside the window (in EDT, see the cron test below)
+        ("morning", et(12, 35, 30), True),  # its last cycle
+        ("morning", et(12, 36), False),  # the window has ended
+        ("morning", et(8, 35), False),  # the other DST dispatch in winter: too early
+        ("afternoon", et(12, 15), True),
         ("afternoon", et(12, 41), True),  # queued behind the morning job
-        ("afternoon", et(13, 35), False),
-        ("afternoon", et(11, 35), False),
+        ("afternoon", et(13, 35), True),
+        ("afternoon", et(11, 35), False),  # the other DST dispatch in winter: too early
         ("afternoon", et(16, 30), False),
     ],
 )
@@ -474,7 +478,7 @@ def test_guard_accepts_only_its_own_window(job, at, ok):
 
 def test_wrong_dst_start_exits_with_a_plain_line_and_writes_nothing(db, monkeypatch, capsys):
     monkeypatch.setenv("DATABASE_URL", os.environ["TEST_DATABASE_URL"])
-    rc = main(["--job", "morning", "--now", "2026-11-12T15:35:00+00:00"])  # 10:35 ET
+    rc = main(["--job", "morning", "--now", "2026-11-12T13:35:00+00:00"])  # 8:35 ET: too early
     assert rc == 0
     assert "window" in capsys.readouterr().out
     assert _day(db) is None
@@ -488,15 +492,32 @@ def test_wrong_dst_start_exits_with_a_plain_line_and_writes_nothing(db, monkeypa
     ],
 )
 def test_guard_lets_exactly_one_cron_dispatch_per_job_run(day, morning, afternoon):
+    """In EST the wrong dispatches land at 8:35 and 11:35 ET: too early, refused at once. In EDT
+    they land at 10:35 and 13:35 ET, inside the window, but the right job is running then in the
+    same concurrency group (cancel-in-progress: false), so the wrong one waits and starts only when
+    that job ends, after its window: refused. If the first job died, it runs as a harmless recovery."""
+
     def utc(hm):
         h, m = map(int, hm.split(":"))
         return datetime.combine(day, time(h, m), tzinfo=UTC)
 
-    runs = {
-        job: [hm for hm in times if check_start(job, utc(hm)) is None]
-        for job, times in (("morning", ["13:35", "14:35"]), ("afternoon", ["16:35", "17:35"]))
-    }
-    assert runs == {"morning": [morning], "afternoon": [afternoon]}
+    def job_end(job):
+        # The job's last cycle starts 30 s after its last bar close and takes a little while.
+        return cycle.last_close(job, day, cycle.open_sessions(day)) + cycle.CYCLE_DELAY + timedelta(minutes=1)
+
+    def runs(job, times):
+        out, busy_until = [], None
+        for hm in times:
+            start = utc(hm)
+            if busy_until is not None and start < busy_until:
+                start = busy_until  # it waits for the running job
+            if check_start(job, start) is None:
+                out.append(hm)
+                busy_until = job_end(job)
+        return out
+
+    jobs = (("morning", ["13:35", "14:35"]), ("afternoon", ["16:35", "17:35"]))
+    assert {job: runs(job, times) for job, times in jobs} == {"morning": [morning], "afternoon": [afternoon]}
 
 
 def test_a_stored_signal_is_not_scanned_again_in_a_full_cycle(db):
@@ -509,7 +530,7 @@ def test_a_stored_signal_is_not_scanned_again_in_a_full_cycle(db):
     assert [q for q in client.requests if q[0] == "1d"] == [("1d", "AAA")]  # tracking only
 
 
-def test_stage_two_charts_at_most_200_candidates_most_traded_first(db):
+def test_stage_two_charts_at_most_200_a_cycle_and_the_rest_in_the_next(db):
     assert MAX_CONFIRM == 200
     today = {f"S{i:03d}": _bars(DAY, "cand", vol=1000 + i) for i in range(300)}
     client = FakeClient(today, {})
@@ -518,6 +539,92 @@ def test_stage_two_charts_at_most_200_candidates_most_traded_first(db):
     assert r["ok"] is True and len(r["candidates"]) == 300
     charted = [arg for what, arg in client.requests if what == "1d"]
     assert sorted(charted) == [f"S{i:03d}" for i in range(100, 300)]
+    # The next cycle charts the 100 smaller ones it had no room for (S000 is the least traded).
+    client.requests.clear()
+    r = run_cycle(
+        db, client, listings, et(10, 5, 30), full=False, news_get=FakeNews(),
+        candidates=r["candidates"], charted=r["charted"],
+    )
+    assert r["ok"] is True
+    assert sorted(arg for what, arg in client.requests if what == "1d") == [f"S{i:03d}" for i in range(100)]
+    # All 300 are charted and none has closed above its range high since: nothing to chart.
+    client.requests.clear()
+    r = run_cycle(
+        db, client, listings, et(10, 10, 30), full=False, news_get=FakeNews(),
+        candidates=r["candidates"], charted=r["charted"],
+    )
+    assert r["ok"] is True
+    assert [q for q in client.requests if q[0] == "1d"] == []
+
+
+def test_the_job_remembers_charted_candidates_and_charts_again_on_a_breakout(db, monkeypatch):
+    monkeypatch.setattr(cycle, "MAX_CONFIRM", 2)
+    client, listings = _world(DAY, [("S0", US, "cand", None), ("S1", US, "cand", None), ("S2", US, "cand", None)])
+    # S0's 10:30 bar closes above its range high (10.20) on 3x the range volume.
+    k = next(i for i, b in enumerate(client.today["S0"]) if b.start == et(10, 30))
+    client.today["S0"][k] = Bar(et(10, 30), 10.1, 10.45, 10.05, 10.4, 3000)
+    clock = SimClock(et(9, 35))
+    run_job(db, client, listings, "morning", clock=clock.now, sleep=clock.sleep, news_get=FakeNews())
+    charts = [arg for what, arg in client.requests if what == "1d"]
+    # 9:50:30 charts two (a tie on price x volume goes by symbol), 9:55:30 the third, then
+    # nothing until S0's breakout at 10:35:30; from then on S0 is tracked every cycle.
+    assert charts[:4] == ["S0", "S1", "S2", "S0"]
+    assert (charts.count("S1"), charts.count("S2")) == (1, 1)
+    assert _signals(db)["S0"]["trigger_at"] == et(10, 35)
+
+
+def test_a_cycle_whose_every_stage_two_chart_fails_is_recorded_as_failed(db):
+    client, listings = _world(DAY, [("AAA", US, "open", 0), ("BBB", US, "open", 0)])
+    client.on_request = lambda what, arg: setattr(client, "down", what == "1d")
+    r = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    assert (r["ok"], r["errors"]) == (False, 2)
+    day = _day(db)
+    assert (day["status"], day["last_update"]) == ("failed", None)
+    assert "2 of 2 charts failed" in day["error"]
+    assert _signals(db) == {}
+
+
+def test_tracking_gives_up_after_five_failed_charts_in_a_row(db):
+    client, listings = _world(DAY, [(f"S{i}", US, "open", 0) for i in range(8)])
+    run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews(), replays=100)
+    assert len(_signals(db)) == 8
+    client.requests.clear()
+    client.down = True
+    r = run_cycle(db, client, listings, et(9, 55, 30), full=False, news_get=FakeNews(), candidates=[])
+    assert len([q for q in client.requests if q[0] == "1d"]) == 5
+    assert (r["ok"], r["tracked"], r["errors"]) == (False, 0, 8)
+    assert _day(db)["status"] == "failed"
+
+
+def test_a_signal_finalize_could_not_close_is_closed_by_the_next_job(db, monkeypatch):
+    client, listings = _world(DAY, [("AAA", US, "open", 0), ("BBB", US, "open", 0)])
+    news = FakeNews()
+    first = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=news, replays=100)
+    run_cycle(db, client, listings, et(9, 55, 30), full=False, news_get=news, candidates=first["candidates"])
+    aaa = _signals(db)["AAA"]["id"]
+    real = repo.update_daytrade_outcome
+
+    def update(conn, id, outcome, net_r):
+        if id == aaa and outcome.status == "flat":
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+        return real(conn, id, outcome, net_r)
+
+    monkeypatch.setattr(repo, "update_daytrade_outcome", update)
+    clock = SimClock(et(15, 50))
+    run_job(db, client, listings, "afternoon", clock=clock.now, sleep=clock.sleep, news_get=news)
+    sig = _signals(db)
+    assert (sig["AAA"]["status"], sig["BBB"]["status"]) == ("open", "flat")
+    assert _day(db)["status"] == "done"
+    last_price = float(sig["AAA"]["last_price"])
+    monkeypatch.setattr(repo, "update_daytrade_outcome", real)
+
+    nxt = date(2026, 11, 13)
+    clock = SimClock(et(12, 39, day=nxt))  # past the morning's last cycle: the job only tidies up
+    run_job(db, client, listings, "morning", clock=clock.now, sleep=clock.sleep, news_get=news)
+    a = _signals(db)["AAA"]
+    assert (a["status"], a["exit_at"], float(a["exit_price"])) == ("flat", et(15, 55), last_price)
+    # The afternoon job did run: the day keeps its status and gets no "finished late" note.
+    assert (_day(db)["status"], _day(db)["error"]) == ("done", None)
 
 
 def _yesterday_row(symbol, **over):

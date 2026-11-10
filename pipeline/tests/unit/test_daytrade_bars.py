@@ -142,3 +142,16 @@ def test_null_rows_dropped():
     bars = _client(lambda url: json.dumps(doc)).chart("X", "1d", "5m")
     assert len(bars) == 1
     assert isinstance(bars[0], Bar)
+
+
+@pytest.mark.parametrize("column", ["close", "volume"])
+def test_spark_column_longer_than_its_timestamps_drops_only_that_symbol(column):
+    def item(sym, n_close, n_vol):
+        quote = {"close": [10.0 + k for k in range(n_close)], "volume": [5] * n_vol}
+        return {"symbol": sym, "response": [{"timestamp": [1792416600, 1792416900], "indicators": {"quote": [quote]}}]}
+
+    bad = item("BAD", 3, 2) if column == "close" else item("BAD", 2, 3)
+    doc = {"spark": {"result": [item("OK", 2, 2), bad], "error": None}}
+    got = _client(lambda url: json.dumps(doc)).spark_series(["OK", "BAD"], "1d", "5m")
+    assert set(got) == {"OK"}
+    assert [c for _, c in got["OK"].points] == [10.0, 11.0]

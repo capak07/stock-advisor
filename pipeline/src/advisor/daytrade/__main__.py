@@ -1,7 +1,10 @@
 """python -m advisor.daytrade --job morning|afternoon [--now ISO]: one day trade job.
 
 pg_cron dispatches each job twice a day, once for EDT and once for EST; the guard here
-lets only the one that lands in the job's own window run (the other exits 0).
+lets a job start anywhere from 20 minutes before its window to the window's end, and refuses
+(exit 0) a start outside that. In EST the wrong dispatch lands at 8:35 or 11:35 ET: too early.
+In EDT it lands at 10:35 or 13:35 ET, while the right job runs in the same concurrency group,
+so it waits and starts after the window ends: refused (or, if the first job died, a recovery run).
 """
 
 import argparse
@@ -18,7 +21,7 @@ from advisor.models import ET
 from advisor.store import repo
 from advisor.store.db import connect
 
-START_TOLERANCE = timedelta(minutes=20)
+START_TOLERANCE = timedelta(minutes=20)  # how early before its window a job may start
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -29,9 +32,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def check_start(job: str, now: datetime) -> str | None:
-    """None when `now` is a fair start for `job`, else the plain reason it is not. A start more
-    than 20 minutes off the window's start is the other daylight-saving dispatch (an hour early
-    or late); a start after the job's last cycle has nothing left to do."""
+    """None when `now` is a fair start for `job`: from 20 minutes before its window starts to
+    the window's end (a late start, e.g. queued behind a long job, runs what is left). Else the
+    plain reason: too early is the other daylight-saving dispatch; a start after the job's last
+    cycle has nothing left to do."""
     now_et = now.astimezone(ET)
     day = now_et.date()
     begin_t, end_t = WINDOWS[job]
@@ -42,10 +46,10 @@ def check_start(job: str, now: datetime) -> str | None:
         end = min(end, last_close(job, day, sessions) + CYCLE_DELAY)
     if now_et > end:
         return f"The {job} job's window ended at {end:%H:%M} ET; it is {now_et:%H:%M} ET. Nothing to do."
-    if not begin - START_TOLERANCE <= now_et <= begin + START_TOLERANCE:
+    if now_et < begin - START_TOLERANCE:
         return (
             f"The {job} job's window starts at {begin:%H:%M} ET and it is {now_et:%H:%M} ET:"
-            " this is the other daylight-saving start. Nothing to do."
+            " too early, this is the other daylight-saving start. Nothing to do."
         )
     return None
 

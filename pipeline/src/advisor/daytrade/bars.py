@@ -79,6 +79,14 @@ def _series(res: dict[str, Any]) -> tuple[list[Any], dict[str, list[Any]]]:
     return stamps, cols
 
 
+@dataclass(frozen=True)
+class SparkSeries:
+    """One symbol's spark answer: (start ET, close) points and the day's volume so far."""
+
+    points: list[tuple[datetime, float]]
+    volume: float
+
+
 class YahooClient:
     def __init__(
         self,
@@ -124,19 +132,37 @@ class YahooClient:
             out.update(_parse_spark(self._request(path)))
         return out
 
+    def wait(self) -> None:
+        """The pause between two requests (the free endpoint's courtesy)."""
+        self._sleep(self._pause)
+
+    def spark_series(self, symbols: Sequence[str], rng: str, interval: str) -> dict[str, SparkSeries]:
+        out: dict[str, SparkSeries] = {}
+        for k in range(0, len(symbols), SPARK_MAX):
+            if k:
+                self.wait()
+            batch = symbols[k : k + SPARK_MAX]
+            path = f"/v7/finance/spark?symbols={','.join(batch)}&range={rng}&interval={interval}"
+            out.update(_parse_spark_series(self._request(path)))
+        return out
+
     def chart(self, symbol: str, rng: str, interval: str) -> list[Bar]:
         path = f"/v8/finance/chart/{symbol}?range={rng}&interval={interval}"
         return _parse_chart(self._request(path), symbol)
 
 
 def _parse_spark(text: str) -> dict[str, list[tuple[datetime, float]]]:
+    return {k: v.points for k, v in _parse_spark_series(text).items()}
+
+
+def _parse_spark_series(text: str) -> dict[str, SparkSeries]:
     try:
         spark = json.loads(text)["spark"]
     except (ValueError, KeyError, TypeError):
         raise YahooError("Yahoo's spark answer is not the shape this tool knows") from None
     if not isinstance(spark, dict):
         raise YahooError("Yahoo's spark answer is not the shape this tool knows")
-    out: dict[str, list[tuple[datetime, float]]] = {}
+    out: dict[str, SparkSeries] = {}
     for item in spark.get("result") or []:
         resp = item.get("response") or []
         if not resp:
@@ -145,9 +171,13 @@ def _parse_spark(text: str) -> dict[str, list[tuple[datetime, float]]]:
         if not sym:
             continue
         stamps, cols = _series(resp[0])
-        out[sym] = [
+        points = [
             (_to_et(t), float(c)) for t, c in zip(stamps, cols["close"], strict=True) if c is not None
         ]
+        vols = [v for v in cols["volume"] if v is not None]
+        meta_vol = (resp[0].get("meta") or {}).get("regularMarketVolume")
+        volume = float(sum(vols)) if vols else float(meta_vol or 0)
+        out[sym] = SparkSeries(points, volume)
     err = spark.get("error")
     if err and not out:
         raise YahooError(f"Yahoo spark: {err.get('description') or err.get('code') or err}")

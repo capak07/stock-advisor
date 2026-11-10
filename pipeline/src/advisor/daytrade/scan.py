@@ -13,7 +13,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from advisor.collectors.yfinance_bars import to_yahoo
-from advisor.daytrade.bars import BAR_MIN, SPARK_MAX, Bar, YahooClient, YahooError, session_bars
+from advisor.daytrade.bars import (
+    BAR_MIN,
+    SPARK_MAX,
+    Bar,
+    SparkSeries,
+    YahooClient,
+    YahooError,
+    session_bars,
+)
 from advisor.daytrade.rule import (
     RANGE_BARS,
     OpeningRange,
@@ -51,6 +59,7 @@ class ScanResult:
     candidates: list[Listing]
     found: list[Found]
     errors: int
+    unusable: int = 0  # stage-2 charts with a missing bar
 
 
 def _usable(bars: Sequence[Bar], s: Session, cutoff: datetime) -> bool:
@@ -69,6 +78,8 @@ def _is_candidate(bars: Sequence[Bar]) -> bool:
 
 def _spark_bars(points: Sequence[tuple[datetime, float]]) -> list[Bar]:
     return [Bar(t, c, c, c, c, 0.0) for t, c in points]
+
+MAX_FAILED_BATCHES = 5  # in a row: Yahoo is down, stop the cycle
 
 
 def scan(
@@ -92,28 +103,37 @@ def scan(
             todo.append((lst, to_yahoo(lst.symbol), s))
 
     errors = 0
+    unusable_s2 = 0
     scanned = 0
     usable = 0
-    spark: dict[str, list[tuple[datetime, float]]] = {}
+    spark: dict[str, SparkSeries] = {}
     failed: set[str] = set()
+    streak = 0
     for k in range(0, len(todo), SPARK_MAX):
+        if k:
+            client.wait()
         batch = todo[k : k + SPARK_MAX]
         try:
-            spark.update(client.spark_closes([y for _, y, _ in batch], "1d", "5m"))
+            spark.update(client.spark_series([y for _, y, _ in batch], "1d", "5m"))
+            streak = 0
         except YahooError:
             errors += len(batch)
             failed.update(y for _, y, _ in batch)
+            streak += 1
+            if streak >= MAX_FAILED_BATCHES:
+                errors += len(todo) - (k + len(batch))
+                return ScanResult(scanned, usable, [], [], errors)
 
     cands: list[tuple[Listing, str, Session, float]] = []
     for lst, y, s in todo:
         if y in failed:
             continue
-        pts = spark.get(y)
-        if pts is None:
+        series = spark.get(y)
+        if series is None:
             errors += 1
             continue
         scanned += 1
-        bars = session_bars(_spark_bars(pts), s.day, cutoff)
+        bars = session_bars(_spark_bars(series.points), s.day, cutoff)
         if not _usable(bars, s, cutoff):
             continue
         usable += 1
@@ -121,21 +141,22 @@ def scan(
         if last < min_price:
             continue
         if _is_candidate(bars):
-            # spark carries no volume, so the stage-1 order is by price alone
-            cands.append((lst, y, s, last))
+            cands.append((lst, y, s, last * series.volume))
 
-    cands.sort(key=lambda c: -c[3])
+    cands.sort(key=lambda c: (-c[3], c[0].symbol))
     ranked = cands if max_confirm is None else cands[:max_confirm]
 
     found: list[Found] = []
-    for lst, y, s, _ in ranked:
+    for i, (lst, y, s, _) in enumerate(ranked):
+        if i:
+            client.wait()
         try:
             full = session_bars(client.chart(y, "1d", "5m"), s.day, cutoff)
         except YahooError:
             errors += 1
             continue
         if not _usable(full, s, cutoff):
-            errors += 1
+            unusable_s2 += 1
             continue
         rng = opening_range(full, s)
         if rng is None:
@@ -148,4 +169,4 @@ def scan(
             continue
         found.append(Found(lst, rng, trig, plan, full))
     found.sort(key=lambda f: (f.trigger.at, f.listing.symbol))
-    return ScanResult(scanned, usable, [c[0] for c in cands], found, errors)
+    return ScanResult(scanned, usable, [c[0] for c in cands], found, errors, unusable_s2)

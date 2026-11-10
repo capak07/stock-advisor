@@ -13,9 +13,11 @@ export interface SettingsValues {
   crypto_fee_pct: string
   tfsa_round_trips_warn: string
   tfsa_short_hold_share_warn: string
+  daytrade_max_loss_cad: string
+  daytrade_spread_pct: string
 }
 
-const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: string; mode: 'decimal' | 'numeric'; section: 'costs' | 'tfsa' }[] = [
+const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: string; mode: 'decimal' | 'numeric'; section: 'costs' | 'tfsa' | 'daytrade' }[] = [
   {
     name: 'usd_fx_fee_pct',
     title: 'USD conversion fee',
@@ -47,6 +49,22 @@ const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: s
     unit: '% of holds',
     mode: 'numeric',
     section: 'tfsa',
+  },
+  {
+    name: 'daytrade_max_loss_cad',
+    title: 'Day-trade max loss per trade (C$)',
+    help: 'The Day trade tab sizes shares so the loss at the stop stays under this. US stocks convert at the latest USD/CAD.',
+    unit: 'C$',
+    mode: 'decimal',
+    section: 'daytrade',
+  },
+  {
+    name: 'daytrade_spread_pct',
+    title: 'Day-trade spread, round trip (%)',
+    help: 'The bid-ask spread a day trade pays in and out. US stocks also pay the currency fee both ways.',
+    unit: '% round trip',
+    mode: 'decimal',
+    section: 'daytrade',
   },
 ]
 
@@ -92,6 +110,8 @@ export function CostsForm({ initial, changed }: { initial: SettingsValues; chang
         warnings appear. Not tax advice.
       </p>
       {FIELDS.filter((f) => f.section === 'tfsa').map(field)}
+      <h2 style={{ margin: '18px 0 4px' }}>Day trade</h2>
+      {FIELDS.filter((f) => f.section === 'daytrade').map(field)}
       {state.message && !state.ok && <p className="sub loss">{state.message}</p>}
       <div className="flex items-center justify-between gap-3 flex-wrap" style={{ marginTop: 14 }}>
         <span className="sub">Last changed {changed}</span>

@@ -390,3 +390,76 @@ export async function seedAlert(a: {
                     ${a.hit ? new Date(Date.now() - a.hit.hoursAgo * 3_600_000) : null}, ${a.hit?.price ?? null},
                     ${a.dismissed ? new Date() : null})`
 }
+
+/** A day of the day-trade tab, as the pipeline's job writes it. `day` defaults to today (New York). */
+export async function seedDaytradeDay(d: {
+  day?: string
+  status: 'waiting' | 'scanning' | 'done' | 'failed' | 'closed'
+  lastUpdate?: Date | null
+  error?: string | null
+  cycles?: number
+}) {
+  await sql`insert into daytrade_days (day, status, cycles, last_update, scanned, usable, candidates, error)
+            values (${d.day ?? today()}, ${d.status}, ${d.cycles ?? 1}, ${d.lastUpdate ?? null}, 5000, 4200, 40,
+                    ${d.error ?? null})`
+}
+
+export const REPLAY = { replays: 10000, target_first: 0.341, stop_first: 0.52, neither: 0.139, green: 0.48, avg_r: 0.4, close_p05: 1, close_p50: 2, close_p95: 3, sessions: 55 }
+export const HISTORY = { sessions: 55, fired: 37, target: 5, stop: 20, neither: 12, avg_r: 1.6 }
+
+/** One signal of a day-trade day (the day row must exist). Prices and R as the pipeline stores them. */
+export async function seedDaytradeSignal(s: {
+  day?: string
+  symbol: string
+  market?: 'US' | 'TSX'
+  name?: string | null
+  triggerAt: Date
+  entry: number
+  stop: number
+  costPct?: number
+  costR?: number
+  replay?: JSONValue
+  history?: JSONValue
+  netReplayR?: number | null
+  netHistoryR?: number | null
+  eligible?: boolean
+  rank?: number | null
+  headlines?: { title: string; url: string; published_at: string; outlet: string }[]
+  status?: 'open' | 'target' | 'stop' | 'flat'
+  lastPrice?: number | null
+  lastAt?: Date | null
+  exitAt?: Date | null
+  exitPrice?: number | null
+  netR?: number | null
+}) {
+  const risk = s.entry - s.stop
+  await sql`insert into daytrade_signals ${sql({
+    day: s.day ?? today(),
+    symbol: s.symbol,
+    market: s.market ?? 'US',
+    name: s.name ?? null,
+    trigger_at: s.triggerAt,
+    entry: s.entry,
+    or_high: s.entry - 0.1,
+    or_low: s.stop - risk,
+    stop: s.stop,
+    target: Number((s.entry + 2 * risk).toFixed(2)),
+    volume_x: 2.1,
+    cost_pct: s.costPct ?? 3.1,
+    cost_r: s.costR ?? ((s.costPct ?? 3.1) / 100) * (s.entry / risk),
+    replay: sql.json(s.replay ?? REPLAY),
+    history: sql.json(s.history ?? HISTORY),
+    net_replay_r: s.netReplayR === undefined ? 0.2 : s.netReplayR,
+    net_history_r: s.netHistoryR === undefined ? 0.3 : s.netHistoryR,
+    eligible: s.eligible ?? true,
+    rank: s.rank ?? null,
+    headlines: sql.json(s.headlines ?? []),
+    status: s.status ?? 'open',
+    last_price: s.lastPrice ?? null,
+    last_at: s.lastAt ?? null,
+    exit_at: s.exitAt ?? null,
+    exit_price: s.exitPrice ?? null,
+    gross_r: s.netR === undefined || s.netR === null ? null : s.netR + 0.1,
+    net_r: s.netR ?? null,
+  })}`
+}

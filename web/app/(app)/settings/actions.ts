@@ -18,5 +18,6 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
   if (count === 0) return { message: "Settings weren't saved: only the owner can change them.", at: Date.now() }
   revalidatePath('/settings')
   revalidatePath('/')
+  revalidatePath('/daytrade')
   return { ok: true, message: 'Settings saved: they apply from the next run', at: Date.now() }
 }

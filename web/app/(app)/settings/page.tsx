@@ -8,7 +8,7 @@ import { signOut } from '../actions'
 
 export const metadata: Metadata = { title: 'Settings' }
 
-/** Settings (spec §9): the USD conversion fee, the crypto spread and the TFSA guideline. */
+/** Settings (spec §9): the USD conversion fee, the crypto spread, the TFSA guideline and the day trade tab's two. */
 export default async function SettingsPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
@@ -30,6 +30,8 @@ export default async function SettingsPage() {
             crypto_fee_pct: String(settings.crypto_fee_pct),
             tfsa_round_trips_warn: String(settings.tfsa_round_trips_warn),
             tfsa_short_hold_share_warn: String(Math.round(settings.tfsa_short_hold_share_warn * 100)),
+            daytrade_max_loss_cad: String(settings.daytrade_max_loss_cad),
+            daytrade_spread_pct: String(settings.daytrade_spread_pct),
           }}
         />
         <section className="card card-pad enter">

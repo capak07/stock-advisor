@@ -1106,6 +1106,14 @@ def daytrade_day(conn: psycopg.Connection, day: date) -> dict | None:
     return conn.execute("select * from daytrade_days where day = %s", (day,)).fetchone()
 
 
+def daytrade_unfinished_days(conn: psycopg.Connection, before: date) -> list[dict]:
+    """Days before `before` that no afternoon job finished (not done, not closed), oldest first."""
+    return conn.execute(
+        "select * from daytrade_days where day < %s and status not in ('done', 'closed') order by day",
+        (before,),
+    ).fetchall()
+
+
 DAYTRADE_DAY_FIELDS = frozenset(
     {"status", "cycles", "last_update", "scanned", "usable", "candidates", "error"}
 )

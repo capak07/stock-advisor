@@ -25,6 +25,7 @@ from advisor.models import ET, Market
 from advisor.store import repo
 
 REPLAYS = 10_000
+MAX_CONFIRM = 200  # stage-2 charts per scan, most traded first (the skill's default)
 STEP = timedelta(minutes=BAR_MIN)
 CYCLE_DELAY = timedelta(seconds=30)  # Yahoo's bars lag the close a little
 FULL_EVERY = timedelta(minutes=15)
@@ -37,6 +38,8 @@ WINDOWS: dict[str, tuple[time, time]] = {
 Clock = Callable[[], datetime]
 Sleep = Callable[[float], None]
 Get = Callable[[str], str]
+Log = Callable[[str], None]
+LATE = "finished late: the afternoon job did not run"
 
 
 def open_sessions(day: date) -> dict[Market, Session]:
@@ -64,11 +67,11 @@ def _next_close(now: datetime, first: datetime, prev: datetime | None) -> dateti
     return c
 
 
-def _plan_of(row: dict, s: Session) -> tuple[Plan, Trigger]:
+def _plan_of(row: dict, flat_by: datetime) -> tuple[Plan, Trigger]:
     """The stored signal's plan and trigger. track() only reads the trigger's time and entry."""
     entry, stop = float(row["entry"]), float(row["stop"])
     at = row["trigger_at"].astimezone(ET)
-    plan = Plan(entry, stop, float(row["target"]), float(row["entry"] - row["stop"]), s.flat_by)
+    plan = Plan(entry, stop, float(row["target"]), float(row["entry"] - row["stop"]), flat_by)
     bar = Bar(at - STEP, entry, entry, entry, entry, 0.0)
     return plan, Trigger(bar=bar, at=at, entry=entry, volume_x=float(row["volume_x"]))
 
@@ -77,6 +80,18 @@ def _net(outcome: Outcome, row: dict) -> float | None:
     if outcome.status == "open" or outcome.gross_r is None:
         return None
     return outcome.gross_r - float(row["cost_r"])
+
+
+def _flat(plan: Plan, price: float, last_at: datetime) -> Outcome:
+    """Flat at flat-by. Gross R as track() computes its own flat exit (unrounded)."""
+    return Outcome("flat", plan.flat_by, price, (price - plan.entry) / plan.risk, price, last_at)
+
+
+def _last_seen(row: dict, plan: Plan, trig: Trigger) -> tuple[float, datetime]:
+    """The last stored price and its time, else the entry at the trigger."""
+    if row["last_price"] is not None:
+        return float(row["last_price"]), row["last_at"] or trig.at
+    return plan.entry, trig.at
 
 
 def _new_signal(
@@ -175,65 +190,88 @@ def run_cycle(
     news_get: Get,
     candidates: Sequence[Listing] | None = None,
     replays: int = REPLAYS,
+    log: Log = print,
 ) -> dict[str, Any]:
     """One cycle at `now`. `full` scans `listings`; otherwise only `candidates` (the job's last
-    full scan's stage-1 candidates). Per-symbol errors are counted; a cycle whose every Yahoo
-    request failed is recorded as failed (the day's error) and returns early."""
+    full scan's stage-1 candidates). Stocks that already have a signal today are tracked, not
+    scanned. Per-symbol errors of any kind are counted and logged. A cycle whose scan got no
+    data (or, with no scan, whose every tracking chart failed) still tracks, then is recorded as
+    failed with the reason; its scan counts are not written."""
     now_et = now.astimezone(ET)
     day = now_et.date()
     cycles = _cycles_so_far(conn, day) + 1
     sessions = open_sessions(day)
     fee, spread, _ = repo.daytrade_settings(conn)
     cutoff = now_et.replace(second=0, microsecond=0)
+    stored = {(r["symbol"], r["market"]) for r in repo.daytrade_signals_for(conn, day)}
     pool = listings if full else (candidates or [])
     # A market past its no-new-signals time is not scanned (a 13:00 close stops at 12:30).
-    todo = [x for x in pool if x.market in sessions and cutoff <= sessions[x.market].no_entries_after]
+    todo = [
+        x for x in pool
+        if x.market in sessions
+        and cutoff <= sessions[x.market].no_entries_after
+        and (x.symbol, x.market.value) not in stored
+    ]
     out: dict[str, Any] = {"ok": True, "full": full, "candidates": [], "new": 0, "tracked": 0, "errors": 0}
 
-    def fail(reason: str) -> dict[str, Any]:
-        repo.update_daytrade_day(conn, day, status="failed", cycles=cycles, error=reason)
-        return {**out, "ok": False, "error": reason}
-
+    failure: str | None = None
     result = ScanResult(0, 0, [], [], 0)
     if todo:
         try:
-            result = scan(client, todo, now_et)
+            result = scan(client, todo, now_et, max_confirm=MAX_CONFIRM)
         except Exception as e:  # noqa: BLE001 - an unexpected answer must not end the job
-            return fail(f"the scan failed: {e}")
-        out["errors"] += result.errors
-        if result.scanned == 0 and result.errors:
-            return fail(f"Yahoo gave no data this cycle ({result.errors} of {len(todo)} symbols failed)")
-    out["candidates"] = result.candidates
-
-    stored = {(r["symbol"], r["market"]) for r in repo.daytrade_signals_for(conn, day)}
-    for f in result.found:
-        if (f.listing.symbol, f.listing.market.value) in stored:
-            continue  # one signal per stock per day: never replayed again
-        row, errors = _new_signal(client, f, sessions[f.listing.market], now, fee, spread, news_get, replays)
-        repo.upsert_daytrade_signal(conn, row)
-        out["new"] += 1
-        out["errors"] += errors
-    _rerank(conn, day)
+            failure = f"the scan failed: {e}"
+        else:
+            out["errors"] += result.errors
+            # A scan that bailed out (5 failed batches in a row) also reports scanned == 0.
+            if result.scanned == 0 and result.errors:
+                failure = f"Yahoo gave no data this cycle ({result.errors} of {len(todo)} symbols failed)"
+    if failure is None:
+        out["candidates"] = result.candidates
+        for f in result.found:
+            key = (f.listing.symbol, f.listing.market.value)
+            if key in stored:
+                continue  # one signal per stock per day: never replayed again
+            try:
+                row, errors = _new_signal(
+                    client, f, sessions[f.listing.market], now, fee, spread, news_get, replays
+                )
+                repo.upsert_daytrade_signal(conn, row)
+            except Exception as e:  # noqa: BLE001 - one odd signal must not stop the others
+                out["errors"] += 1
+                log(f"{f.listing.symbol}: signal not stored: {type(e).__name__}: {e}")
+                continue
+            stored.add(key)
+            out["new"] += 1
+            out["errors"] += errors
+        _rerank(conn, day)
 
     asked = failed = 0
     for row in repo.daytrade_signals_for(conn, day):
         if row["status"] != "open":
             continue  # target, stop and flat are final
-        plan, trig = _plan_of(row, sessions[Market(row["market"])])
-        client.wait()
         asked += 1
         try:
+            plan, trig = _plan_of(row, sessions[Market(row["market"])].flat_by)
+            client.wait()
             bars = client.chart(to_yahoo(row["symbol"]), "1d", "5m")
+            o = track(plan, trig, bars, now_et)
+            repo.update_daytrade_outcome(conn, row["id"], o, _net(o, row))
         except YahooError:
             failed += 1
             continue
-        o = track(plan, trig, bars, now_et)
-        repo.update_daytrade_outcome(conn, row["id"], o, _net(o, row))
+        except Exception as e:  # noqa: BLE001 - one odd signal must not stop the others
+            failed += 1
+            log(f"{row['symbol']}: not tracked: {type(e).__name__}: {e}")
+            continue
         out["tracked"] += 1
     out["errors"] += failed
-    if not todo and asked and failed == asked:
-        return fail(f"Yahoo gave no data this cycle ({failed} of {asked} charts failed)")
+    if failure is None and not todo and asked and failed == asked:
+        failure = f"Yahoo gave no data this cycle ({failed} of {asked} charts failed)"
 
+    if failure is not None:
+        repo.update_daytrade_day(conn, day, status="failed", cycles=cycles, error=failure)
+        return {**out, "ok": False, "error": failure}
     fields: dict[str, Any] = {"status": "scanning", "cycles": cycles, "last_update": now, "error": None}
     if full and todo:
         fields.update(scanned=result.scanned, usable=result.usable, candidates=len(result.candidates))
@@ -241,7 +279,7 @@ def run_cycle(
     return out
 
 
-def finalize(conn: psycopg.Connection, client: YahooClient, now: datetime) -> int:
+def finalize(conn: psycopg.Connection, client: YahooClient, now: datetime, log: Log = print) -> int:
     """Close every still-open signal of the day as flat at its flat-by time: at the last completed
     bar's close up to flat-by, or the last stored price when there are no bars. Returns how many."""
     now_et = now.astimezone(ET)
@@ -251,25 +289,60 @@ def finalize(conn: psycopg.Connection, client: YahooClient, now: datetime) -> in
     for row in repo.daytrade_signals_for(conn, day):
         if row["status"] != "open":
             continue
-        s = sessions[Market(row["market"])]
-        plan, trig = _plan_of(row, s)
-        o: Outcome | None = None
-        client.wait()
         try:
-            o = track(plan, trig, client.chart(to_yahoo(row["symbol"]), "1d", "5m"), now_et)
-        except YahooError:
-            o = None
-        if o is None or o.status == "open":
-            if o is not None and o.last_at > trig.at:
-                price, at = o.last_price, o.last_at
-            elif row["last_price"] is not None:
-                price, at = float(row["last_price"]), row["last_at"]
-            else:
-                price, at = plan.entry, trig.at
-            o = Outcome("flat", s.flat_by, price, (price - plan.entry) / plan.risk, price, at)
-        repo.update_daytrade_outcome(conn, row["id"], o, _net(o, row))
+            plan, trig = _plan_of(row, sessions[Market(row["market"])].flat_by)
+            o: Outcome | None = None
+            client.wait()
+            try:
+                o = track(plan, trig, client.chart(to_yahoo(row["symbol"]), "1d", "5m"), now_et)
+            except YahooError:
+                o = None
+            if o is None or o.status == "open":
+                if o is not None and o.last_at > trig.at:
+                    o = _flat(plan, o.last_price, o.last_at)
+                else:
+                    o = _flat(plan, *_last_seen(row, plan, trig))
+            repo.update_daytrade_outcome(conn, row["id"], o, _net(o, row))
+        except Exception as e:  # noqa: BLE001 - close the others; the next job closes this one
+            log(f"{row['symbol']}: not finalized: {type(e).__name__}: {e}")
+            continue
         n += 1
     return n
+
+
+def close_earlier_days(conn: psycopg.Connection, today: date, log: Log = print) -> int:
+    """Days before `today` left unfinished (the afternoon job never ran or died): their open
+    signals go flat at their last stored price (else the entry), exit at that day's flat-by;
+    no charts (Yahoo's 1-day chart would be today's). The day is marked done. Returns days closed."""
+    n = 0
+    for d in repo.daytrade_unfinished_days(conn, today):
+        day = d["day"]
+        try:
+            for row in repo.daytrade_signals_for(conn, day):
+                if row["status"] != "open":
+                    continue
+                s = session_for(day, Market(row["market"]))
+                flat_by = s.flat_by if s is not None else datetime.combine(day, time(15, 55), tzinfo=ET)
+                plan, trig = _plan_of(row, flat_by)
+                o = _flat(plan, *_last_seen(row, plan, trig))
+                repo.update_daytrade_outcome(conn, row["id"], o, _net(o, row))
+            error = LATE if not d["error"] else f"{d['error']}; {LATE}"
+            repo.update_daytrade_day(conn, day, status="done", error=error)
+        except Exception as e:  # noqa: BLE001 - today's job matters more
+            log(f"{day.isoformat()}: not closed: {type(e).__name__}: {e}")
+            continue
+        n += 1
+    return n
+
+
+def _record_failure(conn: psycopg.Connection, day: date, reason: str, log: Log) -> None:
+    """Best effort: the database may be what failed."""
+    try:
+        row = repo.daytrade_day(conn, day)
+        cycles = (row["cycles"] if row else 0) + 1
+        repo.update_daytrade_day(conn, day, status="failed", cycles=cycles, error=reason)
+    except Exception as e:  # noqa: BLE001
+        log(f"could not record the failed cycle: {type(e).__name__}: {e}")
 
 
 def run_job(
@@ -281,11 +354,13 @@ def run_job(
     clock: Clock,
     sleep: Sleep,
     news_get: Get,
-    log: Callable[[str], None] = print,
+    log: Log = print,
 ) -> dict[str, Any]:
     """Loop cycles 30 s after each 5-minute bar close until the job's last bar. Each job's first
     cycle is a full scan, then one every 15 minutes (and again after a failed one); the cycles
-    between re-check the last full scan's candidates. The afternoon job finalizes the day."""
+    between re-check the last full scan's candidates. A cycle that raises is recorded as failed
+    and the loop goes on. The job first closes any earlier unfinished day; the afternoon job
+    finalizes today."""
     start = clock().astimezone(ET)
     day = start.date()
     sessions = open_sessions(day)
@@ -293,6 +368,7 @@ def run_job(
         repo.start_daytrade_day(conn, day, "closed")
         return {"day": day.isoformat(), "cycles": [], "closed": True}
     repo.prune_daytrade(conn, start)
+    close_earlier_days(conn, day, log)
     if repo.daytrade_day(conn, day) is None:
         repo.start_daytrade_day(conn, day, "waiting")
     first = datetime.combine(day, FIRST_CLOSE, tzinfo=ET)
@@ -309,8 +385,16 @@ def run_job(
         at = close + CYCLE_DELAY
         if at > now:
             sleep((at - now).total_seconds())
+        # A failed full scan leaves last_full >= 15 minutes back, so the next cycle is full again.
         full = candidates is None or last_full is None or close - last_full >= FULL_EVERY
-        res = run_cycle(conn, client, listings, clock(), full=full, news_get=news_get, candidates=candidates)
+        try:
+            res = run_cycle(
+                conn, client, listings, clock(), full=full, news_get=news_get, candidates=candidates, log=log
+            )
+        except Exception as e:  # noqa: BLE001 - record it and wait for the next bar
+            reason = f"the cycle failed: {type(e).__name__}: {e}"
+            _record_failure(conn, day, reason, log)
+            res = {"ok": False, "candidates": [], "new": 0, "tracked": 0, "errors": 0, "error": reason}
         if res["ok"] and full:
             candidates, last_full = list(res["candidates"]), close
         prev = close
@@ -323,6 +407,6 @@ def run_job(
     finalized = None
     if job == "afternoon":
         now = clock()
-        finalized = finalize(conn, client, now)
+        finalized = finalize(conn, client, now, log)
         repo.update_daytrade_day(conn, day, status="done", last_update=now)
     return {"day": day.isoformat(), "cycles": cycles, "finalized": finalized}

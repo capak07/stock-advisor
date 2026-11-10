@@ -10,13 +10,17 @@ import os
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 
+import psycopg
 import pytest
 
+from advisor.daytrade import cycle
 from advisor.daytrade.__main__ import check_start, main
 from advisor.daytrade.bars import Bar, SparkSeries, YahooClient, YahooError
-from advisor.daytrade.cycle import run_cycle, run_job
+from advisor.daytrade.cycle import MAX_CONFIRM, run_cycle, run_job
+from advisor.daytrade.replay import seed_for
 from advisor.daytrade.rule import session_for
 from advisor.daytrade.scan import Listing
+from advisor.daytrade.track import Outcome
 from advisor.models import ET, Market, SymbolInfo
 from advisor.store import repo
 
@@ -38,15 +42,18 @@ def et(h, m, s=0, day=DAY):
     return datetime.combine(day, time(h, m, s), tzinfo=ET)
 
 
-def _bars(d: date, kind: str, close: time = time(16, 0)) -> list[Bar]:
-    """One session of 5-minute bars. kind: win / stop (history), target / open / none (today)."""
+def _bars(d: date, kind: str, close: time = time(16, 0), vol: float = 1000) -> list[Bar]:
+    """One session of 5-minute bars. kind: win / stop (history), target / open / none / cand (today).
+    'cand' passes stage 1 (closes above the range closes) but never breaks the range high."""
     open_ = datetime.combine(d, time(9, 30), tzinfo=ET)
     n = int((datetime.combine(d, close, tzinfo=ET) - open_) / timedelta(minutes=5))
     out = []
     for i in range(n):
         t = open_ + timedelta(minutes=5 * i)
         if i < 3:
-            b = Bar(t, 10.0, 10.2, 9.8, 10.0, 1000)
+            b = Bar(t, 10.0, 10.2, 9.8, 10.0, vol)
+        elif kind == "cand":
+            b = Bar(t, 10.1, 10.15, 10.05, 10.1, vol)
         elif kind == "none":
             b = Bar(t, 9.9, 9.95, 9.85, 9.9, 1000)
         elif i == 3:
@@ -241,10 +248,13 @@ def test_stored_signals_are_tracked_not_replayed_again(db):
         db, client, listings, et(9, 55, 30), full=False, news_get=news, candidates=first["candidates"]
     )
     assert r["ok"] is True
-    assert sorted(client.sparked()) == sorted(["AAA", "BRK-B", "CCC", "DDD", "RYY.TO", "FFF", "GGG"])
+    # Every candidate already has a stored signal: none is scanned again, each is charted once (tracking).
+    assert client.sparked() == []
+    assert sorted(arg for what, arg in client.requests if what == "1d") == sorted(
+        ["AAA", "BRK-B", "CCC", "DDD", "RYY.TO", "FFF", "GGG"]
+    )
     assert not [q for q in client.requests if q[0] == "60d"]
     assert news.urls == []
-    # One 1-day chart per stored signal for the scan's confirmation and one for tracking.
     sig = _signals(db)
     a = sig["AAA"]
     assert a["status"] == "target"
@@ -271,8 +281,11 @@ def test_morning_job_schedule_full_every_15_minutes(db):
     assert len(cycles) == 34
     assert all(c["full"] == (k % 3 == 0) for k, c in enumerate(cycles))
     # Full cycles read the whole list; the others only the candidates.
+    # Once AAA has its signal it is tracked, not scanned: later full scans read only EEE, and the
+    # cycles between have no candidates left to re-check.
     sparks = [arg for what, arg in client.requests if what == "spark"]
-    assert sparks[0] == ("AAA", "EEE") and sparks[1] == ("AAA",)
+    assert sparks[0] == ("AAA", "EEE")
+    assert sparks[1:] == [("EEE",)] * 11
     # Replayed and given headlines once.
     assert [q for q in client.requests if q[0] == "60d"] == [("60d", "AAA")]
     assert len(news.urls) == 1
@@ -365,7 +378,9 @@ def test_split_close_us_stops_at_1230_and_flats_at_1255_while_tsx_runs_on(db):
     assert (us.no_entries_after, us.flat_by) == (et(12, 30, day=SPLIT), et(12, 55, day=SPLIT))
     assert session_for(SPLIT, TSX).flat_by == et(15, 55, day=SPLIT)
     client, listings = _world(
-        SPLIT, [("AAA", US, "open", 0), ("RYY.TO", TSX, "open", 0)], close={US: time(13, 0)}
+        SPLIT,
+        [("AAA", US, "open", 0), ("RYY.TO", TSX, "open", 0), ("UUU", US, "none", 0), ("TTT.TO", TSX, "none", 0)],
+        close={US: time(13, 0)},
     )
     news = FakeNews()
     run_cycle(db, client, listings, et(9, 50, 30, day=SPLIT), full=True, news_get=news)
@@ -375,8 +390,9 @@ def test_split_close_us_stops_at_1230_and_flats_at_1255_while_tsx_runs_on(db):
     clock = SimClock(et(12, 35, day=SPLIT))
     out = run_job(db, client, listings, "afternoon", clock=clock.now, sleep=clock.sleep, news_get=news)
     # The afternoon job runs on for the TSX; US listings are no longer scanned after 12:30.
+    # (AAA and RYY.TO have signals: they are tracked, not scanned.)
     assert out["cycles"][-1]["at"] == et(15, 55, 30, day=SPLIT)
-    assert "AAA" not in client.sparked() and "RYY.TO" in client.sparked()
+    assert set(client.sparked()) == {"TTT.TO"}
     sig = _signals(db, SPLIT)
     assert (sig["AAA"]["status"], sig["AAA"]["exit_at"]) == ("flat", et(12, 55, day=SPLIT))
     assert (sig["RYY.TO"]["status"], sig["RYY.TO"]["exit_at"]) == ("flat", et(15, 55, day=SPLIT))
@@ -455,3 +471,197 @@ def test_wrong_dst_start_exits_with_a_plain_line_and_writes_nothing(db, monkeypa
     assert rc == 0
     assert "window" in capsys.readouterr().out
     assert _day(db) is None
+
+
+@pytest.mark.parametrize(
+    ("day", "morning", "afternoon"),
+    [
+        (date(2026, 10, 14), "13:35", "16:35"),  # EDT (UTC-4): 9:35 and 12:35 ET
+        (date(2026, 11, 12), "14:35", "17:35"),  # EST (UTC-5): 9:35 and 12:35 ET
+    ],
+)
+def test_guard_lets_exactly_one_cron_dispatch_per_job_run(day, morning, afternoon):
+    def utc(hm):
+        h, m = map(int, hm.split(":"))
+        return datetime.combine(day, time(h, m), tzinfo=UTC)
+
+    runs = {
+        job: [hm for hm in times if check_start(job, utc(hm)) is None]
+        for job, times in (("morning", ["13:35", "14:35"]), ("afternoon", ["16:35", "17:35"]))
+    }
+    assert runs == {"morning": [morning], "afternoon": [afternoon]}
+
+
+def test_a_stored_signal_is_not_scanned_again_in_a_full_cycle(db):
+    client, listings = _world(DAY, [("AAA", US, "open", 0), ("EEE", US, "none", 0)])
+    run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    client.requests.clear()
+    r = run_cycle(db, client, listings, et(9, 55, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True
+    assert client.sparked() == ["EEE"]
+    assert [q for q in client.requests if q[0] == "1d"] == [("1d", "AAA")]  # tracking only
+
+
+def test_stage_two_charts_at_most_200_candidates_most_traded_first(db):
+    assert MAX_CONFIRM == 200
+    today = {f"S{i:03d}": _bars(DAY, "cand", vol=1000 + i) for i in range(300)}
+    client = FakeClient(today, {})
+    listings = [Listing(sym, US, None) for sym in today]
+    r = run_cycle(db, client, listings, et(10, 0, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True and len(r["candidates"]) == 300
+    charted = [arg for what, arg in client.requests if what == "1d"]
+    assert sorted(charted) == [f"S{i:03d}" for i in range(100, 300)]
+
+
+def _yesterday_row(symbol, **over):
+    row = {
+        "day": date(2026, 11, 11), "symbol": symbol, "market": "US", "name": None,
+        "trigger_at": et(9, 50, day=date(2026, 11, 11)), "entry": 10.4, "or_high": 10.2, "or_low": 9.8,
+        "stop": 10.0, "target": 11.2, "volume_x": 3.0, "cost_pct": 3.1, "cost_r": US_COST_R,
+        "replay": {}, "history": {}, "net_replay_r": None, "net_history_r": None, "eligible": False,
+        "headlines": [],
+    }
+    row.update(over)
+    return row
+
+
+def test_a_job_closes_earlier_days_left_open_at_their_last_stored_price(db):
+    y, before, done = date(2026, 11, 11), date(2026, 11, 10), date(2026, 11, 9)
+    repo.start_daytrade_day(db, y, "scanning")
+    repo.start_daytrade_day(db, before, "failed")
+    repo.update_daytrade_day(db, before, error="Yahoo gave no data this cycle")
+    repo.start_daytrade_day(db, done, "done")
+    a = repo.upsert_daytrade_signal(db, _yesterday_row("AAA"))
+    repo.update_daytrade_outcome(db, a, Outcome("open", None, None, None, 10.5, et(14, 0, day=y)), None)
+    repo.upsert_daytrade_signal(db, _yesterday_row("BBB"))  # never tracked: no stored price
+    c = repo.upsert_daytrade_signal(db, _yesterday_row("CCC"))
+    hit = et(10, 0, day=y)
+    repo.update_daytrade_outcome(db, c, Outcome("target", hit, 11.2, 2.0, 11.3, hit), 2.0 - US_COST_R)
+
+    client, listings = _world(DAY, [("AAA", US, "open", 0)])
+    clock = SimClock(et(12, 39))  # past the morning's last cycle: the job only tidies up
+    out = run_job(db, client, listings, "morning", clock=clock.now, sleep=clock.sleep, news_get=FakeNews())
+    assert out["cycles"] == []
+    assert client.requests == []  # no chart for a past day (it would be today's bars)
+
+    sig = _signals(db, y)
+    assert (sig["AAA"]["status"], sig["AAA"]["exit_at"], float(sig["AAA"]["exit_price"])) == (
+        "flat", et(15, 55, day=y), 10.5,
+    )
+    assert float(sig["AAA"]["gross_r"]) == pytest.approx(0.25)
+    assert float(sig["AAA"]["net_r"]) == pytest.approx(0.25 - US_COST_R)
+    assert sig["AAA"]["last_at"] == et(14, 0, day=y)
+    assert (sig["BBB"]["status"], float(sig["BBB"]["exit_price"]), float(sig["BBB"]["gross_r"])) == (
+        "flat", 10.4, 0.0,
+    )
+    assert (sig["CCC"]["status"], float(sig["CCC"]["exit_price"])) == ("target", 11.2)
+    late = "finished late: the afternoon job did not run"
+    assert (_day(db, y)["status"], _day(db, y)["error"]) == ("done", late)
+    assert (_day(db, before)["status"], _day(db, before)["error"]) == (
+        "done", "Yahoo gave no data this cycle; " + late,
+    )
+    assert (_day(db, done)["status"], _day(db, done)["error"]) == ("done", None)
+
+
+def test_unexpected_errors_on_one_signal_leave_the_others_processed(db, monkeypatch, capsys):
+    client, listings = _world(
+        DAY, [("AAA", US, "open", 0), ("BAD", US, "open", 0), ("ODD", US, "open", 0), ("ZZZ", US, "open", 0)]
+    )
+    real_upsert, real_replay, real_update = (
+        repo.upsert_daytrade_signal, cycle.replay, repo.update_daytrade_outcome,
+    )
+
+    def upsert(conn, row):
+        if row["symbol"] == "BAD":
+            raise psycopg.errors.NumericValueOutOfRange("numeric field overflow")
+        return real_upsert(conn, row)
+
+    def odd_replay(history, plan, trigger, s, **kw):
+        if kw["seed"] == seed_for(DAY, "ODD"):
+            raise RuntimeError("odd bars")
+        return real_replay(history, plan, trigger, s, **kw)
+
+    monkeypatch.setattr(repo, "upsert_daytrade_signal", upsert)
+    monkeypatch.setattr(cycle, "replay", odd_replay)
+    r = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True
+    assert r["errors"] == 2
+    assert set(_signals(db)) == {"AAA", "ZZZ"}
+    out = capsys.readouterr().out
+    assert "BAD" in out and "numeric field overflow" in out
+    assert "ODD" in out and "odd bars" in out
+
+    aaa = _signals(db)["AAA"]["id"]
+
+    def update(conn, id, outcome, net_r):
+        if id == aaa:
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+        return real_update(conn, id, outcome, net_r)
+
+    monkeypatch.setattr(repo, "update_daytrade_outcome", update)
+    r = run_cycle(db, client, listings, et(9, 55, 30), full=False, news_get=FakeNews(), candidates=[])
+    assert r["ok"] is True and r["errors"] == 1 and r["tracked"] == 1
+    assert _signals(db)["ZZZ"]["last_at"] == et(9, 55)
+    assert "AAA" in capsys.readouterr().out
+
+
+def test_an_error_escaping_a_cycle_fails_the_day_and_the_job_runs_on(db, monkeypatch):
+    client, listings = _world(DAY, [("AAA", US, "open", 0), ("EEE", US, "none", 0)])
+    real = repo.daytrade_settings
+    calls, seen = [], []
+
+    def settings(conn):
+        calls.append(1)
+        if len(calls) == 1:
+            raise psycopg.OperationalError("connection to server lost")
+        if len(calls) == 2:
+            seen.append(_day(db))
+        return real(conn)
+
+    monkeypatch.setattr(repo, "daytrade_settings", settings)
+    clock = SimClock(et(9, 35))
+    lines: list[str] = []
+    out = run_job(
+        db, client, listings, "morning", clock=clock.now, sleep=clock.sleep, news_get=FakeNews(), log=lines.append
+    )
+    c = out["cycles"]
+    assert (c[0]["at"], c[0]["ok"]) == (et(9, 50, 30), False)
+    assert "connection to server lost" in lines[0]
+    assert (c[1]["at"], c[1]["full"], c[1]["ok"]) == (et(9, 55, 30), True, True)
+    assert seen[0]["status"] == "failed" and "connection to server lost" in seen[0]["error"]
+    assert len(c) == 34
+    assert _day(db)["status"] == "scanning"
+
+
+def test_a_scan_that_bails_out_fails_the_cycle_keeps_the_counts_and_retries_full(db):
+    client, listings = _world(DAY, [(f"S{i:03d}", US, "none", None) for i in range(120)])
+    clock = SimClock(et(9, 35))
+    snap: list[dict] = []
+
+    def hook(what, arg):
+        # Batches 2-6 of the 10:05:30 full scan fail: the scan bails out after 5 in a row.
+        client.down = clock.now() == et(10, 5, 30) and what == "spark" and arg[0] != "S000"
+        if clock.now() == et(10, 10, 30) and what == "spark" and arg[0] == "S000" and not snap:
+            snap.append(_day(db))
+
+    client.on_request = hook
+    out = run_job(db, client, listings, "morning", clock=clock.now, sleep=clock.sleep, news_get=FakeNews())
+    c = out["cycles"]
+    assert [(x["at"], x["full"], x["ok"]) for x in c[3:5]] == [
+        (et(10, 5, 30), True, False), (et(10, 10, 30), True, True),
+    ]
+    assert snap[0]["status"] == "failed" and snap[0]["error"]
+    assert (snap[0]["scanned"], snap[0]["usable"]) == (120, 120)  # still the 9:50 scan's counts
+
+
+def test_a_failed_scan_still_tracks_the_stored_signals(db):
+    client, listings = _world(DAY, [("AAA", US, "open", 0)])
+    run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    client.on_request = lambda what, arg: setattr(client, "down", what == "spark")
+    listings = [*listings, Listing("EEE", US, None)]
+    client.today["EEE"] = _bars(DAY, "none")
+    r = run_cycle(db, client, listings, et(9, 55, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is False and r["tracked"] == 1
+    assert _signals(db)["AAA"]["last_at"] == et(9, 55)
+    day = _day(db)
+    assert day["status"] == "failed" and "no data" in day["error"]

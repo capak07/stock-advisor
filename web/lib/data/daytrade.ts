@@ -57,6 +57,7 @@ type SignalDb = {
   or_low: unknown
   stop: unknown
   target: unknown
+  flat_by: string
   volume_x: unknown
   cost_pct: unknown
   cost_r: unknown
@@ -66,6 +67,7 @@ type SignalDb = {
   net_history_r: unknown
   eligible: boolean
   rank: number | null
+  best_rank: number | null
   headlines: Headline[] | null
   status: Signal['status']
   last_price: unknown
@@ -88,6 +90,7 @@ const toSignal = (r: SignalDb): Signal => ({
   orLow: Number(r.or_low),
   stop: Number(r.stop),
   target: Number(r.target),
+  flatBy: r.flat_by,
   volumeX: Number(r.volume_x),
   costPct: Number(r.cost_pct),
   costR: Number(r.cost_r),
@@ -97,6 +100,7 @@ const toSignal = (r: SignalDb): Signal => ({
   netHistoryR: num(r.net_history_r),
   eligible: r.eligible,
   rank: r.rank,
+  bestRank: r.best_rank,
   headlines: Array.isArray(r.headlines) ? r.headlines : [],
   status: r.status,
   lastPrice: num(r.last_price),
@@ -109,7 +113,7 @@ const toSignal = (r: SignalDb): Signal => ({
 
 /**
  * The Day trade page for `day` (New York's date): the day's row and signals, the track record of the
- * last 20 and 60 finished days' top-3 signals, the max loss per trade and the latest USD/CAD.
+ * last 20 and 60 finished days' top-3 signals (any signal shown in the top 3 that day, even if displaced later), the max loss per trade and the latest USD/CAD.
  */
 export async function loadDaytrade(supabase: Supabase, day: string): Promise<DaytradeData> {
   const [dayRows, signalRows, doneRows, settings, fxRows] = await Promise.all([
@@ -133,7 +137,7 @@ export async function loadDaytrade(supabase: Supabase, day: string): Promise<Day
           .from('daytrade_signals')
           .select('day, status, net_r')
           .in('day', doneDays)
-          .not('rank', 'is', null)
+          .not('best_rank', 'is', null)
           .order('day')
           .order('id')
           .range(from, to),

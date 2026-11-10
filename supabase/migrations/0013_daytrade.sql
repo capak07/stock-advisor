@@ -24,6 +24,8 @@ create table daytrade_signals (
   or_low numeric not null,
   stop numeric not null,
   target numeric not null,
+  -- the signal's market's flat-by time that day (12:55 on a 13:00 close)
+  flat_by timestamptz not null,
   volume_x numeric not null,
   cost_pct numeric not null,
   cost_r numeric not null,
@@ -33,6 +35,8 @@ create table daytrade_signals (
   net_history_r numeric,
   eligible boolean not null,
   rank int check (rank between 1 and 3),
+  -- the best top-3 place the signal ever had; never cleared, so a displaced signal stays in the track record
+  best_rank int check (best_rank between 1 and 3),
   headlines jsonb not null default '[]',
   status text not null default 'open' check (status in ('open', 'target', 'stop', 'flat')),
   last_price numeric,

@@ -1130,7 +1130,7 @@ def update_daytrade_day(conn: psycopg.Connection, day: date, **fields: Any) -> N
 # Not in the on-conflict update: rank and the outcome have their own functions.
 _SIGNAL_COLUMNS = (
     "trigger_at", "entry", "or_high", "or_low", "stop", "target", "volume_x", "cost_pct", "cost_r",
-    "replay", "history", "net_replay_r", "net_history_r", "eligible", "headlines", "name",
+    "replay", "history", "net_replay_r", "net_history_r", "eligible", "headlines", "name", "flat_by",
 )
 _SIGNAL_JSON = {"replay", "history", "headlines"}
 
@@ -1163,10 +1163,14 @@ def update_daytrade_outcome(conn: psycopg.Connection, id: int, outcome: DayOutco
 
 
 def set_daytrade_ranks(conn: psycopg.Connection, day: date, ranks: Mapping[int, int]) -> None:
+    """The day's current top 3. best_rank keeps the best place each signal ever had (least() skips null)."""
     with conn.transaction():
         conn.execute("update daytrade_signals set rank = null where day = %s", (day,))
         for sid, rank in ranks.items():
-            conn.execute("update daytrade_signals set rank = %s where id = %s and day = %s", (rank, sid, day))
+            conn.execute(
+                "update daytrade_signals set rank = %s, best_rank = least(best_rank, %s) where id = %s and day = %s",
+                (rank, rank, sid, day),
+            )
 
 
 def prune_daytrade(conn: psycopg.Connection, now: datetime) -> None:

@@ -4,14 +4,15 @@ import {
   MARKET_CLOSED,
   costLine,
   etClock,
-  flatBy,
   fmtR,
   historyLine,
   isFresh,
   isLive,
+  noTradeLine,
   oddsLine,
   orderSignals,
   outcomeLine,
+  recordEmptyLine,
   shares,
   sharesLine,
   statusLine,
@@ -48,6 +49,7 @@ const signal = (over: Partial<Signal> = {}): Signal => ({
   orLow: 64.6,
   stop: 66.05,
   target: 70.85,
+  flatBy: at('15:55'),
   volumeX: 2.1,
   costPct: 3.1,
   costR: 1.31,
@@ -57,6 +59,7 @@ const signal = (over: Partial<Signal> = {}): Signal => ({
   netHistoryR: 0.3,
   eligible: true,
   rank: 1,
+  bestRank: 1,
   headlines: [],
   status: 'open',
   lastPrice: null,
@@ -156,13 +159,23 @@ describe('statusLine', () => {
 })
 
 describe('isLive', () => {
-  it('refreshes while waiting or scanning, and after a failed cycle during the session', () => {
+  it('refreshes while waiting or scanning, and after a failed cycle, until 4:05 PM', () => {
     expect(isLive(dayRow({ status: 'waiting' }), at('09:40'))).toBe(true)
     expect(isLive(dayRow(), at('11:00'))).toBe(true)
     expect(isLive(dayRow({ status: 'failed' }), at('11:00'))).toBe(true)
-    expect(isLive(dayRow({ status: 'failed' }), at('16:30'))).toBe(false)
-    expect(isLive(dayRow({ status: 'done' }), at('16:30'))).toBe(false)
-    expect(isLive(null, at('11:00'))).toBe(false)
+    expect(isLive(dayRow({ status: 'failed' }), at('16:04'))).toBe(true)
+    expect(isLive(dayRow({ status: 'failed' }), at('16:05'))).toBe(false)
+    expect(isLive(dayRow(), at('16:05'))).toBe(false) // a job that died leaves the day scanning
+    expect(isLive(dayRow({ status: 'done' }), at('15:00'))).toBe(false)
+    expect(isLive(dayRow({ status: 'closed' }), at('11:00'))).toBe(false)
+  })
+
+  it('without a row: refreshes on a weekday from 9:30 AM to 4:05 PM, waiting for the job', () => {
+    expect(isLive(null, at('09:29'))).toBe(false)
+    expect(isLive(null, at('09:30'))).toBe(true)
+    expect(isLive(null, at('16:04'))).toBe(true)
+    expect(isLive(null, at('16:05'))).toBe(false)
+    expect(isLive(null, at('11:00', '2026-11-14'))).toBe(false) // Saturday
   })
 })
 
@@ -173,11 +186,9 @@ describe('formatters', () => {
     expect(fmtR(0.001)).toBe('0.00R')
   })
 
-  it('flat-by is 3:55 PM, 12:55 PM on a 1:00 PM close', () => {
-    expect(flatBy('2026-11-10', 'US')).toBe('3:55 PM')
-    expect(flatBy('2026-11-27', 'US')).toBe('12:55 PM')
-    expect(flatBy('2026-11-27', 'TSX')).toBe('3:55 PM')
-    expect(flatBy('2026-12-24', 'TSX')).toBe('12:55 PM')
+  it('the no-trade line, and none checked yet', () => {
+    expect(noTradeLine(4)).toBe('No signal today has a positive record after costs (4 signals checked).')
+    expect(noTradeLine(0)).toBe('No signals yet today.')
   })
 
   it('history, cost and odds lines', () => {
@@ -244,12 +255,21 @@ describe('trackRecord', () => {
   ]
 
   it('sums the top-3 outcomes of the last 20 and 60 finished days', () => {
-    const t = trackRecord(rows, days)
+    // an open row on a finished day (never finalized) counts nowhere
+    const t = trackRecord([...rows, { day: days[1], status: 'open' as const, netR: null }], days)
     expect(t.last20).toEqual({ days: 20, count: 3, target: 1, stop: 1, flat: 1, avgNetR: expect.closeTo(0.2, 9), sumNetR: expect.closeTo(0.6, 9) })
     expect(t.last60).toEqual({ days: 25, count: 4, target: 1, stop: 2, flat: 1, avgNetR: expect.closeTo(-0.125, 9), sumNetR: expect.closeTo(-0.5, 9) })
   })
 
   it('is empty without finished signals', () => {
     expect(trackRecord([], []).last60).toEqual({ days: 0, count: 0, target: 0, stop: 0, flat: 0, avgNetR: null, sumNetR: 0 })
+  })
+
+  it('says how many finished days had no top-3 signal', () => {
+    const empty = (n: number) => trackRecord([], days.slice(0, n)).last60
+    expect(recordEmptyLine(empty(0))).toBe('No finished day-trade signals yet.')
+    expect(recordEmptyLine(empty(15))).toBe('15 trading days, no top-3 signals.')
+    expect(recordEmptyLine(empty(1))).toBe('1 trading day, no top-3 signals.')
+    expect(recordEmptyLine(trackRecord(rows, days).last60)).toBeNull()
   })
 })

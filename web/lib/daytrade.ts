@@ -67,6 +67,8 @@ export interface Signal {
   orLow: number
   stop: number
   target: number
+  /** When the signal must be closed: its market's flat-by that day (12:55 PM on a 1:00 PM close). */
+  flatBy: string
   volumeX: number
   costPct: number
   costR: number
@@ -76,6 +78,8 @@ export interface Signal {
   netHistoryR: number | null
   eligible: boolean
   rank: number | null
+  /** The best top-3 place it ever had today; kept when a better signal displaces it. */
+  bestRank: number | null
   headlines: Headline[]
   status: SignalStatus
   lastPrice: number | null
@@ -91,30 +95,25 @@ export const MARKET_CLOSED = 'Market closed today.'
 export const LATE_LINE = 'Late: the price has moved since the signal; entering now is a different trade.'
 export const TRACK_LABEL = "Paper: what the rule's top-3 trades would have done, after costs."
 export const NO_RECORD = 'No finished day-trade signals yet.'
+export const LATE_SHARES = "Shares are sized from the signal's entry and stop."
 export const NOTES = [
   'Not financial advice. Nothing is ordered: you place trades yourself.',
   'Frequent day trading in a TFSA can be treated as a business, which makes the gains taxable (not tax advice).',
   "Yahoo's free 5-minute bars can lag a few minutes.",
 ] as const
-export const noTradeLine = (n: number) => `No signal today has a positive record after costs (${n} signals checked).`
+export const noTradeLine = (n: number) =>
+  n === 0 ? 'No signals yet today.' : `No signal today has a positive record after costs (${n} signals checked).`
 
 /** The pipeline's eligibility floor (advisor/daytrade/score.py MIN_FIRED). */
 export const MIN_FIRED = 20
 const FRESH_MS = 10 * 60_000
 const BAR_MIN = 5
+const OPEN = 9 * 60 + 30
 const FIRST_CYCLE = 9 * 60 + 50
-const SESSION_END = 16 * 60
-
-/**
- * The 1:00 PM closes in the pipeline's market calendars (pandas_market_calendars, 2026-2027): flat by
- * 12:55 PM on these days. Other days, and later years until this list grows, are 3:55 PM.
- */
-const EARLY_CLOSES: Record<string, readonly DaytradeMarket[]> = {
-  '2026-11-27': ['US'],
-  '2026-12-24': ['US', 'TSX'],
-  '2027-11-26': ['US'],
-  '2027-12-24': ['TSX'],
-}
+/** The last bar a day's cycles run for (3:55 PM; a 1:00 PM close ends sooner and the day goes done). */
+const LAST_BAR = 15 * 60 + 55
+/** The page stops refreshing itself after this, whatever the day's status (a dead job leaves it scanning). */
+const LIVE_UNTIL = 16 * 60 + 5
 
 const nyParts = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/New_York',
@@ -149,14 +148,6 @@ const clockOf = (minutes: number): string => {
 export const etClock = (iso: string): string => clockOf(nyTime(iso).minutes)
 
 const isWeekend = (weekday: string) => weekday === 'Sat' || weekday === 'Sun'
-
-const closesEarly = (day: string, market: DaytradeMarket) => EARLY_CLOSES[day]?.includes(market) ?? false
-
-/** When a signal must be closed: 3:55 PM, or 12:55 PM on a 1:00 PM close. */
-export const flatBy = (day: string, market: DaytradeMarket): string => (closesEarly(day, market) ? '12:55 PM' : '3:55 PM')
-
-/** The last bar a day's cycles run for: the later flat-by of the two markets. */
-const lastBarMinutes = (day: string) => (closesEarly(day, 'US') && closesEarly(day, 'TSX') ? 12 * 60 + 55 : 15 * 60 + 55)
 
 /**
  * Shares sized so the loss at the stop fits the max loss per trade: floor(max loss in the stock's
@@ -207,14 +198,18 @@ export function statusLine(day: DayRow | null, now: string): string {
   if (last === null) return 'Scanning'
   const at = nyTime(day.lastUpdate!).minutes
   const next = at - (at % BAR_MIN) + BAR_MIN
-  return next <= lastBarMinutes(day.day) ? `Scanning · ${last} · next ~${clockOf(next).replace(/ [AP]M$/, '')}` : `Scanning · ${last}`
+  return next <= LAST_BAR ? `Scanning · ${last} · next ~${clockOf(next).replace(/ [AP]M$/, '')}` : `Scanning · ${last}`
 }
 
-/** Refresh the page while the day is waiting or scanning, or after a failed cycle during the session. */
+/**
+ * Refresh the page while the day is waiting, scanning or after a failed cycle, and, with no row yet,
+ * on a weekday from 9:30 AM (the morning job writes it). Never after 4:05 PM, whatever the status.
+ */
 export function isLive(day: DayRow | null, now: string): boolean {
-  if (day === null) return false
-  if (day.status === 'waiting' || day.status === 'scanning') return true
-  return day.status === 'failed' && nyTime(now).minutes < SESSION_END
+  const t = nyTime(now)
+  if (t.minutes >= LIVE_UNTIL) return false
+  if (day === null) return !isWeekend(t.weekday) && t.minutes >= OPEN
+  return day.status === 'waiting' || day.status === 'scanning' || day.status === 'failed'
 }
 
 const MINUS = '−'
@@ -309,9 +304,10 @@ export interface RecordRow {
   netR: number | null
 }
 
+/** Finished signals only: an open one on a finished day (never finalized) counts nowhere. */
 function summarize(rows: readonly RecordRow[], days: readonly string[]): RecordSummary {
   const within = new Set(days)
-  const mine = rows.filter((r) => within.has(r.day))
+  const mine = rows.filter((r) => within.has(r.day) && r.status !== 'open')
   const nets = mine.map((r) => r.netR).filter((r): r is number => r !== null)
   const sum = nets.reduce((a, b) => a + b, 0)
   return {
@@ -323,6 +319,13 @@ function summarize(rows: readonly RecordRow[], days: readonly string[]): RecordS
     avgNetR: nets.length ? sum / nets.length : null,
     sumNetR: sum,
   }
+}
+
+/** The line for a track record with no finished top-3 signal; null when there is one. */
+export function recordEmptyLine(t: RecordSummary): string | null {
+  if (t.count > 0) return null
+  if (t.days === 0) return NO_RECORD
+  return `${t.days} trading ${t.days === 1 ? 'day' : 'days'}, no top-3 signals.`
 }
 
 /** The top-3 signals' outcomes over the last 20 and 60 finished days (`doneDays` newest first). */

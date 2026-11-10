@@ -580,10 +580,21 @@ def test_pipeline_cannot_delete_price_alerts(owned_db):
 DAYTRADE_DAY = "insert into daytrade_days (day, status) values ('2026-11-10', 'scanning')"
 DAYTRADE_SIGNAL = (
     "insert into daytrade_signals (day, symbol, market, trigger_at, entry, or_high, or_low, stop,"
-    " target, volume_x, cost_pct, cost_r, replay, history, eligible)"
+    " target, volume_x, cost_pct, cost_r, replay, history, eligible, flat_by)"
     " values ('2026-11-10', 'AAPL', 'US', now(), 100, 101, 99, 99.5, 101, 2, 0.1, 0.2,"
-    " '{}', '{}', true)"
+    " '{}', '{}', true, '2026-11-10 15:55-05')"
 )
+
+
+def test_daytrade_signals_need_a_flat_by_and_best_rank_is_a_top_3_place(db):
+    db.execute(DAYTRADE_DAY)
+    with pytest.raises(psycopg.errors.NotNullViolation):
+        db.execute(DAYTRADE_SIGNAL.replace(", flat_by)", ")").replace(", '2026-11-10 15:55-05')", ")"))
+    db.execute(DAYTRADE_SIGNAL)
+    assert db.execute("update daytrade_signals set best_rank = 3").rowcount == 1
+    for bad in (0, 4):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            db.execute("update daytrade_signals set best_rank = %s", (bad,))
 
 
 def test_daytrade_tables_exist(db):

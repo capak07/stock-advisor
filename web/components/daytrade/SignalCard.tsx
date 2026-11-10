@@ -2,9 +2,9 @@ import { TriangleAlert } from 'lucide-react'
 import { shortDay } from '@/lib/dates'
 import {
   LATE_LINE,
+  LATE_SHARES,
   costLine,
   etClock,
-  flatBy,
   historyLine,
   nyTime,
   oddsLine,
@@ -87,11 +87,12 @@ export function SignalCard({
         </div>
         <div>
           <dt>Flat by</dt>
-          <dd className="num">{flatBy(s.day, s.market)}</dd>
+          <dd className="num">{etClock(s.flatBy)}</dd>
         </div>
         <div>
           <dt>Shares</dt>
           <dd>{sharesLine(maxLossCad, risk, s.market, usdCad)}</dd>
+          {late && <dd className="sub">{LATE_SHARES}</dd>}
         </div>
       </dl>
       <ul className="dt-lines">

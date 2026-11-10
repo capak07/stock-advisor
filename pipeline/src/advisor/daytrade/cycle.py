@@ -148,6 +148,7 @@ def _new_signal(
         "or_low": f.rng.low,
         "stop": f.plan.stop,
         "target": f.plan.target,
+        "flat_by": f.plan.flat_by,
         "volume_x": f.trigger.volume_x,
         "cost_pct": pct,
         "cost_r": c_r,

@@ -197,6 +197,7 @@ def test_a_found_signal_gets_replay_history_headlines_cost_and_rank(db):
     assert set(sig) == {"AAA", "BRK.B", "CCC", "DDD", "RYY.TO", "FFF", "GGG"}
     a = sig["AAA"]
     assert a["trigger_at"] == et(9, 50)
+    assert a["flat_by"] == et(15, 55)
     assert (float(a["entry"]), float(a["stop"]), float(a["target"])) == (10.4, 10.0, 11.2)
     assert (float(a["or_high"]), float(a["or_low"]), float(a["volume_x"])) == (10.2, 9.8, 3.0)
     assert float(a["cost_pct"]) == pytest.approx(3.10)
@@ -219,11 +220,14 @@ def test_a_found_signal_gets_replay_history_headlines_cost_and_rank(db):
     }
     # Ranked by net history R: RYY.TO 1.974, AAA 1.194, BRK.B 0.894; CCC (0.594) is fourth.
     assert {s: sig[s]["rank"] for s in sig if sig[s]["rank"]} == {"RYY.TO": 1, "AAA": 2, "BRK.B": 3}
+    assert {s: sig[s]["best_rank"] for s in sig if sig[s]["best_rank"]} == {"RYY.TO": 1, "AAA": 2, "BRK.B": 3}
     # Too little history: stored, not eligible, and the stats say why.
     assert sig["FFF"]["replay"] == {"skipped": "only 10 full past session(s); need at least 20"}
     assert sig["FFF"]["history"]["sessions"] == 10
     assert sig["FFF"]["net_replay_r"] is None and sig["FFF"]["net_history_r"] is None
     assert "skipped" in sig["GGG"]["replay"] and "skipped" in sig["GGG"]["history"]
+    # Skipped stats still carry the market's flat-by.
+    assert sig["FFF"]["flat_by"] == et(15, 55) and sig["GGG"]["flat_by"] == et(15, 55)
     assert r["errors"] == 2
     # Headlines for each new signal, by Yahoo symbol.
     assert sorted(u.split("s=")[1].split("&")[0] for u in news.urls) == sorted(
@@ -385,6 +389,9 @@ def test_split_close_us_stops_at_1230_and_flats_at_1255_while_tsx_runs_on(db):
     news = FakeNews()
     run_cycle(db, client, listings, et(9, 50, 30, day=SPLIT), full=True, news_get=news)
     assert set(_signals(db, SPLIT)) == {"AAA", "RYY.TO"}
+    # Each signal stores its own market's flat-by: 12:55 for the US on a 13:00 close.
+    stored = _signals(db, SPLIT)
+    assert (stored["AAA"]["flat_by"], stored["RYY.TO"]["flat_by"]) == (et(12, 55, day=SPLIT), et(15, 55, day=SPLIT))
     client.requests.clear()
 
     clock = SimClock(et(12, 35, day=SPLIT))
@@ -519,7 +526,7 @@ def _yesterday_row(symbol, **over):
         "trigger_at": et(9, 50, day=date(2026, 11, 11)), "entry": 10.4, "or_high": 10.2, "or_low": 9.8,
         "stop": 10.0, "target": 11.2, "volume_x": 3.0, "cost_pct": 3.1, "cost_r": US_COST_R,
         "replay": {}, "history": {}, "net_replay_r": None, "net_history_r": None, "eligible": False,
-        "headlines": [],
+        "headlines": [], "flat_by": et(15, 55, day=date(2026, 11, 11)),
     }
     row.update(over)
     return row

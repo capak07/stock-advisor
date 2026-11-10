@@ -1,21 +1,16 @@
 import { expect, test, type Page } from '@playwright/test'
-import { daysAgo, resetData, seedDaytradeDay, seedDaytradeSignal, seedFx, sql, today } from './db'
+import { nyTime } from '../lib/daytrade'
+import { daysAgo, nyAt, resetData, seedDaytradeDay, seedDaytradeSignal, seedFx, sql, today } from './db'
 
 const MIN = 60_000
 const ago = (minutes: number) => new Date(Date.now() - minutes * MIN)
 const cards = (page: Page) => page.getByTestId('daytrade-card')
 
-/** New York's weekday and minutes after midnight right now. */
-function nyNow() {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    weekday: 'short',
-    hour: 'numeric',
-    minute: 'numeric',
-    hourCycle: 'h23',
-  }).formatToParts(new Date())
-  const get = (type: string) => parts.find((p) => p.type === type)!.value
-  return { weekday: get('weekday'), minutes: Number(get('hour')) * 60 + Number(get('minute')) }
+/** The status line without a row for today, at New York's time now. */
+function noRowLine() {
+  const { weekday, minutes } = nyTime(new Date().toISOString())
+  if (weekday === 'Sat' || weekday === 'Sun') return 'Market closed today.'
+  return minutes < 9 * 60 + 50 ? 'Before 9:50 AM: the opening range is still forming.' : 'No scan has run yet today.'
 }
 
 const NOTES = [
@@ -37,6 +32,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
     stop: 66.05,
     rank: 1,
     netHistoryR: 0.29,
+    flatBy: nyAt(today(), '12:55'), // as the pipeline stores it on a 1:00 PM close
     headlines: [
       { title: 'TG Therapeutics beats estimates', url: 'https://finance.yahoo.com/tgtx-1', published_at: ago(90).toISOString(), outlet: 'Reuters' },
       { title: 'TGTX second headline', url: 'https://finance.yahoo.com/tgtx-2', published_at: ago(120).toISOString(), outlet: 'Yahoo Finance' },
@@ -58,7 +54,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(first.getByText('Fresh', { exact: true })).toBeVisible()
   await expect(first).toContainText('StopUS$66.05')
   await expect(first).toContainText('TargetUS$70.85')
-  await expect(first).toContainText(/Flat by(3:55|12:55) PM/)
+  await expect(first).toContainText('Flat by12:55 PM')
   await expect(first).toContainText('10,000 replays: target first 34% · stop first 52% · neither 14% · green at close 48%')
   await expect(first).toContainText("This rule on TGTX's last 55 sessions: fired 37 times, 5 target, 20 stop; average +1.60R before costs")
   await expect(first).toContainText('Cost 3.10% round trip = 1.31R')
@@ -72,6 +68,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(second).toContainText('TSX')
   await expect(second).toContainText('StopC$149.50')
   await expect(second).toContainText('≈ 100 shares (risking ≈ C$50 at the stop)')
+  await expect(second).toContainText('Flat by3:55 PM')
   await expect(cards(page).nth(2)).toContainText('Even one share risks more than your C$50 limit.')
 
   const table = page.getByRole('table', { name: 'Other signals today' })
@@ -115,6 +112,7 @@ test('a signal more than 10 minutes old is late and shows the latest price with 
   await expect(card.getByText('Late: the price has moved since the signal; entering now is a different trade.')).toBeVisible()
   await expect(card).toContainText(/Last price US\$68\.40 at \d{1,2}:\d{2} [AP]M/)
   await expect(card.getByText('Fresh', { exact: true })).toHaveCount(0)
+  await expect(card.getByText("Shares are sized from the signal's entry and stop.")).toBeVisible()
 })
 
 test('a failed day shows the reason and the last good update', async ({ page }) => {
@@ -127,17 +125,28 @@ test('a failed day shows the reason and the last good update', async ({ page }) 
 })
 
 test('without a row for today the line fits the time of day, and the track record is still shown', async ({ page }) => {
+  // the line just before or just after the page loads, so a boundary (9:50, midnight) can't flake it
+  const before = noRowLine()
   await page.goto('/daytrade')
-  const { weekday, minutes } = nyNow()
-  const expected =
-    weekday === 'Sat' || weekday === 'Sun'
-      ? 'Market closed today.'
-      : minutes < 9 * 60 + 50
-        ? 'Before 9:50 AM: the opening range is still forming.'
-        : 'No scan has run yet today.'
-  await expect(page.getByTestId('daytrade-status')).toHaveText(expected)
+  const after = noRowLine()
+  const shown = (await page.getByTestId('daytrade-status').textContent()) ?? ''
+  expect([before, after]).toContain(shown)
   await expect(page.getByRole('heading', { name: 'Track record' })).toBeVisible()
   await expect(page.getByText('No finished day-trade signals yet.')).toBeVisible()
+})
+
+test('a scanning day with no signal yet says so', async ({ page }) => {
+  await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
+  await page.goto('/daytrade')
+  await expect(page.getByText('No signals yet today.')).toBeVisible()
+  await expect(page.getByText(/signals checked/)).toHaveCount(0)
+})
+
+test('finished days without a top-3 signal are counted', async ({ page }) => {
+  for (const n of [1, 2, 3]) await seedDaytradeDay({ day: daysAgo(n), status: 'done', lastUpdate: ago(n * 1440) })
+  await seedDaytradeSignal({ day: daysAgo(1), symbol: 'AMD', triggerAt: ago(1440), entry: 50, stop: 49, eligible: false, status: 'flat', netR: -0.3 })
+  await page.goto('/daytrade')
+  await expect(page.getByRole('region', { name: 'Track record' }).getByText('3 trading days, no top-3 signals.')).toBeVisible()
 })
 
 test('a closed day says the market is closed', async ({ page }) => {
@@ -149,13 +158,17 @@ test('a closed day says the market is closed', async ({ page }) => {
 test('the track record counts the top-3 outcomes of finished days, after costs', async ({ page }) => {
   for (const n of [1, 2, 3]) await seedDaytradeDay({ day: daysAgo(n), status: 'done', lastUpdate: ago(n * 1440) })
   await seedDaytradeDay({ day: daysAgo(4), status: 'failed', lastUpdate: ago(4 * 1440) }) // not finished: left out
-  const past = (n: number, symbol: string, status: 'target' | 'stop' | 'flat', netR: number, rank: number | null = 1) =>
+  const past = (n: number, symbol: string, status: 'open' | 'target' | 'stop' | 'flat', netR: number, rank: number | null = 1) =>
     seedDaytradeSignal({ day: daysAgo(n), symbol, triggerAt: ago(n * 1440), entry: 20, stop: 19, rank, status, netR })
   await past(1, 'AAA', 'target', 2.0)
   await past(1, 'BBB', 'stop', -1.0, 2)
   await past(2, 'CCC', 'flat', 0.2)
-  await past(2, 'DDD', 'stop', -1.1, null) // not top 3
+  await past(2, 'GGG', 'target', 1.0, null)
+  await sql`update daytrade_signals set best_rank = 2 where symbol = 'GGG'` // shown #2, displaced later that day
+  await past(2, 'DDD', 'stop', -1.1, null) // never top 3
   await past(3, 'EEE', 'stop', -1.0)
+  await past(3, 'HHH', 'open', 0) // never finalized: counts nowhere
+  await sql`update daytrade_signals set net_r = null where symbol = 'HHH'`
   await past(4, 'FFF', 'target', 1.9)
 
   await page.goto('/daytrade')
@@ -163,11 +176,11 @@ test('the track record counts the top-3 outcomes of finished days, after costs',
   await expect(record.getByText("Paper: what the rule's top-3 trades would have done, after costs.")).toBeVisible()
   const last20 = record.getByTestId('track-20')
   await expect(last20).toContainText('Last 20 trading days')
-  await expect(last20).toContainText('4 signals')
-  await expect(last20).toContainText('1 target · 2 stop · 1 flat')
-  await expect(last20).toContainText('Average +0.05R') // (2.0 − 1.0 + 0.2 − 1.0) / 4
-  await expect(last20).toContainText('Sum +0.20R')
-  await expect(record.getByTestId('track-60')).toContainText('4 signals')
+  await expect(last20).toContainText('5 signals')
+  await expect(last20).toContainText('2 target · 2 stop · 1 flat')
+  await expect(last20).toContainText('Average +0.24R') // (2.0 − 1.0 + 0.2 + 1.0 − 1.0) / 5
+  await expect(last20).toContainText('Sum +1.20R')
+  await expect(record.getByTestId('track-60')).toContainText('5 signals')
 })
 
 test('the page refreshes itself while the day is scanning', async ({ page }) => {
@@ -204,7 +217,12 @@ test.describe('on a phone', () => {
       headlines: [{ title: `TGTX ${'quarterly-results-'.repeat(8)}beat`, url: 'https://finance.yahoo.com/x', published_at: ago(60).toISOString(), outlet: 'Reuters' }],
     })
     await seedDaytradeSignal({ symbol: 'AMD', triggerAt: ago(5), entry: 50, stop: 49, eligible: false, netHistoryR: -0.2 })
-    await page.goto('/daytrade')
+    // Day trade sits under More on a phone; the primary tabs stay as they were
+    await page.goto('/')
+    const tabs = page.getByRole('navigation', { name: 'Main' }).last()
+    await expect(tabs.getByRole('link', { name: 'Day trade' })).toHaveCount(0)
+    await tabs.getByRole('button', { name: 'More' }).click()
+    await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Day trade' }).click()
     await expect(page.getByRole('heading', { name: 'Day trade', level: 1 })).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)

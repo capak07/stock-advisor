@@ -1,5 +1,6 @@
 import postgres, { type JSONValue } from 'postgres'
 import { addDays, todayInToronto } from '../lib/dates'
+import { nyTime } from '../lib/daytrade'
 import { localStack } from './stack'
 
 const DB_URL = localStack().DB_URL
@@ -407,7 +408,18 @@ export async function seedDaytradeDay(d: {
 export const REPLAY = { replays: 10000, target_first: 0.341, stop_first: 0.52, neither: 0.139, green: 0.48, avg_r: 0.4, close_p05: 1, close_p50: 2, close_p95: 3, sessions: 55 }
 export const HISTORY = { sessions: 55, fired: 37, target: 5, stop: 20, neither: 12, avg_r: 1.6 }
 
-/** One signal of a day-trade day (the day row must exist). Prices and R as the pipeline stores them. */
+/** `hhmm` on New York's clock on `day` (EST or EDT, whichever that day has). */
+export function nyAt(day: string, hhmm: string): Date {
+  for (const offset of ['-05:00', '-04:00']) {
+    const d = new Date(`${day}T${hhmm}:00${offset}`)
+    const t = nyTime(d.toISOString())
+    if (t.day === day && t.minutes === Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3))) return d
+  }
+  throw new Error(`no ${hhmm} on ${day} in New York`)
+}
+
+/** One signal of a day-trade day (the day row must exist). Prices and R as the pipeline stores them;
+ * flat-by defaults to 3:55 PM that day and best_rank to the rank. */
 export async function seedDaytradeSignal(s: {
   day?: string
   symbol: string
@@ -424,6 +436,8 @@ export async function seedDaytradeSignal(s: {
   netHistoryR?: number | null
   eligible?: boolean
   rank?: number | null
+  bestRank?: number | null
+  flatBy?: Date
   headlines?: { title: string; url: string; published_at: string; outlet: string }[]
   status?: 'open' | 'target' | 'stop' | 'flat'
   lastPrice?: number | null
@@ -444,6 +458,7 @@ export async function seedDaytradeSignal(s: {
     or_low: s.stop - risk,
     stop: s.stop,
     target: Number((s.entry + 2 * risk).toFixed(2)),
+    flat_by: s.flatBy ?? nyAt(s.day ?? today(), '15:55'),
     volume_x: 2.1,
     cost_pct: s.costPct ?? 3.1,
     cost_r: s.costR ?? ((s.costPct ?? 3.1) / 100) * (s.entry / risk),
@@ -453,6 +468,7 @@ export async function seedDaytradeSignal(s: {
     net_history_r: s.netHistoryR === undefined ? 0.3 : s.netHistoryR,
     eligible: s.eligible ?? true,
     rank: s.rank ?? null,
+    best_rank: s.bestRank === undefined ? (s.rank ?? null) : s.bestRank,
     headlines: sql.json(s.headlines ?? []),
     status: s.status ?? 'open',
     last_price: s.lastPrice ?? null,

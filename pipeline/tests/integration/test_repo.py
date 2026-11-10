@@ -914,7 +914,7 @@ def signal_row(symbol="AAPL", market="US", **over):
         "trigger_at": datetime(2026, 11, 10, 15, 0, tzinfo=UTC), "entry": 10.0, "or_high": 9.9,
         "or_low": 9.5, "stop": 9.7, "target": 10.6, "volume_x": 2.0, "cost_pct": 0.2, "cost_r": 0.07,
         "replay": {"p": 1}, "history": {"n": 2}, "net_replay_r": 0.3, "net_history_r": None,
-        "eligible": True, "headlines": [],
+        "eligible": True, "headlines": [], "flat_by": datetime(2026, 11, 10, 20, 55, tzinfo=UTC),
     }
     row.update(over)
     return row
@@ -951,6 +951,7 @@ def test_daytrade_upsert_is_idempotent_and_keeps_rank_and_outcome(db):
     r = rows[0]
     assert (float(r["entry"]), r["rank"], r["status"], float(r["net_r"]), r["headlines"]) == (
         10.1, 1, "target", 1.9, [{"title": "t"}])
+    assert r["flat_by"] == datetime(2026, 11, 10, 20, 55, tzinfo=UTC)
 
 
 def test_daytrade_ranks_are_reset_when_reranked(db):
@@ -962,6 +963,22 @@ def test_daytrade_ranks_are_reset_when_reranked(db):
     repo.set_daytrade_ranks(db, day, {b: 1})
     got = {r["symbol"]: r["rank"] for r in repo.daytrade_signals_for(db, day)}
     assert got == {"AAPL": None, "MSFT": 1}
+
+
+def test_daytrade_best_rank_keeps_the_best_top_3_place_a_signal_ever_had(db):
+    day = date(2026, 11, 10)
+    repo.start_daytrade_day(db, day, "scanning")
+    a = repo.upsert_daytrade_signal(db, signal_row("AAPL"))
+    b = repo.upsert_daytrade_signal(db, signal_row("MSFT"))
+    c = repo.upsert_daytrade_signal(db, signal_row("NVDA"))
+    repo.set_daytrade_ranks(db, day, {a: 2, b: 1})
+    repo.set_daytrade_ranks(db, day, {b: 1, c: 2})  # AAPL displaced
+    repo.set_daytrade_ranks(db, day, {c: 1, a: 3, b: 2})  # AAPL back, lower: its best stays 2
+    got = {r["symbol"]: (r["rank"], r["best_rank"]) for r in repo.daytrade_signals_for(db, day)}
+    assert got == {"NVDA": (1, 1), "MSFT": (2, 1), "AAPL": (3, 2)}
+    repo.set_daytrade_ranks(db, day, {})
+    got = {r["symbol"]: (r["rank"], r["best_rank"]) for r in repo.daytrade_signals_for(db, day)}
+    assert got == {"NVDA": (None, 1), "MSFT": (None, 1), "AAPL": (None, 2)}
 
 
 def test_update_daytrade_day_only_known_columns(db):

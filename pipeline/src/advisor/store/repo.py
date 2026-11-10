@@ -1102,6 +1102,10 @@ def start_daytrade_day(conn: psycopg.Connection, day: date, status: str) -> None
     )
 
 
+def daytrade_day(conn: psycopg.Connection, day: date) -> dict | None:
+    return conn.execute("select * from daytrade_days where day = %s", (day,)).fetchone()
+
+
 DAYTRADE_DAY_FIELDS = frozenset(
     {"status", "cycles", "last_update", "scanned", "usable", "candidates", "error"}
 )

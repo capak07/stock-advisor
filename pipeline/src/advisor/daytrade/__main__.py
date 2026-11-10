@@ -1,0 +1,97 @@
+"""python -m advisor.daytrade --job morning|afternoon [--now ISO]: one day trade job.
+
+pg_cron dispatches each job twice a day, once for EDT and once for EST; the guard here
+lets only the one that lands in the job's own window run (the other exits 0).
+"""
+
+import argparse
+import json
+import sys
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+
+from advisor.config import Settings
+from advisor.daytrade.bars import YahooClient, _http_get
+from advisor.daytrade.cycle import CYCLE_DELAY, WINDOWS, last_close, open_sessions, run_job
+from advisor.models import ET
+from advisor.store import repo
+from advisor.store.db import connect
+
+START_TOLERANCE = timedelta(minutes=20)
+
+
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(prog="python -m advisor.daytrade", description=__doc__)
+    p.add_argument("--job", required=True, choices=sorted(WINDOWS))
+    p.add_argument("--now", help="pretend the job starts at this ISO time (the clock runs on from it)")
+    return p.parse_args(argv)
+
+
+def check_start(job: str, now: datetime) -> str | None:
+    """None when `now` is a fair start for `job`, else the plain reason it is not. A start more
+    than 20 minutes off the window's start is the other daylight-saving dispatch (an hour early
+    or late); a start after the job's last cycle has nothing left to do."""
+    now_et = now.astimezone(ET)
+    day = now_et.date()
+    begin_t, end_t = WINDOWS[job]
+    begin = datetime.combine(day, begin_t, tzinfo=ET)
+    end = datetime.combine(day, end_t, tzinfo=ET)
+    sessions = open_sessions(day)
+    if sessions:
+        end = min(end, last_close(job, day, sessions) + CYCLE_DELAY)
+    if now_et > end:
+        return f"The {job} job's window ended at {end:%H:%M} ET; it is {now_et:%H:%M} ET. Nothing to do."
+    if not begin - START_TOLERANCE <= now_et <= begin + START_TOLERANCE:
+        return (
+            f"The {job} job's window starts at {begin:%H:%M} ET and it is {now_et:%H:%M} ET:"
+            " this is the other daylight-saving start. Nothing to do."
+        )
+    return None
+
+
+def main(
+    argv: list[str] | None = None,
+    *,
+    clock: Callable[[], datetime] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    client: YahooClient | None = None,
+    news_get: Callable[[str], str] = _http_get,
+) -> int:
+    args = parse_args(argv)
+    base = clock or (lambda: datetime.now(UTC))
+    if args.now:
+        start = datetime.fromisoformat(args.now)
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=UTC)
+        offset = start - base()
+
+        def now_fn() -> datetime:
+            return base() + offset
+    else:
+        now_fn = base
+    now = now_fn()
+    day = now.astimezone(ET).date()
+
+    if not open_sessions(day):
+        with connect(Settings.from_env().database_url) as conn:
+            repo.start_daytrade_day(conn, day, "closed")
+        print(f"The NYSE and the TSX are both closed on {day.isoformat()}. Nothing to do.")
+        return 0
+    refusal = check_start(args.job, now)
+    if refusal:
+        print(refusal)
+        return 0
+
+    with connect(Settings.from_env().database_url) as conn:
+        listings = repo.daytrade_listings(conn)
+        out = run_job(
+            conn, client or YahooClient(), listings, args.job, clock=now_fn, sleep=sleep, news_get=news_get
+        )
+    print(json.dumps({"job": args.job, "day": out["day"], "cycles": len(out["cycles"]),
+                      "finalized": out.get("finalized")}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,108 @@
+"""Point-in-time US quarterly earnings features from the as-filed SEC facts, as wide day x symbol frames.
+
+Single quarters come from 3-month facts (80-100 days); a fiscal Q4 is the fiscal year (350-380 days)
+minus the 9-month year-to-date ending inside it, known when the later of the two was filed. Each
+quarter is compared with the quarter whose end is 365 +/- 20 days earlier. Values are first-reported
+(`fundamentals.first_reported`), a day reads only what was filed strictly before it, and quarters that
+ended over STALE_DAYS before the day read NaN.
+
+EPS is not split-adjusted: `sue` compares a quarter with its year-ago quarter as each was first
+reported, so a split between the two distorts that one change (as the signature has no splits).
+"""
+
+from collections.abc import Sequence
+
+import numpy as np
+import pandas as pd
+
+from advisor.model.fundamentals import _asof, _fresh, _ns, first_reported
+
+EARNINGS_FEATURES = ["rev_growth_q", "op_margin_q_chg", "sue", "days_since_report"]
+METRICS = ("revenue", "operating_income", "eps_diluted")
+SUE_CLIP = 5.0
+SUE_WINDOW, SUE_MIN = 8, 4
+DAYS_CAP = 120
+YEAR, YEAR_TOL = pd.Timedelta(days=365), pd.Timedelta(days=20)
+
+
+def single_quarters(facts: pd.DataFrame) -> pd.DataFrame:
+    """One row per (cik, metric, quarter end) from `first_reported` rows: cik, metric, end, value, known."""
+    d = facts[facts["start"].notna() & facts["metric"].isin(METRICS)].copy()
+    d["days"] = (d["end"] - d["start"]).dt.days
+    q = d[d["days"].between(80, 100)].rename(columns={"filed": "known"})
+    fy = d[d["days"].between(350, 380)]
+    nine = d[d["days"].between(255, 290)]
+    m = fy.merge(nine, on=["cik", "metric", "start"], suffixes=("", "_9m"))
+    m = m[m["end_9m"] < m["end"]]
+    m = m.assign(value=m["value"] - m["value_9m"], known=m[["filed", "filed_9m"]].max(axis=1))
+    cols = ["cik", "metric", "end", "value", "known"]
+    out = pd.concat([q[cols], m[cols]], ignore_index=True)
+    out = out.sort_values("known", kind="stable").drop_duplicates(["cik", "metric", "end"])
+    return out.sort_values(["cik", "metric", "end"], kind="stable").reset_index(drop=True)
+
+
+def _year_ago(q: pd.DataFrame) -> pd.DataFrame:
+    """`q` (one metric) with value_1y: the quarter ending 365 +/- 20 days earlier, if known no later."""
+    q = q.sort_values("end", kind="stable").reset_index(drop=True)
+    left = q.assign(target=q["end"] - YEAR).sort_values("target", kind="stable")
+    right = q[["cik", "end", "value", "known"]].rename(
+        columns={"end": "target", "value": "value_1y", "known": "known_1y"}).sort_values("target", kind="stable")
+    m = pd.merge_asof(left, right, on="target", by="cik", direction="nearest", tolerance=YEAR_TOL)
+    late = m["known_1y"] > m["known"]
+    m.loc[late, "value_1y"] = np.nan
+    m["known"] = m[["known", "known_1y"]].max(axis=1)
+    return m.drop(columns=["target", "known_1y"])
+
+
+def _ratio(num: pd.Series, den: pd.Series) -> pd.Series:
+    return (num / den).where(den.abs() > 0)
+
+
+def _sue(eps: pd.DataFrame) -> pd.DataFrame:
+    """Rows of eps changes with `sue`: the change / std of up to 8 prior changes known by then (>= 4)."""
+    c = eps.assign(chg=eps["value"] - eps["value_1y"]).dropna(subset=["chg"])
+    c = c.sort_values(["cik", "known", "end"], kind="stable").reset_index(drop=True)
+    prior = c.groupby("cik")["chg"].shift()
+    std = prior.groupby(c["cik"]).rolling(SUE_WINDOW, min_periods=SUE_MIN).std(ddof=1).reset_index(level=0, drop=True)
+    c["sue"] = (c["chg"] / std.where(std > 0)).clip(-SUE_CLIP, SUE_CLIP)
+    return c
+
+
+def earnings_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.DatetimeIndex,
+                      symbols: Sequence[str]) -> dict[str, pd.DataFrame]:
+    """Wide frames (days x symbols) of EARNINGS_FEATURES; symbols missing from `tickers` read NaN."""
+    symbols = list(symbols)
+    wanted = set(tickers["symbol"])
+    present = [s for s in symbols if s in wanted]
+    if not present or facts.empty:
+        empty = pd.DataFrame(np.nan, index=days, columns=symbols)
+        return {name: empty.copy() for name in EARNINGS_FEATURES}
+    q = single_quarters(first_reported(facts))
+    syms = tickers[tickers["symbol"].isin(present)][["symbol", "cik"]].drop_duplicates("symbol")
+    syms["cik"] = syms["cik"].astype("int64")
+    grid = syms.merge(pd.DataFrame({"day": _ns(days)}), how="cross")
+    grid = grid.sort_values("day", kind="stable").reset_index(drop=True)
+    out = grid[["day", "symbol"]].copy()
+
+    rev = _year_ago(q[q["metric"] == "revenue"])
+    rev["rev_growth_q"] = _ratio(rev["value"], rev["value_1y"]) - 1
+    out["rev_growth_q"] = _fresh(grid, _asof(rev, grid, ["rev_growth_q", "end"]))["rev_growth_q"]
+
+    key = ["cik", "end"]
+    r = q[q["metric"] == "revenue"][[*key, "value", "known"]]
+    oi = q[q["metric"] == "operating_income"][[*key, "value", "known"]]
+    mg = r.merge(oi, on=key, suffixes=("_r", "_o"))
+    mg = mg.assign(value=100 * _ratio(mg["value_o"], mg["value_r"]), known=mg[["known_r", "known_o"]].max(axis=1))
+    mg = _year_ago(mg[[*key, "value", "known"]])
+    mg["op_margin_q_chg"] = mg["value"] - mg["value_1y"]
+    out["op_margin_q_chg"] = _fresh(grid, _asof(mg, grid, ["op_margin_q_chg", "end"]))["op_margin_q_chg"]
+
+    sue = _sue(_year_ago(q[q["metric"] == "eps_diluted"]))
+    out["sue"] = _fresh(grid, _asof(sue, grid, ["sue", "end"]))["sue"]
+
+    last = _fresh(grid, _asof(q.assign(filed=q["known"]), grid, ["filed", "end"]))
+    out["days_since_report"] = (grid["day"] - last["filed"]).dt.days.clip(upper=DAYS_CAP)
+
+    wide = out.pivot(index="day", columns="symbol")
+    return {name: wide[name].reindex(index=_ns(days), columns=symbols).set_axis(days, axis=0)
+            for name in EARNINGS_FEATURES}

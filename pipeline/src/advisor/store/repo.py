@@ -11,6 +11,8 @@ from psycopg.types.json import Jsonb
 
 from advisor.collectors.base import Collector, CollectorResult
 from advisor.collectors.runner import SourceState
+from advisor.daytrade.scan import Listing
+from advisor.daytrade.track import Outcome as DayOutcome
 from advisor.markets import MARKETS, TSX_SUFFIX, market_of
 from advisor.model.crypto import EXCLUDED
 from advisor.models import (
@@ -74,6 +76,7 @@ class ActionToGrade:
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
 NEWS_KEPT = timedelta(days=90)  # spec §10: news is pruned after 90 days
 FILINGS_KEPT = timedelta(days=400)
+DAYTRADE_KEPT = timedelta(days=400)
 INSIDER_KEPT = timedelta(days=400)
 EARNINGS_KEPT = timedelta(days=3 * 365)
 QUARTERS_KEPT = 12  # newest quarters kept per symbol
@@ -1071,3 +1074,89 @@ def accept_config(
         ).fetchone()
         return row["id"]
 
+
+def daytrade_listings(conn: psycopg.Connection) -> list[Listing]:
+    """Active US and TSX stocks. `symbols` already holds only common stock: ETFs, funds, warrants,
+    units and notes are dropped at collection (collectors/nasdaq_symbols._keep, tmx_symbols.NON_EQUITY).
+    TSX symbols stay as stored (X.TO, X-A.TO)."""
+    rows = conn.execute(
+        "select symbol, market, name from symbols"
+        " where active and asset_type = 'stock' and market in ('US', 'TSX') order by symbol"
+    ).fetchall()
+    return [Listing(r["symbol"], Market(r["market"]), r["name"]) for r in rows]
+
+
+def daytrade_settings(conn: psycopg.Connection) -> tuple[float, float, float]:
+    """(USD FX fee %, day trade spread %, day trade max loss in CAD)."""
+    r = conn.execute(
+        "select usd_fx_fee_pct, daytrade_spread_pct, daytrade_max_loss_cad from settings where id = 1"
+    ).fetchone()
+    return float(r["usd_fx_fee_pct"]), float(r["daytrade_spread_pct"]), float(r["daytrade_max_loss_cad"])
+
+
+def start_daytrade_day(conn: psycopg.Connection, day: date, status: str) -> None:
+    conn.execute(
+        "insert into daytrade_days (day, status) values (%s, %s)"
+        " on conflict (day) do update set status = excluded.status, updated_at = now()",
+        (day, status),
+    )
+
+
+DAYTRADE_DAY_FIELDS = frozenset(
+    {"status", "cycles", "last_update", "scanned", "usable", "candidates", "error"}
+)
+
+
+def update_daytrade_day(conn: psycopg.Connection, day: date, **fields: Any) -> None:
+    unknown = sorted(set(fields) - DAYTRADE_DAY_FIELDS)
+    if unknown:
+        raise ValueError(f"unknown daytrade_days columns: {', '.join(unknown)}")
+    sets = "".join(f"{k} = %s, " for k in fields)
+    conn.execute(f"update daytrade_days set {sets}updated_at = now() where day = %s", (*fields.values(), day))
+
+
+# Not in the on-conflict update: rank and the outcome have their own functions.
+_SIGNAL_COLUMNS = (
+    "trigger_at", "entry", "or_high", "or_low", "stop", "target", "volume_x", "cost_pct", "cost_r",
+    "replay", "history", "net_replay_r", "net_history_r", "eligible", "headlines", "name",
+)
+_SIGNAL_JSON = {"replay", "history", "headlines"}
+
+
+def upsert_daytrade_signal(conn: psycopg.Connection, row: Mapping[str, Any]) -> int:
+    cols = ("day", "symbol", "market", *_SIGNAL_COLUMNS)
+    values = [Jsonb(row[c]) if c in _SIGNAL_JSON else row[c] for c in cols]
+    updates = ", ".join(f"{c} = excluded.{c}" for c in _SIGNAL_COLUMNS)
+    r = conn.execute(
+        f"insert into daytrade_signals ({', '.join(cols)}) values ({', '.join(['%s'] * len(cols))})"
+        f" on conflict (day, symbol, market) do update set {updates} returning id",
+        values,
+    ).fetchone()
+    return r["id"]
+
+
+def daytrade_signals_for(conn: psycopg.Connection, day: date) -> list[dict]:
+    return conn.execute(
+        "select * from daytrade_signals where day = %s order by rank nulls last, trigger_at, id", (day,)
+    ).fetchall()
+
+
+def update_daytrade_outcome(conn: psycopg.Connection, id: int, outcome: DayOutcome, net_r: float | None) -> None:
+    conn.execute(
+        "update daytrade_signals set status = %s, last_price = %s, last_at = %s, exit_at = %s,"
+        " exit_price = %s, gross_r = %s, net_r = %s where id = %s",
+        (outcome.status, outcome.last_price, outcome.last_at, outcome.exit_at, outcome.exit_price,
+         outcome.gross_r, net_r, id),
+    )
+
+
+def set_daytrade_ranks(conn: psycopg.Connection, day: date, ranks: Mapping[int, int]) -> None:
+    with conn.transaction():
+        conn.execute("update daytrade_signals set rank = null where day = %s", (day,))
+        for sid, rank in ranks.items():
+            conn.execute("update daytrade_signals set rank = %s where id = %s and day = %s", (rank, sid, day))
+
+
+def prune_daytrade(conn: psycopg.Connection, now: datetime) -> None:
+    """Deleting a day cascades to its signals."""
+    conn.execute("delete from daytrade_days where day < %s", ((now - DAYTRADE_KEPT).date(),))

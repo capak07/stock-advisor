@@ -10,6 +10,7 @@ import pytest
 from advisor.collectors.base import Cadence, Category, CollectorResult, CollectorStatus
 from advisor.collectors.registry import build_registry
 from advisor.config import Settings
+from advisor.daytrade.track import Outcome as DayOutcome
 from advisor.models import (
     AssetRef,
     AssetType,
@@ -905,3 +906,80 @@ def test_mark_alerts_hit_never_overwrites_an_earlier_hit(db):
     rows = {r["id"]: r for r in db.execute("select id, hit_at, hit_price from price_alerts").fetchall()}
     assert (rows[first]["hit_at"], float(rows[first]["hit_price"])) == (NOW, 101.0)
     assert (rows[second]["hit_at"], float(rows[second]["hit_price"])) == (NOW + timedelta(days=1), 102.0)
+
+
+def signal_row(symbol="AAPL", market="US", **over):
+    row = {
+        "day": date(2026, 11, 10), "symbol": symbol, "market": market, "name": symbol + " Inc",
+        "trigger_at": datetime(2026, 11, 10, 15, 0, tzinfo=UTC), "entry": 10.0, "or_high": 9.9,
+        "or_low": 9.5, "stop": 9.7, "target": 10.6, "volume_x": 2.0, "cost_pct": 0.2, "cost_r": 0.07,
+        "replay": {"p": 1}, "history": {"n": 2}, "net_replay_r": 0.3, "net_history_r": None,
+        "eligible": True, "headlines": [],
+    }
+    row.update(over)
+    return row
+
+
+def test_daytrade_listings_are_active_stocks_in_us_and_tsx(db):
+    repo.upsert_symbols(db, Market.US, [info("AAPL"), info("OLD")])
+    repo.upsert_symbols(db, Market.US, [info("AAPL")])
+    repo.upsert_symbols(db, Market.TSX, [info("RY.TO"), info("BAM-A.TO")])
+    repo.upsert_coins(db, [("BTC", "Bitcoin", 2e12)], NOW)
+    got = sorted((x.symbol, x.market) for x in repo.daytrade_listings(db))
+    assert got == [("AAPL", Market.US), ("BAM-A.TO", Market.TSX), ("RY.TO", Market.TSX)]
+
+
+def test_daytrade_settings_defaults(db):
+    assert repo.daytrade_settings(db) == (1.5, 0.10, 50.0)
+
+
+def test_daytrade_upsert_is_idempotent_and_keeps_rank_and_outcome(db):
+    as_pipeline(db)
+    try:
+        day = date(2026, 11, 10)
+        repo.start_daytrade_day(db, day, "scanning")
+        repo.start_daytrade_day(db, day, "scanning")
+        a = repo.upsert_daytrade_signal(db, signal_row())
+        repo.set_daytrade_ranks(db, day, {a: 1})
+        repo.update_daytrade_outcome(db, a, DayOutcome("target", NOW, 10.6, 2.0, 10.6, NOW), 1.9)
+        again = repo.upsert_daytrade_signal(db, signal_row(entry=10.1, headlines=[{"title": "t"}]))
+    finally:
+        db.execute("reset role")
+    assert again == a
+    rows = repo.daytrade_signals_for(db, day)
+    assert len(rows) == 1
+    r = rows[0]
+    assert (float(r["entry"]), r["rank"], r["status"], float(r["net_r"]), r["headlines"]) == (
+        10.1, 1, "target", 1.9, [{"title": "t"}])
+
+
+def test_daytrade_ranks_are_reset_when_reranked(db):
+    day = date(2026, 11, 10)
+    repo.start_daytrade_day(db, day, "scanning")
+    a = repo.upsert_daytrade_signal(db, signal_row("AAPL"))
+    b = repo.upsert_daytrade_signal(db, signal_row("MSFT"))
+    repo.set_daytrade_ranks(db, day, {a: 1, b: 2})
+    repo.set_daytrade_ranks(db, day, {b: 1})
+    got = {r["symbol"]: r["rank"] for r in repo.daytrade_signals_for(db, day)}
+    assert got == {"AAPL": None, "MSFT": 1}
+
+
+def test_update_daytrade_day_only_known_columns(db):
+    day = date(2026, 11, 10)
+    repo.start_daytrade_day(db, day, "waiting")
+    repo.update_daytrade_day(db, day, status="done", cycles=3, scanned=100)
+    row = db.execute("select status, cycles, scanned from daytrade_days where day = %s", (day,)).fetchone()
+    assert (row["status"], row["cycles"], row["scanned"]) == ("done", 3, 100)
+    with pytest.raises(ValueError, match="bogus"):
+        repo.update_daytrade_day(db, day, bogus=1)
+
+
+def test_prune_daytrade_keeps_400_days(db):
+    now = datetime(2026, 11, 10, 20, tzinfo=UTC)
+    for d in (date(2026, 11, 10) - timedelta(days=401), date(2026, 11, 10) - timedelta(days=399)):
+        repo.start_daytrade_day(db, d, "done")
+    repo.upsert_daytrade_signal(db, signal_row(day=date(2026, 11, 10) - timedelta(days=401)))
+    repo.prune_daytrade(db, now)
+    assert [r["day"] for r in db.execute("select day from daytrade_days").fetchall()] == [
+        date(2026, 11, 10) - timedelta(days=399)]
+    assert db.execute("select count(*) as n from daytrade_signals").fetchone()["n"] == 0

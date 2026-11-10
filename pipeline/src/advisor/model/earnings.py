@@ -6,8 +6,8 @@ quarter is compared with the quarter whose end is 365 +/- 20 days earlier. Value
 (`fundamentals.first_reported`), a day reads only what was filed strictly before it, and quarters that
 ended over STALE_DAYS before the day read NaN.
 
-EPS is not split-adjusted: `sue` compares a quarter with its year-ago quarter as each was first
-reported, so a split between the two distorts that one change (as the signature has no splits).
+EPS is put on today's share basis as `fundamental_features` does: each value is divided by the split
+factor at its filing date (`_split_at`), so a split between quarters leaves `sue` unchanged.
 """
 
 from collections.abc import Sequence
@@ -15,7 +15,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from advisor.model.fundamentals import _asof, _fresh, _ns, first_reported
+from advisor.model.fundamentals import _asof, _fresh, _ns, _split_at, first_reported
 
 EARNINGS_FEATURES = ["rev_growth_q", "op_margin_q_chg", "sue", "days_since_report"]
 METRICS = ("revenue", "operating_income", "eps_diluted")
@@ -69,7 +69,7 @@ def _sue(eps: pd.DataFrame) -> pd.DataFrame:
 
 
 def earnings_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.DatetimeIndex,
-                      symbols: Sequence[str]) -> dict[str, pd.DataFrame]:
+                      symbols: Sequence[str], splits: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """Wide frames (days x symbols) of EARNINGS_FEATURES; symbols missing from `tickers` read NaN."""
     symbols = list(symbols)
     wanted = set(tickers["symbol"])
@@ -97,8 +97,18 @@ def earnings_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.Datet
     mg["op_margin_q_chg"] = mg["value"] - mg["value_1y"]
     out["op_margin_q_chg"] = _fresh(grid, _asof(mg, grid, ["op_margin_q_chg", "end"]))["op_margin_q_chg"]
 
-    sue = _sue(_year_ago(q[q["metric"] == "eps_diluted"]))
-    out["sue"] = _fresh(grid, _asof(sue, grid, ["sue", "end"]))["sue"]
+    # EPS per symbol (a CIK may list several), on today's share basis; "cik" holds a symbol id from here
+    ids = syms.reset_index(drop=True).assign(sid=lambda x: x.index.astype("int64"))
+    eps = q[q["metric"] == "eps_diluted"].merge(ids, on="cik")
+    if not eps.empty:
+        eps["value"] = eps["value"].to_numpy() / _split_at(splits, eps["symbol"], eps["known"]).to_numpy()
+    eps["cik"] = eps["sid"]
+    sgrid = grid.merge(ids[["symbol", "sid"]], on="symbol").assign(cik=lambda x: x["sid"])
+    sgrid = sgrid.sort_values("day", kind="stable").reset_index(drop=True)
+    sue = _sue(_year_ago(eps[["cik", "metric", "end", "value", "known"]]))
+    s_vals = _fresh(sgrid, _asof(sue, sgrid, ["sue", "end"]))
+    out = out.merge(pd.DataFrame({"day": sgrid["day"], "symbol": sgrid["symbol"], "sue": s_vals["sue"]}),
+                    on=["day", "symbol"], how="left")
 
     last = _fresh(grid, _asof(q.assign(filed=q["known"]), grid, ["filed", "end"]))
     out["days_since_report"] = (grid["day"] - last["filed"]).dt.days.clip(upper=DAYS_CAP)

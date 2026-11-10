@@ -19,8 +19,11 @@ def frame(*rows) -> pd.DataFrame:
     return pd.DataFrame(list(rows))
 
 
-def feats(facts, *days):
-    return earnings_features(facts, TICKERS, pd.DatetimeIndex(list(days), name="day"), ["X"])
+NO_SPLITS = pd.DataFrame({"X": [1.0]}, index=pd.DatetimeIndex(["2010-01-01"]))
+
+
+def feats(facts, *days, splits=NO_SPLITS):
+    return earnings_features(facts, TICKERS, pd.DatetimeIndex(list(days), name="day"), ["X"], splits)
 
 
 def at(f, name, i=0):
@@ -120,8 +123,17 @@ def test_sue_clipped():
 
 
 def test_unknown_symbols_read_nan():
-    f = earnings_features(SEPT, TICKERS, pd.DatetimeIndex(["2024-03-01"]), ["X", "TSX.TO"])
+    f = earnings_features(SEPT, TICKERS, pd.DatetimeIndex(["2024-03-01"]), ["X", "TSX.TO"], NO_SPLITS)
     assert list(f["sue"].columns) == ["X", "TSX.TO"]
     assert np.isnan(f["rev_growth_q"]["TSX.TO"].iloc[0])
-    g = earnings_features(SEPT, TICKERS, pd.DatetimeIndex(["2024-03-01"]), ["BTC-USD"])
+    g = earnings_features(SEPT, TICKERS, pd.DatetimeIndex(["2024-03-01"]), ["BTC-USD"], NO_SPLITS)
     assert np.isnan(g["rev_growth_q"]["BTC-USD"].iloc[0])
+
+
+def test_a_split_between_quarters_leaves_sue_unchanged():
+    eps = [1.0, 1.1, 1.3, 1.2, 1.6, 1.5, 1.9, 2.0, 2.4, 2.9]
+    plain = at(feats(eps_history(eps), "2023-06-01"), "sue")
+    # 2-for-1 on 2023-01-15: the 2023 quarter is reported on the new share basis
+    reported = eps[:-1] + [eps[-1] / 2]
+    splits = pd.DataFrame({"X": [2.0, 1.0]}, index=pd.DatetimeIndex(["2010-01-01", "2023-01-15"]))
+    assert at(feats(eps_history(reported), "2023-06-01", splits=splits), "sue") == pytest.approx(plain)

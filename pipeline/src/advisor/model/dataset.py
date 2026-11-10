@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from advisor.markets import MARKETS
+from advisor.model.earnings import EARNINGS_FEATURES, earnings_features
 from advisor.model.factors import (
     FACTORS,
     FactorFrames,
@@ -117,7 +118,11 @@ def feature_frames(
         splits = splits.loc[:, splits.ne(1).any()]
         features |= fundamental_features(facts, tickers, days, split_adjusted.loc[days], splits)
         names = names + FUNDAMENTAL_FEATURES
-    return FeatureFrames(wide, calendar, names, list(EXTRA_FEATURES), features, dollar_volume, eligible(traded, dollar_volume))
+        features |= earnings_features(facts, tickers, days, list(wide.close.columns), splits)
+    else:  # SEC filings cover US companies only
+        features |= {name: pd.DataFrame(np.nan, index=days, columns=wide.close.columns) for name in EARNINGS_FEATURES}
+    extras = list(EXTRA_FEATURES) + EARNINGS_FEATURES
+    return FeatureFrames(wide, calendar, names, extras, features, dollar_volume, eligible(traded, dollar_volume))
 
 
 def load_market(data_dir: Path, market: Market, with_factors: bool = False, with_garch: bool = False) -> MarketData:

@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from advisor.model.dataset import load_market
+from advisor.model.features import EXTRA_FEATURES
 from advisor.model.train import PARAMS, TrainConfig, make_folds, walk_forward
 from advisor.model.variants import BASELINE, ModelConfig, run_variant, unbuilt
 from advisor.models import Market
@@ -20,9 +21,13 @@ def test_configs_name_themselves_and_round_trip():
     assert ModelConfig(ranker=True, extras=True, bagged=True).name == "ranker+extras+bagged"
     assert ModelConfig(extras=True).name == "extras"
     assert BASELINE.to_json() == {
-        "version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
-        "policy": None,
+        "version": 4, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
+        "earnings": False, "policy": None,
     }
+    assert ModelConfig(ranker=True, earnings=True).name == "ranker+earnings"
+    assert ModelConfig(ranker=True, extras=True, earnings=True, bagged=True).name == "ranker+extras+earnings+bagged"
+    earn = ModelConfig(ranker=True, earnings=True)
+    assert ModelConfig.from_json(earn.to_json()) == earn
     full = ModelConfig(ranker=True, extras=True, bagged=True)
     assert ModelConfig.from_json(full.to_json()) == full
     assert ModelConfig.from_json(ModelConfig(ranker=True).to_json()) == ModelConfig(ranker=True)
@@ -30,8 +35,10 @@ def test_configs_name_themselves_and_round_trip():
 
 
 @pytest.mark.parametrize("stored, match", [
+    ({"version": 5, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
+      "earnings": False, "policy": None}, "version"),
     ({"version": 4, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
-      "policy": None}, "version"),
+      "policy": None}, "earnings"),
     ({"version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "policy": None}, "bagged"),
     ({"version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
       "policy": None, "extra": 1}, "extra"),
@@ -102,7 +109,7 @@ def test_an_extras_config_trains_on_the_extra_features(tmp_path):
     data = load_market(tmp_path, Market.TSX)
     pd.testing.assert_frame_equal(
         run_variant(data, ModelConfig(extras=True), FAST).predictions,
-        walk_forward(data, FAST, extra_features=data.extras).predictions,
+        walk_forward(data, FAST, extra_features=EXTRA_FEATURES).predictions,
     )
 
 
@@ -115,3 +122,38 @@ def test_walk_forward_scores_only_targets_known_before_a_cutoff(tmp_path):
     assert not pred.empty
     position = data.calendar.searchsorted(pd.DatetimeIndex(pred["day"]))
     assert (position + pred["horizon"].to_numpy() < data.calendar.searchsorted(cutoff)).all()
+
+
+def test_a_version_3_config_loads_with_earnings_off():
+    stored = {"version": 3, "factors": False, "garch": False, "ranker": True, "extras": True, "bagged": True,
+              "policy": None}
+    assert ModelConfig.from_json(stored) == ModelConfig(ranker=True, extras=True, bagged=True)
+
+
+def test_extras_and_earnings_configs_each_train_on_only_their_own_columns(tmp_path):
+    from advisor.model.earnings import EARNINGS_FEATURES
+    from advisor.model.features import EXTRA_FEATURES
+    from advisor.model.variants import extra_features
+
+    write_market(tmp_path, Market.US, stocks=2, days=400)
+    data = load_market(tmp_path, Market.US)
+    assert extra_features(data, BASELINE) == ()
+    assert extra_features(data, ModelConfig(extras=True)) == tuple(EXTRA_FEATURES)
+    assert extra_features(data, ModelConfig(ranker=True, earnings=True)) == tuple(EARNINGS_FEATURES)
+    assert extra_features(data, ModelConfig(extras=True, earnings=True)) == (*EXTRA_FEATURES, *EARNINGS_FEATURES)
+
+
+def test_an_earnings_config_stores_the_earnings_columns_in_its_model(tmp_path):
+    from advisor.model.earnings import EARNINGS_FEATURES
+    from advisor.model.variants import fit_variant
+
+    write_market(tmp_path, Market.US, stocks=6, days=900)
+    data = load_market(tmp_path, Market.US)
+    config = ModelConfig(ranker=True, earnings=True)
+    fast = TrainConfig(horizons=(5,), rounds=10, params=FAST.params)
+    model = fit_variant(data, run_variant(data, config, fast), config, fast)
+    assert set(EARNINGS_FEATURES) <= set(model.features)
+    assert list(model.features[: len(data.features)]) == list(data.features)
+    plain = ModelConfig(ranker=True)
+    other = fit_variant(data, run_variant(data, plain, fast), plain, fast)
+    assert not set(EARNINGS_FEATURES) & set(other.features)

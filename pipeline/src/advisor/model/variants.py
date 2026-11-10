@@ -4,6 +4,7 @@ The benchmark compares variants on identical folds; weekly training runs the mar
 one. `garch` (Plan 6d) trains each horizon on its GARCH forecast volatility (spec §4); the data
 must be loaded with `with_garch=True`. A tuned policy is a `Policy` value. `ranker` (Plan 6f) swaps the beat classifier for a ranking booster (spec §8).
 `extras` adds the market's extra features and `bagged` averages three seeds per booster (spec §9).
+`earnings` (Plan 6k) adds the US quarterly earnings features.
 """
 
 from collections.abc import Mapping, Sequence
@@ -13,16 +14,18 @@ from typing import Any
 import pandas as pd
 
 from advisor.model.dataset import MarketData
+from advisor.model.earnings import EARNINGS_FEATURES
 from advisor.model.train import FinalModel, Fold, TrainConfig, WalkForward, fit_final, walk_forward
 from advisor.policy import Policy
 
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 # version 1 (before Plan 6f) had no `ranker`, version 2 (before Plan 6g) no `extras` or `bagged`;
-# both still load, with those parts off
+# version 3 (before Plan 6k) no `earnings`; all still load, with those parts off
 _KEYS = {
     1: {"version", "factors", "garch", "policy"},
     2: {"version", "factors", "garch", "ranker", "policy"},
     3: {"version", "factors", "garch", "ranker", "extras", "bagged", "policy"},
+    4: {"version", "factors", "garch", "ranker", "extras", "bagged", "earnings", "policy"},
 }
 
 
@@ -34,11 +37,12 @@ class ModelConfig:
     ranker: bool = False
     extras: bool = False
     bagged: bool = False
+    earnings: bool = False
 
     @property
     def name(self) -> str:
         parts = (("factors", self.factors), ("garch", self.garch), ("ranker", self.ranker),
-                 ("extras", self.extras), ("bagged", self.bagged))
+                 ("extras", self.extras), ("earnings", self.earnings), ("bagged", self.bagged))
         model = "+".join(part for part, on in parts if on)
         return (model or "baseline") + ("+policy" if self.policy is not None else "")
 
@@ -46,7 +50,7 @@ class ModelConfig:
         policy = None if self.policy is None else self.policy.to_json()
         return {
             "version": CONFIG_VERSION, "factors": self.factors, "garch": self.garch, "ranker": self.ranker,
-            "extras": self.extras, "bagged": self.bagged, "policy": policy,
+            "extras": self.extras, "bagged": self.bagged, "earnings": self.earnings, "policy": policy,
         }
 
     @classmethod
@@ -63,7 +67,7 @@ class ModelConfig:
         raw = d["policy"]
         policy = None if raw is None else Policy.from_json(raw)
         config = cls(bool(d["factors"]), bool(d["garch"]), policy, bool(d.get("ranker", False)),
-                     bool(d.get("extras", False)), bool(d.get("bagged", False)))
+                     bool(d.get("extras", False)), bool(d.get("bagged", False)), bool(d.get("earnings", False)))
         if (plan := unbuilt(config)) is not None:
             raise ValueError(f"{config.name} arrives with {plan}")
         return config
@@ -86,6 +90,17 @@ def _factor_names(data: MarketData, config: ModelConfig) -> tuple[str, ...] | No
     return data.factors.names
 
 
+def extra_features(data: MarketData, config: ModelConfig) -> tuple[str, ...]:
+    """The optional columns of `data` the config trains on: the market's extras with `extras`, the
+    earnings features with `earnings`, in the data's order."""
+    if config.earnings and not set(EARNINGS_FEATURES) <= set(data.extras):
+        raise ValueError(f"{config.name} needs the earnings columns, which this market's data does not carry")
+    return tuple(
+        f for f in data.extras
+        if (config.earnings if f in EARNINGS_FEATURES else config.extras)
+    )
+
+
 def _require_built(config: ModelConfig) -> None:
     if (plan := unbuilt(config)) is not None:
         raise NotImplementedError(f"{config.name} arrives with {plan}")
@@ -102,7 +117,7 @@ def run_variant(
     _require_built(config)
     return walk_forward(
         data, train_config, folds=folds, known_before=known_before, factor_names=_factor_names(data, config),
-        ranker=config.ranker, extra_features=data.extras if config.extras else (), bag=config.bagged,
+        ranker=config.ranker, extra_features=extra_features(data, config), bag=config.bagged,
         garch=config.garch,
     )
 
@@ -113,5 +128,5 @@ def fit_variant(data: MarketData, wf: WalkForward, config: ModelConfig, train_co
     _require_built(config)
     return fit_final(
         data, wf, train_config, factor_names=_factor_names(data, config),
-        extra_features=data.extras if config.extras else (), bag=config.bagged, garch=config.garch,
+        extra_features=extra_features(data, config), bag=config.bagged, garch=config.garch,
     )

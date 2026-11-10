@@ -39,6 +39,37 @@ def test_live_features_match_the_training_rows_on_the_same_day(tmp_path):
     )
 
 
+def test_us_live_features_match_the_training_rows_with_earnings(tmp_path):
+    from advisor.model.earnings import EARNINGS_FEATURES
+
+    stocks = write_market(tmp_path, Market.US, stocks=3, days=700)
+    rows = []
+    for i, end in enumerate(pd.date_range("2016-03-31", periods=12, freq="QE")):
+        start, filed = (end - pd.Timedelta(days=89)).date(), (end + pd.Timedelta(days=30)).date()
+        for metric, concept, value in (
+            ("revenue", "us-gaap:Revenues", 100.0 + 5 * i + (i % 3)),
+            ("operating_income", "us-gaap:OperatingIncomeLoss", 10.0 + i),
+            ("eps_diluted", "us-gaap:EarningsPerShareDiluted", 1.0 + 0.1 * i + 0.05 * (i % 2)),
+        ):
+            rows.append({"cik": 1, "metric": metric, "concept": concept, "unit": "USD", "start": start,
+                         "end": end.date(), "value": value, "filed": filed, "form": "10-Q", "accession": f"a{i}"})
+    pd.DataFrame(rows).to_parquet(tmp_path / "fundamentals.parquet", index=False)
+    tickers = pd.DataFrame({"symbol": [stocks[0]], "cik": pd.Series([1], dtype="int32")})
+    tickers.to_parquet(tmp_path / "tickers.parquet", index=False)
+    data = load_market(tmp_path, Market.US)
+    day = data.calendar[WARMUP + 300]
+    prices, sectors = live_inputs(tmp_path, Market.US)
+    window = prices[pd.to_datetime(prices["day"]) >= day - LIVE_WINDOW]
+    live = live_features(window, Market.US, day, sectors=sectors, partial_day=False,
+                         facts=pd.read_parquet(tmp_path / "fundamentals.parquet"), tickers=tickers)
+    training = data.rows[data.rows["day"] == day].set_index("symbol")
+    assert training.loc[stocks[0], EARNINGS_FEATURES].notna().all()  # the comparison reads real values
+    names = list(data.features) + list(data.extras)
+    pd.testing.assert_frame_equal(
+        live.loc[training.index, names], training[names], check_exact=False, rtol=1e-6, atol=1e-9,
+    )
+
+
 def test_a_partial_day_takes_volume_features_from_the_last_complete_session(tmp_path):
     write_market(tmp_path, Market.TSX, stocks=2, days=500)
     prices, sectors = live_inputs(tmp_path, Market.TSX)

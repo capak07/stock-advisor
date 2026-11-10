@@ -58,9 +58,16 @@ ABLATIONS: dict[str, ModelConfig | None] = {
     "garch": ModelConfig(garch=True),
     "factors+garch": ModelConfig(factors=True, garch=True),
     "garch+ranker": ModelConfig(ranker=True, garch=True),
+    "ranker+earnings": ModelConfig(ranker=True, earnings=True),
     "full+policy": None,
 }
 POLICY_ROW = "full+policy"
+US_ONLY = {"ranker+earnings"}  # SEC filings cover US companies only
+
+
+def rows_for(market: Market | str) -> dict[str, ModelConfig | None]:
+    """The ablation rows the market runs, in report order."""
+    return {name: c for name, c in ABLATIONS.items() if market == Market.US or name not in US_ONLY}
 
 
 def bagging_twins(ablations: Mapping[str, ModelConfig | None]) -> dict[str, str]:
@@ -157,7 +164,7 @@ def _benchmark_market(
     scores: dict[str, Scores] = {}
     results: list[BenchmarkResult] = []
     reference = None
-    for name, variant in ABLATIONS.items():
+    for name, variant in rows_for(market).items():
         if variant is None:  # the policy row runs once a model is chosen
             continue
         plan = unbuilt(variant)

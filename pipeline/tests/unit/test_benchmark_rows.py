@@ -1,7 +1,9 @@
 import pytest
 
-from advisor.benchmark.job import ABLATIONS, bagging_twins
+from advisor.benchmark.job import ABLATIONS, POLICY_ROW, bagging_twins, rows_for
+from advisor.model.crypto import CRYPTO
 from advisor.model.variants import ModelConfig
+from advisor.models import Market
 
 
 def test_every_bagged_row_is_judged_against_the_same_row_without_bagging():
@@ -20,3 +22,12 @@ def test_every_row_is_named_as_its_config_names_itself():
 
 def test_the_ranker_is_also_tried_with_garch():
     assert ABLATIONS["garch+ranker"] == ModelConfig(ranker=True, garch=True)
+
+
+def test_the_earnings_row_sits_before_the_policy_row_and_runs_for_us_only():
+    names = list(ABLATIONS)
+    assert ABLATIONS["ranker+earnings"] == ModelConfig(ranker=True, earnings=True)
+    assert names.index("ranker+earnings") == names.index(POLICY_ROW) - 1
+    assert list(rows_for(Market.US)) == names
+    for market in (Market.TSX, CRYPTO):
+        assert list(rows_for(market)) == [n for n in names if n != "ranker+earnings"]

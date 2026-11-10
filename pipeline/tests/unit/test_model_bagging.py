@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from advisor.model.dataset import load_market
+from advisor.model.features import EXTRA_FEATURES
 from advisor.model.train import (
     BAG_SEEDS,
     PARAMS,
@@ -72,8 +73,8 @@ def test_the_baseline_trains_one_booster_per_part(market):
 
 def test_extra_features_join_the_feature_list_only_when_asked(market, wf, baseline):
     assert "amihud_20" not in baseline.features
-    full = fit_final(market, wf, FAST, extra_features=market.extras)
-    assert full.features == list(market.features) + list(market.extras)
+    full = fit_final(market, wf, FAST, extra_features=EXTRA_FEATURES)  # what an extras config trains on
+    assert full.features == list(market.features) + EXTRA_FEATURES
     assert full.features[-3:] == ["sector_mom_12_1", "sector_dist_52w_high", "amihud_20"]
     with pytest.raises(ValueError, match="not_a_feature"):
         fit_final(market, wf, FAST, extra_features=("amihud_20", "not_a_feature"))

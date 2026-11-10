@@ -6,6 +6,7 @@ import pytest
 
 from advisor.markets import MARKETS
 from advisor.model.dataset import SAMPLE_EVERY, WARMUP, load_market
+from advisor.model.earnings import EARNINGS_FEATURES
 from advisor.model.features import EXTRA_FEATURES, HORIZONS, PRICE_FEATURES, RS_FEATURES
 from advisor.model.fundamentals import FUNDAMENTAL_FEATURES
 from advisor.models import Market
@@ -76,7 +77,17 @@ def test_a_failed_build_is_never_trained_on(tmp_path):
 def test_training_rows_carry_the_extras_but_the_baseline_names_do_not_change(tmp_path):
     write_market(tmp_path, Market.TSX, stocks=3, days=400)
     data = load_market(tmp_path, Market.TSX)
-    assert data.extras == tuple(EXTRA_FEATURES)
+    assert data.extras == (*EXTRA_FEATURES, *EARNINGS_FEATURES)
     assert set(EXTRA_FEATURES) <= set(data.rows.columns)
     assert data.features == PRICE_FEATURES + RS_FEATURES
     assert data.rows["amihud_20"].notna().all()
+
+
+def test_us_rows_carry_the_earnings_columns_and_tsx_rows_read_them_missing(tmp_path):
+    write_market(tmp_path / "us", Market.US, stocks=2, days=400)
+    write_market(tmp_path / "tsx", Market.TSX, stocks=2, days=400)
+    us, tsx = load_market(tmp_path / "us", Market.US), load_market(tmp_path / "tsx", Market.TSX)
+    for data in (us, tsx):
+        assert set(EARNINGS_FEATURES) <= set(data.rows.columns)
+        assert not set(EARNINGS_FEATURES) & set(data.features)  # only configs that name them train on them
+    assert tsx.rows[EARNINGS_FEATURES].isna().all().all()

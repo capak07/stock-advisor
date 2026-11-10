@@ -14,7 +14,6 @@ from datetime import date, timedelta
 
 from advisor.daytrade.bars import BAR_MIN, Bar
 from advisor.daytrade.rule import (
-    RANGE_BARS,
     Plan,
     Session,
     Trigger,
@@ -26,6 +25,7 @@ from advisor.daytrade.rule import (
 from advisor.models import ET, Market
 
 SESSION_BARS = 78  # 9:30 to 16:00 in 5-minute bars
+MIN_SESSIONS = 20  # the skill refuses to replay from fewer full sessions
 
 
 @dataclass(frozen=True)
@@ -86,8 +86,8 @@ def replay(
     window: int = 2,
 ) -> ReplayStats:
     sessions = _full_sessions(history, s.day)
-    if not sessions:
-        raise ValueError("no full past sessions to replay")
+    if len(sessions) < MIN_SESSIONS:
+        raise ValueError(f"only {len(sessions)} full past session(s); need at least {MIN_SESSIONS}")
     pool: list[list[tuple[float, float, float]]] = [[] for _ in range(SESSION_BARS)]
     for _, d in sessions:
         for i in range(1, SESSION_BARS):
@@ -95,6 +95,8 @@ def replay(
             pool[i].append((d[i].high / pc, d[i].low / pc, d[i].close / pc))
     k = int((trigger.at - s.open) / timedelta(minutes=BAR_MIN)) - 1
     last = int((plan.flat_by - s.open) / timedelta(minutes=BAR_MIN)) - 1
+    if last <= k:
+        raise ValueError("no bars left to replay after the entry")
     entry, stop, target = plan.entry, plan.stop, plan.target
     risk = entry - stop
     r_target = round((target - entry) / risk, 4)
@@ -167,7 +169,6 @@ def rule_history(
             continue
         first = int((trig.at - s.open) / timedelta(minutes=BAR_MIN))
         last = int((s.flat_by - s.open) / timedelta(minutes=BAR_MIN)) - 1
-        assert first >= RANGE_BARS
         outcome = None
         for b in bars[first : last + 1]:
             if b.low <= plan.stop:

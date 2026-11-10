@@ -1,8 +1,9 @@
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
-from advisor.daytrade.bars import Bar
+from advisor.daytrade.bars import Bar, YahooClient
 from advisor.daytrade.rule import (
     OpeningRange,
     find_trigger,
@@ -10,9 +11,7 @@ from advisor.daytrade.rule import (
     plan_for,
     session_for,
 )
-from advisor.daytrade.bars import YahooClient
 from advisor.models import ET, Market
-from pathlib import Path
 
 FIX = Path(__file__).parent.parent / "fixtures" / "daytrade"
 DAY = date(2026, 10, 19)

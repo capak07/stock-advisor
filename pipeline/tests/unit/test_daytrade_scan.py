@@ -289,3 +289,26 @@ def test_a_spark_column_longer_than_its_timestamps_is_counted_not_raised():
     client = YahooClient(get=lambda url: json.dumps(doc), sleep=lambda s: None)
     r = scan(client, [Listing("OK", Market.US), Listing("BAD", Market.US)], NOW)
     assert (r.scanned, r.errors) == (1, 1)
+
+
+def test_when_re_charts_exceed_the_cap_the_oldest_checked_go_first_and_new_ones_still_get_charted():
+    # R0-R2 keep closing above their range high (10.01) on thin volume: never a trigger, so each is
+    # a re-chart every cycle. N is never charted and the least traded. The cap is 2.
+    day = NOW.date()
+    up = [10.0] * 3 + [10.5] * 11  # 9:30 to 10:35
+    charts = {f"R{i}": _flat(day, up, 1000 + i) for i in range(3)}
+    fake = FakeClient(charts)
+    r = scan(fake, [Listing(s, Market.US) for s in charts], NOW, min_volume_x=100)
+    assert sorted(fake.chart_calls) == ["R0", "R1", "R2"]
+    memory = r.charted
+
+    fake.charts["N"] = _flat(day, up, 500)
+    ls = [Listing(s, Market.US) for s in fake.charts]
+    calls = []
+    for k in range(1, 4):
+        fake.chart_calls = []
+        r = scan(fake, ls, NOW + timedelta(minutes=5 * k), min_volume_x=100, max_confirm=2, charted=memory)
+        calls.append(fake.chart_calls)
+        memory = r.charted
+    # Oldest checked bar first (never charted counts as oldest), then most traded: everyone takes a turn.
+    assert calls == [["N", "R2"], ["R1", "R0"], ["R2", "N"]]

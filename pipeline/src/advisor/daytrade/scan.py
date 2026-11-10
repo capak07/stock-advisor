@@ -9,13 +9,14 @@ breakout). Stage 2 reads real 5-minute charts for the candidates and runs the ru
 
 Within a job, stage 2 remembers each charted candidate's real opening-range high and the last
 bar it checked. A candidate is charted again only when a newer spark bar closed above that high
-(the trigger's price condition; only the volume needs the chart). Candidates never charted come
-after those, most traded first, and the cap on charts per cycle is a safety net.
+(the trigger's price condition; only the volume needs the chart). Charts go oldest checked bar
+first (never charted counts as oldest), then most traded, so when the cap on charts per cycle
+binds, every candidate still takes its turn.
 """
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from advisor.collectors.yfinance_bars import to_yahoo
 from advisor.daytrade.bars import (
@@ -93,6 +94,7 @@ def _spark_bars(points: Sequence[tuple[datetime, float]]) -> list[Bar]:
 
 MAX_FAILED_BATCHES = 5  # in a row: Yahoo is down, stop the cycle
 MAX_FAILED_CHARTS = 5  # the same for charts (stage 2 and tracking)
+_NEVER = datetime.min.replace(tzinfo=UTC)  # "last checked" of a candidate never charted
 
 
 def scan(
@@ -159,20 +161,21 @@ def scan(
             cands.append((lst, y, s, last * series.volume, bars))
 
     cands.sort(key=lambda c: (-c[3], c[0].symbol))
-    again: list[tuple[Listing, str, Session, float, list[Bar]]] = []
-    fresh: list[tuple[Listing, str, Session, float, list[Bar]]] = []
+    queue: list[tuple[datetime, tuple[Listing, str, Session, float, list[Bar]]]] = []
     for c in cands:
         seen = memory.get(c[1])
         if seen is None:
-            fresh.append(c)
+            queue.append((_NEVER, c))
             continue
         high, checked = seen
         new = [b for b in c[4] if b.start > checked]
         if any(b.close > high for b in new):
-            again.append(c)
+            queue.append((checked, c))
         elif new:
             memory[c[1]] = (high, new[-1].start)  # checked: every new bar closed under the high
-    ranked = again + fresh
+    # Oldest checked first, then most traded, then symbol (cands' order; the sort is stable).
+    queue.sort(key=lambda q: q[0])
+    ranked = [c for _, c in queue]
     if max_confirm is not None:
         ranked = ranked[:max_confirm]
 

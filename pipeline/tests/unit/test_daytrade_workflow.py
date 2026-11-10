@@ -25,7 +25,10 @@ def test_no_schedule_trigger():
 
 def test_timeout_and_command_line():
     assert "timeout-minutes: 330" in WORKFLOW
-    assert "uv run python -m advisor.daytrade --job ${{ inputs.job }}" in WORKFLOW
+    assert "JOB: ${{ inputs.job }}" in WORKFLOW
+    assert 'uv run python -m advisor.daytrade --job "$JOB"' in WORKFLOW
+    run_lines = [ln for ln in WORKFLOW.splitlines() if ln.strip().startswith("run:")]
+    assert not any("${{ inputs.job }}" in ln for ln in run_lines)
     assert "DATABASE_URL: ${{ secrets.DATABASE_URL }}" in WORKFLOW
     assert "uv sync --locked --no-dev" in WORKFLOW
 

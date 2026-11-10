@@ -35,4 +35,5 @@ jobs:
       - name: Run day trade job
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: uv run python -m advisor.daytrade --job ${{ inputs.job }}
+          JOB: ${{ inputs.job }}
+        run: uv run python -m advisor.daytrade --job "$JOB"

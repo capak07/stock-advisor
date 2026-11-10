@@ -575,3 +575,59 @@ def test_pipeline_cannot_delete_price_alerts(owned_db):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             owned_db.execute("delete from price_alerts")
     assert owned_db.execute("select count(*) as n from price_alerts").fetchone()["n"] == 1
+
+
+DAYTRADE_DAY = "insert into daytrade_days (day, status) values ('2026-11-10', 'scanning')"
+DAYTRADE_SIGNAL = (
+    "insert into daytrade_signals (day, symbol, market, trigger_at, entry, or_high, or_low, stop,"
+    " target, volume_x, cost_pct, cost_r, replay, history, eligible)"
+    " values ('2026-11-10', 'AAPL', 'US', now(), 100, 101, 99, 99.5, 101, 2, 0.1, 0.2,"
+    " '{}', '{}', true)"
+)
+
+
+def test_daytrade_tables_exist(db):
+    rows = db.execute(
+        "select tablename from pg_tables where schemaname = 'public' and tablename = any(%s)",
+        (["daytrade_days", "daytrade_signals"],),
+    ).fetchall()
+    assert sorted(r["tablename"] for r in rows) == ["daytrade_days", "daytrade_signals"]
+
+
+def test_owner_reads_but_cannot_write_daytrade_tables(owned_db):
+    owned_db.execute(DAYTRADE_DAY)
+    owned_db.execute(DAYTRADE_SIGNAL)
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert owned_db.execute("select * from daytrade_days").fetchall()
+        assert owned_db.execute("select * from daytrade_signals").fetchall()
+        for statement in (DAYTRADE_DAY, DAYTRADE_SIGNAL):
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                owned_db.execute(statement)
+    with acting_as(owned_db, "authenticated", STRANGER):
+        assert owned_db.execute("select * from daytrade_signals").fetchall() == []
+
+
+def test_pipeline_writes_daytrade_tables(owned_db):
+    with acting_as(owned_db, "pipeline_rw"):
+        owned_db.execute(DAYTRADE_DAY)
+        owned_db.execute(DAYTRADE_SIGNAL)
+        assert owned_db.execute("update daytrade_signals set rank = 1").rowcount == 1
+        assert owned_db.execute("update daytrade_days set status = 'done'").rowcount == 1
+        assert owned_db.execute("delete from daytrade_signals").rowcount == 1
+        assert owned_db.execute("delete from daytrade_days").rowcount == 1
+
+
+def test_daytrade_settings_default_and_only_the_owner_changes_them(owned_db):
+    row = owned_db.execute(
+        "select daytrade_max_loss_cad as loss, daytrade_spread_pct as spread from settings"
+    ).fetchone()
+    assert (float(row["loss"]), float(row["spread"])) == (50, 0.10)
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert owned_db.execute(
+            "update settings set daytrade_max_loss_cad = 75, daytrade_spread_pct = 0.2"
+        ).rowcount == 1
+        with pytest.raises(psycopg.errors.CheckViolation):
+            owned_db.execute("update settings set daytrade_max_loss_cad = 0")
+    with acting_as(owned_db, "pipeline_rw"):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute("update settings set daytrade_max_loss_cad = 10")

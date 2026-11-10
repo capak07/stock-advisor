@@ -13,10 +13,11 @@ export const sql = postgres(DB_URL, { onnotice: () => {} })
 export async function resetData() {
   // runs cascades to source_health, features_live, predictions, picks and verdicts; models to model_files
   await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols, news_items, sources, models,
-            filings, financial_quarters, earnings_reports, insider_trades, price_alerts
+            filings, financial_quarters, earnings_reports, insider_trades, price_alerts, daytrade_days, daytrade_signals
             restart identity cascade`
   await sql`update settings set usd_fx_fee_pct = 1.5, crypto_fee_pct = 2.0, tfsa_round_trips_warn = 24,
-            tfsa_short_hold_share_warn = 0.5, updated_at = now() where id = 1`
+            tfsa_short_hold_share_warn = 0.5,
+            daytrade_max_loss_cad = 50, daytrade_spread_pct = 0.10, updated_at = now() where id = 1`
 }
 
 export const today = () => todayInToronto()

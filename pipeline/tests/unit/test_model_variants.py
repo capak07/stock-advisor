@@ -2,9 +2,17 @@ import pandas as pd
 import pytest
 
 from advisor.model.dataset import load_market
+from advisor.model.earnings import EARNINGS_FEATURES
 from advisor.model.features import EXTRA_FEATURES
 from advisor.model.train import PARAMS, TrainConfig, make_folds, walk_forward
-from advisor.model.variants import BASELINE, ModelConfig, run_variant, unbuilt
+from advisor.model.variants import (
+    BASELINE,
+    ModelConfig,
+    extra_features,
+    fit_variant,
+    run_variant,
+    unbuilt,
+)
 from advisor.models import Market
 from advisor.policy import Policy
 from model_data import write_market
@@ -131,9 +139,6 @@ def test_a_version_3_config_loads_with_earnings_off():
 
 
 def test_extras_and_earnings_configs_each_train_on_only_their_own_columns(tmp_path):
-    from advisor.model.earnings import EARNINGS_FEATURES
-    from advisor.model.features import EXTRA_FEATURES
-    from advisor.model.variants import extra_features
 
     write_market(tmp_path, Market.US, stocks=2, days=400)
     data = load_market(tmp_path, Market.US)
@@ -144,8 +149,6 @@ def test_extras_and_earnings_configs_each_train_on_only_their_own_columns(tmp_pa
 
 
 def test_an_earnings_config_stores_the_earnings_columns_in_its_model(tmp_path):
-    from advisor.model.earnings import EARNINGS_FEATURES
-    from advisor.model.variants import fit_variant
 
     write_market(tmp_path, Market.US, stocks=6, days=900)
     data = load_market(tmp_path, Market.US)

@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from advisor.model.earnings import EARNINGS_FEATURES, earnings_features, single_quarters
+from advisor.model.earnings import (
+    EARNINGS_FEATURES,
+    earnings_features,
+    eps_quarters,
+    single_quarters,
+)
 from advisor.model.fundamentals import first_reported
 
 CONCEPT = {"revenue": "us-gaap:Revenues", "operating_income": "us-gaap:OperatingIncomeLoss",
@@ -13,6 +18,11 @@ TICKERS = pd.DataFrame({"symbol": ["X"], "cik": [1]})
 def fact(metric, start, end, value, filed, cik=1):
     return {"cik": cik, "metric": metric, "concept": CONCEPT[metric], "unit": "USD", "start": start, "end": end,
             "value": value, "filed": filed, "form": "10-Q", "accession": "a"}
+
+
+def earnings_quarters_eps(facts, splits):
+    q = eps_quarters(first_reported(facts), TICKERS, splits)
+    return q[q["end"] == pd.Timestamp("2022-12-31")]
 
 
 def frame(*rows) -> pd.DataFrame:
@@ -137,3 +147,19 @@ def test_a_split_between_quarters_leaves_sue_unchanged():
     reported = eps[:-1] + [eps[-1] / 2]
     splits = pd.DataFrame({"X": [2.0, 1.0]}, index=pd.DatetimeIndex(["2010-01-01", "2023-01-15"]))
     assert at(feats(eps_history(reported), "2023-06-01", splits=splits), "sue") == pytest.approx(plain)
+
+
+def test_a_split_between_nine_months_and_fiscal_year_drops_that_q4_eps():
+    # fiscal years end in December; Q4 2022 = FY 2022 - 9M 2022, with a 2-for-1 split between the two filings
+    rows = [fact(m, f"{y}-01-01", f"{y}-12-31", v, f"{y + 1}-02-10")
+            for y in (2021, 2022) for m, v in (("revenue", 400.0 + 40 * (y - 2021)), ("eps_diluted", 4.0))]
+    rows += [fact(m, f"{y}-01-01", f"{y}-09-30", v, f"{y}-11-01")
+             for y in (2021, 2022) for m, v in (("revenue", 300.0), ("eps_diluted", 3.0))]
+    splits = pd.DataFrame({"X": [2.0, 1.0]}, index=pd.DatetimeIndex(["2010-01-01", "2022-12-01"]))
+    f = feats(frame(*rows), "2023-03-01", splits=splits)
+    assert at(f, "rev_growth_q") == pytest.approx(140 / 100 - 1)  # revenue Q4 still used
+    assert np.isnan(at(f, "sue"))
+    # without the split the same Q4 EPS is kept (one change only, so sue is NaN anyway): check the quarter table
+    from_split = earnings_quarters_eps(frame(*rows), splits)
+    assert from_split.empty
+    assert len(earnings_quarters_eps(frame(*rows), NO_SPLITS)) == 1

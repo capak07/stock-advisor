@@ -61,7 +61,7 @@ A personal decision-support app for **real investing**. Twice each trading day i
 ### Assumptions (confirmed during brainstorming)
 
 - Run times are about 8:15 AM ET and 3:15 PM ET, scheduled 15 minutes early to absorb GitHub cron delays. Both exchanges trade 9:30–16:00 ET. Crypto uses the same schedule.
-- Buys only: no shorting, options trading or day trading. TSX Venture is out of scope.
+- Buys only: no shorting or options trading. The one exception is the display-only Day trade tab (see `docs/superpowers/specs/2026-11-10-day-trade-design.md`). TSX Venture is out of scope.
 - Each pick shows:
   - a likely range;
   - a probability of beating its benchmark;
@@ -74,7 +74,7 @@ A personal decision-support app for **real investing**. Twice each trading day i
 ### Non-goals
 
 - Automated trade execution or broker integration, including connecting to Wealthsimple with the owner's credentials.
-- Shorting, options trading and intraday/day-trading signals.
+- Shorting, options trading and intraday/day-trading signals, apart from the display-only Day trade tab (see `docs/superpowers/specs/2026-11-10-day-trade-design.md`); it places no orders and sends no notifications.
 - Notifications of any kind, apart from GitHub's built-in failure email for failed jobs.
 - Paid data sources, paid LLMs, and any data source that needs an API key or an account.
 - Multi-user support. This is a single owner app.

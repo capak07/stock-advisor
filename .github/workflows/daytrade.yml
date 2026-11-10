@@ -1,0 +1,38 @@
+name: daytrade
+
+# Started by Supabase pg_cron via supabase/manual/daytrade_dispatch_cron.sql. There is no schedule
+# trigger on purpose: GitHub's crons arrive hours late (2026-11-09 diagnosis). The job itself
+# refuses a start that is not in its window (the wrong-DST dispatch).
+on:
+  workflow_dispatch:
+    inputs:
+      job:
+        description: which day trade window to run
+        type: choice
+        options:
+          - morning
+          - afternoon
+        default: morning
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daytrade
+  cancel-in-progress: false
+
+jobs:
+  daytrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --locked --no-dev
+      - name: Run day trade job
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: uv run python -m advisor.daytrade --job ${{ inputs.job }}

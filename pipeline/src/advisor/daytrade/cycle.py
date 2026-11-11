@@ -240,6 +240,7 @@ def run_cycle(
                 )
     if failure is None:
         out["candidates"] = result.candidates
+        fresh: list[tuple[int, dict[str, Any]]] = []
         for f in result.found:
             key = (f.listing.symbol, f.listing.market.value)
             if key in stored:
@@ -248,7 +249,7 @@ def run_cycle(
                 row, errors = _new_signal(
                     client, f, sessions[f.listing.market], now, fee, spread, news_get, replays
                 )
-                repo.upsert_daytrade_signal(conn, row)
+                sid = repo.upsert_daytrade_signal(conn, row)
             except Exception as e:  # noqa: BLE001 - one odd signal must not stop the others
                 out["errors"] += 1
                 log(f"{f.listing.symbol}: signal not stored: {type(e).__name__}: {e}")
@@ -256,6 +257,16 @@ def run_cycle(
             stored.add(key)
             out["new"] += 1
             out["errors"] += errors
+            fresh.append((sid, row))
+        # The skill's top 3: the strongest breakouts among this cycle's new signals fill the free ranks.
+        fresh.sort(key=lambda t: (
+            -(float(t[1]["entry"]) / float(t[1]["or_high"]) - 1), t[1]["trigger_at"], t[1]["symbol"]
+        ))
+        try:
+            repo.assign_skill_ranks(conn, day, [sid for sid, _ in fresh])
+        except Exception as e:  # noqa: BLE001 - a ranking failure must not fail the cycle
+            out["errors"] += 1
+            log(f"skill ranking not stored: {type(e).__name__}: {e}")
         _rerank(conn, day)
 
     # Target, stop and flat are final: only open signals are tracked.

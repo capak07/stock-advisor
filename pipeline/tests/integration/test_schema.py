@@ -642,3 +642,19 @@ def test_daytrade_settings_default_and_only_the_owner_changes_them(owned_db):
     with acting_as(owned_db, "pipeline_rw"):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             owned_db.execute("update settings set daytrade_max_loss_cad = 10")
+
+
+def test_daytrade_skill_rank_is_1_to_3_and_unique_per_day(db):
+    db.execute(DAYTRADE_DAY)
+    db.execute(DAYTRADE_SIGNAL)
+    assert db.execute("update daytrade_signals set skill_rank = 3").rowcount == 1
+    for bad in (0, 4):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            db.execute("update daytrade_signals set skill_rank = %s", (bad,))
+    idx = db.execute(
+        "select indexdef from pg_indexes where indexname = 'daytrade_signals_skill_rank'"
+    ).fetchone()
+    assert idx and "UNIQUE" in idx["indexdef"] and "skill_rank IS NOT NULL" in idx["indexdef"]
+    db.execute(DAYTRADE_SIGNAL.replace("'AAPL'", "'MSFT'"))
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        db.execute("update daytrade_signals set skill_rank = 3 where symbol = 'MSFT'")

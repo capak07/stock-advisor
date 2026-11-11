@@ -1000,3 +1000,45 @@ def test_prune_daytrade_keeps_400_days(db):
     assert [r["day"] for r in db.execute("select day from daytrade_days").fetchall()] == [
         date(2026, 11, 10) - timedelta(days=399)]
     assert db.execute("select count(*) as n from daytrade_signals").fetchone()["n"] == 0
+
+
+def _skill_ranks(db, day):
+    return {r["symbol"]: r["skill_rank"] for r in repo.daytrade_signals_for(db, day)}
+
+
+def _four_signals(db):
+    day = date(2026, 11, 10)
+    repo.start_daytrade_day(db, day, "scanning")
+    ids = {s: repo.upsert_daytrade_signal(db, signal_row(s)) for s in ("AAPL", "MSFT", "NVDA", "AMD")}
+    return day, ids
+
+
+def test_assign_skill_ranks_fills_1_2_3_in_order_and_stops_at_three(db):
+    day, ids = _four_signals(db)
+    n = repo.assign_skill_ranks(db, day, [ids["NVDA"], ids["AAPL"], ids["MSFT"], ids["AMD"]])
+    assert n == 3
+    assert _skill_ranks(db, day) == {"NVDA": 1, "AAPL": 2, "MSFT": 3, "AMD": None}
+
+
+def test_assign_skill_ranks_fills_only_free_slots_and_ignores_ranked_ids(db):
+    day, ids = _four_signals(db)
+    assert repo.assign_skill_ranks(db, day, [ids["MSFT"]]) == 1
+    assert repo.assign_skill_ranks(db, day, [ids["MSFT"], ids["AAPL"], ids["NVDA"], ids["AMD"]]) == 2
+    assert _skill_ranks(db, day) == {"MSFT": 1, "AAPL": 2, "NVDA": 3, "AMD": None}
+
+
+def test_assign_skill_ranks_is_idempotent_and_never_moves_a_rank(db):
+    day, ids = _four_signals(db)
+    order = [ids["AAPL"], ids["MSFT"]]
+    assert repo.assign_skill_ranks(db, day, order) == 2
+    assert repo.assign_skill_ranks(db, day, order) == 0
+    assert repo.assign_skill_ranks(db, day, list(reversed(order))) == 0
+    assert _skill_ranks(db, day)["AAPL"] == 1 and _skill_ranks(db, day)["MSFT"] == 2
+    assert repo.assign_skill_ranks(db, day, []) == 0
+
+
+def test_the_upsert_does_not_touch_skill_rank(db):
+    day, ids = _four_signals(db)
+    repo.assign_skill_ranks(db, day, [ids["AAPL"]])
+    repo.upsert_daytrade_signal(db, signal_row("AAPL", entry=11.0))
+    assert _skill_ranks(db, day)["AAPL"] == 1

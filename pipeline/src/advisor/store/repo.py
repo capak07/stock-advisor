@@ -1176,6 +1176,31 @@ def set_daytrade_ranks(conn: psycopg.Connection, day: date, ranks: Mapping[int, 
             )
 
 
+def assign_skill_ranks(conn: psycopg.Connection, day: date, ids: Sequence[int]) -> int:
+    """Freeze the skill's top 3: give the day's free ranks (lowest first) to ids, in order. Ids that
+    already have a rank are skipped and no stored rank ever changes. Returns how many were set."""
+    with conn.transaction():
+        rows = conn.execute(
+            "select id, skill_rank from daytrade_signals where day = %s and id = any(%s)", (day, list(ids))
+        ).fetchall()
+        ranked = {r["id"] for r in rows if r["skill_rank"] is not None}
+        used = {
+            r["skill_rank"]
+            for r in conn.execute(
+                "select skill_rank from daytrade_signals where day = %s and skill_rank is not null", (day,)
+            ).fetchall()
+        }
+        free = [k for k in (1, 2, 3) if k not in used]
+        known = {r["id"] for r in rows}
+        todo = [i for i in dict.fromkeys(ids) if i in known and i not in ranked]
+        for sid, rank in zip(todo, free, strict=False):
+            conn.execute(
+                "update daytrade_signals set skill_rank = %s where id = %s and day = %s and skill_rank is null",
+                (rank, sid, day),
+            )
+        return min(len(todo), len(free))
+
+
 def prune_daytrade(conn: psycopg.Connection, now: datetime) -> None:
     """Deleting a day cascades to its signals."""
     conn.execute("delete from daytrade_days where day < %s", ((now - DAYTRADE_KEPT).date(),))

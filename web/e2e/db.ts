@@ -437,6 +437,7 @@ export async function seedDaytradeSignal(s: {
   eligible?: boolean
   rank?: number | null
   bestRank?: number | null
+  skillRank?: number | null
   flatBy?: Date
   headlines?: { title: string; url: string; published_at: string; outlet: string }[]
   status?: 'open' | 'target' | 'stop' | 'flat'
@@ -469,6 +470,7 @@ export async function seedDaytradeSignal(s: {
     eligible: s.eligible ?? true,
     rank: s.rank ?? null,
     best_rank: s.bestRank === undefined ? (s.rank ?? null) : s.bestRank,
+    skill_rank: s.skillRank ?? null,
     headlines: sql.json(s.headlines ?? []),
     status: s.status ?? 'open',
     last_price: s.lastPrice ?? null,

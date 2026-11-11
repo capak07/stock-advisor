@@ -779,3 +779,62 @@ def test_a_failed_scan_still_tracks_the_stored_signals(db):
     assert _signals(db)["AAA"]["last_at"] == et(9, 55)
     day = _day(db)
     assert day["status"] == "failed" and "no data" in day["error"]
+
+
+def _stronger_by_symbol(monkeypatch, entries):
+    """Make each new signal's entry the given price (strength = entry / or_high - 1)."""
+    real = cycle._new_signal
+
+    def new_signal(client, f, *a, **kw):
+        row, errors = real(client, f, *a, **kw)
+        return {**row, "entry": entries.get(row["symbol"], row["entry"])}, errors
+
+    monkeypatch.setattr(cycle, "_new_signal", new_signal)
+
+
+def _skill(db):
+    return {s: r["skill_rank"] for s, r in _signals(db).items() if r["skill_rank"]}
+
+
+FIVE = [(s, US, "open", 0) for s in ("AAA", "BBB", "CCC", "DDD", "EEE")]
+
+
+def test_a_cycle_with_five_new_signals_ranks_the_three_strongest(db, monkeypatch):
+    client, listings = _world(DAY, FIVE)
+    # or_high is 10.2. Ties (same entry) go to the earlier trigger, then the symbol.
+    _stronger_by_symbol(monkeypatch, {"AAA": 10.3, "BBB": 10.9, "CCC": 10.5, "DDD": 10.5, "EEE": 10.4})
+    r = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True and r["errors"] == 0
+    assert _skill(db) == {"BBB": 1, "CCC": 2, "DDD": 3}
+
+
+def test_a_quiet_first_cycle_then_a_busy_one_fills_the_free_ranks(db, monkeypatch):
+    client, listings = _world(DAY, FIVE)
+    _stronger_by_symbol(monkeypatch, {"AAA": 10.25, "BBB": 10.9, "CCC": 10.3, "DDD": 10.6, "EEE": 10.4})
+    run_cycle(db, client, listings[:1], et(9, 50, 30), full=True, news_get=FakeNews())
+    assert _skill(db) == {"AAA": 1}
+    run_cycle(db, client, listings, et(10, 5, 30), full=True, news_get=FakeNews())
+    assert _skill(db) == {"AAA": 1, "BBB": 2, "DDD": 3}
+
+
+def test_a_restart_leaves_the_stored_skill_ranks_alone(db, monkeypatch):
+    client, listings = _world(DAY, FIVE)
+    _stronger_by_symbol(monkeypatch, {"AAA": 10.3, "BBB": 10.9, "CCC": 10.5, "DDD": 10.6, "EEE": 10.4})
+    run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    before = _skill(db)
+    assert before == {"BBB": 1, "DDD": 2, "CCC": 3}
+    run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    run_cycle(db, client, listings, et(10, 5, 30), full=True, news_get=FakeNews())
+    assert _skill(db) == before
+
+
+def test_a_failing_skill_ranking_is_counted_and_does_not_fail_the_cycle(db, monkeypatch):
+    client, listings = _world(DAY, FIVE[:2])
+
+    def boom(conn, day, ids):
+        raise psycopg.OperationalError("connection lost")
+
+    monkeypatch.setattr(repo, "assign_skill_ranks", boom)
+    r = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True and r["new"] == 2 and r["errors"] == 1
+    assert _skill(db) == {}

@@ -146,3 +146,4 @@ Settings gain `daytrade_max_loss_cad` and `daytrade_spread_pct`. Kept 400 days.
 1. Apply migrations `0012_holding_monitor.sql` and `0013_daytrade.sql` to the Supabase project.
 2. Put a GitHub fine-grained token (this repo only, "Actions: Read and write") in Supabase Vault, then run
    the day-trade dispatch SQL this build adds (the same token serves the run-trigger file).
+3. Apply `0014_daytrade_skill_rank.sql` to the Supabase project BEFORE pushing the code that uses it, and outside 9:30 AM–4:00 PM ET (a mid-session deploy fills that day's skill list from every signal already stored).

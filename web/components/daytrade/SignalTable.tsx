@@ -28,7 +28,7 @@ export function SignalTable({ signals }: { signals: Signal[] }) {
               <tr key={s.id} data-symbol={s.symbol}>
                 <td>
                   <span className="sym">{s.symbol}</span> <span className="sub">{s.market}</span>
-                  {s.skillRank !== null && (
+                  {s.skillRank != null && (
                     <>
                       {' '}
                       <span className="chip">skill #{s.skillRank}</span>

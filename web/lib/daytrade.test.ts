@@ -18,6 +18,7 @@ import {
   recordEmptyLine,
   shares,
   sharesLine,
+  skillEmptyLine,
   skillSignals,
   statusLine,
   strengthLine,
@@ -203,8 +204,11 @@ describe('formatters', () => {
   it("the breakout's strength above the opening-range high", () => {
     expect(strengthPct(signal({ entry: 68.12, orHigh: 67.5 }))).toBeCloseTo(0.9185, 4)
     expect(strengthLine(signal({ entry: 68.12, orHigh: 67.5 }))).toBe('+0.92% above the range high')
-    expect(strengthLine(signal({ entry: 50, orHigh: 50 }))).toBe('0.00% above the range high')
-    expect(strengthLine(signal({ entry: 9.95, orHigh: 10 }))).toBe('−0.50% above the range high')
+    // the trigger tests the raw close; entry is stored to the cent, so it can sit at or under the stored high
+    expect(strengthLine(signal({ entry: 50, orHigh: 50 }))).toBe('Just above the range high')
+    expect(strengthLine(signal({ entry: 50.001, orHigh: 50 }))).toBe('Just above the range high') // +0.002% rounds to 0.00
+    expect(strengthLine(signal({ entry: 4.2, orHigh: 4.2041 }))).toBe('Just above the range high')
+    expect(strengthLine(signal({ entry: 50.005, orHigh: 50 }))).toBe('+0.01% above the range high')
   })
 
   it('the round-trip cost the trade must beat, for a US stock only', () => {
@@ -270,6 +274,17 @@ describe('signals', () => {
     ]
     expect(skillSignals(list).map((s) => s.id)).toEqual([3, 4, 1])
     expect(skillSignals([signal({ skillRank: null })])).toEqual([])
+  })
+
+  it('treats a signal without the skill rank field (migration 0014 not applied yet) as unranked', () => {
+    const { skillRank: _gone, ...old } = signal({ id: 9, skillRank: 1 })
+    void _gone
+    expect(skillSignals([old as Signal, signal({ id: 2, skillRank: 1 })]).map((s) => s.id)).toEqual([2])
+  })
+
+  it("says why the skill's list is empty: no signals yet, or none ranked yet", () => {
+    expect(skillEmptyLine(0)).toBe('No signals yet today.')
+    expect(skillEmptyLine(3)).toBe("The skill's ranking is not set yet.")
   })
 
   it('says why a signal is not in the top 3', () => {
@@ -364,6 +379,14 @@ describe('trackRecord', () => {
     const t = trackRecord([], [])
     expect(t.skill.last60).toEqual({ days: 0, ...EMPTY })
     expect(t.costs.last20).toEqual({ days: 0, ...EMPTY })
+  })
+
+  it('leaves a row without the skill rank field out of the skill list', () => {
+    const { skillRank: _gone, ...old } = row(days[0], 'target', 2, 1.5)
+    void _gone
+    const t = trackRecord([old as RecordRow], days)
+    expect(t.skill.last20.count).toBe(0)
+    expect(t.costs.last20.count).toBe(1)
   })
 
   it('says so only before the first finished day', () => {

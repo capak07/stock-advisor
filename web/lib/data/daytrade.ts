@@ -13,6 +13,7 @@ import {
 import type { Supabase } from '../supabase/server'
 import { fetchAll, must } from './fetch'
 import { loadSettings } from './settings'
+import { withoutSkillRankIfMissing } from './skill-rank'
 
 /** Finished days the track record looks back over (each one a trading day). */
 const RECORD_DAYS = 60
@@ -68,7 +69,8 @@ type SignalDb = {
   eligible: boolean
   rank: number | null
   best_rank: number | null
-  skill_rank: number | null
+  /** Undefined before migration 0014. */
+  skill_rank?: number | null
   headlines: Headline[] | null
   status: Signal['status']
   last_price: unknown
@@ -78,6 +80,9 @@ type SignalDb = {
   gross_r: unknown
   net_r: unknown
 }
+
+/** A track-record row; `skill_rank` is missing before migration 0014. */
+type RecordDb = { day: string; status: Signal['status']; gross_r: unknown; net_r: unknown; skill_rank?: number | null; best_rank: number | null }
 
 const toSignal = (r: SignalDb): Signal => ({
   id: r.id,
@@ -102,7 +107,7 @@ const toSignal = (r: SignalDb): Signal => ({
   eligible: r.eligible,
   rank: r.rank,
   bestRank: r.best_rank,
-  skillRank: r.skill_rank,
+  skillRank: r.skill_rank ?? null,
   headlines: Array.isArray(r.headlines) ? r.headlines : [],
   status: r.status,
   lastPrice: num(r.last_price),
@@ -134,17 +139,32 @@ export async function loadDaytrade(supabase: Supabase, day: string): Promise<Day
   ])
   const d = (must(dayRows) as DayDb[])[0]
   const doneDays = (must(doneRows) as { day: string }[]).map((r) => r.day)
-  const recordRows = doneDays.length
-    ? ((await fetchAll((from, to) =>
-        supabase
-          .from('daytrade_signals')
-          .select('day, status, gross_r, net_r, skill_rank, best_rank')
-          .in('day', doneDays)
-          .or('skill_rank.not.is.null,best_rank.not.is.null')
-          .order('day')
-          .order('id')
-          .range(from, to),
-      )) as { day: string; status: Signal['status']; gross_r: unknown; net_r: unknown; skill_rank: number | null; best_rank: number | null }[])
+  const recordRows: RecordDb[] = doneDays.length
+    ? await withoutSkillRankIfMissing(
+        async () =>
+          (await fetchAll((from, to) =>
+            supabase
+              .from('daytrade_signals')
+              .select('day, status, gross_r, net_r, skill_rank, best_rank')
+              .in('day', doneDays)
+              .or('skill_rank.not.is.null,best_rank.not.is.null')
+              .order('day')
+              .order('id')
+              .range(from, to),
+          )) as RecordDb[],
+        // migration 0014 not applied yet: the after-costs list only, every skill rank null
+        async () =>
+          (await fetchAll((from, to) =>
+            supabase
+              .from('daytrade_signals')
+              .select('day, status, gross_r, net_r, best_rank')
+              .in('day', doneDays)
+              .not('best_rank', 'is', null)
+              .order('day')
+              .order('id')
+              .range(from, to),
+          )) as RecordDb[],
+      )
     : []
   const fx = (must(fxRows) as { usd_cad: unknown }[])[0]
   return {
@@ -167,7 +187,7 @@ export async function loadDaytrade(supabase: Supabase, day: string): Promise<Day
         status: r.status,
         grossR: num(r.gross_r),
         netR: num(r.net_r),
-        skillRank: r.skill_rank,
+        skillRank: r.skill_rank ?? null,
         bestRank: r.best_rank,
       })),
       doneDays,

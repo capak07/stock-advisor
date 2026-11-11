@@ -26,6 +26,10 @@ On 2026-11-11 the skill's top 3 (FIS, ERAS, AFRM, ranked by breakout strength at
 - New column: migration `0014_daytrade_skill_rank.sql`; RLS and grants already cover the table. All SQL in `store/repo.py`; web data only in `web/lib/data/*.ts`.
 - Python tests via `pipeline/scripts/in-docker.sh`; `ruff check .`; LF line endings.
 
+## Owner steps
+
+- Apply `0014_daytrade_skill_rank.sql` to the Supabase project BEFORE pushing the code that uses it, and outside 9:30 AM–4:00 PM ET (a mid-session deploy fills that day's skill list from every signal already stored).
+
 ## Review Focus
 
 1. A quiet first cycle (0 or 1 signals): later cycles fill the free ranks; filled ranks never move.

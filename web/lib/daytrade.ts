@@ -279,12 +279,14 @@ export function outcomeLine(s: Signal): string {
 /** Breakout strength: how far the trigger bar closed above the opening-range high, in percent. */
 export const strengthPct = (s: Signal): number => (s.entry / s.orHigh - 1) * 100
 
-/** "+0.92% above the range high" */
+/**
+ * "+0.92% above the range high". The trigger compares the raw close with the raw range high, but the
+ * entry is stored to the cent, so a close a hair above the high can show 0.00% or less: that reads
+ * "Just above the range high".
+ */
 export function strengthLine(s: Signal): string {
-  const pct = strengthPct(s)
-  const text = Math.abs(pct).toFixed(2)
-  const sign = Number(text) === 0 ? '' : pct > 0 ? '+' : MINUS
-  return `${sign}${text}% above the range high`
+  const text = strengthPct(s).toFixed(2)
+  return Number(text) > 0 ? `+${text}% above the range high` : 'Just above the range high'
 }
 
 /**
@@ -296,9 +298,12 @@ export const costHurdleLine = (s: Signal): string | null =>
     ? `Your round-trip cost (currency conversion both ways plus the spread) is ${s.costR.toFixed(2)}R: the trade must gain more than that to pay.`
     : null
 
-/** The skill's top 3 in rank order (any eligibility, any after-costs place). */
+/** The skill's top 3 in rank order (any eligibility, any after-costs place); a missing rank (before migration 0014) is no rank. */
 export const skillSignals = (list: readonly Signal[]): Signal[] =>
-  list.filter((s) => s.skillRank !== null).sort((a, b) => a.skillRank! - b.skillRank!)
+  list.filter((s) => s.skillRank != null).sort((a, b) => a.skillRank! - b.skillRank!)
+
+/** Under the skill's title when its list is empty: no signals yet, or signals none of which is ranked yet. */
+export const skillEmptyLine = (signals: number): string => (signals === 0 ? NO_SIGNALS : "The skill's ranking is not set yet.")
 
 /** The top 3 by rank, then the eligible ones, then by net history R (missing last), then the earliest. */
 export function orderSignals(list: readonly Signal[]): Signal[] {
@@ -388,7 +393,7 @@ const windows = (rows: readonly RecordRow[], doneDays: readonly string[]): ListR
 /** Each list's outcomes over the last 20 and 60 finished days (`doneDays` newest first); a signal in both lists counts in both. */
 export function trackRecord(rows: readonly RecordRow[], doneDays: readonly string[]): TrackRecordData {
   return {
-    skill: windows(rows.filter((r) => r.skillRank !== null), doneDays),
+    skill: windows(rows.filter((r) => r.skillRank != null), doneDays),
     costs: windows(rows.filter((r) => r.bestRank !== null), doneDays),
   }
 }

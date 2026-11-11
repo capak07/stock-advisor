@@ -9,13 +9,13 @@ import { loadDaytrade } from '@/lib/data/daytrade'
 import {
   COSTS_TITLE,
   NOTES,
-  NO_SIGNALS,
   SKILL_SUB,
   SKILL_TITLE,
   isFresh,
   isLive,
   noTradeLine,
   nyTime,
+  skillEmptyLine,
   skillSignals,
   statusLine,
 } from '@/lib/daytrade'
@@ -68,7 +68,7 @@ export default async function DaytradePage() {
           ran && (
             <div className="banner info" style={{ marginTop: 12 }}>
               <Info />
-              <div>{NO_SIGNALS}</div>
+              <div>{skillEmptyLine(signals.length)}</div>
             </div>
           )
         ) : (

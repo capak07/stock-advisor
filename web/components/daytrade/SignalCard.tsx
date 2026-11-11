@@ -3,7 +3,7 @@ import { shortDay } from '@/lib/dates'
 import {
   LATE_LINE,
   LATE_SHARES,
-  conversionLine,
+  costHurdleLine,
   costLine,
   etClock,
   historyLine,
@@ -33,7 +33,7 @@ const OUTCOME_CHIP: Record<Exclude<Signal['status'], 'open'>, { label: string; t
  * One of today's top 3 (the skill's, or the after-costs one): the signal, the plan (stop, target,
  * flat by), the replays, the rule's history, the cost in R, shares sized to the max loss, headlines
  * and where it stands now. A skill card also shows the breakout's strength and, for a US stock, the
- * conversion cost the trade must beat. Display only: nothing here places an order.
+ * round-trip cost (conversion both ways plus the spread) the trade must beat. Display only: nothing here places an order.
  */
 export function SignalCard({
   signal: s,
@@ -50,7 +50,7 @@ export function SignalCard({
   usdCad: number | null
 }) {
   const skill = list === 'skill'
-  const conversion = skill ? conversionLine(s) : null
+  const hurdle = skill ? costHurdleLine(s) : null
   const open = s.status === 'open'
   const late = open && !fresh
   const risk = Number((s.entry - s.stop).toFixed(4))
@@ -108,7 +108,7 @@ export function SignalCard({
         <li>{oddsLine(s.replay)}</li>
         <li>{historyLine(s.symbol, s.history)}</li>
         <li>{costLine(s.costPct, s.costR)}</li>
-        {conversion !== null && <li>{conversion}</li>}
+        {hurdle !== null && <li>{hurdle}</li>}
         {!late && <li className="dt-outcome">{outcomeLine(s)}</li>}
       </ul>
       {s.headlines.length > 0 && (

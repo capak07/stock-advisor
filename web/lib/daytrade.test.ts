@@ -4,7 +4,7 @@ import {
   MARKET_CLOSED,
   NO_SIGNALS,
   TRACK_LABEL,
-  conversionLine,
+  costHurdleLine,
   costLine,
   etClock,
   fmtR,
@@ -207,9 +207,11 @@ describe('formatters', () => {
     expect(strengthLine(signal({ entry: 9.95, orHigh: 10 }))).toBe('−0.50% above the range high')
   })
 
-  it('the conversion cost line, for a US stock only', () => {
-    expect(conversionLine(signal({ costR: 1.314 }))).toBe('Your conversion cost is 1.31R: the trade must gain more than that to pay.')
-    expect(conversionLine(signal({ market: 'TSX', costR: 0.05 }))).toBeNull()
+  it('the round-trip cost the trade must beat, for a US stock only', () => {
+    expect(costHurdleLine(signal({ costR: 1.314 }))).toBe(
+      'Your round-trip cost (currency conversion both ways plus the spread) is 1.31R: the trade must gain more than that to pay.',
+    )
+    expect(costHurdleLine(signal({ market: 'TSX', costR: 0.05 }))).toBeNull()
   })
 
   it('history, cost and odds lines', () => {

@@ -287,9 +287,14 @@ export function strengthLine(s: Signal): string {
   return `${sign}${text}% above the range high`
 }
 
-/** For a US stock, what the CAD-USD conversion costs in R; null on the TSX (no conversion). */
-export const conversionLine = (s: Signal): string | null =>
-  s.market === 'US' ? `Your conversion cost is ${s.costR.toFixed(2)}R: the trade must gain more than that to pay.` : null
+/**
+ * For a US stock, the whole round-trip cost in R (`cost_r`: the CAD-USD conversion both ways plus the
+ * spread) that the trade must beat; null on the TSX.
+ */
+export const costHurdleLine = (s: Signal): string | null =>
+  s.market === 'US'
+    ? `Your round-trip cost (currency conversion both ways plus the spread) is ${s.costR.toFixed(2)}R: the trade must gain more than that to pay.`
+    : null
 
 /** The skill's top 3 in rank order (any eligibility, any after-costs place). */
 export const skillSignals = (list: readonly Signal[]): Signal[] =>

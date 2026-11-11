@@ -86,7 +86,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(page.getByRole('button', { name: /buy|order|place/i })).toHaveCount(0)
 })
 
-test("the skill's top 3 come first, with their strength and conversion cost, then the top 3 after costs", async ({ page }) => {
+test("the skill's top 3 come first, with their strength and round-trip cost, then the top 3 after costs", async ({ page }) => {
   await seedFx([daysAgo(1)], 1.4)
   await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
   // the skill's three, seeded out of rank order: none of them is eligible after costs
@@ -129,12 +129,12 @@ test("the skill's top 3 come first, with their strength and conversion cost, the
   await expect(fis).toContainText('Fidelity National Information Services')
   await expect(fis).toContainText(/Entry signal \d{1,2}:\d{2} [AP]M at US\$68\.12/)
   await expect(fis.getByText('+0.92% above the range high', { exact: true })).toBeVisible()
-  await expect(fis.getByText('Your conversion cost is 1.36R: the trade must gain more than that to pay.', { exact: true })).toBeVisible()
+  await expect(fis.getByText('Your round-trip cost (currency conversion both ways plus the spread) is 1.36R: the trade must gain more than that to pay.', { exact: true })).toBeVisible()
   await expect(fis).toContainText(/Target hit at \d{1,2}:\d{2} [AP]M \(US\$70\.36\) · \+2\.00R before costs, \+0\.64R after/)
   await expect(fis).toContainText('Cost 3.10% round trip = 1.36R')
   await expect(fis.getByText('Target hit', { exact: true })).toBeVisible() // the outcome chip
   await expect(skillCards(page).nth(1).getByText('+1.67% above the range high', { exact: true })).toBeVisible()
-  await expect(skillCards(page).nth(2)).toContainText('Your conversion cost is 2.26R: the trade must gain more than that to pay.')
+  await expect(skillCards(page).nth(2)).toContainText('Your round-trip cost (currency conversion both ways plus the spread) is 2.26R: the trade must gain more than that to pay.')
 
   // the after-costs top 3 is as it was: no strength or conversion line
   await expect(cards(page)).toHaveCount(1)
@@ -142,7 +142,7 @@ test("the skill's top 3 come first, with their strength and conversion cost, the
   await expect(ogc).toContainText('#1 OGC.TO')
   await expect(ogc).toContainText('StopC$5.40')
   await expect(ogc).not.toContainText('above the range high')
-  await expect(ogc).not.toContainText('conversion cost')
+  await expect(ogc).not.toContainText('Your round-trip cost')
 
   // every signal is still listed; the skill's ones are marked
   const table = page.getByRole('table', { name: 'Other signals today' })
@@ -254,6 +254,16 @@ test('a closed day says the market is closed', async ({ page }) => {
   await seedDaytradeDay({ status: 'closed' })
   await page.goto('/daytrade')
   await expect(page.getByTestId('daytrade-status')).toHaveText('Market closed today.')
+  await expect(skillSection(page).getByText('No signals yet today.')).toHaveCount(0)
+  await expect(costSection(page).getByText('No signals yet today.')).toHaveCount(0)
+})
+
+test('before the first scan neither list says there are no signals yet', async ({ page }) => {
+  await seedDaytradeDay({ status: 'waiting', lastUpdate: null })
+  await page.goto('/daytrade')
+  await expect(skillSection(page)).toBeVisible()
+  await expect(skillSection(page).getByText('No signals yet today.')).toHaveCount(0)
+  await expect(costSection(page).getByText('No signals yet today.')).toHaveCount(0)
 })
 
 test('the track record counts each list of finished days, before and after costs', async ({ page }) => {

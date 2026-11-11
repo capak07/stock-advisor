@@ -253,5 +253,3 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-news a { text-decoration: underline !important; text-underline-offset: 2px; }
 .dt-scroll { overflow-x: auto; }
 .dt-table td.dt-wrap { white-space: normal; min-width: 160px; }
-.dt-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 639px) { .dt-records { grid-template-columns: minmax(0, 1fr); } }

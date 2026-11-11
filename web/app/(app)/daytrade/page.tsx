@@ -65,10 +65,12 @@ export default async function DaytradePage() {
           {SKILL_SUB}
         </p>
         {skill.length === 0 ? (
-          <div className="banner info" style={{ marginTop: 12 }}>
-            <Info />
-            <div>{NO_SIGNALS}</div>
-          </div>
+          ran && (
+            <div className="banner info" style={{ marginTop: 12 }}>
+              <Info />
+              <div>{NO_SIGNALS}</div>
+            </div>
+          )
         ) : (
           <div className="pick-grid" style={{ marginTop: 12 }}>
             {skill.map((s) => (

@@ -838,3 +838,41 @@ def test_a_failing_skill_ranking_is_counted_and_does_not_fail_the_cycle(db, monk
     r = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
     assert r["ok"] is True and r["new"] == 2 and r["errors"] == 1
     assert _skill(db) == {}
+
+
+def test_a_failed_ranking_heals_in_a_later_cycle_with_no_new_signals(db, monkeypatch):
+    client, listings = _world(DAY, FIVE)
+    _stronger_by_symbol(monkeypatch, {"AAA": 10.3, "BBB": 10.9, "CCC": 10.5, "DDD": 10.6, "EEE": 10.4})
+    real = repo.assign_skill_ranks
+
+    def boom(conn, day, ids):
+        raise psycopg.OperationalError("connection lost")
+
+    monkeypatch.setattr(repo, "assign_skill_ranks", boom)
+    r = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True and r["errors"] == 1 and _skill(db) == {}
+    monkeypatch.setattr(repo, "assign_skill_ranks", real)
+    r = run_cycle(db, client, listings, et(10, 5, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True and r["new"] == 0
+    assert _skill(db) == {"BBB": 1, "DDD": 2, "CCC": 3}
+
+
+def test_a_zero_or_high_cannot_fail_the_cycle(db, monkeypatch):
+    client, listings = _world(DAY, FIVE[:2])
+    real = repo.daytrade_signals_for
+
+    def rows(conn, day):
+        return [{**r, "or_high": 0} for r in real(conn, day)]
+
+    monkeypatch.setattr(repo, "daytrade_signals_for", rows)
+    r = run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    assert r["ok"] is True and r["new"] == 2
+
+
+def test_a_signal_with_a_skipped_replay_is_ranked_like_any_other(db, monkeypatch):
+    client, listings = _world(DAY, [("AAA", US, "open", "short"), ("BBB", US, "open", 0)])
+    _stronger_by_symbol(monkeypatch, {"AAA": 10.9})
+    run_cycle(db, client, listings, et(9, 50, 30), full=True, news_get=FakeNews())
+    sig = _signals(db)
+    assert "skipped" in sig["AAA"]["replay"] and sig["AAA"]["eligible"] is False
+    assert _skill(db) == {"AAA": 1, "BBB": 2}

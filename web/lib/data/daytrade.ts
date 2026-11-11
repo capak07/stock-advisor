@@ -5,10 +5,10 @@ import {
   type DayRow,
   type Headline,
   type HistoryStats,
-  type RecordSummary,
   type ReplayStats,
   type Signal,
   type Skipped,
+  type TrackRecordData,
 } from '../daytrade'
 import type { Supabase } from '../supabase/server'
 import { fetchAll, must } from './fetch'
@@ -20,9 +20,9 @@ const RECORD_DAYS = 60
 export interface DaytradeData {
   /** Today's row; null before the morning job starts (or on a day it never ran). */
   day: DayRow | null
-  /** Today's signals: the top 3 first. */
+  /** Today's signals: the after-costs top 3 first. */
   signals: Signal[]
-  record: { last20: RecordSummary; last60: RecordSummary }
+  record: TrackRecordData
   maxLossCad: number
   /** The latest stored USD/CAD; null before the first rate. */
   usdCad: number | null
@@ -68,6 +68,7 @@ type SignalDb = {
   eligible: boolean
   rank: number | null
   best_rank: number | null
+  skill_rank: number | null
   headlines: Headline[] | null
   status: Signal['status']
   last_price: unknown
@@ -101,6 +102,7 @@ const toSignal = (r: SignalDb): Signal => ({
   eligible: r.eligible,
   rank: r.rank,
   bestRank: r.best_rank,
+  skillRank: r.skill_rank,
   headlines: Array.isArray(r.headlines) ? r.headlines : [],
   status: r.status,
   lastPrice: num(r.last_price),
@@ -113,7 +115,8 @@ const toSignal = (r: SignalDb): Signal => ({
 
 /**
  * The Day trade page for `day` (New York's date): the day's row and signals, the track record of the
- * last 20 and 60 finished days' top-3 signals (any signal shown in the top 3 that day, even if displaced later), the max loss per trade and the latest USD/CAD.
+ * last 20 and 60 finished days for both lists (the skill's top 3, and any signal shown in the
+ * after-costs top 3 that day, even if displaced later), the max loss per trade and the latest USD/CAD.
  */
 export async function loadDaytrade(supabase: Supabase, day: string): Promise<DaytradeData> {
   const [dayRows, signalRows, doneRows, settings, fxRows] = await Promise.all([
@@ -135,13 +138,13 @@ export async function loadDaytrade(supabase: Supabase, day: string): Promise<Day
     ? ((await fetchAll((from, to) =>
         supabase
           .from('daytrade_signals')
-          .select('day, status, net_r')
+          .select('day, status, gross_r, net_r, skill_rank, best_rank')
           .in('day', doneDays)
-          .not('best_rank', 'is', null)
+          .or('skill_rank.not.is.null,best_rank.not.is.null')
           .order('day')
           .order('id')
           .range(from, to),
-      )) as { day: string; status: Signal['status']; net_r: unknown }[])
+      )) as { day: string; status: Signal['status']; gross_r: unknown; net_r: unknown; skill_rank: number | null; best_rank: number | null }[])
     : []
   const fx = (must(fxRows) as { usd_cad: unknown }[])[0]
   return {
@@ -159,7 +162,14 @@ export async function loadDaytrade(supabase: Supabase, day: string): Promise<Day
       : null,
     signals: orderSignals((signalRows as SignalDb[]).map(toSignal)),
     record: trackRecord(
-      recordRows.map((r) => ({ day: r.day, status: r.status, netR: num(r.net_r) })),
+      recordRows.map((r) => ({
+        day: r.day,
+        status: r.status,
+        grossR: num(r.gross_r),
+        netR: num(r.net_r),
+        skillRank: r.skill_rank,
+        bestRank: r.best_rank,
+      })),
       doneDays,
     ),
     maxLossCad: settings.daytrade_max_loss_cad,

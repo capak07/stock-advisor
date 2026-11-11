@@ -80,6 +80,8 @@ export interface Signal {
   rank: number | null
   /** The best top-3 place it ever had today; kept when a better signal displaces it. */
   bestRank: number | null
+  /** Its place (1–3) in the skill's top 3: the day's strongest breakouts, frozen when found. */
+  skillRank: number | null
   headlines: Headline[]
   status: SignalStatus
   lastPrice: number | null
@@ -93,8 +95,12 @@ export interface Signal {
 export const BEFORE_RANGE = 'Before 9:50 AM: the opening range is still forming.'
 export const MARKET_CLOSED = 'Market closed today.'
 export const LATE_LINE = 'Late: the price has moved since the signal; entering now is a different trade.'
-export const TRACK_LABEL = "Paper: what the rule's top-3 trades would have done, after costs."
+export const SKILL_TITLE = "The skill's top 3"
+export const SKILL_SUB = 'Strongest volume-confirmed breakouts at the first scan, among the most traded stocks. Before your costs.'
+export const COSTS_TITLE = 'Top 3 after your costs'
+export const TRACK_LABEL = "Paper: what each list's trades would have done."
 export const NO_RECORD = 'No finished day-trade signals yet.'
+export const NO_SIGNALS = 'No signals yet today.'
 export const LATE_SHARES = "Shares are sized from the signal's entry and stop."
 export const NOTES = [
   'Not financial advice. Nothing is ordered: you place trades yourself.',
@@ -102,7 +108,7 @@ export const NOTES = [
   "Yahoo's free 5-minute bars can lag a few minutes.",
 ] as const
 export const noTradeLine = (n: number) =>
-  n === 0 ? 'No signals yet today.' : `No signal today has a positive record after costs (${n} signals checked).`
+  n === 0 ? NO_SIGNALS : `No signal today has a positive record after costs (${n} signals checked).`
 
 /** The pipeline's eligibility floor (advisor/daytrade/score.py MIN_FIRED). */
 export const MIN_FIRED = 20
@@ -244,11 +250,17 @@ export function oddsLine(r: ReplayStats | Skipped): string {
   return `${r.replays.toLocaleString('en-CA')} replays: target first ${fmtShare(r.target_first)} · stop first ${fmtShare(r.stop_first)} · neither ${fmtShare(r.neither)} · green at close ${fmtShare(r.green)}`
 }
 
-const afterCosts = (netR: number | null) => (netR === null ? '' : ` · ${fmtR(netR)} after costs`)
+/** " · +2.00R before costs, +0.64R after", or the one R value there is. */
+function resultR(s: Signal): string {
+  if (s.grossR !== null && s.netR !== null) return ` · ${fmtR(s.grossR)} before costs, ${fmtR(s.netR)} after`
+  if (s.grossR !== null) return ` · ${fmtR(s.grossR)} before costs`
+  if (s.netR !== null) return ` · ${fmtR(s.netR)} after costs`
+  return ''
+}
 const exitText = (s: Signal) =>
   `${s.exitAt === null ? '' : ` ${etClock(s.exitAt)}`}${s.exitPrice === null ? '' : ` (${priceOf(s.exitPrice, s.market)})`}`
 
-/** Where the tracked signal stands: open with its last price, or how it ended and its R after costs. */
+/** Where the tracked signal stands: open with its last price, or how it ended and its R before and after costs. */
 export function outcomeLine(s: Signal): string {
   switch (s.status) {
     case 'open':
@@ -256,13 +268,32 @@ export function outcomeLine(s: Signal): string {
         ? 'Open: no price since the signal yet'
         : `Open · last ${priceOf(s.lastPrice, s.market)} at ${etClock(s.lastAt)}`
     case 'target':
-      return `Target hit${s.exitAt === null ? '' : ' at'}${exitText(s)}${afterCosts(s.netR)}`
+      return `Target hit${s.exitAt === null ? '' : ' at'}${exitText(s)}${resultR(s)}`
     case 'stop':
-      return `Stopped out${s.exitAt === null ? '' : ' at'}${exitText(s)}${afterCosts(s.netR)}`
+      return `Stopped out${s.exitAt === null ? '' : ' at'}${exitText(s)}${resultR(s)}`
     case 'flat':
-      return `Flat at close${exitText(s)}${afterCosts(s.netR)}`
+      return `Flat at close${exitText(s)}${resultR(s)}`
   }
 }
+
+/** Breakout strength: how far the trigger bar closed above the opening-range high, in percent. */
+export const strengthPct = (s: Signal): number => (s.entry / s.orHigh - 1) * 100
+
+/** "+0.92% above the range high" */
+export function strengthLine(s: Signal): string {
+  const pct = strengthPct(s)
+  const text = Math.abs(pct).toFixed(2)
+  const sign = Number(text) === 0 ? '' : pct > 0 ? '+' : MINUS
+  return `${sign}${text}% above the range high`
+}
+
+/** For a US stock, what the CAD-USD conversion costs in R; null on the TSX (no conversion). */
+export const conversionLine = (s: Signal): string | null =>
+  s.market === 'US' ? `Your conversion cost is ${s.costR.toFixed(2)}R: the trade must gain more than that to pay.` : null
+
+/** The skill's top 3 in rank order (any eligibility, any after-costs place). */
+export const skillSignals = (list: readonly Signal[]): Signal[] =>
+  list.filter((s) => s.skillRank !== null).sort((a, b) => a.skillRank! - b.skillRank!)
 
 /** The top 3 by rank, then the eligible ones, then by net history R (missing last), then the earliest. */
 export function orderSignals(list: readonly Signal[]): Signal[] {
@@ -294,41 +325,65 @@ export interface RecordSummary {
   target: number
   stop: number
   flat: number
+  /** Average R before costs; null with no finished trade (or none with a gross R). */
+  avgGrossR: number | null
   avgNetR: number | null
   sumNetR: number
+}
+
+/** A list's record over the last 20 and 60 finished days. */
+export interface ListRecord {
+  last20: RecordSummary
+  last60: RecordSummary
+}
+
+/** Both lists' records: the skill's top 3 (`skill_rank` set) and the after-costs top 3 (`best_rank` set). */
+export interface TrackRecordData {
+  skill: ListRecord
+  costs: ListRecord
 }
 
 export interface RecordRow {
   day: string
   status: SignalStatus
+  grossR: number | null
   netR: number | null
+  skillRank: number | null
+  bestRank: number | null
 }
+
+const average = (values: readonly number[]): number | null => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null)
 
 /** Finished signals only: an open one on a finished day (never finalized) counts nowhere. */
 function summarize(rows: readonly RecordRow[], days: readonly string[]): RecordSummary {
   const within = new Set(days)
   const mine = rows.filter((r) => within.has(r.day) && r.status !== 'open')
   const nets = mine.map((r) => r.netR).filter((r): r is number => r !== null)
-  const sum = nets.reduce((a, b) => a + b, 0)
+  const grosses = mine.map((r) => r.grossR).filter((r): r is number => r !== null)
   return {
     days: days.length,
     count: mine.length,
     target: mine.filter((r) => r.status === 'target').length,
     stop: mine.filter((r) => r.status === 'stop').length,
     flat: mine.filter((r) => r.status === 'flat').length,
-    avgNetR: nets.length ? sum / nets.length : null,
-    sumNetR: sum,
+    avgGrossR: average(grosses),
+    avgNetR: average(nets),
+    sumNetR: nets.reduce((a, b) => a + b, 0),
   }
 }
 
-/** The line for a track record with no finished top-3 signal; null when there is one. */
-export function recordEmptyLine(t: RecordSummary): string | null {
-  if (t.count > 0) return null
-  if (t.days === 0) return NO_RECORD
-  return `${t.days} trading ${t.days === 1 ? 'day' : 'days'}, no top-3 signals.`
-}
+/** The line in place of the track record before the first finished day; null once there is one (a list with no finished trade shows a dash row). */
+export const recordEmptyLine = (t: RecordSummary): string | null => (t.days === 0 ? NO_RECORD : null)
 
-/** The top-3 signals' outcomes over the last 20 and 60 finished days (`doneDays` newest first). */
-export function trackRecord(rows: readonly RecordRow[], doneDays: readonly string[]): { last20: RecordSummary; last60: RecordSummary } {
-  return { last20: summarize(rows, doneDays.slice(0, 20)), last60: summarize(rows, doneDays.slice(0, 60)) }
+const windows = (rows: readonly RecordRow[], doneDays: readonly string[]): ListRecord => ({
+  last20: summarize(rows, doneDays.slice(0, 20)),
+  last60: summarize(rows, doneDays.slice(0, 60)),
+})
+
+/** Each list's outcomes over the last 20 and 60 finished days (`doneDays` newest first); a signal in both lists counts in both. */
+export function trackRecord(rows: readonly RecordRow[], doneDays: readonly string[]): TrackRecordData {
+  return {
+    skill: windows(rows.filter((r) => r.skillRank !== null), doneDays),
+    costs: windows(rows.filter((r) => r.bestRank !== null), doneDays),
+  }
 }

@@ -2,7 +2,7 @@ import { etClock, fmtR, outcomeLine, priceOf, whyNotTop3, type Signal } from '@/
 
 const r = (value: number | null) => (value === null ? '—' : fmtR(value))
 
-/** Every signal of the day with its net R values and why it is (or isn't) in the top 3. */
+/** Every signal of the day with its net R values and why it is (or isn't) in the after-costs top 3; the skill's top 3 are marked. */
 export function SignalTable({ signals }: { signals: Signal[] }) {
   return (
     <section className="card card-pad enter" aria-labelledby="dt-other-h">
@@ -28,6 +28,12 @@ export function SignalTable({ signals }: { signals: Signal[] }) {
               <tr key={s.id} data-symbol={s.symbol}>
                 <td>
                   <span className="sym">{s.symbol}</span> <span className="sub">{s.market}</span>
+                  {s.skillRank !== null && (
+                    <>
+                      {' '}
+                      <span className="chip">skill #{s.skillRank}</span>
+                    </>
+                  )}
                 </td>
                 <td className="num">
                   {etClock(s.triggerAt)} at {priceOf(s.entry, s.market)}

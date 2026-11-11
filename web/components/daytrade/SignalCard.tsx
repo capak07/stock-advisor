@@ -3,6 +3,7 @@ import { shortDay } from '@/lib/dates'
 import {
   LATE_LINE,
   LATE_SHARES,
+  conversionLine,
   costLine,
   etClock,
   historyLine,
@@ -11,6 +12,7 @@ import {
   outcomeLine,
   priceOf,
   sharesLine,
+  strengthLine,
   type Signal,
 } from '@/lib/daytrade'
 import { safeLink } from '@/lib/ticker'
@@ -28,21 +30,27 @@ const OUTCOME_CHIP: Record<Exclude<Signal['status'], 'open'>, { label: string; t
 }
 
 /**
- * One of today's top 3: the signal, the plan (stop, target, flat by), the replays, the rule's
- * history, the cost in R, shares sized to the max loss, headlines and where it stands now.
- * Display only: nothing here places an order.
+ * One of today's top 3 (the skill's, or the after-costs one): the signal, the plan (stop, target,
+ * flat by), the replays, the rule's history, the cost in R, shares sized to the max loss, headlines
+ * and where it stands now. A skill card also shows the breakout's strength and, for a US stock, the
+ * conversion cost the trade must beat. Display only: nothing here places an order.
  */
 export function SignalCard({
   signal: s,
+  list = 'costs',
   fresh,
   maxLossCad,
   usdCad,
 }: {
   signal: Signal
+  /** Which top 3 the card is in: its place and extra lines follow it. */
+  list?: 'skill' | 'costs'
   fresh: boolean
   maxLossCad: number
   usdCad: number | null
 }) {
+  const skill = list === 'skill'
+  const conversion = skill ? conversionLine(s) : null
   const open = s.status === 'open'
   const late = open && !fresh
   const risk = Number((s.entry - s.stop).toFixed(4))
@@ -51,7 +59,7 @@ export function SignalCard({
     <article className="card pick dt-card" data-testid="daytrade-card" aria-label={`${s.symbol} signal`}>
       <div className="pick-head">
         <div style={{ minWidth: 0 }}>
-          <span className="pick-rank">#{s.rank}</span> <span className="sym" style={{ fontSize: 15 }}>{s.symbol}</span>{' '}
+          <span className="pick-rank">#{skill ? s.skillRank : s.rank}</span> <span className="sym" style={{ fontSize: 15 }}>{s.symbol}</span>{' '}
           <span className="chip" data-market={s.market}>
             {s.market}
           </span>
@@ -96,9 +104,11 @@ export function SignalCard({
         </div>
       </dl>
       <ul className="dt-lines">
+        {skill && <li>{strengthLine(s)}</li>}
         <li>{oddsLine(s.replay)}</li>
         <li>{historyLine(s.symbol, s.history)}</li>
         <li>{costLine(s.costPct, s.costR)}</li>
+        {conversion !== null && <li>{conversion}</li>}
         {!late && <li className="dt-outcome">{outcomeLine(s)}</li>}
       </ul>
       {s.headlines.length > 0 && (

@@ -419,7 +419,8 @@ export function nyAt(day: string, hhmm: string): Date {
 }
 
 /** One signal of a day-trade day (the day row must exist). Prices and R as the pipeline stores them;
- * flat-by defaults to 3:55 PM that day and best_rank to the rank. */
+ * flat-by defaults to 3:55 PM that day, best_rank to the rank, the range high to 0.10 under the entry
+ * and gross R to net R + 0.1. */
 export async function seedDaytradeSignal(s: {
   day?: string
   symbol: string
@@ -427,6 +428,7 @@ export async function seedDaytradeSignal(s: {
   name?: string | null
   triggerAt: Date
   entry: number
+  orHigh?: number
   stop: number
   costPct?: number
   costR?: number
@@ -445,6 +447,7 @@ export async function seedDaytradeSignal(s: {
   lastAt?: Date | null
   exitAt?: Date | null
   exitPrice?: number | null
+  grossR?: number | null
   netR?: number | null
 }) {
   const risk = s.entry - s.stop
@@ -455,7 +458,7 @@ export async function seedDaytradeSignal(s: {
     name: s.name ?? null,
     trigger_at: s.triggerAt,
     entry: s.entry,
-    or_high: s.entry - 0.1,
+    or_high: s.orHigh ?? s.entry - 0.1,
     or_low: s.stop - risk,
     stop: s.stop,
     target: Number((s.entry + 2 * risk).toFixed(2)),
@@ -477,7 +480,7 @@ export async function seedDaytradeSignal(s: {
     last_at: s.lastAt ?? null,
     exit_at: s.exitAt ?? null,
     exit_price: s.exitPrice ?? null,
-    gross_r: s.netR === undefined || s.netR === null ? null : s.netR + 0.1,
+    gross_r: s.grossR !== undefined ? s.grossR : s.netR === undefined || s.netR === null ? null : s.netR + 0.1,
     net_r: s.netR ?? null,
   })}`
 }

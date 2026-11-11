@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   BEFORE_RANGE,
   MARKET_CLOSED,
+  NO_SIGNALS,
+  TRACK_LABEL,
+  conversionLine,
   costLine,
   etClock,
   fmtR,
@@ -15,10 +18,14 @@ import {
   recordEmptyLine,
   shares,
   sharesLine,
+  skillSignals,
   statusLine,
+  strengthLine,
+  strengthPct,
   trackRecord,
   whyNotTop3,
   type DayRow,
+  type RecordRow,
   type Signal,
 } from './daytrade'
 
@@ -60,6 +67,7 @@ const signal = (over: Partial<Signal> = {}): Signal => ({
   eligible: true,
   rank: 1,
   bestRank: 1,
+  skillRank: null,
   headlines: [],
   status: 'open',
   lastPrice: null,
@@ -189,6 +197,19 @@ describe('formatters', () => {
   it('the no-trade line, and none checked yet', () => {
     expect(noTradeLine(4)).toBe('No signal today has a positive record after costs (4 signals checked).')
     expect(noTradeLine(0)).toBe('No signals yet today.')
+    expect(NO_SIGNALS).toBe('No signals yet today.')
+  })
+
+  it("the breakout's strength above the opening-range high", () => {
+    expect(strengthPct(signal({ entry: 68.12, orHigh: 67.5 }))).toBeCloseTo(0.9185, 4)
+    expect(strengthLine(signal({ entry: 68.12, orHigh: 67.5 }))).toBe('+0.92% above the range high')
+    expect(strengthLine(signal({ entry: 50, orHigh: 50 }))).toBe('0.00% above the range high')
+    expect(strengthLine(signal({ entry: 9.95, orHigh: 10 }))).toBe('−0.50% above the range high')
+  })
+
+  it('the conversion cost line, for a US stock only', () => {
+    expect(conversionLine(signal({ costR: 1.314 }))).toBe('Your conversion cost is 1.31R: the trade must gain more than that to pay.')
+    expect(conversionLine(signal({ market: 'TSX', costR: 0.05 }))).toBeNull()
   })
 
   it('history, cost and odds lines', () => {
@@ -206,15 +227,23 @@ describe('formatters', () => {
   it('the live outcome', () => {
     expect(outcomeLine(signal())).toBe('Open: no price since the signal yet')
     expect(outcomeLine(signal({ lastPrice: 68.1, lastAt: at('10:35') }))).toBe('Open · last US$68.10 at 10:35 AM')
+    expect(outcomeLine(signal({ status: 'target', exitAt: at('10:50'), exitPrice: 70.85, grossR: 2, netR: 0.64 }))).toBe(
+      'Target hit at 10:50 AM (US$70.85) · +2.00R before costs, +0.64R after',
+    )
+    expect(outcomeLine(signal({ status: 'stop', exitAt: at('10:20'), exitPrice: 66.05, grossR: -1, netR: -2.31 }))).toBe(
+      'Stopped out at 10:20 AM (US$66.05) · −1.00R before costs, −2.31R after',
+    )
+    expect(outcomeLine(signal({ status: 'flat', exitAt: at('15:55'), exitPrice: 68, grossR: 0.22, netR: -1.09 }))).toBe(
+      'Flat at close 3:55 PM (US$68.00) · +0.22R before costs, −1.09R after',
+    )
+  })
+
+  it('a finished outcome with only one of its R values says that one', () => {
     expect(outcomeLine(signal({ status: 'target', exitAt: at('10:50'), exitPrice: 70.85, netR: 0.69 }))).toBe(
       'Target hit at 10:50 AM (US$70.85) · +0.69R after costs',
     )
-    expect(outcomeLine(signal({ status: 'stop', exitAt: at('10:20'), exitPrice: 66.05, netR: -2.31 }))).toBe(
-      'Stopped out at 10:20 AM (US$66.05) · −2.31R after costs',
-    )
-    expect(outcomeLine(signal({ status: 'flat', exitAt: at('15:55'), exitPrice: 68, netR: -1.09 }))).toBe(
-      'Flat at close 3:55 PM (US$68.00) · −1.09R after costs',
-    )
+    expect(outcomeLine(signal({ status: 'stop', grossR: -1 }))).toBe('Stopped out · −1.00R before costs')
+    expect(outcomeLine(signal({ status: 'flat' }))).toBe('Flat at close')
   })
 })
 
@@ -228,6 +257,17 @@ describe('signals', () => {
       signal({ id: 5, rank: null, eligible: true, netHistoryR: 0.05 }),
     ]
     expect(orderSignals(list).map((s) => s.id)).toEqual([4, 2, 5, 3, 1])
+  })
+
+  it("picks the skill's top 3 in rank order, whatever their after-costs place", () => {
+    const list = [
+      signal({ id: 1, skillRank: 3, rank: null, eligible: false }),
+      signal({ id: 2, skillRank: null, rank: 1 }),
+      signal({ id: 3, skillRank: 1, rank: null }),
+      signal({ id: 4, skillRank: 2, rank: 2 }), // in both lists
+    ]
+    expect(skillSignals(list).map((s) => s.id)).toEqual([3, 4, 1])
+    expect(skillSignals([signal({ skillRank: null })])).toEqual([])
   })
 
   it('says why a signal is not in the top 3', () => {
@@ -247,29 +287,90 @@ describe('signals', () => {
 
 describe('trackRecord', () => {
   const days = Array.from({ length: 25 }, (_, i) => `2026-10-${String(31 - i).padStart(2, '0')}`) // newest first
+  // in the after-costs top 3 (best rank) only, unless a skill rank is given
+  const row = (day: string, status: RecordRow['status'], grossR: number | null, netR: number | null, over: Partial<RecordRow> = {}): RecordRow => ({
+    day,
+    status,
+    grossR,
+    netR,
+    skillRank: null,
+    bestRank: 1,
+    ...over,
+  })
   const rows = [
-    { day: days[0], status: 'target' as const, netR: 1.5 },
-    { day: days[0], status: 'stop' as const, netR: -1.2 },
-    { day: days[5], status: 'flat' as const, netR: 0.3 },
-    { day: days[22], status: 'stop' as const, netR: -1.1 },
+    row(days[0], 'target', 2, 1.5),
+    row(days[0], 'stop', -1, -1.2),
+    row(days[5], 'flat', 0.4, 0.3),
+    row(days[22], 'stop', -1, -1.1),
   ]
+  const EMPTY = { count: 0, target: 0, stop: 0, flat: 0, avgGrossR: null, avgNetR: null, sumNetR: 0 }
 
-  it('sums the top-3 outcomes of the last 20 and 60 finished days', () => {
+  it('sums the after-costs top 3 of the last 20 and 60 finished days, before and after costs', () => {
     // an open row on a finished day (never finalized) counts nowhere
-    const t = trackRecord([...rows, { day: days[1], status: 'open' as const, netR: null }], days)
-    expect(t.last20).toEqual({ days: 20, count: 3, target: 1, stop: 1, flat: 1, avgNetR: expect.closeTo(0.2, 9), sumNetR: expect.closeTo(0.6, 9) })
-    expect(t.last60).toEqual({ days: 25, count: 4, target: 1, stop: 2, flat: 1, avgNetR: expect.closeTo(-0.125, 9), sumNetR: expect.closeTo(-0.5, 9) })
+    const t = trackRecord([...rows, row(days[1], 'open', null, null)], days)
+    expect(t.costs.last20).toEqual({
+      days: 20,
+      count: 3,
+      target: 1,
+      stop: 1,
+      flat: 1,
+      avgGrossR: expect.closeTo(0.4666667, 6),
+      avgNetR: expect.closeTo(0.2, 9),
+      sumNetR: expect.closeTo(0.6, 9),
+    })
+    expect(t.costs.last60).toEqual({
+      days: 25,
+      count: 4,
+      target: 1,
+      stop: 2,
+      flat: 1,
+      avgGrossR: expect.closeTo(0.1, 9),
+      avgNetR: expect.closeTo(-0.125, 9),
+      sumNetR: expect.closeTo(-0.5, 9),
+    })
   })
 
-  it('is empty without finished signals', () => {
-    expect(trackRecord([], []).last60).toEqual({ days: 0, count: 0, target: 0, stop: 0, flat: 0, avgNetR: null, sumNetR: 0 })
+  it("counts each list by its own rank: a signal in both lists counts in both, a list with nothing finished is empty", () => {
+    const t = trackRecord(
+      [
+        row(days[0], 'target', 2, 0.64, { skillRank: 1, bestRank: null }),
+        row(days[0], 'stop', -1, -1.36, { skillRank: 2, bestRank: null }),
+        row(days[1], 'target', 2, 1.9, { skillRank: 1, bestRank: 1 }), // in both lists
+        row(days[2], 'open', null, null, { skillRank: 3, bestRank: null }),
+      ],
+      days,
+    )
+    expect(t.skill.last20).toEqual({
+      days: 20,
+      count: 3,
+      target: 2,
+      stop: 1,
+      flat: 0,
+      avgGrossR: expect.closeTo(1, 9),
+      avgNetR: expect.closeTo(0.3933333, 6),
+      sumNetR: expect.closeTo(1.18, 9),
+    })
+    expect(t.costs.last20).toEqual({ days: 20, count: 1, target: 1, stop: 0, flat: 0, avgGrossR: 2, avgNetR: 1.9, sumNetR: 1.9 })
+
+    const onlySkill = trackRecord([row(days[0], 'flat', 0.1, -0.2, { skillRank: 1, bestRank: null })], days)
+    expect(onlySkill.costs.last20).toEqual({ days: 20, ...EMPTY })
+    expect(onlySkill.costs.last60).toEqual({ days: 25, ...EMPTY })
+    expect(onlySkill.skill.last60.count).toBe(1)
   })
 
-  it('says how many finished days had no top-3 signal', () => {
-    const empty = (n: number) => trackRecord([], days.slice(0, n)).last60
-    expect(recordEmptyLine(empty(0))).toBe('No finished day-trade signals yet.')
-    expect(recordEmptyLine(empty(15))).toBe('15 trading days, no top-3 signals.')
-    expect(recordEmptyLine(empty(1))).toBe('1 trading day, no top-3 signals.')
-    expect(recordEmptyLine(trackRecord(rows, days).last60)).toBeNull()
+  it('is empty without finished days', () => {
+    const t = trackRecord([], [])
+    expect(t.skill.last60).toEqual({ days: 0, ...EMPTY })
+    expect(t.costs.last20).toEqual({ days: 0, ...EMPTY })
+  })
+
+  it('says so only before the first finished day', () => {
+    expect(recordEmptyLine(trackRecord([], []).skill.last60)).toBe('No finished day-trade signals yet.')
+    expect(recordEmptyLine(trackRecord([], days.slice(0, 3)).skill.last60)).toBeNull() // dash rows instead
+    expect(recordEmptyLine(trackRecord(rows, days).costs.last60)).toBeNull()
+  })
+
+  it('labels the record as paper, for each list', () => {
+    expect(TRACK_LABEL).toBe("Paper: what each list's trades would have done.")
   })
 })

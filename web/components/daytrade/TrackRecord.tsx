@@ -1,27 +1,57 @@
-import { TRACK_LABEL, fmtR, recordEmptyLine, type RecordSummary } from '@/lib/daytrade'
+import { COSTS_TITLE, SKILL_TITLE, TRACK_LABEL, fmtR, recordEmptyLine, type RecordSummary, type TrackRecordData } from '@/lib/daytrade'
 
-function Block({ span, summary: t }: { span: 20 | 60; summary: RecordSummary }) {
+const DASH = '—'
+const r = (value: number | null) => (value === null ? DASH : fmtR(value))
+
+/** One list's figures for a window; a list with no finished trade is a dash row with 0 trades. */
+function Row({ name, summary: t }: { name: string; summary: RecordSummary }) {
+  const none = t.count === 0
   return (
-    <div className="kpi dt-record" data-testid={`track-${span}`}>
-      <span className="label">
-        Last {span} trading days{t.days < span && ` · ${t.days} finished so far`}
-      </span>
-      <b>
-        {t.count} {t.count === 1 ? 'signal' : 'signals'}
-      </b>
-      <span className="sub num">
-        {t.target} target · {t.stop} stop · {t.flat} flat
-      </span>
-      <span className="sub num">
-        {t.avgNetR === null ? 'No net R yet' : `Average ${fmtR(t.avgNetR)}`} · Sum {fmtR(t.sumNetR)}
-      </span>
+    <tr>
+      <td>{name}</td>
+      <td className="r num">{t.count}</td>
+      <td className="num">{none ? DASH : `${t.target} / ${t.stop} / ${t.flat}`}</td>
+      <td className="r num">{none ? DASH : r(t.avgGrossR)}</td>
+      <td className="r num">{none ? DASH : r(t.avgNetR)}</td>
+      <td className="r num">{none ? DASH : fmtR(t.sumNetR)}</td>
+    </tr>
+  )
+}
+
+function Window({ span, record }: { span: 20 | 60; record: TrackRecordData }) {
+  const skill = span === 20 ? record.skill.last20 : record.skill.last60
+  const costs = span === 20 ? record.costs.last20 : record.costs.last60
+  const id = `dt-record-${span}`
+  return (
+    <div className="dt-record" data-testid={`track-${span}`}>
+      <p className="sub" id={id} style={{ margin: '0 0 4px' }}>
+        Last {span} trading days{skill.days < span && ` · ${skill.days} finished so far`}
+      </p>
+      <div className="dt-scroll">
+        <table className="data-table dt-table" aria-labelledby={id}>
+          <thead>
+            <tr>
+              <th>List</th>
+              <th className="r">Trades</th>
+              <th>Target / stop / flat</th>
+              <th className="r">Average R before costs</th>
+              <th className="r">Average R after costs</th>
+              <th className="r">Sum after costs</th>
+            </tr>
+          </thead>
+          <tbody>
+            <Row name={SKILL_TITLE} summary={skill} />
+            <Row name={COSTS_TITLE} summary={costs} />
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
-/** The published top-3 signals' outcomes over the last 20 and 60 finished trading days, after costs. */
-export function TrackRecord({ record }: { record: { last20: RecordSummary; last60: RecordSummary } }) {
-  const empty = recordEmptyLine(record.last60)
+/** Both lists' finished signals over the last 20 and 60 finished trading days, before and after costs. */
+export function TrackRecord({ record }: { record: TrackRecordData }) {
+  const empty = recordEmptyLine(record.costs.last60)
   return (
     <section className="card card-pad enter" aria-labelledby="dt-record-h">
       <div className="section-head" style={{ marginBottom: 4 }}>
@@ -35,9 +65,9 @@ export function TrackRecord({ record }: { record: { last20: RecordSummary; last6
           {empty}
         </p>
       ) : (
-        <div className="dt-records">
-          <Block span={20} summary={record.last20} />
-          <Block span={60} summary={record.last60} />
+        <div style={{ display: 'grid', gap: 16 }}>
+          <Window span={20} record={record} />
+          <Window span={60} record={record} />
         </div>
       )}
     </section>

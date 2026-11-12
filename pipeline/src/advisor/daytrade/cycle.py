@@ -25,6 +25,7 @@ from advisor.models import ET, Market
 from advisor.store import repo
 
 REPLAYS = 10_000
+SKILL_AT = time(10, 0)  # ET: when the skill's top 3 is set (a hand run of the skill at about 9:57)
 MAX_CONFIRM = 200  # stage-2 charts per cycle at most, a safety net (the skill's default)
 STEP = timedelta(minutes=BAR_MIN)
 CYCLE_DELAY = timedelta(seconds=30)  # Yahoo's bars lag the close a little
@@ -162,6 +163,13 @@ def _new_signal(
     return row, errors
 
 
+def _above_high(row: dict) -> float:
+    """How far the last price seen (the entry until the signal is tracked) is above the range high."""
+    high = float(row["or_high"])
+    price = row["last_price"] if row["last_price"] is not None else row["entry"]
+    return float(price) / high - 1 if high else 0.0
+
+
 def _rerank(conn: psycopg.Connection, day: date) -> None:
     rows = repo.daytrade_signals_for(conn, day)
     items = [
@@ -256,15 +264,17 @@ def run_cycle(
             stored.add(key)
             out["new"] += 1
             out["errors"] += errors
-        # The skill's top 3: the strongest breakouts among the day's unranked signals (this cycle's new
-        # ones, and any an earlier failed ranking left behind) fill the free ranks.
+        # The skill's top 3, as a hand run of the skill gives it: from SKILL_AT on, the US signals
+        # found so far, ranked by how far the price now is above the range high, fill the free ranks
+        # (later signals fill any still free; a rank once set never moves).
         try:
-            unranked = [r for r in repo.daytrade_signals_for(conn, day) if r["skill_rank"] is None]
-            unranked.sort(key=lambda r: (
-                -(float(r["entry"]) / float(r["or_high"]) - 1 if float(r["or_high"]) else 0.0),
-                r["trigger_at"], r["symbol"],
-            ))
-            repo.assign_skill_ranks(conn, day, [r["id"] for r in unranked])
+            unranked = [
+                r for r in repo.daytrade_signals_for(conn, day)
+                if r["skill_rank"] is None and r["market"] == Market.US.value
+            ] if now_et.time() >= SKILL_AT else []
+            unranked.sort(key=lambda r: (-_above_high(r), r["trigger_at"], r["symbol"]))
+            if unranked:
+                repo.assign_skill_ranks(conn, day, [r["id"] for r in unranked])
         except Exception as e:  # noqa: BLE001 - a ranking failure must not fail the cycle
             out["errors"] += 1
             log(f"skill ranking not stored: {type(e).__name__}: {e}")

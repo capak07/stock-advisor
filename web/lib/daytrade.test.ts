@@ -284,7 +284,7 @@ describe('signals', () => {
 
   it("says why the skill's list is empty: no signals yet, or none ranked yet", () => {
     expect(skillEmptyLine(0)).toBe('No signals yet today.')
-    expect(skillEmptyLine(3)).toBe("The skill's ranking is not set yet.")
+    expect(skillEmptyLine(3)).toBe("The skill's ranking is set at 10:00 AM ET.")
   })
 
   it('says why a signal is not in the top 3', () => {

@@ -173,11 +173,16 @@ def scan(
             queue.append((checked, c))
         elif new:
             memory[c[1]] = (high, new[-1].start)  # checked: every new bar closed under the high
-    # Oldest checked first, then most traded, then symbol (cands' order; the sort is stable).
-    queue.sort(key=lambda q: q[0])
-    ranked = [c for _, c in queue]
+    # Re-checks (a charted stock whose newer bar closed above its range high: the likely triggers)
+    # go first, oldest checked first; stocks never charted follow, most traded first (cands' order;
+    # the sort is stable). Under a cap each kind is sure of half, so a trigger among the most traded
+    # is found within a cycle and the never-charted are still worked through.
+    again = sorted((q for q in queue if q[0] is not _NEVER), key=lambda q: q[0])
+    fresh = [q for q in queue if q[0] is _NEVER]
     if max_confirm is not None:
-        ranked = ranked[:max_confirm]
+        again = again[: max(max_confirm // 2, max_confirm - len(fresh))]
+        fresh = fresh[: max_confirm - len(again)]
+    ranked = [c for _, c in (*again, *fresh)]
 
     found: list[Found] = []
     failed_charts = streak = 0

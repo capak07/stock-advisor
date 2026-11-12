@@ -19,7 +19,7 @@ On 2026-11-11 the skill's top 3 (FIS, ERAS, AFRM, ranked by breakout strength at
 - Breakout strength of a signal = `(entry / or_high − 1) × 100` percent (how far the trigger bar closed above the opening-range high). Computed from stored columns; not stored.
 - `skill_rank`: 1–3, per day, set once and never changed or cleared. A cycle fills the day's free slots (lowest free rank first) with that cycle's NEW signals ordered by strength descending, then `trigger_at` ascending, then symbol. Signals of both markets and any eligibility count. A day has at most one signal per rank (unique partial index on `(day, skill_rank)`).
 - The existing `rank` / `best_rank` (after-costs ranking), eligibility, costs, scan, replay and tracking are unchanged.
-- Page order: status line; **"The skill's top 3"** (subtitle "Strongest volume-confirmed breakouts at the first scan, among the most traded stocks. Before your costs."); **"Top 3 after your costs"** (the existing section, existing no-trade line); other signals; track record; notes.
+- Page order: status line; **"The skill's top 3"** (subtitle "The strongest volume-confirmed US breakouts at 10:00 AM ET, by how far the price is above the range high. Before your costs."); **"Top 3 after your costs"** (the existing section, existing no-trade line); other signals; track record; notes.
 - Each skill card shows what the existing card shows, plus the strength ("+0.92% above the range high") and, for US stocks, the line "Your round-trip cost (currency conversion both ways plus the spread) is {cost_r}R: the trade must gain more than that to pay." Outcome lines show before and after costs ("+2.00R before costs, +0.64R after").
 - Track record: two rows of figures for each window (20 and 60 trading days): "The skill's top 3" and "Top 3 after your costs"; each with count, target / stop / flat, average R before costs, average R after costs, sum after costs. Finished signals only. Label (replaces the old one): "Paper: what each list's trades would have done."
 - Wording: no "buy"/"sell" advice; existing standing notes stay verbatim.
@@ -62,3 +62,18 @@ On 2026-11-11 the skill's top 3 (FIS, ERAS, AFRM, ranked by breakout strength at
 - [ ] **Step 1: Failing tests:** Vitest for `strengthPct`, the lines and the two-list record maths (incl. one list empty); e2e: a seeded day with 3 skill-ranked US signals and 1 after-costs TSX signal shows both sections in the stated order with the stated titles and subtitle, the strength and conversion lines, the before/after outcome; a day with skill signals but no eligible signal shows the skill list and the existing no-trade line; the track record shows both rows.
 - [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4:** vitest (all), tsc, eslint, full `npx playwright test` — PASS.
 - [ ] **Step 5: Commit** `feat: show the skill's top 3 beside the after-costs top 3`.
+
+## Amendment (owner, 2026-11-12)
+
+On 2026-11-12 the app's skill list (NRG, TD.TO, TOST) differed from a hand run of the skill at 9:57 (VG,
+NRG, ETSY). Three causes, each changed:
+
+- The list was frozen at the first scan (9:50:30), before the 9:55 bar's signals (VG). It is now set from
+  **10:00 AM ET** on (`SKILL_AT`): the first cycle at or after it ranks the signals found so far; later
+  signals fill ranks still free.
+- It ranked by the trigger bar's strength. It now ranks by how far the **last price** is above the range
+  high (the entry stands in until a signal is tracked), as the skill's hand ranking does.
+- It counted TSX signals; the skill scans US stocks only. The skill's list is now **US only**.
+- VG's trigger was charted 22 minutes late because never-charted stocks took the whole chart cap.
+  Re-checks of charted stocks whose new bar closed above their range high now get half the cap, oldest
+  first; the never-charted get the other half (unused room flows either way).

@@ -96,7 +96,7 @@ export const BEFORE_RANGE = 'Before 9:50 AM: the opening range is still forming.
 export const MARKET_CLOSED = 'Market closed today.'
 export const LATE_LINE = 'Late: the price has moved since the signal; entering now is a different trade.'
 export const SKILL_TITLE = "The skill's top 3"
-export const SKILL_SUB = 'Strongest volume-confirmed breakouts at the first scan, among the most traded stocks. Before your costs.'
+export const SKILL_SUB = 'The strongest volume-confirmed US breakouts at 10:00 AM ET, by how far the price is above the range high. Before your costs.'
 export const COSTS_TITLE = 'Top 3 after your costs'
 export const TRACK_LABEL = "Paper: what each list's trades would have done."
 export const NO_RECORD = 'No finished day-trade signals yet.'
@@ -303,7 +303,7 @@ export const skillSignals = (list: readonly Signal[]): Signal[] =>
   list.filter((s) => s.skillRank != null).sort((a, b) => a.skillRank! - b.skillRank!)
 
 /** Under the skill's title when its list is empty: no signals yet, or signals none of which is ranked yet. */
-export const skillEmptyLine = (signals: number): string => (signals === 0 ? NO_SIGNALS : "The skill's ranking is not set yet.")
+export const skillEmptyLine = (signals: number): string => (signals === 0 ? NO_SIGNALS : "The skill's ranking is set at 10:00 AM ET.")
 
 /** The top 3 by rank, then the eligible ones, then by net history R (missing last), then the earliest. */
 export function orderSignals(list: readonly Signal[]): Signal[] {

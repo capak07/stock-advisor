@@ -9,7 +9,7 @@ const costSection = (page: Page) => page.getByRole('region', { name: 'Top 3 afte
 /** The after-costs top 3's cards. */
 const cards = (page: Page) => costSection(page).getByTestId('daytrade-card')
 const skillCards = (page: Page) => skillSection(page).getByTestId('daytrade-card')
-const SKILL_SUB = 'Strongest volume-confirmed breakouts at the first scan, among the most traded stocks. Before your costs.'
+const SKILL_SUB = 'The strongest volume-confirmed US breakouts at 10:00 AM ET, by how far the price is above the range high. Before your costs.'
 
 /** The status line without a row for today, at New York's time now. */
 function noRowLine() {
@@ -195,7 +195,7 @@ test('a day with no eligible signal says no trade and still lists the signals', 
   await expect(page.getByText('No signal today has a positive record after costs (2 signals checked).')).toBeVisible()
   await expect(cards(page)).toHaveCount(0)
   // signals but none in the skill's list (as when a cycle failed to rank them)
-  await expect(skillSection(page).getByText("The skill's ranking is not set yet.")).toBeVisible()
+  await expect(skillSection(page).getByText("The skill's ranking is set at 10:00 AM ET.")).toBeVisible()
   await expect(skillSection(page).getByText('No signals yet today.')).toHaveCount(0)
   const table = page.getByRole('table', { name: 'Other signals today' })
   await expect(table.getByRole('row', { name: /AMD/ })).toContainText('History is −0.20R after costs')

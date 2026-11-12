@@ -310,5 +310,22 @@ def test_when_re_charts_exceed_the_cap_the_oldest_checked_go_first_and_new_ones_
         r = scan(fake, ls, NOW + timedelta(minutes=5 * k), min_volume_x=100, max_confirm=2, charted=memory)
         calls.append(fake.chart_calls)
         memory = r.charted
-    # Oldest checked bar first (never charted counts as oldest), then most traded: everyone takes a turn.
-    assert calls == [["N", "R2"], ["R1", "R0"], ["R2", "N"]]
+    # Re-checks and the never-charted each get half the cap; re-checks go oldest checked first, then
+    # most traded: everyone takes a turn.
+    assert calls == [["R2", "N"], ["R1", "R0"], ["R2", "N"]]
+
+
+def test_a_charted_stock_that_breaks_out_is_re_checked_at_once_even_with_many_never_charted_waiting():
+    # R was charted with no breakout; then its new bar closes above its range high while five
+    # never-charted, more traded stocks wait. With a cap of 2, R must still be charted this cycle.
+    day = NOW.date()
+    quiet = [10.0] * 14
+    fake = FakeClient({"R": _flat(day, quiet, 100)})
+    r = scan(fake, [Listing("R", Market.US)], NOW, min_volume_x=100)
+    memory = r.charted
+    up = [10.0] * 3 + [10.5] * 12
+    fake.charts = {"R": _flat(day, up, 100), **{f"N{i}": _flat(day, up, 5000 + i) for i in range(5)}}
+    fake.chart_calls = []
+    scan(fake, [Listing(s, Market.US) for s in fake.charts], NOW + timedelta(minutes=5), min_volume_x=100,
+         max_confirm=2, charted=memory)
+    assert fake.chart_calls == ["R", "N4"]

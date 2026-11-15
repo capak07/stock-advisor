@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useCallback, useState } from 'react'
 import { Drawer } from '../Drawer'
-import { FindTicker } from './FindTicker'
 import { NAV, isCurrent } from './nav'
 
 export function SidebarLinks() {
@@ -22,7 +21,7 @@ export function SidebarLinks() {
   )
 }
 
-/** Phone tabs: the primary pages, then More for the rest. */
+/** Phone tabs: the primary pages, then More for the rest. The symbol search is in the status bar. */
 export function BottomTabs() {
   const pathname = usePathname()
   const [more, setMore] = useState(false)
@@ -56,7 +55,6 @@ export function BottomTabs() {
       </nav>
       <Drawer id="more-sheet" title="More" open={more} onClose={close}>
         <div className="drawer-body">
-          <FindTicker onGo={close} />
           {secondary.map(({ href, label, icon: Icon }) => (
             <Link key={href} className="nav-link" href={href} onClick={close}>
               <Icon />

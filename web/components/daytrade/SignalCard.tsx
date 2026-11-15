@@ -1,4 +1,5 @@
 import { TriangleAlert } from 'lucide-react'
+import { LowRankChip } from '@/components/LowRankChip'
 import { shortDay } from '@/lib/dates'
 import {
   LATE_LINE,
@@ -41,6 +42,7 @@ export function SignalCard({
   fresh,
   maxLossCad,
   usdCad,
+  lowRank = null,
 }: {
   signal: Signal
   /** Which top 3 the card is in: its place and extra lines follow it. */
@@ -48,6 +50,8 @@ export function SignalCard({
   fresh: boolean
   maxLossCad: number
   usdCad: number | null
+  /** Low model rank in the latest run: how many US stocks it ranked; null when not flagged. */
+  lowRank?: number | null
 }) {
   const skill = list === 'skill'
   const hurdle = skill ? costHurdleLine(s) : null
@@ -63,6 +67,12 @@ export function SignalCard({
           <span className="chip" data-market={s.market}>
             {s.market}
           </span>
+          {lowRank !== null && (
+            <>
+              {' '}
+              <LowRankChip scored={lowRank} />
+            </>
+          )}
           {s.name && <div className="sub dt-name">{s.name}</div>}
         </div>
         <span className={`chip ${chip.tone}`}>{chip.label}</span>

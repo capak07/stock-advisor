@@ -340,12 +340,10 @@ test.describe('on a phone', () => {
       headlines: [{ title: `TGTX ${'quarterly-results-'.repeat(8)}beat`, url: 'https://finance.yahoo.com/x', published_at: ago(60).toISOString(), outlet: 'Reuters' }],
     })
     await seedDaytradeSignal({ symbol: 'AMD', triggerAt: ago(5), entry: 50, stop: 49, eligible: false, netHistoryR: -0.2 })
-    // Day trade sits under More on a phone; the primary tabs stay as they were
+    // Day trade is a tab on a phone (owner, 2026-11-15: in place of Watchlist, which moved under More)
     await page.goto('/')
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
-    await expect(tabs.getByRole('link', { name: 'Day trade' })).toHaveCount(0)
-    await tabs.getByRole('button', { name: 'More' }).click()
-    await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Day trade' }).click()
+    await tabs.getByRole('link', { name: 'Day trade' }).click()
     await expect(page.getByRole('heading', { name: 'Day trade', level: 1 })).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { resetData, seedHealth, seedNews, seedPortfolio, seedRun, seedSources, seedVerdict, sql } from './db'
+import { resetData, seedHealth, seedNews, seedPortfolio, seedRun, seedSources, seedSymbols, seedVerdict, sql } from './db'
 
 test.beforeEach(resetData)
 
@@ -19,16 +19,34 @@ test('the sidebar reaches every page and marks the current one', async ({ page }
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('pages are tabs at the bottom, and Settings is under More', async ({ page }) => {
+  test('pages are tabs at the bottom, and Watchlist and Settings are under More', async ({ page }) => {
     await page.goto('/')
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
     await expect(tabs.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page')
-    await tabs.getByRole('link', { name: 'Watchlist' }).click()
+    await expect(tabs.getByRole('link')).toHaveText(['Portfolio', 'Picks', 'Invest', 'Day trade'])
+    await tabs.getByRole('button', { name: 'More' }).click()
+    await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Watchlist' }).click()
     await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible()
+    await expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
     await tabs.getByRole('button', { name: 'More' }).click()
     await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Settings' }).click()
     await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
     await expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('the symbol search sits at the top of every page, not under More', async ({ page }) => {
+    await seedSymbols([{ symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' }])
+    await page.goto('/picks')
+    const search = page.getByRole('banner').getByRole('combobox', { name: 'Find a symbol' })
+    await expect(search).toBeVisible()
+    const box = await search.boundingBox()
+    expect(box?.y ?? 999).toBeLessThan(140)
+    await page.getByRole('navigation', { name: 'Main' }).last().getByRole('button', { name: 'More' }).click()
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('combobox', { name: 'Find a symbol' })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await search.fill('royal')
+    await page.getByRole('option', { name: /RY\.TO/ }).click()
+    await expect(page).toHaveURL(/\/ticker\/RY\.TO/)
   })
 
   test('no page is wider than the screen', async ({ page }) => {

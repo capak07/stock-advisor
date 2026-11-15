@@ -7,6 +7,7 @@ import { MonitorCard } from '@/components/portfolio/MonitorCard'
 import { ValueCard } from '@/components/portfolio/ValueCard'
 import { ownerClient } from '@/lib/auth'
 import { loadHoldingActions } from '@/lib/data/actions'
+import { loadLowRanks } from '@/lib/data/low-rank'
 import { loadMonitorFeed } from '@/lib/data/monitor'
 import { loadPortfolio } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
@@ -48,6 +49,10 @@ export default async function PortfolioPage() {
       return [[h.key, holdingGuides(h.action, { qty, valueCad: h.valueCad, portfolioCad: view.totals.valueCad, latest }, orders)]]
     }),
   )
+  const lowRanks = await loadLowRanks(
+    supabase,
+    view.holdings.flatMap((h) => (h.action?.assetType === 'stock' ? [h.action.symbol] : [])),
+  )
   const accounts = view.accounts.length === 0 ? 'No accounts yet' : `${view.accounts.join(' and ')} accounts`
   const rate = view.fx ? ` (${view.fx.usdCad.toFixed(4)})` : ''
 
@@ -65,7 +70,7 @@ export default async function PortfolioPage() {
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>
         <div className="grid gap-4">
-          <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} />
+          <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} lowRanks={lowRanks} />
           <MonitorCard items={feed} />
         </div>
         <aside className="grid gap-4">

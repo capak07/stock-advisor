@@ -5,6 +5,7 @@ import { AddWatch, WatchList, type WatchRow } from '@/components/watchlist/Watch
 import { ownerClient } from '@/lib/auth'
 import { loadCloses, loadFx, loadPortfolio } from '@/lib/data/portfolio'
 import { loadNames } from '@/lib/data/symbols'
+import { loadLowRanks } from '@/lib/data/low-rank'
 import { loadVerdicts, loadWatchlist } from '@/lib/data/watchlist'
 import { addDays, todayInToronto } from '@/lib/dates'
 import { fmtPrice } from '@/lib/format'
@@ -41,12 +42,13 @@ export default async function WatchlistPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
   const items = await loadWatchlist(supabase)
-  const [names, prices, fx, latest] = await Promise.all([
+  const [names, prices, fx, latest, lowRanks] = await Promise.all([
     loadNames(supabase, items.filter((i) => i.assetType === 'stock').map((i) => i.symbol)),
     // Watched symbols get a close every run, so two weeks back always reaches the latest one.
     loadCloses(supabase, items, addDays(todayInToronto(), -14)),
     loadFx(supabase),
     loadVerdicts(supabase),
+    loadLowRanks(supabase, items.filter((i) => i.assetType === 'stock').map((i) => i.symbol)),
   ])
   const rate = fx.latest()?.usdCad ?? null
   const withVerdicts = latest !== null && latest.verdicts.size > 0
@@ -74,6 +76,7 @@ export default async function WatchlistPage() {
       held: held && { group: held.group, label: held.label },
       why: held ? held.why : v ? verdictWhy({ ...v, market }, 'long') : null,
       guide: !held && v && item.assetType === 'stock' ? verdictGuide(item.symbol, v, portfolioCad, orders) : null,
+      lowRank: item.assetType === 'stock' ? (lowRanks.get(item.symbol) ?? null) : null,
     }
   })
 

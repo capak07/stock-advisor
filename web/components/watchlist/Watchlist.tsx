@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 import { addWatch, removeWatch } from '@/app/(app)/watchlist/actions'
+import { LowRankChip } from '@/components/LowRankChip'
 import { OrderGuide } from '@/components/OrderGuide'
 import { SymbolSearch } from '@/components/SymbolSearch'
 import { useToast } from '@/components/Toast'
@@ -27,6 +28,8 @@ export interface WatchRow {
   why: string | null
   /** How to place a Buy; null for other verdicts. */
   guide: Guide | null
+  /** Low model rank in the latest run: how many US stocks it ranked; null when not flagged. */
+  lowRank: number | null
 }
 
 /** Search the stock and coin lists; picking a match watches it. `watched` holds asset keys. */
@@ -128,6 +131,12 @@ export function WatchList({ rows, withVerdicts = false }: { rows: WatchRow[]; wi
                     <span className={`chip ${row.verdict}`}>{VERDICT_LABEL[row.verdict]}</span>
                   ) : (
                     <span className="chip hold">New</span>
+                  )}
+                  {row.lowRank !== null && (
+                    <>
+                      {' '}
+                      <LowRankChip scored={row.lowRank} />
+                    </>
                   )}
                 </span>
                 <span className="w-why">

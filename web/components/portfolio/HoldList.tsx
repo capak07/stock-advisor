@@ -2,12 +2,15 @@
 
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
+import { LowRankChip } from '@/components/LowRankChip'
 
 export interface HoldLine {
   key: string
   symbol: string
   name: string | null
   text: string
+  /** Low model rank in the latest run: how many US stocks it ranked; null when not flagged. */
+  lowRank: number | null
 }
 
 /** The plain Holds, folded under one toggle below the action cards. */
@@ -36,6 +39,12 @@ export function HoldList({ lines }: { lines: HoldLine[] }) {
               <div className="hold-row" key={l.key}>
                 <span>
                   <span className="sym">{l.symbol}</span> {l.name && <span className="sub">{l.name}</span>}
+                  {l.lowRank !== null && (
+                    <>
+                      {' '}
+                      <LowRankChip scored={l.lowRank} />
+                    </>
+                  )}
                 </span>
                 <span className="num sub">{l.text}</span>
               </div>

@@ -2,6 +2,7 @@ import { Info, Sparkles, TriangleAlert } from 'lucide-react'
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { shortDay } from '@/lib/dates'
+import { LowRankChip } from '@/components/LowRankChip'
 import { OrderGuide } from '@/components/OrderGuide'
 import { fmtAmount, fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
 import { joinPlans } from '@/lib/guidance'
@@ -32,7 +33,18 @@ export type HoldingGuides = Map<string, { order: OrderPlan | null; stop: OrderPl
 const acted = (holdings: readonly HoldingRow[]): Acted[] => holdings.filter((h): h is Acted => h.action !== null)
 
 /** Sell → Trim → Review → Add cards from the latest run's actions, then the plain Holds folded (spec §7.2, §7.3). */
-export function ActionsCard({ holdings, asOf, guides }: { holdings: HoldingRow[]; asOf: string | null; guides: HoldingGuides }) {
+export function ActionsCard({
+  holdings,
+  asOf,
+  guides,
+  lowRanks = new Map(),
+}: {
+  holdings: HoldingRow[]
+  asOf: string | null
+  guides: HoldingGuides
+  /** US stocks flagged Low model rank in the latest run, each with how many stocks it ranked. */
+  lowRanks?: Map<string, number>
+}) {
   const rows = acted(holdings)
   const byKey = new Map(rows.map((h) => [positionKey(h.action), h]))
   const { cards, hold } = actionGroups(rows.map((h) => h.action))
@@ -86,6 +98,12 @@ export function ActionsCard({ holdings, asOf, guides }: { holdings: HoldingRow[]
                     </div>
                     <div>
                       <span className="sym">{a.symbol}</span> {h.name && <span className="sub">{h.name}</span>}
+                      {a.assetType === 'stock' && lowRanks.has(a.symbol) && (
+                        <>
+                          {' '}
+                          <LowRankChip scored={lowRanks.get(a.symbol) as number} />
+                        </>
+                      )}
                     </div>
                     <p style={{ fontSize: 13, margin: 0 }}>{cardReason(a)}</p>
                     <div className={`num ${tone}`} style={{ fontSize: 13 }}>
@@ -101,7 +119,13 @@ export function ActionsCard({ holdings, asOf, guides }: { holdings: HoldingRow[]
             <HoldList
               lines={hold.map((a) => {
                 const h = byKey.get(positionKey(a)) as Acted
-                return { key: h.key, symbol: a.symbol, name: h.name, text: holdText(a) }
+                return {
+                  key: h.key,
+                  symbol: a.symbol,
+                  name: h.name,
+                  text: holdText(a),
+                  lowRank: a.assetType === 'stock' ? (lowRanks.get(a.symbol) ?? null) : null,
+                }
               })}
             />
           )}

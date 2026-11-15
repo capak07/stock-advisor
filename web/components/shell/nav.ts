@@ -12,10 +12,10 @@ export interface NavItem {
 export const NAV: readonly NavItem[] = [
   { href: '/', label: 'Portfolio', icon: Wallet, primary: true },
   { href: '/picks', label: 'Picks', icon: Sparkles, primary: true },
-  { href: '/watchlist', label: 'Watchlist', icon: Eye, primary: true },
+  // on a phone, Day trade is a tab in Watchlist's place (owner, 2026-11-15); Watchlist is first under More
+  { href: '/watchlist', label: 'Watchlist', icon: Eye, primary: false },
   { href: '/invest', label: 'Invest', icon: PiggyBank, primary: true },
-  // used live on a phone too, but the bottom bar keeps its four pages: it is first under More
-  { href: '/daytrade', label: 'Day trade', icon: ChartCandlestick, primary: false },
+  { href: '/daytrade', label: 'Day trade', icon: ChartCandlestick, primary: true },
   { href: '/sources', label: 'Sources', icon: Activity, primary: false },
   { href: '/settings', label: 'Settings', icon: Settings, primary: false },
 ]

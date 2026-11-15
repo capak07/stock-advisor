@@ -58,6 +58,8 @@ main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0;
 .nav-link[aria-current="page"] { background: var(--sidebar-accent); color: var(--foreground) !important; font-weight: 500; }
 .nav-link svg { width: 17px; height: 17px; }
 .sidebar-search { margin-top: 14px; position: relative; }
+.statusbar-search { flex-basis: 100%; min-width: 0; }
+.statusbar-search .error:empty { display: none; }
 .sidebar-search input { width: 100%; padding-left: 32px !important; }
 .sidebar-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted-foreground); }
 .sidebar-foot { margin-top: auto; padding: 10px; font-size: 12px; color: var(--muted-foreground); display: grid; gap: 6px; }
@@ -134,6 +136,7 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
 .chip.hold { color: var(--action-hold); background: var(--hold-soft); }
 .chip.buy { color: var(--gain); background: var(--gain-soft); }
 .chip.avoid { color: var(--loss); background: var(--loss-soft); }
+.chip.low-rank { color: var(--loss); background: var(--attention-soft); cursor: help; }
 
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--card); white-space: nowrap; }
 .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; flex: none; }

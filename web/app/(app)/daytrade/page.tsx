@@ -2,6 +2,7 @@ import { Info } from 'lucide-react'
 import type { Metadata } from 'next'
 import { AutoRefresh } from '@/components/daytrade/AutoRefresh'
 import { SignalCard } from '@/components/daytrade/SignalCard'
+import { loadLowRanks } from '@/lib/data/low-rank'
 import { SignalTable } from '@/components/daytrade/SignalTable'
 import { TrackRecord } from '@/components/daytrade/TrackRecord'
 import { ownerClient } from '@/lib/auth'
@@ -38,6 +39,7 @@ export default async function DaytradePage() {
   const { day, signals } = data
   const skill = skillSignals(signals)
   const top = signals.filter((s) => s.rank !== null)
+  const lowRanks = await loadLowRanks(supabase, [...skill, ...top].filter((s) => s.market === 'US').map((s) => s.symbol))
   // a day that has run a cycle says so when nothing made the top 3
   const ran = day !== null && (day.status === 'scanning' || day.status === 'done' || (day.status === 'failed' && day.lastUpdate !== null))
 
@@ -81,6 +83,7 @@ export default async function DaytradePage() {
                 fresh={isFresh(s.triggerAt, now)}
                 maxLossCad={data.maxLossCad}
                 usdCad={data.usdCad}
+                lowRank={lowRanks.get(s.symbol) ?? null}
               />
             ))}
           </div>
@@ -99,7 +102,14 @@ export default async function DaytradePage() {
         {top.length > 0 && (
           <div className="pick-grid" style={{ marginTop: 12 }}>
             {top.map((s) => (
-              <SignalCard key={s.id} signal={s} fresh={isFresh(s.triggerAt, now)} maxLossCad={data.maxLossCad} usdCad={data.usdCad} />
+              <SignalCard
+                key={s.id}
+                signal={s}
+                fresh={isFresh(s.triggerAt, now)}
+                maxLossCad={data.maxLossCad}
+                usdCad={data.usdCad}
+                lowRank={s.market === 'US' ? (lowRanks.get(s.symbol) ?? null) : null}
+              />
             ))}
           </div>
         )}

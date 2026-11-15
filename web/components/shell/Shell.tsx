@@ -86,6 +86,10 @@ export function Shell({
             <span className="status-spacer" />
             <RefreshPrices liveAt={liveAt} />
             <ThemeToggle />
+            {/* on a phone the search is a row of its own at the top; the sidebar has it on a desktop */}
+            <div className="statusbar-search only-sm">
+              <FindTicker />
+            </div>
           </header>
           <div className="banners" aria-live="polite">
             {stale && (

@@ -128,6 +128,33 @@ test.describe('watchlist', () => {
     await expect(sol.locator('.w-detail')).toHaveText('Gets its first verdict at the next run')
   })
 
+  test('a watched US stock in the bottom tenth of the run shows Low model rank beside its verdict', async ({ page }) => {
+    await seedSymbols([
+      { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
+      { symbol: 'MSFT', market: 'US', name: 'Microsoft Corporation' },
+    ])
+    await sql`insert into watchlist (symbol, asset_type) values ('AAPL', 'stock'), ('MSFT', 'stock')`
+    const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    for (const symbol of ['AAPL', 'MSFT']) {
+      await seedVerdict(runId, {
+        symbol,
+        assetType: 'stock',
+        verdict: 'hold',
+        reasons: ["doesn't qualify as a buy", 'P(beat SPY) 0.47 is under 0.58 at every horizon'],
+        details: { market_picks_enabled: false },
+      })
+    }
+    await sql`insert into screen_ranks (run_id, symbol, market, pct, low, scored)
+              values (${runId}, 'AAPL', 'US', 0.04, true, 3712), (${runId}, 'MSFT', 'US', 0.80, false, 3712)`
+    await page.goto('/watchlist')
+    const aapl = page.locator('.watch-row', { hasText: 'AAPL' })
+    await expect(aapl.locator('.chip.hold')).toHaveText('Hold')
+    const flag = aapl.locator('.chip.low-rank')
+    await expect(flag).toHaveText('Low model rank')
+    await expect(flag).toHaveAttribute('title', /Bottom 10% of the model’s ranking of 3,712 US stocks/)
+    await expect(page.locator('.watch-row', { hasText: 'MSFT' }).locator('.chip.low-rank')).toHaveCount(0)
+  })
+
   test("a watched symbol you hold shows My Portfolio's action, on the Watchlist and on Picks", async ({ page }) => {
     await seedSymbols([
       { symbol: 'XRPN', market: 'US', name: 'XRPN Corp.' },

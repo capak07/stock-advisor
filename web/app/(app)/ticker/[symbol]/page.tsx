@@ -1,3 +1,4 @@
+import { LowRankChip } from '@/components/LowRankChip'
 import { ArrowLeft, Info } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
@@ -14,6 +15,7 @@ import { ownerClient } from '@/lib/auth'
 import { loadAlerts, loadHoldingData } from '@/lib/data/monitor'
 import { loadSettings } from '@/lib/data/settings'
 import { loadSourceHealth } from '@/lib/data/sources'
+import { loadLowRanks } from '@/lib/data/low-rank'
 import { loadTicker, resolveAssetType } from '@/lib/data/ticker'
 import { shortDay, timeOrDate } from '@/lib/dates'
 import { fmtMoney, fmtPct, fmtPrice, fmtQty } from '@/lib/format'
@@ -67,6 +69,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const coin = assetType === 'crypto'
   // Filings, insider trades and quarterly numbers exist for US stocks only; earnings dates for US and TSX.
   const us = !coin && data.market === 'US'
+  const lowRank = assetType === 'stock' ? (await loadLowRanks(supabase, [symbol])).get(symbol) : undefined
   const [holding, alerts] = await Promise.all([
     coin ? null : loadHoldingData(supabase, symbol, { us }),
     loadAlerts(supabase, symbol, assetType),
@@ -134,6 +137,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 You hold {fmtQty(p.qty)} · {ACCOUNT_LABELS[p.account]}
               </span>
             ))}
+            {lowRank !== undefined && <LowRankChip scored={lowRank} />}
             {/* Only listed stocks and coins can be watched; one watched before stays removable. */}
             {(data.watchable || data.watched) && <WatchToggle symbol={symbol} assetType={assetType} watched={data.watched} />}
           </div>

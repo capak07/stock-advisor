@@ -24,6 +24,14 @@ def test_the_ranker_is_also_tried_with_garch():
     assert ABLATIONS["garch+ranker"] == ModelConfig(ranker=True, garch=True)
 
 
+def test_the_forest_row_follows_the_ranker_with_garch_in_every_market():
+    names = list(ABLATIONS)
+    assert ABLATIONS["garch+ranker+forest"] == ModelConfig(ranker=True, garch=True, forest=True)
+    assert names.index("garch+ranker+forest") == names.index("garch+ranker") + 1
+    for market in (Market.US, Market.TSX, CRYPTO):
+        assert "garch+ranker+forest" in rows_for(market)
+
+
 def test_the_earnings_row_sits_before_the_policy_row_and_runs_for_us_only():
     names = list(ABLATIONS)
     assert ABLATIONS["ranker+earnings"] == ModelConfig(ranker=True, earnings=True)

@@ -51,4 +51,5 @@ def test_the_screener_scores_every_stock(db, trained):
     store(db, model, [5, 63])
     x = data.rows.drop_duplicates("symbol").set_index("symbol")[data.features]
     scores = screen_scores(load_active(db, Market.TSX), x)
-    assert list(scores.index) == list(x.index) and scores.between(0, 1).all()
+    # a forest screener's score is a predicted daily rank, centred on 0; it only orders the shortlist
+    assert list(scores.index) == list(x.index) and scores.between(-0.5, 0.5).all() and scores.nunique() > 1

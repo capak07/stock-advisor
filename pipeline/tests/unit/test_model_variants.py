@@ -29,9 +29,12 @@ def test_configs_name_themselves_and_round_trip():
     assert ModelConfig(ranker=True, extras=True, bagged=True).name == "ranker+extras+bagged"
     assert ModelConfig(extras=True).name == "extras"
     assert BASELINE.to_json() == {
-        "version": 4, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
-        "earnings": False, "policy": None,
+        "version": 5, "factors": False, "garch": False, "ranker": False, "forest": False, "extras": False,
+        "bagged": False, "earnings": False, "policy": None,
     }
+    assert ModelConfig(ranker=True, garch=True, forest=True).name == "garch+ranker+forest"
+    forest = ModelConfig(ranker=True, garch=True, forest=True)
+    assert ModelConfig.from_json(forest.to_json()) == forest
     assert ModelConfig(ranker=True, earnings=True).name == "ranker+earnings"
     assert ModelConfig(ranker=True, extras=True, earnings=True, bagged=True).name == "ranker+extras+earnings+bagged"
     earn = ModelConfig(ranker=True, earnings=True)
@@ -43,8 +46,12 @@ def test_configs_name_themselves_and_round_trip():
 
 
 @pytest.mark.parametrize("stored, match", [
+    ({"version": 6, "factors": False, "garch": False, "ranker": False, "forest": False, "extras": False,
+      "bagged": False, "earnings": False, "policy": None}, "version"),
     ({"version": 5, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
-      "earnings": False, "policy": None}, "version"),
+      "earnings": False, "policy": None}, "forest"),
+    ({"version": 5, "factors": False, "garch": False, "ranker": False, "forest": True, "extras": False,
+      "bagged": False, "earnings": False, "policy": None}, "ranker"),
     ({"version": 4, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
       "policy": None}, "earnings"),
     ({"version": 3, "factors": False, "garch": False, "ranker": False, "extras": False, "policy": None}, "bagged"),
@@ -130,6 +137,21 @@ def test_walk_forward_scores_only_targets_known_before_a_cutoff(tmp_path):
     assert not pred.empty
     position = data.calendar.searchsorted(pd.DatetimeIndex(pred["day"]))
     assert (position + pred["horizon"].to_numpy() < data.calendar.searchsorted(cutoff)).all()
+
+
+def test_a_version_4_config_loads_with_the_forest_off():
+    stored = {"version": 4, "factors": False, "garch": True, "ranker": True, "extras": False, "bagged": False,
+              "earnings": False, "policy": None}
+    assert ModelConfig.from_json(stored) == ModelConfig(ranker=True, garch=True)
+
+
+def test_a_forest_config_runs_the_forest_walk_forward(tmp_path):
+    write_market(tmp_path, Market.TSX, stocks=20, days=1100)
+    data = load_market(tmp_path, Market.TSX)
+    pd.testing.assert_frame_equal(
+        run_variant(data, ModelConfig(ranker=True, forest=True), FAST).predictions,
+        walk_forward(data, FAST, ranker=True, forest=True).predictions,
+    )
 
 
 def test_a_version_3_config_loads_with_earnings_off():

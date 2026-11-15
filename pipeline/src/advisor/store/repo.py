@@ -596,6 +596,26 @@ def write_features_live(
         )
 
 
+SCREEN_RANK_RUNS = 10  # runs whose low-rank rows are kept: the pages read the latest published one
+
+
+def write_screen_ranks(
+    conn: psycopg.Connection, run_id: int, market: Market, ranks: Sequence, keep_runs: int = SCREEN_RANK_RUNS
+) -> None:
+    """A run's screener percentiles for one market (`advisor.screen_rank.ScreenRank`), then drop the
+    rows of every run older than the latest `keep_runs`."""
+    with conn.cursor() as cur:
+        if ranks:
+            cur.executemany(
+                "insert into screen_ranks (run_id, symbol, market, pct, low, scored) values (%s, %s, %s, %s, %s, %s)",
+                [(run_id, r.symbol, market.value, r.pct, r.low, len(ranks)) for r in ranks],
+            )
+        cur.execute(
+            "delete from screen_ranks where run_id not in (select id from runs order by id desc limit %s)",
+            (keep_runs,),
+        )
+
+
 def merge_features_live(
     conn: psycopg.Connection,
     run_id: int,

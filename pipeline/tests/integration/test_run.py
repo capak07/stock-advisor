@@ -1180,6 +1180,45 @@ def test_an_active_model_shortlists_by_its_screener_score_not_dollar_volume(
     assert [r["symbol"] for r in rows] == ["RY.TO"]  # by dollar volume it would have been TD.TO
 
 
+def test_a_flagged_market_stores_each_scored_stocks_low_rank(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    monkeypatch.setattr("advisor.screen_rank.MARKETS", frozenset({Market.TSX}))
+    monkeypatch.setattr("advisor.screen_rank.MIN_SCORED", 2)
+    monkeypatch.setattr("advisor.screen_rank.LOW_SHARE", 0.5)
+    monkeypatch.setattr(
+        "advisor.run.screen_scores",
+        lambda active, features: pd.Series({"RY.TO": 2.0, "TD.TO": 1.0}).reindex(features.index),
+    )
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    rows = db.execute("select symbol, pct, low from screen_ranks where run_id = %s order by symbol",
+                      (outcome.run_id,)).fetchall()
+    assert [(r["symbol"], r["pct"], r["low"]) for r in rows] == [("RY.TO", 1.0, False), ("TD.TO", 0.5, True)]
+    assert outcome.summary["model"]["TSX"]["low_rank"] == 1
+
+
+def test_a_failed_low_rank_write_is_recorded_and_the_run_still_succeeds(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    monkeypatch.setattr("advisor.screen_rank.MARKETS", frozenset({Market.TSX}))
+    monkeypatch.setattr("advisor.screen_rank.MIN_SCORED", 1)
+
+    def broken(*a, **k):
+        raise RuntimeError("no table")
+
+    monkeypatch.setattr("advisor.store.repo.write_screen_ranks", broken)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    assert outcome.summary["model"]["TSX"]["low_rank_failed"] == "RuntimeError: no table"
+    assert outcome.summary["model"]["TSX"]["predicted"] >= 1  # forecasts went on
+
+
+def test_a_market_without_the_flag_stores_no_low_rank(db, tmp_path, tsx_model_files):
+    activate_tsx(db, tsx_model_files)  # TSX is not flagged (spec 2026-11-15: US only)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert db.execute("select count(*) as n from screen_ranks").fetchone()["n"] == 0
+    assert "low_rank" not in outcome.summary["model"]["TSX"]
+
+
 def test_a_stock_the_model_may_not_score_gets_no_score_and_no_forecast(db, tmp_path, tsx_model_files):
     activate_tsx(db, tsx_model_files)
     hold(db, "TD.TO")  # a holding too: the gate applies to every stock

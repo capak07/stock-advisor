@@ -4,7 +4,8 @@ The benchmark compares variants on identical folds; weekly training runs the mar
 one. `garch` (Plan 6d) trains each horizon on its GARCH forecast volatility (spec §4); the data
 must be loaded with `with_garch=True`. A tuned policy is a `Policy` value. `ranker` (Plan 6f) swaps the beat classifier for a ranking booster (spec §8).
 `extras` adds the market's extra features and `bagged` averages three seeds per booster (spec §9).
-`earnings` (Plan 6k) adds the US quarterly earnings features.
+`earnings` (Plan 6k) adds the US quarterly earnings features. `forest` (spec 2026-11-15) makes the
+ranking booster a random forest; it needs `ranker`.
 """
 
 from collections.abc import Mapping, Sequence
@@ -18,14 +19,16 @@ from advisor.model.earnings import EARNINGS_FEATURES
 from advisor.model.train import FinalModel, Fold, TrainConfig, WalkForward, fit_final, walk_forward
 from advisor.policy import Policy
 
-CONFIG_VERSION = 4
+CONFIG_VERSION = 5
 # version 1 (before Plan 6f) had no `ranker`, version 2 (before Plan 6g) no `extras` or `bagged`;
-# version 3 (before Plan 6k) no `earnings`; all still load, with those parts off
+# version 3 (before Plan 6k) no `earnings`, version 4 (before 2026-11-15) no `forest`; all still load,
+# with those parts off
 _KEYS = {
     1: {"version", "factors", "garch", "policy"},
     2: {"version", "factors", "garch", "ranker", "policy"},
     3: {"version", "factors", "garch", "ranker", "extras", "bagged", "policy"},
     4: {"version", "factors", "garch", "ranker", "extras", "bagged", "earnings", "policy"},
+    5: {"version", "factors", "garch", "ranker", "forest", "extras", "bagged", "earnings", "policy"},
 }
 
 
@@ -38,11 +41,12 @@ class ModelConfig:
     extras: bool = False
     bagged: bool = False
     earnings: bool = False
+    forest: bool = False
 
     @property
     def name(self) -> str:
         parts = (("factors", self.factors), ("garch", self.garch), ("ranker", self.ranker),
-                 ("extras", self.extras), ("earnings", self.earnings), ("bagged", self.bagged))
+                 ("forest", self.forest), ("extras", self.extras), ("earnings", self.earnings), ("bagged", self.bagged))
         model = "+".join(part for part, on in parts if on)
         return (model or "baseline") + ("+policy" if self.policy is not None else "")
 
@@ -50,7 +54,7 @@ class ModelConfig:
         policy = None if self.policy is None else self.policy.to_json()
         return {
             "version": CONFIG_VERSION, "factors": self.factors, "garch": self.garch, "ranker": self.ranker,
-            "extras": self.extras, "bagged": self.bagged, "earnings": self.earnings, "policy": policy,
+            "forest": self.forest, "extras": self.extras, "bagged": self.bagged, "earnings": self.earnings, "policy": policy,
         }
 
     @classmethod
@@ -67,7 +71,10 @@ class ModelConfig:
         raw = d["policy"]
         policy = None if raw is None else Policy.from_json(raw)
         config = cls(bool(d["factors"]), bool(d["garch"]), policy, bool(d.get("ranker", False)),
-                     bool(d.get("extras", False)), bool(d.get("bagged", False)), bool(d.get("earnings", False)))
+                     bool(d.get("extras", False)), bool(d.get("bagged", False)), bool(d.get("earnings", False)),
+                     bool(d.get("forest", False)))
+        if config.forest and not config.ranker:
+            raise ValueError(f"{config.name}: a forest is a ranking booster, so it needs the ranker")
         if (plan := unbuilt(config)) is not None:
             raise ValueError(f"{config.name} arrives with {plan}")
         return config
@@ -118,7 +125,7 @@ def run_variant(
     return walk_forward(
         data, train_config, folds=folds, known_before=known_before, factor_names=_factor_names(data, config),
         ranker=config.ranker, extra_features=extra_features(data, config), bag=config.bagged,
-        garch=config.garch,
+        garch=config.garch, forest=config.forest,
     )
 
 

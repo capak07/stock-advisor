@@ -33,6 +33,16 @@ QUANTILE_NAMES = tuple(f"q{round(q * 100)}" for q in QUANTILES)
 # the ranking booster learns slower than the others; laid over the train config's params (spec §8)
 RANK_SETTINGS = {"learning_rate": 0.03, "num_leaves": 15}
 RANK_ROUNDS = 400
+# a random forest that learns `daily_rank` (spec 2026-11-15): the `forest` ranking booster and every
+# screener trained from then on. Its smallest leaf is a share of the rows, so it holds at any size.
+FOREST_SETTINGS = {
+    "objective": "regression", "boosting": "rf", "num_leaves": 63, "bagging_fraction": 0.6, "bagging_freq": 1,
+    "feature_fraction": 0.3,
+}
+FOREST_ROUNDS = 200
+FOREST_MIN_LEAF = 200
+FOREST_LEAF_SHARE = 0.01
+SCREENER_KIND = "forest_rank"
 BAG_SEEDS = (7, 8, 9)  # a bag averages one booster per seed (spec §9); the first is PARAMS' own seed
 
 
@@ -298,6 +308,7 @@ class WalkForward:
     ranker: bool = False  # P and `score` come from the ranking booster
     garch: bool = False  # each horizon trained on its GARCH forecast volatility (Plan 6d)
     garch_fallbacks: int = 0  # (fold, symbol) pairs scored without GARCH parameters (spec §6)
+    forest: bool = False  # the ranking booster is a random forest (spec 2026-11-15)
 
 
 def daily_rank(rows: pd.DataFrame, target: str) -> pd.Series:
@@ -333,6 +344,17 @@ class Bag:
 Part = lgb.Booster | Bag
 
 
+def screener_garch_horizon(horizons: Sequence[int]) -> int:
+    """The horizon whose GARCH volatility a garch model's screener reads: the one nearest 21 sessions
+    (a model has a forecast volatility for its own horizons only)."""
+    return min(horizons, key=lambda h: (abs(h - SCREENER_HORIZON), h))
+
+
+def forest_params(params: dict, rows: int) -> dict:
+    """`params` with the forest's settings laid over, its smallest leaf scaled to `rows`."""
+    return params | FOREST_SETTINGS | {"min_data_in_leaf": max(FOREST_MIN_LEAF, int(FOREST_LEAF_SHARE * rows))}
+
+
 def _train(params: dict, x: pd.DataFrame, y: np.ndarray, rounds: int, seeds: Sequence[int] = ()) -> Part:
     """One booster, or with two or more `seeds` a `Bag` of one per seed."""
     if len(seeds) < 2:
@@ -348,17 +370,20 @@ def _fit(x: pd.DataFrame, y: np.ndarray, config: TrainConfig, seeds: Sequence[in
 
 def _fit_horizon(
     x: pd.DataFrame, y: pd.Series, config: TrainConfig, beat: pd.Series | None = None,
-    rank: pd.Series | None = None, seeds: Sequence[int] = (),
+    rank: pd.Series | None = None, seeds: Sequence[int] = (), forest: bool = False,
 ) -> dict[str, Part]:
     """Quantile boosters learn `y`. With `rank`, a ranking booster learns it in place of the beat
     booster; otherwise the beat booster learns `beat > 0` when that series is given, and `y > 0`
-    otherwise. With two or more `seeds`, every part is a `Bag` averaging one booster per seed."""
+    otherwise. With two or more `seeds`, every part is a `Bag` averaging one booster per seed. With
+    `forest`, the ranking booster is a random forest (`forest_params`)."""
     labels = y if beat is None else beat
     boosters = {
         name: _fit(x, y.to_numpy(), config, seeds, objective="quantile", alpha=q)
         for name, q in zip(QUANTILE_NAMES, QUANTILES, strict=True)
     }
-    if rank is not None:
+    if rank is not None and forest:
+        boosters["rank"] = _train(forest_params(config.params, len(x)), x, rank.to_numpy(), FOREST_ROUNDS, seeds)
+    elif rank is not None:
         params = config.params | RANK_SETTINGS | {"objective": "quantile", "alpha": 0.5}
         boosters["rank"] = _train(params, x, rank.to_numpy(), RANK_ROUNDS, seeds)
     else:
@@ -450,6 +475,7 @@ def walk_forward(
     extra_features: Sequence[str] = (),
     bag: bool = False,
     garch: bool = False,
+    forest: bool = False,
 ) -> WalkForward:
     """Out-of-sample predictions per fold (default: `make_folds`).
 
@@ -462,7 +488,10 @@ def walk_forward(
     `extra_features` (each in `data.extras`) join the features; with `bag`, every booster is a
     mean of `BAG_SEEDS` seeds. With `garch`, each horizon also trains on `garch_vol`, that
     horizon's GARCH forecast volatility from parameters fitted before each fold (`fold_garch`).
+    With `forest` (which needs `ranker`), the ranking booster is a random forest.
     """
+    if forest and not ranker:
+        raise ValueError("a forest is a ranking booster: it needs the ranker")
     rows = data.rows
     names = tuple(factor_names or ())
     feat = _feature_list(data, extra_features, names) + (["garch_vol"] if garch else [])
@@ -497,11 +526,12 @@ def walk_forward(
                 unfit |= {(k, s) for s in test["symbol"].unique() if params.get(s) is None}
             if names:
                 boosters = _fit_horizon(
-                    train[feat], alpha.loc[train.index], config, beat=train[target], rank=ranks, seeds=seeds
+                    train[feat], alpha.loc[train.index], config, beat=train[target], rank=ranks, seeds=seeds,
+                    forest=forest,
                 )
                 mu = {name: _finite_mean(train[f"f_{name}_{h}"]) for name in names}
             else:
-                boosters = _fit_horizon(train[feat], train[target], config, rank=ranks, seeds=seeds)
+                boosters = _fit_horizon(train[feat], train[target], config, rank=ranks, seeds=seeds, forest=forest)
                 mu = {}
             raw = _predict(boosters, test[feat])
             if names:
@@ -542,7 +572,7 @@ def walk_forward(
     if names and not predictions.empty:
         comparable = predictions.dropna(subset=["q50_alpha", "alpha"])
         alpha_ic = rank_ic_by_horizon(comparable, "q50_alpha", "alpha") if not comparable.empty else float("nan")
-    return WalkForward(predictions, metrics, folds, fallbacks, alpha_ic, ranker, garch, len(unfit))
+    return WalkForward(predictions, metrics, folds, fallbacks, alpha_ic, ranker, garch, len(unfit), forest)
 
 
 @dataclass(frozen=True)
@@ -561,6 +591,8 @@ class FinalModel:
     ranges: dict = field(default_factory=dict)  # horizon → RangeCalibrator of the edges that beat the raw ones
     p_source: str = "beat"  # the booster P is calibrated from: "beat", or "rank" (spec §8)
     garch: dict | None = None  # symbol → GarchParams (or None) fitted on all returns; None = not a garch model
+    # a forest screener learns daily_rank at this horizon; None = a model saved before it (a binary screener)
+    screener_horizon: int | None = None
 
     def _for_horizon(self, frame: pd.DataFrame, horizon: int) -> pd.DataFrame:
         """A garch model reads horizon h's `garch_vol_h` column as its `garch_vol` feature."""
@@ -614,8 +646,16 @@ class FinalModel:
         return out
 
     def screen(self, x: pd.DataFrame) -> np.ndarray:
-        """Uncalibrated price-only score: it only ranks, to shortlist stocks for a full prediction."""
-        return self.screener.predict(x[self.screener_features])
+        """Uncalibrated price-only score: it only ranks, to shortlist stocks for a full prediction.
+
+        A garch model's screener reads `garch_vol` at the model horizon nearest 21 sessions."""
+        frame = x
+        if "garch_vol" in self.screener_features:
+            column = f"garch_vol_{screener_garch_horizon(self.horizons)}"
+            if column not in x:
+                raise ValueError(f"a garch model's screener needs a {column} column")
+            frame = x.assign(garch_vol=x[column])
+        return self.screener.predict(frame[self.screener_features])
 
 
 def _latest_betas(rows: pd.DataFrame, names: Sequence[str]) -> dict[str, dict[str, float | None]]:
@@ -669,10 +709,11 @@ def fit_final(
         ranks = daily_rank(train, f"y_{h}") if ranker else None
         if names:
             boosters[h] = _fit_horizon(
-                train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"], rank=ranks, seeds=seeds
+                train[feat], alpha_target(train, h, names), config, beat=train[f"y_{h}"], rank=ranks, seeds=seeds,
+                forest=wf.forest,
             )
         else:
-            boosters[h] = _fit_horizon(train[feat], train[f"y_{h}"], config, rank=ranks, seeds=seeds)
+            boosters[h] = _fit_horizon(train[feat], train[f"y_{h}"], config, rank=ranks, seeds=seeds, forest=wf.forest)
     screener_features = PRICE_FEATURES + RS_FEATURES
     if not set(screener_features) <= set(data.features):  # coins have no sector features
         screener_features = list(data.features)
@@ -681,8 +722,13 @@ def fit_final(
     if f"y_{horizon}" not in rows:
         horizon = min(config.horizons, key=lambda h: (abs(h - SCREENER_HORIZON), h))
     train = rows[rows[f"y_{horizon}"].notna()]
-    beat = (train[f"y_{horizon}"] > 0).astype(int).to_numpy()
-    screener = _fit(train[screener_features], beat, config, objective="binary")
+    if garch:  # the screener's own horizon's forecast volatility, as the ranking boosters read theirs
+        train = train.assign(garch_vol=_garch_column(vols, train, screener_garch_horizon(config.horizons)))
+        screener_features = [*screener_features, "garch_vol"]
+    screener = _train(
+        forest_params(config.params, len(train)), train[screener_features],
+        daily_rank(train, f"y_{horizon}").to_numpy(), FOREST_ROUNDS,
+    )
     mu = {
         h: {name: _finite_mean(rows.loc[rows[f"y_{h}"].notna(), f"f_{name}_{h}"]) for name in names}
         for h in config.horizons
@@ -691,7 +737,7 @@ def fit_final(
     return FinalModel(
         feat, tuple(config.horizons), boosters, calibrators, screener, screener_features,
         dict(config.params), config.rounds, names, mu, betas, ranges, "rank" if ranker else "beat",
-        garch_params,
+        garch_params, horizon,
     )
 
 
@@ -723,6 +769,8 @@ def to_files(model: FinalModel) -> dict[str, bytes]:
         "horizons": list(model.horizons), "params": model.params, "rounds": model.rounds,
         "p_source": model.p_source,
     }
+    if model.screener_horizon is not None:
+        meta |= {"screener_kind": SCREENER_KIND, "screener_horizon": model.screener_horizon}
     if (bag := _bag_size(model)) > 1:
         meta["bag"] = bag
     files["meta"] = _pack(json.dumps(meta))
@@ -778,4 +826,5 @@ def from_files(files: Mapping[str, bytes]) -> FinalModel:
         # a model saved before Plan 6d, or without garch, has no `garch` file
         {s: None if v is None else GarchParams.from_json(v) for s, v in stored_garch["params"].items()}
         if stored_garch is not None else None,
+        meta.get("screener_horizon"),
     )

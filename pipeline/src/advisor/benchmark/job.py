@@ -58,6 +58,7 @@ ABLATIONS: dict[str, ModelConfig | None] = {
     "garch": ModelConfig(garch=True),
     "factors+garch": ModelConfig(factors=True, garch=True),
     "garch+ranker": ModelConfig(ranker=True, garch=True),
+    "garch+ranker+forest": ModelConfig(ranker=True, garch=True, forest=True),
     "ranker+earnings": ModelConfig(ranker=True, earnings=True),
     "full+policy": None,
 }

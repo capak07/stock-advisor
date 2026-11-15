@@ -17,7 +17,7 @@ import httpx
 import pandas as pd
 import psycopg
 
-from advisor import screener
+from advisor import screen_rank, screener
 from advisor.coin_list import refresh_coin_list
 from advisor.collectors.base import (
     Category,
@@ -592,6 +592,15 @@ def execute_run(
                 del models[market]
             else:
                 model_summary[market.value]["screened"] = len(scores[market])
+            # Low model rank (spec 2026-11-15): display only, so a failure is noted and never degrades the run
+            if market in screen_rank.MARKETS and market in scores:
+                try:
+                    ranks = screen_rank.screen_ranks(scores[market])
+                    with conn.transaction():
+                        repo.write_screen_ranks(conn, run_id, market, ranks)
+                    model_summary[market.value]["low_rank"] = sum(r.low for r in ranks)
+                except Exception as exc:
+                    model_summary[market.value]["low_rank_failed"] = f"{type(exc).__name__}: {exc}"[:200]
 
         # Phase 3: enrichment, only for a run that can still publish.
         ranked = {

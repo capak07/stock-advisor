@@ -198,6 +198,21 @@ def test_write_features_live(db):
     )
 
 
+def test_screen_ranks_are_written_and_only_the_latest_runs_kept(db):
+    from advisor.screen_rank import ScreenRank
+
+    runs = [repo.create_run(db, RunKind.PRE_OPEN, DAY + timedelta(days=i)) for i in range(3)]
+    for run_id in runs:
+        repo.write_screen_ranks(db, run_id, Market.US, [ScreenRank("AAA", 0.05, True), ScreenRank("BBB", 1.0, False)],
+                                keep_runs=2)
+    rows = db.execute("select run_id, symbol, market, pct, low, scored from screen_ranks order by run_id, symbol").fetchall()
+    assert {r["run_id"] for r in rows} == set(runs[1:])
+    assert [(r["symbol"], r["market"], r["pct"], r["low"], r["scored"]) for r in rows[:2]] == [
+        ("AAA", "US", 0.05, True, 2), ("BBB", "US", 1.0, False, 2),
+    ]
+    repo.write_screen_ranks(db, runs[2], Market.US, [], keep_runs=2)  # nothing to write is no error
+
+
 def test_record_source_health_supports_health_context(db):
     ok = CollectorResult("nasdaq_symbols", CollectorStatus.OK, [], 7)
     repo.record_source_health(db, None, ok, 0, NOW, context="health")

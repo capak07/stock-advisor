@@ -264,3 +264,10 @@ Plans 4a (picks and watchlist verdicts), 4b (the suggestions dashboard: Today's 
   - Only net changes are seen. A sell and rebuy between two reports is recorded as the difference. Sells are at that day's market price, not the actual fill.
   - A split, a transfer, a position held in two accounts of one type, or a report older than a position's last recorded trade is refused with a reason, to be added under Buy or Sell. So is any gone position in an account with an unreadable row.
   - Deferred: the import action drops a trade identical to a recorded one (`sameTrade`), to protect against a stale tab. A report buy whose day, quantity and price exactly match a recorded buy is therefore skipped until the next report. This is rare: its price comes from the book value.
+
+## Plan 7a: rank picks by the raw score
+
+- **The benchmark has to be run to see the effect.** Plan 7a changed how a rank policy's top N is chosen (by `p_raw`, not the clipped P) and added the top-5% table. The next `benchmark.yml` run shows the table for every variant and re-tunes the policy row on the new ranking. Until then the live policy is unchanged: no market has an accepted rank policy.
+- **Seed averaging was left out.** A bagged `garch+ranker+forest` row would add about 43 minutes to the US benchmark, and about 90 more if it were chosen (the policy row's inner runs triple), which passes 80% of the 360-minute limit. The earlier three-seed test showed no gain. Run it as a one-off if the number is wanted.
+- **The raw score is not stored.** `PredictionRow.score` lives only in the run; the `predictions` table has no column for it. Add one if a page or a diagnostic needs to show why a stock ranked where it did.
+- **Live and backtest still rank different populations** (the forecast shortlist against every eligible stock); see "Plan 4a known limits".

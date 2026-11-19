@@ -3,17 +3,20 @@ import json
 import logging
 import zipfile
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pandas as pd
 import pytest
 
+from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec import SecEdgar
+from advisor.model.groups import GROUP_FILES
 from advisor.models import Market
 from advisor.training import build as build_module
-from advisor.training.build import BuildDeps, BuildFailed, build
-from advisor.training.prices import PAUSE_SECONDS, YahooThrottled
+from advisor.training.build import BuildDeps, BuildFailed, HistoryPlan, build, parse_args
+from advisor.training.history import HistoryCache, HistoryDeps
+from advisor.training.prices import PAUSE_SECONDS, YahooThrottled, history_start
 
 NOW = datetime(2026, 10, 24, 14, tzinfo=UTC)  # a Saturday
 UNIVERSE = {Market.US: ["JPM", "AAPL", "BRK.B"], Market.TSX: ["RY.TO"]}
@@ -263,7 +266,7 @@ def test_a_crypto_step_that_raises_leaves_the_stock_files(fixtures_dir, tmp_path
 
 
 def test_main_logs_the_cause_with_its_traceback_and_quiets_httpx(monkeypatch, tmp_path, caplog):
-    def broken_build(out, now, deps, limit=None):
+    def broken_build(out, now, deps, limit=None, history=None):
         try:
             {}["cik"]
         except KeyError as exc:
@@ -280,3 +283,155 @@ def test_main_logs_the_cause_with_its_traceback_and_quiets_httpx(monkeypatch, tm
     assert "fundamentals step failed: KeyError" in error.getMessage()
     assert error.exc_info is not None and error.exc_info[0] is KeyError  # the real traceback
     assert httpx_log.level == logging.WARNING  # httpx's per-request lines carry query strings
+
+
+BEFORE = {
+    "sectors.parquet", "prices_US.parquet", "prices_TSX.parquet", "tickers.parquet", "fundamentals.parquet",
+    "macro.parquet", "events_US.parquet", "events_TSX.parquet",
+}
+
+
+def test_a_build_without_history_deps_writes_what_it_wrote_before(fixtures_dir, tmp_path):
+    with web(fixtures_dir) as client:
+        d = deps(client, [])
+        assert d.history is None
+        manifest = build(tmp_path, NOW, d, limit=10)
+    assert set(manifest["files"]) == BEFORE
+    assert "history_groups" not in manifest and "unavailable" not in manifest
+    assert not any(name in BEFORE for names in GROUP_FILES.values() for name in names)
+    assert not (tmp_path / "history-cache").exists()
+
+
+def history_deps(client, cache: HistoryCache) -> HistoryDeps:
+    return HistoryDeps(finra=client, fda=client, sec=SecEdgar(client, "stock-advisor test@example.com"),
+                       figis=FigiBook(client, cache.figi_path), cache=cache, names={"AAPL": "Apple Inc."})
+
+
+def test_history_only_writes_the_group_cache_and_no_training_files(fixtures_dir, tmp_path, monkeypatch):
+    args = parse_args(["--out", str(tmp_path / "out"), "--history-only", "--history-cache", str(tmp_path / "cache")])
+    assert args.groups == frozenset(GROUP_FILES)  # the default, --groups all
+    calls = []
+
+    def fake_history(cache, groups, history, tickers, symbols, names, since, now, manifest):
+        calls.append(dict(groups=groups, symbols=symbols, names=names, since=since, now=now,
+                          tickers=tickers["symbol"].tolist()))
+        cache.groups_dir.mkdir(parents=True)
+        (cache.groups_dir / "written.json").write_text(json.dumps({g: now.isoformat() for g in groups}))
+        manifest["seconds"]["history_short"] = 1.0
+
+    monkeypatch.setattr(build_module, "build_history", fake_history)
+    asked: list[list[str]] = []
+    cache = HistoryCache(args.history_cache)
+    with web(fixtures_dir) as client:
+        d = deps(client, asked)
+        d.history = history_deps(client, cache)
+        manifest = build(args.out, NOW, d, limit=10,
+                         history=HistoryPlan(groups=args.groups, cache=args.history_cache, only=True))
+    assert sorted(p.name for p in args.out.iterdir()) == ["manifest.json", "tickers.parquet"]
+    assert asked == []  # no prices
+    assert (cache.groups_dir / "written.json").exists()
+    assert manifest["history_groups"] == sorted(GROUP_FILES)
+    assert set(manifest["files"]) == {"tickers.parquet"}
+    start = history_start(NOW.date())
+    (call,) = calls
+    assert call["groups"] == frozenset(GROUP_FILES)
+    assert call["since"] == history_start(start, years=1)
+    assert call["since"] <= start - timedelta(days=187)  # the earliest row's 180-day openFDA window + 7-day lag
+    assert call["symbols"] == ["AAPL", "BRK.B", "JPM"] and call["tickers"] == ["AAPL", "BRK.B", "JPM"]
+    assert call["names"] == {"AAPL": "Apple Inc."} and call["now"] == NOW
+    assert json.loads((args.out / "manifest.json").read_text()) == manifest
+
+
+def test_a_local_build_downloads_the_history_then_copies_it(fixtures_dir, tmp_path, monkeypatch):
+    def fake_history(cache, groups, history, tickers, symbols, names, since, now, manifest):
+        cache.groups_dir.mkdir(parents=True)
+        for name in GROUP_FILES["short"]:
+            pd.DataFrame({"symbol": ["AAPL"]}).to_parquet(cache.groups_dir / name)
+        (cache.groups_dir / "written.json").write_text(json.dumps({"short": now.isoformat()}))
+
+    monkeypatch.setattr(build_module, "build_history", fake_history)
+    cache = HistoryCache(tmp_path / "out" / "history-cache")
+    with web(fixtures_dir) as client:
+        d = deps(client, [])
+        d.history = history_deps(client, cache)
+        manifest = build(tmp_path / "out", NOW, d, limit=10,
+                         history=HistoryPlan(groups=frozenset({"short", "analyst"}), cache=cache.root))
+    assert BEFORE | set(GROUP_FILES["short"]) <= set(manifest["files"])
+    assert (tmp_path / "out" / "short_volume.parquet").exists()
+    assert manifest["unavailable"] == {"analyst": "no cached history"}
+    assert manifest["history_groups"] == ["analyst", "short"]
+
+
+def test_a_history_download_without_history_deps_fails_the_build(fixtures_dir, tmp_path):
+    with web(fixtures_dir) as client, pytest.raises(BuildFailed, match="history"):
+        build(tmp_path, NOW, deps(client, []), limit=10,
+              history=HistoryPlan(groups=frozenset({"short"}), cache=tmp_path / "cache", only=True))
+
+
+def test_no_history_download_copies_fresh_groups_without_fetching(fixtures_dir, tmp_path, monkeypatch):
+    def never(*args, **kwargs):
+        raise AssertionError("downloaded group history")
+
+    monkeypatch.setattr(build_module, "build_history", never)
+    cache = HistoryCache(tmp_path / "cache")
+    cache.groups_dir.mkdir(parents=True)
+    for name in (*GROUP_FILES["short"], *GROUP_FILES["holders"]):
+        pd.DataFrame({"symbol": ["AAPL"]}).to_parquet(cache.groups_dir / name)
+    (cache.groups_dir / "written.json").write_text(json.dumps({
+        "short": (NOW - timedelta(days=1)).isoformat(), "holders": (NOW - timedelta(days=30)).isoformat()}))
+    out = tmp_path / "out"
+    with web(fixtures_dir) as client:
+        d = deps(client, [])
+        assert d.history is None
+        manifest = build(out, NOW, d, limit=10,
+                         history=HistoryPlan(groups=frozenset(GROUP_FILES), cache=cache.root, download=False))
+    assert {"short_interest.parquet", "short_volume.parquet"} <= {p.name for p in out.iterdir()}
+    assert not (out / "holders.parquet").exists()
+    assert manifest["unavailable"]["holders"] == "cached history is 30 days old"
+    assert manifest["unavailable"]["analyst"] == "no cached history"
+    assert manifest["history_age_days"] == {"short": 1.0}
+    assert manifest["history_groups"] == sorted(GROUP_FILES)
+    assert "failed" not in manifest and BEFORE <= set(manifest["files"])
+
+
+def test_the_history_options_exclude_each_other_and_need_a_cache(tmp_path):
+    out = ["--out", str(tmp_path)]
+    cache = ["--history-cache", str(tmp_path / "cache")]
+    for argv in (
+        [*out, *cache, "--history-only", "--no-history-download"],
+        [*out, "--history-only"],
+        [*out, "--no-history-download"],
+        [*out, "--groups", "short,bogus"],
+    ):
+        with pytest.raises(SystemExit):
+            parse_args(argv)
+    args = parse_args([*out, *cache, "--no-history-download", "--groups", "short,holders"])
+    assert (args.no_history_download, args.history_only) == (True, False)
+    assert args.groups == frozenset({"short", "holders"}) and args.history_cache == tmp_path / "cache"
+    plain = parse_args(out)
+    assert plain.history_cache is None and plain.groups == frozenset(GROUP_FILES)
+
+
+def test_main_builds_history_deps_only_when_the_plan_downloads(monkeypatch, tmp_path):
+    seen = []
+
+    def fake_build(out, now, deps, limit=None, history=None):
+        seen.append((history, deps.history))
+        return {}
+
+    monkeypatch.setenv("SEC_USER_AGENT", "stock-advisor test@example.com")
+    monkeypatch.setattr(build_module, "NasdaqSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "TmxSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "build", fake_build)
+    cache = tmp_path / "cache"
+    assert build_module.main(["--out", str(tmp_path), "--no-db", "--no-history-download",
+                              "--history-cache", str(cache)]) == 0
+    assert build_module.main(["--out", str(tmp_path), "--no-db", "--history-only", "--history-cache", str(cache)]) == 0
+    assert build_module.main(["--out", str(tmp_path), "--no-db", "--groups", "none"]) == 0
+    assert build_module.main(["--out", str(tmp_path), "--no-db"]) == 0
+    (copy_plan, no_deps), (only_plan, real), (none_plan, none_deps), (local_plan, local) = seen
+    assert copy_plan == HistoryPlan(groups=frozenset(GROUP_FILES), cache=cache, download=False) and no_deps is None
+    assert only_plan == HistoryPlan(groups=frozenset(GROUP_FILES), cache=cache, only=True)
+    assert real.cache.root == cache and real.figis._path == cache / "openfigi.json"
+    assert none_plan is None and none_deps is None  # --groups none: the build of before
+    assert local_plan.cache == tmp_path / "history-cache" and local.cache.root == tmp_path / "history-cache"

@@ -32,13 +32,17 @@ COUNTED = ("original", "new_indication")
 
 
 def _records(client: httpx.Client, listing: Mapping, dataset: str, limiter: RateLimiter | None) -> list[dict]:
-    """Every record of the dataset's bulk files (each a zip holding one JSON document)."""
+    """Every record of the dataset's bulk files (each a zip holding one JSON document). A zip without
+    a JSON file raises ValueError naming it."""
     records: list[dict] = []
     for partition in listing["results"]["drug"][dataset]["partitions"]:
         check_deadline()
-        body = get_with_retries(client, partition["file"], limiter=limiter).content
+        url = partition["file"]
+        body = get_with_retries(client, url, limiter=limiter).content
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
-            name = next(n for n in archive.namelist() if n.endswith(".json"))
+            name = next((n for n in archive.namelist() if n.endswith(".json")), None)
+            if name is None:
+                raise ValueError(f"openFDA partition {url} holds no JSON file")
             records.extend(json.loads(archive.read(name))["results"])
     return records
 

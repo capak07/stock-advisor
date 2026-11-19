@@ -72,10 +72,12 @@ def read_quarters(sec: SecEdgar, folder: Path, data_sets: Sequence[DataSet]
 
 
 def holders_build(sec: SecEdgar, figis: FigiBook, folder: Path, symbols: Sequence[str], as_of: datetime,
-                  since: date) -> tuple[pd.DataFrame, dict[str, str]]:
+                  since: date, counts: dict[str, int] | None = None) -> tuple[pd.DataFrame, dict[str, str]]:
     """`holders.parquet` for `symbols` from every data set whose window ends on or after `since`, and the
     gaps. The totals stay in `folder` and the FIGIs in `figis`' file, for the next history run. A symbol
-    OpenFIGI could not look up has no CUSIP, so no rows; the share of symbols mapped is logged."""
+    OpenFIGI could not look up has no CUSIP, so no rows. The counts are logged and, when `counts` is
+    given, put in it: `asked`, `figi_failed` (OpenFIGI failed before looking them up), `mapped` (to a
+    CUSIP), `with_holdings`, `data_sets` (read) and `gaps`."""
     data_sets = [d for d in parse_listing(sec.get(LISTING_URL).text) if d.end >= since]
     quarters, gaps = read_quarters(sec, folder, data_sets)
     lookup = figis.lookup(symbols, as_of)
@@ -83,7 +85,12 @@ def holders_build(sec: SecEdgar, figis: FigiBook, folder: Path, symbols: Sequenc
         log.warning("OpenFIGI failed for %d symbols: %s", len(lookup.failed), lookup.error)
     cusips = cusip_map(quarters, lookup.figis)
     frame = holders_history(quarters, cusips)
-    asked = len(dict.fromkeys(symbols))
-    log.info("13F: %d of %d symbols mapped to a CUSIP, %d with holdings; %d data sets, %d gaps",
-             len(cusips), asked, frame["symbol"].nunique(), len(quarters), len(gaps))
+    found = {
+        "asked": len(dict.fromkeys(symbols)), "figi_failed": len(lookup.failed), "mapped": len(cusips),
+        "with_holdings": int(frame["symbol"].nunique()), "data_sets": len(quarters), "gaps": len(gaps),
+    }
+    if counts is not None:
+        counts.update(found)
+    log.info("13F: %(mapped)d of %(asked)d symbols mapped to a CUSIP, %(with_holdings)d with holdings, "
+             "%(figi_failed)d not looked up (OpenFIGI failed); %(data_sets)d data sets, %(gaps)d gaps", found)
     return frame, gaps

@@ -14,6 +14,18 @@ from advisor.model.fundamentals import _ns
 from advisor.models import ET, Market
 from advisor.schedule import sessions_after
 
+# Each data group's history files (written by `training.history`, read by the dataset), in the spec's
+# priority order. `earnings` needs only fundamentals.parquet, so it is not a key.
+GROUP_FILES: dict[str, tuple[str, ...]] = {
+    "short": ("short_interest.parquet", "short_volume.parquet"),
+    "analyst": ("analyst_events.parquet",),
+    "insider": ("insider_trades.parquet",),
+    "events": ("material_events.parquet", "large_holders.parquet"),
+    "holders": ("holders.parquet",),
+    "estimates": ("earnings_estimates.parquet",),
+    "catalysts": ("fda_events.parquet",),
+}
+
 
 def sec_known(accepted_at: pd.Series, filing_date: pd.Series) -> pd.Series:
     """The date an SEC filing becomes known (datetime64[ns] days, the index of `accepted_at`).

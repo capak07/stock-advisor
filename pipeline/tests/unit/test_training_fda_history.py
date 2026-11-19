@@ -4,6 +4,7 @@ import zipfile
 from datetime import date
 
 import httpx
+import pytest
 
 from advisor.training.fda_history import DOWNLOAD_URL, EVENT_COLUMNS, fda_history
 
@@ -134,3 +135,20 @@ def test_an_empty_history_keeps_its_columns():
     with _client([], []) as client:
         frame = fda_history(client, NAMES, SINCE, None)
     assert list(frame.columns) == EVENT_COLUMNS and frame.empty
+
+
+def test_a_partition_without_a_json_file_is_an_error_naming_it():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("readme.txt", "no data here")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if url == DOWNLOAD_URL:
+            return httpx.Response(200, json=LISTING)
+        return httpx.Response(200, content=buffer.getvalue())
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client, pytest.raises(
+        ValueError, match="drug-drugsfda-0001-of-0001.json.zip holds no JSON file"
+    ):
+        fda_history(client, NAMES, SINCE, None)

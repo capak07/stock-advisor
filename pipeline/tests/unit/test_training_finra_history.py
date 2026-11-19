@@ -152,3 +152,21 @@ def test_a_file_exactly_ninety_days_old_is_not_cached_yet():
     cache = FakeCache()
     short_volume_history(client, [date.fromisoformat(day)], ["AAPL"], cache, None, TODAY)
     assert cache.store == {}
+
+
+def test_each_finra_symbol_is_keyed_once_across_files(monkeypatch):
+    import advisor.training.finra_history as finra_history
+
+    keyed: list[str] = []
+    real = finra_history.symbol_key
+
+    def counting(symbol: str) -> str:
+        keyed.append(symbol)
+        return real(symbol)
+
+    monkeypatch.setattr(finra_history, "symbol_key", counting)
+    days = ["2026-11-10", "2026-11-11", "2026-11-12"]
+    client = client_serving({volume_url(day): volume_file(day) for day in days}, [])
+    volume = short_volume_history(client, [date.fromisoformat(d) for d in days], ["AAPL", "BRK.B"], None, None, TODAY)
+    assert sorted(keyed) == ["AAPL", "BRK/B", "ZZZZ"]  # three files, each symbol keyed once
+    assert len(volume) == 6 and sorted(set(volume["symbol"])) == ["AAPL", "BRK.B"]

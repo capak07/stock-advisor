@@ -38,12 +38,19 @@ jobs:
         if: steps.due.outputs.run == 'true'
       - run: uv sync --locked --no-dev
         if: steps.due.outputs.run == 'true'
+      - name: Restore the data groups' history (history.yml downloads it; never saved here)
+        uses: actions/cache/restore@v4
+        if: steps.due.outputs.run == 'true'
+        with:
+          path: ${{ runner.temp }}/history-cache
+          key: history-${{ github.run_id }}
+          restore-keys: history-
       - name: Build training data
         if: steps.due.outputs.run == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
-        run: uv run python -m advisor.training.build --out "$RUNNER_TEMP/training"
+        run: uv run python -m advisor.training.build --out "$RUNNER_TEMP/training" --no-history-download --history-cache "$RUNNER_TEMP/history-cache"
       - name: Score every built variant and store the accepted configuration
         if: steps.due.outputs.run == 'true'
         env:

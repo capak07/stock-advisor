@@ -1,0 +1,52 @@
+name: history
+
+# Weekly, early on Saturday: download the US data groups' history (FINRA short interest, Yahoo ratings
+# and earnings, SEC filings and 13F holdings, openFDA) into an actions cache. train.yml (Saturday 10:00
+# UTC) and benchmark.yml (the month's first Sunday) restore that cache and never download group
+# history, so neither pays the long Yahoo download (Ruling R0). A run of about 98 minutes ends near
+# 03:40; one that reaches its limit ends by 05:00, still five hours before train. The cache is saved
+# even when the run fails or times out, so what it downloaded warms the next run.
+on:
+  schedule:
+    - cron: "0 2 * * 6"  # Saturday 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: history
+  cancel-in-progress: false
+
+jobs:
+  history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        working-directory: pipeline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: uv sync --locked --no-dev
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/history-cache
+          key: history-${{ github.run_id }}
+          restore-keys: history-
+      - name: Download the data groups' history into the cache
+        env:
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: uv run python -m advisor.training.build --out "$RUNNER_TEMP/history-run" --no-db --history-only --history-cache "$RUNNER_TEMP/history-cache"
+      - uses: actions/cache/save@v4
+        if: always()  # a failed or timed-out run keeps what it downloaded
+        with:
+          path: ${{ runner.temp }}/history-cache
+          key: history-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4  # which groups were written, failed or empty, for 30 days
+        if: always()
+        with:
+          name: history-report
+          path: ${{ runner.temp }}/history-run/manifest.json
+          retention-days: 30
+          if-no-files-found: ignore

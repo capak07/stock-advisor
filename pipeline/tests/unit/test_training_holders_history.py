@@ -150,3 +150,19 @@ def test_an_empty_build_has_the_history_columns(tmp_path):
     frame, gaps = holders_build(sec, _figi_book(tmp_path / "f.json", []), tmp_path, ["AAPL"], AS_OF,
                                 date(2023, 1, 1))
     assert list(frame.columns) == HOLDERS_COLUMNS and frame.empty and gaps == {}
+
+
+def test_the_build_counts_the_symbols_openfigi_failed_and_mapped(tmp_path):
+    def refuse(request):
+        return httpx.Response(400, text="bad request")
+
+    figis = FigiBook(httpx.Client(transport=httpx.MockTransport(refuse)), tmp_path / "openfigi.json")
+    counts: dict = {}
+    frame, gaps = holders_build(fake_sec(_routes()), figis, tmp_path / "sec_13f", ["AAPL", "MSFT", "AAPL"], AS_OF,
+                                date(2026, 1, 1), counts=counts)
+    assert frame.empty  # no FIGIs, so no CUSIPs: recorded, not raised
+    assert counts == {"asked": 2, "figi_failed": 2, "mapped": 0, "with_holdings": 0, "data_sets": 1, "gaps": 0}
+    counts = {}
+    holders_build(fake_sec(_routes()), _figi_book(tmp_path / "f.json", []), tmp_path / "sec_13f", ["AAPL", "MSFT"],
+                  AS_OF, date(2026, 1, 1), counts=counts)
+    assert counts == {"asked": 2, "figi_failed": 0, "mapped": 1, "with_holdings": 1, "data_sets": 1, "gaps": 0}

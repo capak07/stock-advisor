@@ -73,9 +73,16 @@ def _volume_frame(text: str) -> pd.DataFrame:
     ], VOLUME_COLUMNS)
 
 
-def _on_universe(frame: pd.DataFrame, wanted: Mapping[str, str]) -> pd.DataFrame:
-    """The rows of the wanted symbols, with FINRA's spelling replaced by the canonical one."""
-    mapped = pd.Series([wanted.get(symbol_key(s)) for s in frame["symbol"]], index=frame.index, dtype="string")
+def _on_universe(frame: pd.DataFrame, wanted: Mapping[str, str], seen: dict[str, str | None]) -> pd.DataFrame:
+    """The rows of the wanted symbols, with FINRA's spelling replaced by the canonical one.
+
+    `seen` maps each FINRA symbol met so far to its canonical symbol (None when not wanted). It is shared
+    by every file of one history, so each distinct symbol is keyed once, not once per row of each file.
+    """
+    for finra_symbol in frame["symbol"].dropna().unique():
+        if finra_symbol not in seen:
+            seen[finra_symbol] = wanted.get(symbol_key(finra_symbol))
+    mapped = frame["symbol"].map(seen).astype("string")
     kept = frame.assign(symbol=mapped)
     return kept[kept["symbol"].notna()].drop_duplicates("symbol")
 
@@ -95,6 +102,7 @@ def _history(
     date_column: str,
 ) -> pd.DataFrame:
     wanted = requested_by_key(symbols)
+    seen: dict[str, str | None] = {}
     parts: list[pd.DataFrame] = []
     for day in dates:
         check_deadline()
@@ -110,7 +118,7 @@ def _history(
             frame = parse(response.text)
             if cache is not None and (today - day).days > FINRA_CACHE_AFTER_DAYS:
                 cache.put(kind, key, frame)
-        parts.append(_on_universe(frame, wanted))
+        parts.append(_on_universe(frame, wanted, seen))
     parts = [part for part in parts if not part.empty]
     if not parts:
         return _frame([], columns)

@@ -53,11 +53,15 @@ def test_a_document_about_another_issuer_is_ignored(fixtures_dir):
 def test_insider_lookback_covers_180_days():
     from datetime import timedelta
 
+    from advisor.collectors.base import FEATURE_DAY_MARGIN_DAYS
     from advisor.collectors.sec_insiders import LOOKBACK
     from advisor.model.insider import NET_BUY_WINDOW_DAYS, OFFICER_WINDOW_DAYS
 
-    assert LOOKBACK == timedelta(days=180)
-    assert LOOKBACK >= timedelta(days=max(OFFICER_WINDOW_DAYS, NET_BUY_WINDOW_DAYS))  # the model's longest window
+    # the model's longest window, counted from a pre-open run's feature day: up to 4 days before the run
+    # day (a Monday after a Friday holiday), so the margin is a week (Ruling R13)
+    assert OFFICER_WINDOW_DAYS == max(OFFICER_WINDOW_DAYS, NET_BUY_WINDOW_DAYS) == 180
+    assert FEATURE_DAY_MARGIN_DAYS == 7
+    assert LOOKBACK == timedelta(days=OFFICER_WINDOW_DAYS + FEATURE_DAY_MARGIN_DAYS)
 
 
 def test_fetch_reads_the_last_180_days_of_form_4s(fixtures_dir):

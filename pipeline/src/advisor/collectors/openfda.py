@@ -6,7 +6,8 @@ text. So each fetch makes two market-wide requests over the last WINDOW_DAYS:
 - drug recalls reported in the window.
 
 WINDOW_DAYS is the model's longest window plus its lag (`model.catalysts` counts approvals dated up
-to APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS days back; Ruling R3, F4). The names are matched with
+to APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS days back; Ruling R3, F4), plus FEATURE_DAY_MARGIN_DAYS, because
+a pre-open run's feature day is the previous session, days before the run day (Ruling R13). The names are matched with
 `advisor.sponsors` against every US name in the directory, as the training history matches them, so a
 name two companies share matches neither in both; records are kept for the requested stocks only.
 openFDA refreshes both data sets about weekly.
@@ -37,6 +38,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from advisor.collectors.base import (
+    FEATURE_DAY_MARGIN_DAYS,
     Cadence,
     Category,
     RateLimiter,
@@ -56,7 +58,7 @@ RECALLS_URL = "https://api.fda.gov/drug/enforcement.json"
 FDA_LAG_DAYS = 7
 APPROVAL_WINDOW_DAYS = 180
 RECALL_WINDOW_DAYS = 90
-WINDOW_DAYS = APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS
+WINDOW_DAYS = APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS + FEATURE_DAY_MARGIN_DAYS  # 194
 COUNT_DAYS = 90  # the `*_90d` fields' window
 COUNTED_APPROVALS = ("original", "new_indication")  # the model's approvals (`new_molecule` is an original)
 PAGE = 1000  # openFDA's largest page

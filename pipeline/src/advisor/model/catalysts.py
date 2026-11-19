@@ -3,7 +3,7 @@
 openFDA refreshes its data about weekly, so a record dated D0 is treated as known `FDA_LAG_DAYS` later
 (`known = day + FDA_LAG_DAYS`) and a day reads it only strictly after that, the same in training
 (`training.fda_history`) and live (`collectors.openfda`, which looks back `WINDOW_DAYS =
-APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS`).
+APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS + FEATURE_DAY_MARGIN_DAYS`).
 
 `events` has `symbol`, `kind` ("approval" | "recall"), `day` and `event_id`. An event counts once however
 many rows list it (a recall of three products is one event), dated by its earliest row (Ruling R12). A symbol without events reads 0 when

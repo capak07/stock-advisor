@@ -12,12 +12,21 @@ from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict
 
-from advisor.collectors.base import Cadence, Category, Scope, collect_per_symbol
+from advisor.collectors.base import (
+    FEATURE_DAY_MARGIN_DAYS,
+    Cadence,
+    Category,
+    Scope,
+    collect_per_symbol,
+)
 from advisor.collectors.sec import DocumentBudget, Filing, SecEdgar, number, public_by, sec_stop
+from advisor.model.insider import OFFICER_WINDOW_DAYS
 from advisor.models import ET, AssetType, Market
 
 INSIDER_FORMS = frozenset({"4", "4/A"})
-LOOKBACK = timedelta(days=180)  # the model reads officer buys over 180 days (model.insider)
+# the model's longest window (officer buys over 180 days, `model.insider`) counted from a pre-open run's
+# earlier feature day (Ruling R13)
+LOOKBACK = timedelta(days=OFFICER_WINDOW_DAYS + FEATURE_DAY_MARGIN_DAYS)
 MAX_DOCUMENTS = 1000  # per run; a first run over the whole shortlist finishes on later runs
 
 

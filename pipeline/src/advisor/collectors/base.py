@@ -35,6 +35,10 @@ from advisor.models import AssetType, Market
 USER_AGENT = "stock-advisor/0.1 (personal research)"
 RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 MAX_RETRY_AFTER = 60.0  # never let a server park a run for longer than this per retry
+# A pre-open run's feature day is the previous session (`model.market_run.feature_day`): up to 4 days
+# before the run day (a Monday after a Friday holiday). A collector whose lookback fills a model window
+# counts back this much further than the window, so the oldest days of the window are there (Ruling R13).
+FEATURE_DAY_MARGIN_DAYS = 7
 
 
 class Category(StrEnum):

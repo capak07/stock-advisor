@@ -253,3 +253,114 @@ def test_history_from_records_takes_no_run_day():
     import inspect
 
     assert list(inspect.signature(history_from_records).parameters) == ["results"]
+
+
+# A Monday pre-open run: its feature day is the previous Friday (`market_run.feature_day`), 3 days earlier.
+MONDAY_RUN = datetime(2026, 10, 12, 12, 15, tzinfo=UTC)
+FRIDAY = pd.Timestamp("2026-10-09")
+OFFICER_BUY = b"""<ownershipDocument>
+  <issuer><issuerCik>0000000042</issuerCik><issuerTradingSymbol>XYZ</issuerTradingSymbol></issuer>
+  <reportingOwner>
+    <reportingOwnerId><rptOwnerName>DOE JANE</rptOwnerName></reportingOwnerId>
+    <reportingOwnerRelationship><isOfficer>1</isOfficer><officerTitle>CFO</officerTitle></reportingOwnerRelationship>
+  </reportingOwner>
+  <nonDerivativeTable><nonDerivativeTransaction>
+    <transactionDate><value>2026-04-10</value></transactionDate>
+    <transactionCoding><transactionCode>P</transactionCode></transactionCoding>
+    <transactionAmounts><transactionShares><value>1000</value></transactionShares>
+      <transactionPricePerShare><value>20</value></transactionPricePerShare>
+      <transactionAcquiredDisposedCode><value>A</value></transactionAcquiredDisposedCode></transactionAmounts>
+  </nonDerivativeTransaction></nonDerivativeTable>
+</ownershipDocument>"""
+
+
+class OneFilingSec:
+    """The parts of SecEdgar SecInsiders uses: one company (CIK 42) with one Form 4."""
+
+    def __init__(self, filing):
+        self.filing = filing
+
+    def require_contact(self):
+        return "test@example.com"
+
+    def cik_for(self, symbol):
+        return 42
+
+    def filings(self, cik):
+        return [self.filing]
+
+    def has_document(self, filing):
+        return True
+
+    def document(self, cik, filing):
+        return OFFICER_BUY
+
+    def forget(self, filing):
+        pass
+
+
+def test_a_monday_pre_open_run_reads_an_officer_buy_at_the_oldest_edge_of_the_window():
+    """Known 179 days before Friday's feature day, so training counts it; it was filed 182 days before the
+    run day, which a 180-day lookback from the run day would miss (Ruling R13)."""
+    from advisor.collectors.sec import Filing
+    from advisor.collectors.sec_insiders import SecInsiders
+    from advisor.model.insider import OFFICER_WINDOW_DAYS
+
+    filed = date(2026, 4, 13)  # a Monday, accepted 17:00 ET: known that day
+    assert (FRIDAY - pd.Timestamp(filed)).days < OFFICER_WINDOW_DAYS < (MONDAY_RUN.date() - filed).days
+    filing = Filing(accession="0000000042-26-000001", form="4", filing_date=filed,
+                    accepted_at=datetime(2026, 4, 13, 21, tzinfo=UTC), report_date=None, items=(), file_number="",
+                    primary_document="form4.xml")
+    trades = SecInsiders(OneFilingSec(filing)).fetch(["XYZ"], MONDAY_RUN)
+    live = history_from_records(_ok("sec_form4", trades)).insider_trades
+    training = pd.DataFrame({
+        "symbol": ["XYZ"], "accession": [filing.accession], "filing_date": [filed],
+        "accepted_at": pd.to_datetime([filing.accepted_at], utc=True), "trade_date": [date(2026, 4, 10)],
+        "code": ["P"], "shares": [1000.0], "price": [20.0], "owners": [["DOE JANE"]], "officer": [True],
+        "director": [False], "ten_percent_owner": [False], "filed_ticker": ["XYZ"],
+    })
+    days = pd.DatetimeIndex([FRIDAY])
+    value = pd.DataFrame({"XYZ": [1e9]}, index=days)
+    got = insider_features(live, value, {"XYZ"}, days, ["XYZ"])
+    want = insider_features(training, value, {"XYZ"}, days, ["XYZ"])
+    assert got["officer_buy_180d"]["XYZ"].iloc[0] == want["officer_buy_180d"]["XYZ"].iloc[0] == 1.0
+
+
+def test_a_monday_pre_open_run_reads_an_approval_at_the_oldest_edge_of_the_window():
+    """Dated 2026-04-06: known a week later, 179 days before Friday's feature day, so training counts it;
+    older than run day - 187, which a window counted from the run day would miss (Ruling R13)."""
+    import httpx
+
+    from advisor.collectors.openfda import (
+        APPROVAL_WINDOW_DAYS,
+        APPROVALS_URL,
+        FDA_LAG_DAYS,
+        RECALLS_URL,
+        OpenFda,
+    )
+    from advisor.company_names import CompanyNames
+
+    approved = date(2026, 4, 6)
+    assert (MONDAY_RUN.date() - approved).days > APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS
+    application = {"application_number": "NDA000001", "sponsor_name": "ACME PHARMS", "submissions": [
+        {"submission_status": "AP", "submission_status_date": "20260406", "submission_type": "ORIG",
+         "submission_class_code": "TYPE 1"}]}
+    answers = {
+        APPROVALS_URL: {"meta": {"results": {"total": 1}}, "results": [application]},
+        RECALLS_URL: {"meta": {"results": {"total": 1}}, "results": [
+            {"report_date": "20261001", "recalling_firm": "Someone Else Inc", "event_id": "E9"}]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=answers[str(request.url.copy_with(query=None))])
+
+    names = CompanyNames({"ACME": "Acme Pharmaceuticals, Inc. Common Stock"})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        records = OpenFda(client, names=names).fetch(["ACME"], MONDAY_RUN)
+    live = history_from_records(_ok("openfda", records)).fda_events
+    training = pd.DataFrame({"symbol": ["ACME"], "kind": ["approval"], "day": [approved],
+                             "event_id": ["NDA000001:original:20260406:0"]})
+    days = pd.DatetimeIndex([FRIDAY])
+    got = catalysts_features(live, days, ["ACME"])["fda_approvals_180d"]["ACME"].iloc[0]
+    want = catalysts_features(training, days, ["ACME"])["fda_approvals_180d"]["ACME"].iloc[0]
+    assert got == want == 1

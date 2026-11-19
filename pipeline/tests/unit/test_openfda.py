@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 import httpx
 import pytest
 
+from advisor.collectors.base import FEATURE_DAY_MARGIN_DAYS
 from advisor.collectors.openfda import (
     APPROVAL_WINDOW_DAYS,
     APPROVALS_URL,
@@ -72,15 +73,16 @@ def test_approvals_and_recalls_are_counted_for_the_runs_stocks(fixtures_dir):
     assert abbvie.as_of == date(2026, 10, 19)
 
 
-def test_both_searches_cover_187_days_in_one_page_each(fixtures_dir):
+def test_both_searches_cover_194_days_in_one_page_each(fixtures_dir):
+    """The model's 180 days, its 7-day lag, and a margin for a pre-open run's earlier feature day (Ruling R13)."""
     asked: list[httpx.Request] = []
     fetch(fixtures_dir, ["PFE"], asked=asked)
     searches = [request.url.params["search"] for request in asked]
-    assert WINDOW_DAYS == APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS == 187
+    assert WINDOW_DAYS == APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS + FEATURE_DAY_MARGIN_DAYS == 194
     assert searches == [
-        "submissions.submission_status_date:[20260415 TO 20261019] AND submissions.submission_status:AP"
+        "submissions.submission_status_date:[20260408 TO 20261019] AND submissions.submission_status:AP"
         " AND (application_number:NDA* application_number:BLA*)",
-        "report_date:[20260415 TO 20261019]",
+        "report_date:[20260408 TO 20261019]",
     ]
     assert {request.url.params["limit"] for request in asked} == {"1000"}
 

@@ -2,6 +2,7 @@ import json
 import zipfile
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -9,10 +10,15 @@ from advisor.collectors.sec import SUBMISSIONS_ZIP_URL
 from advisor.collectors.sec_events import EVENT_FORMS
 from advisor.collectors.sec_holders import HOLDER_FORMS
 from advisor.model.events import events_features
+from advisor.model.insider import insider_features
 from advisor.training.sec_history import (
+    INSIDER_LISTING_URL,
     SUBMISSION_FORMS,
+    insider_data_sets,
+    insider_history,
     large_holder_filings,
     material_events,
+    reduce_insider_set,
     reduce_submissions,
 )
 
@@ -165,3 +171,155 @@ def test_new_and_legacy_schedule_names_both_count(filings):
                           pd.DatetimeIndex(["2026-06-10"]), ["AAA", "BBB"])
     assert out["activist_13d_180d"].loc["2026-06-10"].tolist() == [1, 0]
     assert out["passive_13g_90d"].loc["2026-06-10"].tolist() == [0, 1]
+
+
+INSIDER_COLUMNS = ["symbol", "accession", "filing_date", "accepted_at", "trade_date", "code", "shares", "price",
+                   "owners", "officer", "director", "ten_percent_owner", "filed_ticker"]
+SET_COLUMNS = ["accession", "issuer_cik", "filed_ticker", "filing_date", "trade_date", "code", "shares", "price",
+               "owners", "officer", "director", "ten_percent_owner"]
+
+
+def test_insider_data_sets_are_read_from_the_listing():
+    assert INSIDER_LISTING_URL == "https://www.sec.gov/data-research/sec-markets-data/insider-transactions-data-sets"
+    html = (
+        '<a href="/files/structureddata/data/insider-transactions-data-sets/2006q1_form345.zip">2006 Q1</a>'
+        '<a href="/files/datastandardsinnovation/insider/2026q3_form345.zip">2026 Q3</a>'
+        '<a href="/files/datastandardsinnovation/insider/2026q3_form345.zip">again</a>'
+        '<a href="/files/structureddata/data/form-13f-data-sets/2018q1_form13f.zip">13F</a>'
+    )
+    assert insider_data_sets(html) == [
+        ("2006q1", "https://www.sec.gov/files/structureddata/data/insider-transactions-data-sets/2006q1_form345.zip"),
+        ("2026q3", "https://www.sec.gov/files/datastandardsinnovation/insider/2026q3_form345.zip"),
+    ]
+
+
+def _tsv(header: list[str], rows: list[dict]) -> str:
+    return "\n".join(["\t".join(header), *("\t".join(row.get(h, "") for h in header) for row in rows)]) + "\n"
+
+
+def _insider_zip(tmp_path, submissions: list[dict], owners: list[dict], trades: list[dict],
+                 name: str = "2026q2_form345.zip"):
+    """A Form 3/4/5 data set with SEC's three files (the columns read, plus a few that are not)."""
+    path = tmp_path / name
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("SUBMISSION.tsv", _tsv(
+            ["ACCESSION_NUMBER", "FILING_DATE", "PERIOD_OF_REPORT", "DOCUMENT_TYPE", "ISSUERCIK", "ISSUERNAME",
+             "ISSUERTRADINGSYMBOL"], submissions))
+        archive.writestr("REPORTINGOWNER.tsv", _tsv(
+            ["ACCESSION_NUMBER", "RPTOWNERCIK", "RPTOWNERNAME", "RPTOWNER_RELATIONSHIP", "RPTOWNER_TITLE"], owners))
+        archive.writestr("NONDERIV_TRANS.tsv", _tsv(
+            ["ACCESSION_NUMBER", "NONDERIV_TRANS_SK", "SECURITY_TITLE", "TRANS_DATE", "TRANS_CODE", "TRANS_SHARES",
+             "TRANS_PRICEPERSHARE", "TRANS_ACQUIRED_DISP_CD"], trades))
+    return path
+
+
+def _submission(accession: str, form: str, filed: str, cik: str, ticker: str) -> dict:
+    return {"ACCESSION_NUMBER": accession, "FILING_DATE": filed, "DOCUMENT_TYPE": form, "ISSUERCIK": cik,
+            "ISSUERTRADINGSYMBOL": ticker}
+
+
+def _owner(accession: str, name: str, relationship: str) -> dict:
+    return {"ACCESSION_NUMBER": accession, "RPTOWNERNAME": name, "RPTOWNER_RELATIONSHIP": relationship}
+
+
+def _trade(accession: str, code: str, day: str, shares: str, price: str = "") -> dict:
+    return {"ACCESSION_NUMBER": accession, "SECURITY_TITLE": "Common Stock", "TRANS_DATE": day, "TRANS_CODE": code,
+            "TRANS_SHARES": shares, "TRANS_PRICEPERSHARE": price}
+
+
+def test_reduce_keeps_only_open_market_trades_of_form_4(tmp_path):
+    path = _insider_zip(tmp_path, [
+        _submission("0000000002-26-000001", "3", "02-JUN-2026", "2", "BBB"),
+        _submission("0000000002-26-000002", "4", "03-JUN-2026", "2", "BBB"),
+    ], [
+        _owner("0000000002-26-000001", "NEW NANCY", "Officer"),
+        _owner("0000000002-26-000002", "BIG FUND LP", "Director,TenPercentOwner"),
+    ], [
+        _trade("0000000002-26-000001", "P", "01-JUN-2026", "500", "9.5"),  # a Form 3 row
+        _trade("0000000002-26-000002", "A", "01-JUN-2026", "1000"),  # an award
+        _trade("0000000002-26-000002", "P", "01-JUN-2026", "2500", "10.25"),
+    ])
+    trades = reduce_insider_set(path)
+    assert list(trades.columns) == SET_COLUMNS
+    assert len(trades) == 1
+    row = trades.iloc[0]
+    assert row["accession"] == "0000000002-26-000002" and row["issuer_cik"] == 2
+    assert row["filed_ticker"] == "BBB" and row["code"] == "P"
+    assert row["filing_date"] == date(2026, 6, 3) and row["trade_date"] == date(2026, 6, 1)
+    assert row["shares"] == 2500 and row["price"] == 10.25
+    assert list(row["owners"]) == ["BIG FUND LP"]
+    assert bool(row["director"]) and bool(row["ten_percent_owner"]) and not bool(row["officer"])
+
+
+def test_reduce_keeps_amendments_sales_and_trades_without_a_price(tmp_path):
+    path = _insider_zip(tmp_path, [
+        _submission("0000000001-26-000003", "4/A", "05-JUN-2026", "1", "AAA"),
+        _submission("0000000001-26-000004", "5", "05-JUN-2026", "1", "AAA"),
+    ], [
+        _owner("0000000001-26-000003", "SMITH JOHN", "Officer"),
+        _owner("0000000001-26-000003", "SMITH JANE", "Director"),
+    ], [
+        _trade("0000000001-26-000003", "S", "04-JUN-2026", "300"),
+        _trade("0000000001-26-000003", "M", "04-JUN-2026", "300", "1.0"),
+        _trade("0000000001-26-000004", "P", "04-JUN-2026", "300", "1.0"),  # a Form 5 row
+    ])
+    trades = reduce_insider_set(path)
+    assert trades["code"].tolist() == ["S"]
+    assert list(trades["owners"].iloc[0]) == ["SMITH JOHN", "SMITH JANE"]
+    assert bool(trades["officer"].iloc[0]) and bool(trades["director"].iloc[0])
+    assert np.isnan(trades["price"].iloc[0])
+
+
+def test_history_joins_acceptance_by_accession_and_maps_the_issuer_cik(tmp_path):
+    first = reduce_insider_set(_insider_zip(tmp_path, [
+        _submission("0000000002-26-000002", "4", "03-JUN-2026", "2", "BBB"),
+        _submission("0000000009-26-000001", "4", "03-JUN-2026", "9", "ZZZ"),  # not in the universe
+    ], [
+        _owner("0000000002-26-000002", "BIG FUND LP", "TenPercentOwner"),
+        _owner("0000000009-26-000001", "SOMEONE", "Officer"),
+    ], [
+        _trade("0000000002-26-000002", "P", "01-JUN-2026", "2500", "10.25"),
+        _trade("0000000009-26-000001", "P", "01-JUN-2026", "1", "1"),
+    ], name="2026q2_form345.zip"))
+    second = reduce_insider_set(_insider_zip(tmp_path, [
+        _submission("0000000001-26-000007", "4", "01-JUL-2026", "1", "AAA"),
+    ], [_owner("0000000001-26-000007", "SMITH JOHN", "Officer")], [
+        _trade("0000000001-26-000007", "S", "30-JUN-2026", "100", "20"),
+    ], name="2026q3_form345.zip"))
+    filings = reduce_submissions(_zip(tmp_path, {
+        "CIK0000000002.json": _company(2, [
+            _filing("0000000002-26-000002", "4", "2026-06-03", accepted="2026-06-03T21:15:00.000Z"),
+        ]),
+    }), [1, 2], date(2018, 1, 1), forms=SUBMISSION_FORMS)
+    history = insider_history([first, second], filings, TICKERS)
+    assert list(history.columns) == INSIDER_COLUMNS
+    history = history.sort_values(["symbol", "accession"]).reset_index(drop=True)
+    assert history["symbol"].tolist() == ["AAA", "BBB", "BBB.B"]  # share classes share the CIK
+    assert history["filed_ticker"].tolist() == ["AAA", "BBB", "BBB"]
+    assert str(history["accepted_at"].dtype) == "datetime64[ns, UTC]"
+    assert pd.isna(history["accepted_at"].iloc[0])  # no submissions row: NaT
+    assert history["accepted_at"].iloc[1] == pd.Timestamp("2026-06-03 17:15", tz="UTC")
+    assert history["ten_percent_owner"].tolist() == [False, True, True]
+
+
+def test_no_insider_sets_still_give_the_columns(tmp_path):
+    filings = reduce_submissions(_zip(tmp_path, {}), [1], date(2018, 1, 1))
+    assert list(insider_history([], filings, TICKERS).columns) == INSIDER_COLUMNS
+
+
+def test_the_history_round_trips_through_parquet_into_the_features(tmp_path):
+    trades = reduce_insider_set(_insider_zip(tmp_path, [
+        _submission("0000000002-26-000002", "4", "03-JUN-2026", "2", "BBB"),
+    ], [
+        _owner("0000000002-26-000002", "DOE JANE", "Officer"),
+        _owner("0000000002-26-000002", "ROE RICHARD", "Director"),
+    ], [_trade("0000000002-26-000002", "P", "01-JUN-2026", "1000", "10")]))
+    filings = reduce_submissions(_zip(tmp_path, {}), [2], date(2018, 1, 1))
+    path = tmp_path / "insider_trades.parquet"
+    insider_history([trades], filings, TICKERS).to_parquet(path)
+    days = pd.DatetimeIndex(["2026-06-04", "2026-06-05"])  # no acceptance time: known one session after the 3rd
+    value = pd.DataFrame(1e6, index=days, columns=["BBB"])
+    out = insider_features(pd.read_parquet(path), value, {"BBB"}, days, ["BBB"])
+    assert out["insider_buyers_90d"]["BBB"].tolist() == [0, 2]
+    assert out["officer_buy_180d"]["BBB"].tolist() == [0, 1]
+    assert out["insider_net_buy_90d"]["BBB"].tolist() == [0, pytest.approx(0.01)]

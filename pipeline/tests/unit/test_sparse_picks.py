@@ -30,7 +30,7 @@ def test_a_pick_must_clear_its_costs_by_the_margin():
 
 def test_the_search_book_uses_the_margin_too():
     rows = pd.DataFrame({
-        "symbol": ["A", "B"], "horizon": [21, 21], "p": [0.49, 0.48],
+        "symbol": ["A", "B"], "horizon": [21, 21], "p": [0.49, 0.48], "p_raw": [0.49, 0.48],
         "q10": [-0.05, -0.05], "q50": [0.015, 0.05], "q90": [0.10, 0.10], "dollar_volume_20": [5e7, 5e7],
     })
     assert list(_candidates(rows, replace(EDGE, top_n=2), Market.TSX, 1.5)["symbol"]) == ["B"]

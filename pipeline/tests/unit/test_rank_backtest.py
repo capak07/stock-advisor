@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from advisor.benchmark import policy_search
 from advisor.model.backtest import gate, in_top_n
@@ -17,6 +18,7 @@ def _frame():
         "symbol": ["A", "B", "C", "D", "E", "A", "B"],
         "horizon": [21, 21, 21, 21, 63, 21, 21],
         "p": [0.47, 0.49, 0.48, np.nan, 0.40, 0.30, 0.31],
+        "p_raw": [0.01, 0.03, 0.02, 0.09, 0.00, -0.02, -0.01],
     })
 
 
@@ -24,6 +26,21 @@ def test_rank_mode_simulates_the_top_n():
     top = in_top_n(_frame(), 2)
     # day 1, horizon 21: B (0.49), C (0.48) — the NaN never ranks; horizon 63: E alone; day 2: B, A
     assert top.tolist() == [False, True, True, False, True, True, True]
+
+
+def test_tied_p_is_ranked_by_the_raw_score_not_the_alphabet():
+    frame = _frame().iloc[:3].assign(p=0.53, p_raw=[0.01, 0.02, 0.03])  # A, B, C all at the ceiling
+    assert in_top_n(frame, 2).tolist() == [False, True, True]
+
+
+def test_a_row_without_a_raw_score_never_ranks():
+    frame = _frame().iloc[:3].assign(p_raw=[np.nan, 0.02, 0.03])
+    assert in_top_n(frame, 3).tolist() == [False, True, True]
+
+
+def test_a_frame_without_raw_scores_is_refused():
+    with pytest.raises(KeyError):
+        in_top_n(_frame().drop(columns="p_raw"), 2)
 
 
 def test_the_search_tries_each_top_n_once():
@@ -54,7 +71,7 @@ def test_a_jump_day_never_takes_a_top_n_place_in_the_search():
     from advisor.models import Market
     rows = pd.DataFrame({
         "symbol": ["J", "A", "B"], "horizon": [21, 21, 21], "p": [0.60, 0.49, 0.48],
-        "q10": [-0.05] * 3, "q50": [0.05] * 3, "q90": [0.10] * 3, "dollar_volume_20": [5e7] * 3,
+        "p_raw": [0.60, 0.49, 0.48], "q10": [-0.05] * 3, "q50": [0.05] * 3, "q90": [0.10] * 3, "dollar_volume_20": [5e7] * 3,
         "jump_5d": [1.0, 0.0, 0.0],
     })
     picked = _candidates(rows, RANK, Market.TSX, 1.5)

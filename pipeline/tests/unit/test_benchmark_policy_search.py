@@ -34,7 +34,7 @@ def market(samples=5, every=15):
             q50 = 0.05 if good else 0.08
             rows.append({"day": day, "symbol": s, "sector": s, "dollar_volume_20": 2e7, "horizon": 5, "fold": 1,
                          "y": 0.0, "q10": q50 - 0.1, "q50": q50, "q90": q50 + 0.1, "p_raw": 0.6,
-                         "p": 0.61 if good else 0.59})
+                         "p": 0.61 if good else 0.59, "p_raw": 0.61 if good else 0.59})
     return pd.DataFrame(rows), pnl, [Fold(days[0], days[-1] + pd.Timedelta(days=1))]
 
 

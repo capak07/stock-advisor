@@ -55,10 +55,13 @@ def _priced(predictions: pd.DataFrame, market: Market, usd_fx_fee_pct: float) ->
 
 
 def in_top_n(df: pd.DataFrame, n: int) -> pd.Series:
-    """Whether each row is among the top `n` by P(beat) for its horizon (and day, when the frame
-    has one), ties by symbol; a NaN P never ranks. The live rule is `recommend.picks.top_by_horizon`."""
+    """Whether each row is among the top `n` by raw score (`p_raw`, what P is calibrated from) for
+    its horizon (and day, when the frame has one), ties by symbol. P is clipped and steps, so it
+    ties; the raw score does not. A row with no P or no raw score never ranks. The live rule is
+    `recommend.picks.top_by_horizon`."""
     keys = [k for k in ("day", "horizon") if k in df]
-    ranked = df[df["p"].notna()].sort_values(["p", "symbol"], ascending=[False, True], kind="stable")
+    known = df["p"].notna() & np.isfinite(df["p_raw"].to_numpy(dtype=float))
+    ranked = df[known].sort_values(["p_raw", "symbol"], ascending=[False, True], kind="stable")
     place = ranked.groupby(keys, sort=False).cumcount() + 1
     out = pd.Series(False, index=df.index)
     out[place.index] = place.to_numpy() <= n
@@ -66,7 +69,7 @@ def in_top_n(df: pd.DataFrame, n: int) -> pd.Series:
 
 
 def _qualified(df: pd.DataFrame, policy: Policy) -> pd.Series:
-    """The P floor, or with `top_n` the top-N rank (spec §11); a NaN P passes neither."""
+    """The P floor, or with `top_n` the top-N rank by raw score (spec §11); a NaN P passes neither."""
     return in_top_n(df, policy.top_n) if policy.top_n is not None else df["p"] >= policy.p_buy
 
 

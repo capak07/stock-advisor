@@ -5,8 +5,11 @@ text. So each fetch makes two market-wide requests over the last WINDOW_DAYS:
 - NDA and BLA applications with an approval in the window;
 - drug recalls reported in the window.
 
-The names are then matched to the run's stocks (`advisor.sponsors`). openFDA refreshes both
-data sets about weekly.
+WINDOW_DAYS is the model's longest window plus its lag (`model.catalysts` counts approvals dated up
+to APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS days back; Ruling R3, F4). The names are matched with
+`advisor.sponsors` against every US name in the directory, as the training history matches them, so a
+name two companies share matches neither in both; records are kept for the requested stocks only.
+openFDA refreshes both data sets about weekly.
 
 Approvals counted for a stock:
 - an original approval (a new drug, formulation or biologic);
@@ -42,17 +45,20 @@ from advisor.collectors.base import (
     get_with_retries,
 )
 from advisor.company_names import CompanyNames
+from advisor.markets import market_of
 from advisor.models import ET, AssetType, Market
 from advisor.sponsors import SponsorMatcher
 
 APPROVALS_URL = "https://api.fda.gov/drug/drugsfda.json"
 RECALLS_URL = "https://api.fda.gov/drug/enforcement.json"
-WINDOW_DAYS = 90
 # The model's windows (`model.catalysts`): a record is read a week after its date, as openFDA publishes
-# about weekly, in training and live alike. Task 11 sets WINDOW_DAYS = APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS.
+# about weekly, in training and live alike.
 FDA_LAG_DAYS = 7
 APPROVAL_WINDOW_DAYS = 180
 RECALL_WINDOW_DAYS = 90
+WINDOW_DAYS = APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS
+COUNT_DAYS = 90  # the `*_90d` fields' window
+COUNTED_APPROVALS = ("original", "new_indication")  # the model's approvals (`new_molecule` is an original)
 PAGE = 1000  # openFDA's largest page
 OPENFDA_PER_MINUTE = 60
 
@@ -70,6 +76,11 @@ class DrugEvents(BaseModel):
     class1_recalls_90d: int = 0  # the most serious class
     latest_recall: date | None = None
     data_updated: date | None = None  # openFDA's last refresh of the approvals data
+    # The model's rows over the whole WINDOW_DAYS: one date per counted approval (an original or a new
+    # indication), and each recall event's earliest report date. A record cached before these fields
+    # existed has none, so the stock reads no events until the next fetch.
+    approval_days: list[date] = []
+    recall_days: dict[str, date] = {}
 
 
 def fda_date(text: str | None) -> date | None:
@@ -136,23 +147,43 @@ def drug_events(
     recalls: Sequence[Mapping[str, Any]],
     as_of: datetime,
     data_updated: date | None,
+    symbols: Sequence[str] | None = None,
 ) -> list[DrugEvents]:
+    """One record per stock with an approval or recall in the window (only `symbols`, when given).
+
+    The `*_90d` fields and the latest dates count the last COUNT_DAYS days; `approval_days` and
+    `recall_days` cover the whole WINDOW_DAYS."""
     start, end = window(as_of)
+    recent = end - timedelta(days=COUNT_DAYS)
+    wanted = None if symbols is None else set(symbols)
     counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     latest_approval: dict[str, date] = {}
+    approval_days: dict[str, list[date]] = defaultdict(list)
     for sponsor, kind, day in approvals(applications, start, end):
         for symbol in matcher.symbols_for(sponsor):
-            counts[symbol][kind] += 1
-            latest_approval[symbol] = max(day, latest_approval.get(symbol, day))
+            if wanted is not None and symbol not in wanted:
+                continue
+            if kind in COUNTED_APPROVALS:
+                approval_days[symbol].append(day)
+            if day >= recent:
+                counts[symbol][kind] += 1
+                latest_approval[symbol] = max(day, latest_approval.get(symbol, day))
     events: dict[str, set[str]] = defaultdict(set)
     serious: dict[str, set[str]] = defaultdict(set)
     latest_recall: dict[str, date] = {}
+    recall_days: dict[str, dict[str, date]] = defaultdict(dict)
     for recall in recalls:
         day = fda_date(recall.get("report_date"))
         if day is None or not start <= day <= end:
             continue
         for symbol in matcher.symbols_for(recall.get("recalling_firm") or ""):
+            if wanted is not None and symbol not in wanted:
+                continue
             event = str(recall.get("event_id") or recall.get("recall_number"))
+            # an event listed on several dates is dated by its earliest (Ruling R12)
+            recall_days[symbol][event] = min(day, recall_days[symbol].get(event, day))
+            if day < recent:
+                continue
             events[symbol].add(event)
             if recall.get("classification") == "Class I":
                 serious[symbol].add(event)
@@ -169,8 +200,10 @@ def drug_events(
             class1_recalls_90d=len(serious[symbol]),
             latest_recall=latest_recall.get(symbol),
             data_updated=data_updated,
+            approval_days=sorted(approval_days[symbol]),
+            recall_days=dict(sorted(recall_days[symbol].items())),
         )
-        for symbol in sorted(set(latest_approval) | set(latest_recall))
+        for symbol in sorted(set(approval_days) | set(recall_days) | set(latest_approval))
     ]
 
 
@@ -212,13 +245,17 @@ class OpenFda:
         )
         recalls, _ = _results(self._client, RECALLS_URL, f"report_date:{span}", self._limiter)
         if not recalls:
-            raise RuntimeError("openFDA reported no drug recalls in 90 days: the search is probably broken")
-        known = {symbol: name for symbol in symbols if (name := self._names.get(symbol))}
+            raise RuntimeError(
+                f"openFDA reported no drug recalls in {WINDOW_DAYS} days: the search is probably broken"
+            )
+        # every US name, as the training history matches them; the TSX names are not in its directory
+        us_names = {symbol: name for symbol, name in self._names.items() if market_of(symbol) is Market.US}
         updated = meta.get("last_updated")
         return drug_events(
-            SponsorMatcher(known),
+            SponsorMatcher(us_names),
             applications,
             recalls,
             as_of,
             date.fromisoformat(updated) if updated else None,
+            symbols,
         )

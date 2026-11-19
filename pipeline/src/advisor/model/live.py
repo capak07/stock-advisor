@@ -1,7 +1,9 @@
 """Live features: the training feature step run on a short window of recent bars.
 
 `live_features` calls `feature_frames`, the same code `load_market` trains on, so a stock's live
-features equal its training features for the same day (given enough history in the window).
+features equal its training features for the same day (given enough history in the window). The US
+data groups come in as a `GroupHistory` built from the run's collector records
+(`live_groups.history_from_records`).
 """
 
 import time
@@ -17,6 +19,7 @@ from advisor.markets import MARKETS
 from advisor.model.dataset import feature_frames
 from advisor.model.features import to_wide
 from advisor.model.garch import GarchParams, live_garch_vol
+from advisor.model.groups import GroupHistory
 from advisor.models import DailyBar, Market
 from advisor.screener import ADV_WINDOW
 from advisor.training.prices import download_history, training_download
@@ -65,12 +68,14 @@ def split_events(
     return download_history(list(symbols), today - SPLIT_REACH, today, download=download, sleep=sleep).events
 
 
-def _day_row(prices, events, sectors, market, day, facts, tickers, session: pd.Timestamp) -> pd.DataFrame:
+def _day_row(prices, events, sectors, market, day, facts, tickers, session: pd.Timestamp,
+             history: GroupHistory | None = None) -> pd.DataFrame:
     """Every symbol's features and eligibility on `session`, from the bars up to and including it."""
     days = pd.DatetimeIndex([session])
     frames = feature_frames(
         prices[pd.to_datetime(prices["day"]) <= session], events, sectors, market, days,
         facts=facts, tickers=tickers, split_calendar=pd.bdate_range(session - SPLIT_REACH, session),
+        history=history,
     )
     out = pd.DataFrame({name: frames.features[name].loc[session] for name in [*frames.names, *frames.extras]})
     out["eligible"] = frames.eligible.loc[session].astype(bool)
@@ -108,12 +113,14 @@ def live_features(
     events: pd.DataFrame | None = None,
     facts: pd.DataFrame | None = None,
     tickers: pd.DataFrame | None = None,
+    history: GroupHistory | None = None,
 ) -> pd.DataFrame:
     """One row per stock on `day`: the market's features, `eligible`, `dollar_volume_20` and `sector`.
 
     With `partial_day` today's bar is incomplete (its volume is partway through the session), so the
     volume features and eligibility come from the previous session; prices still use today's bar.
-    Either way a stock without a close on `day` is not eligible.
+    Either way a stock without a close on `day` is not eligible. `history` is the US data groups'
+    frames (None: their features read NaN); each reads only records known strictly before `day`.
     """
     benchmark = MARKETS[market].benchmark
     etfs = [benchmark, *SECTOR_ETFS[market].values()]
@@ -123,7 +130,7 @@ def live_features(
     sessions = pd.to_datetime(prices.loc[prices["symbol"] == benchmark, "day"])
     if not (sessions == day).any():
         raise ValueError(f"no {benchmark} bar for {day:%Y-%m-%d}")
-    out = _day_row(prices, events, sectors, market, day, facts, tickers, day)
+    out = _day_row(prices, events, sectors, market, day, facts, tickers, day, history)
     if partial_day:
         previous = pd.Timestamp(sessions[sessions < day].max())
         last = _day_row(prices, events, sectors, market, day, facts, tickers, previous).reindex(out.index)

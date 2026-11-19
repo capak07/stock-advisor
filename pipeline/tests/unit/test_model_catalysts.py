@@ -78,3 +78,19 @@ def test_every_symbol_reads_zero_without_events_and_missing_without_the_source()
     empty = catalysts_features(_events([]), days, ["AAA"])  # a source that ran and found nothing
     assert not np.isnan(empty["fda_approvals_180d"].to_numpy()).any()
     assert empty["fda_recalls_90d"]["AAA"].tolist() == [0, 0]
+
+
+def test_an_event_listed_on_several_dates_is_dated_by_its_earliest_row():
+    """Ruling R12: whatever order the rows come in, the earliest date dates the event."""
+    events = _events([
+        ("AAA", "recall", "2026-04-20", "R1"),  # listed again later, first in the frame
+        ("AAA", "recall", "2026-01-05", "R1"),
+        ("AAA", "approval", "2026-05-01", "NDA1:x"),
+        ("AAA", "approval", "2026-01-05", "NDA1:x"),
+    ])
+    first_known = _offset("2026-01-05", FDA_LAG_DAYS)
+    later_known = _offset("2026-04-20", FDA_LAG_DAYS)
+    days = _days(_offset(first_known, 1), _offset(later_known, 1), _offset(first_known, APPROVAL_WINDOW_DAYS + 1))
+    out = catalysts_features(events, days, ["AAA"])
+    assert out["fda_recalls_90d"]["AAA"].tolist() == [1, 0, 0]  # the later listing does not renew it
+    assert out["fda_approvals_180d"]["AAA"].tolist() == [1, 1, 0]

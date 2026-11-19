@@ -41,7 +41,9 @@ from advisor.history import record as record_price_history
 from advisor.markets import BENCHMARKS, MARKETS, market_of
 from advisor.model.crypto import BTC, CRYPTO
 from advisor.model.crypto_live import coin_costs, forecast_coins
+from advisor.model.groups import GroupHistory
 from advisor.model.live import bars_frame, facts_frame, live_features, live_garch, split_events
+from advisor.model.live_groups import history_from_records
 from advisor.model.market_run import Forecast, MarketModel, feature_day, model_failure
 from advisor.model.predict import load_active, predict_rows, screen_scores
 from advisor.model.weekly import KIND
@@ -346,10 +348,12 @@ def model_features(
     *,
     events: pd.DataFrame | None = None,
     facts: tuple[pd.DataFrame, pd.DataFrame] | None = None,
+    history: GroupHistory | None = None,
 ) -> pd.DataFrame:
     """Stage 6: the training code's features for `symbols` on the market's last session.
 
-    Without `facts`, a US stock's fundamentals are missing; the screener uses none of them.
+    Without `facts`, a US stock's fundamentals are missing; the screener uses none of them. Without
+    `history` (the US data groups from the run's records), the group features read NaN.
     """
     wanted = [*symbols, MARKETS[market].benchmark, *SECTOR_ETFS[market].values()]
     prices = bars_frame({s: bars[s] for s in dict.fromkeys(wanted) if s in bars})
@@ -359,7 +363,7 @@ def model_features(
     table, tickers = facts if facts is not None else (None, None)
     features = live_features(
         prices, market, day, sectors=model.sectors, partial_day=partial,
-        events=events, facts=table, tickers=tickers,
+        events=events, facts=table, tickers=tickers, history=history,
     )
     garch = getattr(model.active.model, "garch", None)
     if garch is not None:  # a garch model reads each stock's GARCH volatility (Plan 6d); NaN without a fit
@@ -421,12 +425,15 @@ def forecast_market(
     Training kept only eligible stock-days, so an ineligible stock gets `model_eligible: false` and
     no forecast. Returns the market's summary fields, and its features and forecasts for stage 8.
 
-    US fundamentals come from the run's SEC facts. Split events are best-effort: without them a
-    stock that split since its last filing gets off fundamentals, which beats no forecast at all.
+    US fundamentals come from the run's SEC facts, and the US data groups from the run's collector
+    records (a source that did not run cleanly leaves its features NaN). Split events are best-effort:
+    without them a stock that split since its last filing gets off fundamentals, which beats no
+    forecast at all.
     """
     added: dict = {}
-    events, facts = None, None
+    events, facts, history = None, None, None
     if market is Market.US:
+        history = history_from_records(results)
         sec = results.get("sec_xbrl")
         filed = [f for f in (sec.records if sec is not None else []) if isinstance(f, FinancialFact)]
         facts = facts_frame(filed)
@@ -437,7 +444,9 @@ def forecast_market(
                 )
             except Exception as exc:  # Yahoo throttling or the run budget: forecast without them
                 added["split_events"] = f"failed: {type(exc).__name__}: {exc}"[:200]
-    features = model_features(market, model, symbols, bars, kind, now_utc, events=events, facts=facts)
+    features = model_features(
+        market, model, symbols, bars, kind, now_utc, events=events, facts=facts, history=history
+    )
     benchmark = MARKETS[market].benchmark
     eligible = features[features["eligible"].astype(bool)]
     rows = predict_rows(model.active, eligible, benchmark) if not eligible.empty else []

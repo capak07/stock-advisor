@@ -4,8 +4,10 @@ SEC's 13F listing shows no publication date, so a quarter is known at the later 
 days (the filing deadline) and its data set's window end + 30 days (Ruling R6); training and live use
 the same rule (`quarter_known`) and this same feature function (Ruling R3, F5). On day D a symbol reads
 its latest quarter known strictly before D and the quarter whose period ended 80 to 100 days before it,
-also known before D. Without that pair both features are NaN. Share counts are compared on today's
-basis: each quarter's shares are multiplied by the split factor at its period end.
+also known before D. Without that pair both features are NaN, and so they are once that latest quarter
+was known more than HOLDERS_STALE_DAYS before D (a CUSIP missing from later data sets must not carry
+an old pair forever; Ruling R11). Share counts are compared on today's basis: each quarter's shares
+are multiplied by the split factor at its period end.
 
 `quarters` has `symbol`, `period`, `known`, `shares` and `holders` (`holders.parquet`, or live's three
 data sets in the same shape). None (live: its collector did not run cleanly) reads NaN everywhere.
@@ -23,6 +25,7 @@ HOLDERS_FEATURES = ["holder_count_chg", "inst_shares_chg"]
 FILING_DEADLINE_DAYS = 45  # a 13F is due 45 days after its quarter ends
 PUBLICATION_LAG_DAYS = 30  # a data set is read from 30 days after its window closes
 PREVIOUS_MIN_DAYS, PREVIOUS_MAX_DAYS = 80, 100  # the previous quarter's period end, before the latest's
+HOLDERS_STALE_DAYS = 200  # a latest quarter known longer ago than this is no longer read
 
 
 def quarter_known(period: date, window_end: date) -> date:
@@ -80,6 +83,7 @@ def holders_features(quarters: pd.DataFrame | None, shares: pd.DataFrame, splits
         before = np.where(latest >= 0, previous[np.maximum(latest, 0)], -1)
         pair = (latest >= 0) & (before >= 0)
         pair &= known[np.maximum(before, 0)] < day_ns  # the previous quarter must be known before D too
+        pair &= (day_ns - known[np.maximum(latest, 0)]) <= np.timedelta64(HOLDERS_STALE_DAYS, "D")
         now, then = np.maximum(latest, 0), np.maximum(before, 0)
         total = outstanding[symbol].to_numpy(float)
         total = np.where(total > 0, total, np.nan)

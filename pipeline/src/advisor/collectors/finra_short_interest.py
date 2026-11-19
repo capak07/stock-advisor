@@ -2,7 +2,9 @@
 
 FINRA settles short interest on the 15th and the last business day of each month and publishes
 about seven business days later, re-issuing files after first publication. The weekly run takes
-the newest file that exists (unpublished files answer HTTP 403).
+the SETTLEMENTS newest files that exist (unpublished files answer HTTP 403): the model reads a
+settlement only SHORT_KNOWN_SESSIONS (12) sessions after it, so while the newest file is younger than
+that the latest known report is the second newest, and its change needs the third (Ruling R3, F6).
 """
 
 import calendar
@@ -33,6 +35,7 @@ REQUIRED_COLUMNS = (
 )  # read by name: older files and later layouts add, drop or reorder the others
 NO_VOLUME_DAYS_TO_COVER = "999.99"  # FINRA's placeholder when average daily volume is zero
 UNPUBLISHED = frozenset({403, 404})
+SETTLEMENTS = 3  # the newest published settlements a fetch returns
 
 
 class ShortInterest(BaseModel):
@@ -120,7 +123,11 @@ class FinraShortInterest:
         self._limiter = limiter
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[ShortInterest]:
+        """Every requested symbol's rows of the SETTLEMENTS newest published files, newest first; an
+        unpublished day is skipped. Raises only when none of `settlement_dates(as_of)` is published."""
         wanted = requested_by_key(symbols)
+        records: list[ShortInterest] = []
+        found = 0
         for day in settlement_dates(as_of):
             check_deadline()
             try:
@@ -131,5 +138,10 @@ class FinraShortInterest:
                 if exc.response.status_code in UNPUBLISHED:
                     continue
                 raise
-            return parse_short_interest(response.text, wanted)
-        raise RuntimeError("no published FINRA short interest file in the last two months")
+            records.extend(parse_short_interest(response.text, wanted))
+            found += 1
+            if found == SETTLEMENTS:
+                break
+        if not found:
+            raise RuntimeError("no published FINRA short interest file in the last two months")
+        return records

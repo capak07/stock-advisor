@@ -93,3 +93,19 @@ def test_shares_outstanding_missing_reads_missing_share_change_only():
     out = _features(quarters, ["2025-07-01"], ["A"], outstanding=np.nan)
     assert np.isnan(out["inst_shares_chg"]["A"].iloc[0])
     assert out["holder_count_chg"]["A"].iloc[0] == 2.0
+
+
+def test_a_latest_quarter_known_over_200_days_ago_reads_missing():
+    """Ruling R11: a CUSIP missing from later data sets does not carry its last pair forever."""
+    from advisor.model.holders import HOLDERS_STALE_DAYS
+
+    known = pd.Timestamp("2025-06-30")
+    quarters = _quarters("A", [("2024-12-31", "2025-03-01", 1_000, 10), ("2025-03-31", "2025-06-30", 1_500, 12)])
+    days = [known + pd.Timedelta(days=199), known + pd.Timedelta(days=HOLDERS_STALE_DAYS),
+            known + pd.Timedelta(days=201)]
+    out = _features(quarters, days, ["A"])
+    assert HOLDERS_STALE_DAYS == 200
+    assert out["holder_count_chg"]["A"].iloc[:2].tolist() == [2.0, 2.0]
+    assert out["inst_shares_chg"]["A"].iloc[0] == pytest.approx(500 / 10_000)
+    assert out["holder_count_chg"]["A"].iloc[2:].isna().all()
+    assert out["inst_shares_chg"]["A"].iloc[2:].isna().all()

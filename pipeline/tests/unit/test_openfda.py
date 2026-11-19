@@ -4,7 +4,16 @@ from datetime import UTC, date, datetime
 import httpx
 import pytest
 
-from advisor.collectors.openfda import APPROVALS_URL, RECALLS_URL, DrugEvents, OpenFda, fda_date
+from advisor.collectors.openfda import (
+    APPROVAL_WINDOW_DAYS,
+    APPROVALS_URL,
+    FDA_LAG_DAYS,
+    RECALLS_URL,
+    WINDOW_DAYS,
+    DrugEvents,
+    OpenFda,
+    fda_date,
+)
 from advisor.company_names import CompanyNames
 
 AS_OF = datetime(2026, 10, 19, 15, 30, tzinfo=UTC)
@@ -63,14 +72,15 @@ def test_approvals_and_recalls_are_counted_for_the_runs_stocks(fixtures_dir):
     assert abbvie.as_of == date(2026, 10, 19)
 
 
-def test_both_searches_cover_the_last_ninety_days_in_one_page_each(fixtures_dir):
+def test_both_searches_cover_187_days_in_one_page_each(fixtures_dir):
     asked: list[httpx.Request] = []
     fetch(fixtures_dir, ["PFE"], asked=asked)
     searches = [request.url.params["search"] for request in asked]
+    assert WINDOW_DAYS == APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS == 187
     assert searches == [
-        "submissions.submission_status_date:[20260721 TO 20261019] AND submissions.submission_status:AP"
+        "submissions.submission_status_date:[20260415 TO 20261019] AND submissions.submission_status:AP"
         " AND (application_number:NDA* application_number:BLA*)",
-        "report_date:[20260721 TO 20261019]",
+        "report_date:[20260415 TO 20261019]",
     ]
     assert {request.url.params["limit"] for request in asked} == {"1000"}
 
@@ -115,3 +125,54 @@ def test_more_than_a_page_is_read_page_by_page(fixtures_dir):
 def test_fda_dates():
     assert fda_date("20260925") == date(2026, 9, 25)
     assert fda_date("") is None and fda_date(None) is None
+
+
+def test_openfda_matches_against_every_us_name_and_lists_dates():
+    """Names are matched over the whole US directory, as the training history matches them, and only the
+    requested stocks get records, carrying the model's dates over the whole window."""
+    application = {"application_number": "NDA000001", "sponsor_name": "ACME PHARMS", "submissions": [
+        {"submission_status": "AP", "submission_status_date": "20260420", "submission_type": "ORIG",
+         "submission_class_code": "TYPE 1"},  # 182 days back: outside the 90-day counts, inside the window
+        {"submission_status": "AP", "submission_status_date": "20261001", "submission_type": "SUPPL",
+         "submission_class_code": "EFFICACY"},
+        {"submission_status": "AP", "submission_status_date": "20261002", "submission_type": "SUPPL",
+         "submission_class_code": "LABELING"},  # not counted
+    ]}
+    shared = {"application_number": "NDA000002", "sponsor_name": "ZENITH", "submissions": [
+        {"submission_status": "AP", "submission_status_date": "20261001", "submission_type": "ORIG",
+         "submission_class_code": "TYPE 1"}]}
+    recalls = {"meta": {"results": {"total": 3}}, "results": [
+        {"report_date": "20260501", "recalling_firm": "Acme Pharmaceuticals Inc", "event_id": "E1",
+         "classification": "Class II"},
+        {"report_date": "20260910", "recalling_firm": "Acme Pharmaceuticals Inc", "event_id": "E1",
+         "classification": "Class II"},  # the same event listed again
+        {"report_date": "20260911", "recalling_firm": "Acme Pharmaceuticals Inc", "event_id": "E2",
+         "classification": "Class I"},
+    ]}
+    names = CompanyNames({
+        "ACME": "Acme Pharmaceuticals, Inc. Common Stock",
+        "ZEN": "Zenith Capital Corp Common Stock",  # not asked for, but its name blocks ZENX's match
+        "ZENX": "Zenith Therapeutics Common Stock",
+        "ZEN.TO": "Zenith Mining Corp",  # a TSX name is not in the US directory
+    })
+    approvals = {"meta": {"results": {"total": 2}, "last_updated": "2026-10-16"}, "results": [application, shared]}
+    answers = {APPROVALS_URL: approvals, RECALLS_URL: recalls}
+    with openfda(answers, []) as client:
+        events = OpenFda(client, names=names).fetch(["ACME", "ZENX"], AS_OF)
+    assert [e.symbol for e in events] == ["ACME"]  # ZENITH matches two US companies, so neither
+    acme = events[0]
+    assert acme.approval_days == [date(2026, 4, 20), date(2026, 10, 1)]
+    assert acme.recall_days == {"E1": date(2026, 5, 1), "E2": date(2026, 9, 11)}  # an event's earliest date
+    assert (acme.original_approvals_90d, acme.new_indications_90d, acme.latest_approval) == (0, 1, date(2026, 10, 1))
+    assert (acme.recalls_90d, acme.class1_recalls_90d, acme.latest_recall) == (2, 1, date(2026, 9, 11))
+    with openfda(answers, []) as client:
+        alone = OpenFda(client, names=CompanyNames({"ZENX": "Zenith Therapeutics Common Stock"})).fetch(["ZENX"], AS_OF)
+    assert [e.symbol for e in alone] == ["ZENX"]  # with the run's names only, it would have matched
+    tsx = CompanyNames({"ZENX": "Zenith Therapeutics Common Stock", "ZEN.TO": "Zenith Mining Corp"})
+    with openfda(answers, []) as client:
+        assert [e.symbol for e in OpenFda(client, names=tsx).fetch(["ZENX"], AS_OF)] == ["ZENX"]  # US names only
+
+
+def test_a_drug_events_record_cached_before_the_dates_still_loads():
+    old = DrugEvents.model_validate({"symbol": "PFE", "as_of": "2026-10-12", "recalls_90d": 1})
+    assert (old.approval_days, old.recall_days) == ([], {})

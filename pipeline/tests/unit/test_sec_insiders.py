@@ -50,7 +50,17 @@ def test_a_document_about_another_issuer_is_ignored(fixtures_dir):
     assert parse_form4("AAPL", FILING, boeing, 320193) == []
 
 
-def test_fetch_reads_the_last_90_days_of_form_4s(fixtures_dir):
+def test_insider_lookback_covers_180_days():
+    from datetime import timedelta
+
+    from advisor.collectors.sec_insiders import LOOKBACK
+    from advisor.model.insider import NET_BUY_WINDOW_DAYS, OFFICER_WINDOW_DAYS
+
+    assert LOOKBACK == timedelta(days=180)
+    assert LOOKBACK >= timedelta(days=max(OFFICER_WINDOW_DAYS, NET_BUY_WINDOW_DAYS))  # the model's longest window
+
+
+def test_fetch_reads_the_last_180_days_of_form_4s(fixtures_dir):
     seen: list[httpx.Request] = []
     trades = SecInsiders(fake_sec(sec_routes(fixtures_dir), seen=seen)).fetch(["AAPL"], AS_OF)
     assert len(trades) == 11  # 1 + 8 + 2; the two Boeing documents are ignored

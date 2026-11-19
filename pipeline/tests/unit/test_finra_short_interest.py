@@ -79,17 +79,36 @@ def test_parsing_without_a_wanted_list_keeps_every_finra_symbol(fixtures_dir):
     assert len(rows) > len(parse_short_interest(fixture_text(fixtures_dir), requested_by_key(["AAPL"])))
 
 
-def test_fetch_takes_the_newest_published_settlement(fixtures_dir):
+def test_fetch_takes_the_three_newest_published_settlements(fixtures_dir):
+    """The newest is under 12 sessions old, so the model reads the second, and its change needs the third
+    (Ruling R3, F6)."""
     seen: list[str] = []
-    published = FINRA_SHORT_INTEREST_URL.format(day=date(2026, 9, 15))
+    published = {FINRA_SHORT_INTEREST_URL.format(day=d)
+                 for d in (date(2026, 9, 15), date(2026, 8, 31), date(2026, 8, 14))}
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(str(request.url))
-        if str(request.url) == published:
+        if str(request.url) in published:
             return httpx.Response(200, text=fixture_text(fixtures_dir))
         return httpx.Response(403, text="AccessDenied")
 
     collector = FinraShortInterest(httpx.Client(transport=httpx.MockTransport(handler)))
     records = collector.fetch(["AAPL"], AS_OF)
-    assert [r.symbol for r in records] == ["AAPL"]
-    assert seen == [FINRA_SHORT_INTEREST_URL.format(day=date(2026, 9, 30)), published]
+    assert [r.symbol for r in records] == ["AAPL", "AAPL", "AAPL"]
+    assert seen == [FINRA_SHORT_INTEREST_URL.format(day=d) for d in (
+        date(2026, 9, 30), date(2026, 9, 15), date(2026, 8, 31), date(2026, 8, 14))]
+
+
+def test_fetch_keeps_what_it_found_and_fails_only_when_nothing_is_published(fixtures_dir):
+    published = FINRA_SHORT_INTEREST_URL.format(day=date(2026, 8, 14))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == published:
+            return httpx.Response(200, text=fixture_text(fixtures_dir))
+        return httpx.Response(403, text="AccessDenied")
+
+    collector = FinraShortInterest(httpx.Client(transport=httpx.MockTransport(handler)))
+    assert [r.symbol for r in collector.fetch(["AAPL"], AS_OF)] == ["AAPL"]
+    nothing = FinraShortInterest(httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(403))))
+    with pytest.raises(RuntimeError, match="no published FINRA short interest file"):
+        nothing.fetch(["AAPL"], AS_OF)

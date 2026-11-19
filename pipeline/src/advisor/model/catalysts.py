@@ -6,7 +6,7 @@ openFDA refreshes its data about weekly, so a record dated D0 is treated as know
 APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS`).
 
 `events` has `symbol`, `kind` ("approval" | "recall"), `day` and `event_id`. An event counts once however
-many rows list it (a recall of three products is one event). A symbol without events reads 0 when
+many rows list it (a recall of three products is one event), dated by its earliest row (Ruling R12). A symbol without events reads 0 when
 `events` is given, and a source given as None (live: its collector did not run cleanly) reads NaN.
 """
 
@@ -32,7 +32,8 @@ def catalysts_features(events: pd.DataFrame | None, days: pd.DatetimeIndex,
     symbols = list(symbols)
     if events is None:
         return {name: pd.DataFrame(np.nan, index=days, columns=symbols) for name in CATALYSTS_FEATURES}
-    rows = events.drop_duplicates(["symbol", "kind", "event_id"]).copy()
+    rows = events.assign(day=pd.to_datetime(events["day"]))
+    rows = rows.sort_values("day", kind="stable").drop_duplicates(["symbol", "kind", "event_id"]).copy()
     rows["known"] = pd.to_datetime(rows["day"]).astype("datetime64[ns]") + pd.Timedelta(days=FDA_LAG_DAYS)
     return {
         name: window_count(rows[rows["kind"] == kind], days, symbols, window)

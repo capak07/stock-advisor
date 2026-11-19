@@ -6,7 +6,12 @@ import pytest
 
 from advisor.collectors.base import DeadlineExceeded, PartialFetch
 from advisor.collectors.yahoo import rate_limited
-from advisor.collectors.yfinance_analyst import YFinanceAnalyst, analyst_view, read_ticker
+from advisor.collectors.yfinance_analyst import (
+    AnalystView,
+    YFinanceAnalyst,
+    analyst_view,
+    read_ticker,
+)
 from advisor.models import Market
 
 AS_OF = datetime(2026, 10, 12, 20, 0, tzinfo=UTC)
@@ -59,7 +64,7 @@ def test_zero_or_missing_targets_are_treated_as_missing():
 def test_yahoo_analyst_covers_both_markets_and_is_capped():
     collector = YFinanceAnalyst()
     assert collector.markets == frozenset({Market.US, Market.TSX})
-    assert collector.max_symbols == 200
+    assert collector.max_symbols == 600
 
 
 def test_fetch_maps_symbols_and_takes_one_limiter_token_per_symbol(fixtures_dir):
@@ -161,3 +166,24 @@ def test_a_rate_limit_while_reading_a_ticker_propagates(fixtures_dir):
     ticker = FakeTicker(aapl(fixtures_dir), raises={"recommendations": YFRateLimitError("Too Many Requests")})
     with pytest.raises(YFRateLimitError):
         read_ticker(ticker)
+
+
+def test_a_view_keeps_the_last_year_and_the_latest_downgrade_before_it():
+    upgrades = pd.DataFrame(
+        {"Firm": ["A", "B", "C", "D"], "ToGrade": "Buy", "FromGrade": "Hold",
+         "Action": ["up", "down", "down", "main"], "priceTargetAction": ["Raises", "Lowers", None, "Maintains"]},
+        index=pd.DatetimeIndex(["2026-10-01 15:00", "2025-09-01 15:00", "2024-03-01 15:00", "2023-01-01 15:00"],
+                               name="GradeDate"),
+    )
+    view = analyst_view("AAPL", {}, None, upgrades, AS_OF)
+    assert [(e.graded_at, e.firm, e.action, e.price_target_action) for e in view.events] == [
+        (datetime(2025, 9, 1, 15), "B", "down", "Lowers"),  # over a year back, the latest downgrade
+        (datetime(2026, 10, 1, 15), "A", "up", "Raises"),
+    ]
+    assert (view.oldest_event, view.event_count) == (datetime(2023, 1, 1, 15), 4)
+    assert view.events[0].from_grade == "Hold" and view.events[0].to_grade == "Buy"
+
+
+def test_a_view_cached_before_the_events_still_loads():
+    old = AnalystView.model_validate({"symbol": "AAPL", "as_of": "2026-10-09", "upgrades_30d": 2})
+    assert (old.events, old.oldest_event, old.event_count) == ([], None, 0)

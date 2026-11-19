@@ -6,8 +6,10 @@ ZIP of about 100 MB, a few weeks after the window closes, and lists them on LIST
 window's filings are mostly one quarter's reports, plus late and amended ones for older quarters.
 
 Each fetch reads the listing (one request). The two newest data sets give the latest quarter and
-the one before. Each is downloaded once, reduced to totals per CUSIP and kept on disk, so a ZIP
-is downloaded about four times a year. A quarter counts only the reports filed in its own window,
+the one before; the model also gets the third newest, because it reads a quarter only from its known
+date (`model.holders.quarter_known`, the training rule), so while the newest data set is not yet known
+its pair is the two before (Ruling R3, F5). Each is downloaded once, reduced to totals per CUSIP and
+kept on disk, so a ZIP is downloaded about four times a year. A quarter counts only the reports filed in its own window,
 so late filers are left out of both quarters alike.
 
 The totals follow the research (.superpowers/research/plan-2b/sec.md §5.3):
@@ -53,11 +55,22 @@ DATA_SET = re.compile(
     r'href="(?P<path>[^"]*?(?P<name>\d{2}[a-z]{3}\d{4}-\d{2}[a-z]{3}\d{4}|\d{4}q[1-4])_form13f\.zip)"'
 )
 QUARTER_NAME = re.compile(r"(?P<year>\d{4})q(?P<quarter>[1-4])")
-QUARTERS = 2  # the latest quarter and the one before
+QUARTERS = 3  # the latest quarter, the one before, and the one before that for the model
 CHECK_EVERY = 100_000  # INFOTABLE rows between deadline checks (a data set has about 3.8 million)
 ORIGINAL, RESTATEMENT, NEW_HOLDINGS = "13F-HR", "RESTATEMENT", "NEW HOLDINGS"
 
 csv.field_size_limit(10_000_000)  # some ADDITIONALINFORMATION cells are long
+
+
+class HeldQuarter(BaseModel):
+    """One data set's totals for a stock: what the model reads (`model.holders`)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    period: date  # the quarter's last day
+    window_end: date  # the data set's filing window end (`DataSet.end`)
+    shares: int | None = Field(default=None, ge=0)  # None: no filer reported it in this data set
+    holders: int | None = Field(default=None, ge=1)
 
 
 class InstitutionalOwnership(BaseModel):
@@ -74,6 +87,8 @@ class InstitutionalOwnership(BaseModel):
     previous_period: date
     previous_shares: int | None = Field(default=None, ge=0)  # None: no filer reported it then
     previous_holders: int | None = Field(default=None, ge=1)
+    # one per data set fetched, newest first; a record cached before this field existed has none
+    quarters: list[HeldQuarter] = []
 
 
 @dataclass(frozen=True)
@@ -266,6 +281,14 @@ def quarter_totals(sec: SecEdgar, folder: Path, data_set: DataSet) -> Quarter:
     return quarter
 
 
+def _held(data_set: DataSet, quarter: Quarter, cusip: str) -> HeldQuarter:
+    held = quarter.holdings.get(cusip)
+    return HeldQuarter(
+        period=quarter.period, window_end=data_set.end,
+        shares=held.shares if held else None, holders=held.holders if held else None,
+    )
+
+
 class Sec13f:
     name = "sec_13f"
     category = Category.FUNDAMENTALS
@@ -290,7 +313,8 @@ class Sec13f:
         data_sets = parse_listing(self._sec.get(LISTING_URL).text)[:QUARTERS]
         if len(data_sets) < QUARTERS:
             raise ValueError(f"SEC's 13F listing names {len(data_sets)} data sets, not {QUARTERS}")
-        latest, previous = (self._quarter(data_set) for data_set in data_sets)
+        totals = [self._quarter(data_set) for data_set in data_sets]
+        latest, previous = totals[0], totals[1]
         self._prune(data_sets)
         lookup = self._figis.lookup(symbols, as_of)
         records: list[InstitutionalOwnership] = []
@@ -310,6 +334,7 @@ class Sec13f:
                 previous_period=previous.period,
                 previous_shares=before.shares if before else None,
                 previous_holders=before.holders if before else None,
+                quarters=[_held(data_set, quarter, cusip) for data_set, quarter in zip(data_sets, totals, strict=True)],
             ))
         if lookup.failed:
             raise PartialFetch(

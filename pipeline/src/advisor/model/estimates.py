@@ -65,13 +65,14 @@ def estimates_features(reports: pd.DataFrame | None, days: pd.DatetimeIndex,
     - `days_to_next_report`: the least `(r + NEXT_REPORT_DAYS days - D).days` over past reports r with
       `r + NEXT_REPORT_DAYS days >= D`; NaN when there is none.
 
-    All NaN without `reports` (None) and for a symbol without reports.
+    All NaN without `reports` (None) and for a symbol without reports. Each day counts as its date: a
+    time of day (a live timestamp) never reads a report from that same date.
     """
     symbols = list(symbols)
     out = {name: pd.DataFrame(np.nan, index=days, columns=symbols) for name in ESTIMATES_FEATURES}
     if reports is None:
         return out
-    day_ns = _ns(days).to_numpy("datetime64[ns]")
+    day_ns = _ns(days).normalize().to_numpy("datetime64[ns]")
     year = np.timedelta64(NEXT_REPORT_DAYS, "D")
     for symbol, rows in _one_per_day(reports, symbols).groupby("symbol", sort=False):
         report_ns = rows["report_day"].to_numpy("datetime64[ns]")

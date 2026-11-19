@@ -1,11 +1,17 @@
-from datetime import date
+from datetime import UTC, date, datetime
 
 import numpy as np
 import pandas as pd
 import pytest
 
+from advisor.collectors.base import CollectorResult, CollectorStatus
+from advisor.collectors.sec_insiders import InsiderTrade
 from advisor.collectors.sec_xbrl import FinancialFact
+from advisor.collectors.yfinance_analyst import AnalystView, RatingEvent
+from advisor.model.analyst import ANALYST_FEATURES
 from advisor.model.dataset import WARMUP, load_market
+from advisor.model.groups import ALL_GROUP_FEATURES, load_history
+from advisor.model.insider import INSIDER_FEATURES
 from advisor.model.live import (
     LIVE_WINDOW,
     VOLUME_FEATURES,
@@ -14,8 +20,9 @@ from advisor.model.live import (
     live_features,
     split_events,
 )
+from advisor.model.live_groups import history_from_records
 from advisor.models import DailyBar, Market
-from model_data import write_market
+from model_data import write_group_histories, write_market
 
 
 def live_inputs(tmp_path, market):
@@ -68,6 +75,65 @@ def test_us_live_features_match_the_training_rows_with_earnings(tmp_path):
     pd.testing.assert_frame_equal(
         live.loc[training.index, names], training[names], check_exact=False, rtol=1e-6, atol=1e-9,
     )
+
+
+def _group_fixture(tmp_path):
+    """The parity fixture: three US stocks, every group's history for the first, and its sample day."""
+    stocks = write_market(tmp_path, Market.US, stocks=3, days=700)
+    write_group_histories(tmp_path, stocks)  # new helper in tests/model_data.py: one small file per source
+    data = load_market(tmp_path, Market.US)
+    day = data.calendar[WARMUP + 300]
+    prices, sectors = live_inputs(tmp_path, Market.US)
+    window = prices[pd.to_datetime(prices["day"]) >= day - LIVE_WINDOW]
+    return stocks, data, day, window, sectors
+
+
+def _us_live(tmp_path, window, day, sectors, history):
+    return live_features(window, Market.US, day, sectors=sectors, partial_day=False,
+                         facts=pd.read_parquet(tmp_path / "fundamentals.parquet"),
+                         tickers=pd.read_parquet(tmp_path / "tickers.parquet"), history=history)
+
+
+def test_us_live_features_match_the_training_rows_with_every_group(tmp_path):
+    stocks, data, day, window, sectors = _group_fixture(tmp_path)
+    live = _us_live(tmp_path, window, day, sectors, load_history(tmp_path))
+    training = data.rows[data.rows["day"] == day].set_index("symbol")
+    assert training.loc[stocks[0], ALL_GROUP_FEATURES].notna().all()  # the comparison reads real values
+    pd.testing.assert_frame_equal(live.loc[training.index, ALL_GROUP_FEATURES], training[ALL_GROUP_FEATURES],
+                                  check_exact=False, rtol=1e-6, atol=1e-9)
+    names = list(data.features) + list(data.extras)  # and nothing else moved
+    pd.testing.assert_frame_equal(live.loc[training.index, names], training[names],
+                                  check_exact=False, rtol=1e-6, atol=1e-9)
+
+
+def _form4(symbol: str, filed: date) -> InsiderTrade:
+    return InsiderTrade(
+        symbol=symbol, accession="0000000000-19-000001", form="4", filing_date=filed,
+        accepted_at=datetime(filed.year, filed.month, filed.day, 21, tzinfo=UTC), trade_date=filed,
+        owners=["DOE JANE"], director=False, officer=True, ten_percent_owner=False, code="P", acquired=True,
+        shares=1_000.0, price=10.0, direct=True, derivative=False, planned=False,
+    )
+
+
+def test_a_source_that_was_not_ok_reads_missing_in_the_features(tmp_path):
+    """Review Focus 1 (Ruling R3, F16): a source that did not run cleanly gives NaN, never 0, even for a
+    covered symbol whose OK source would read 0."""
+    stocks, _, day, window, sectors = _group_fixture(tmp_path)
+    trade = _form4(stocks[0], (day - pd.Timedelta(days=10)).date())
+    view = AnalystView(symbol=stocks[0], as_of=day.date(), oldest_event=datetime(2018, 1, 2, 15), event_count=1,
+                       events=[RatingEvent(graded_at=datetime(2018, 1, 2, 15), action="up")])
+
+    def run(name, status, records):
+        result = CollectorResult(name, status, records, 0, None if status is CollectorStatus.OK else "x")
+        return _us_live(tmp_path, window, day, sectors, history_from_records({name: result})).loc[stocks[0]]
+
+    partial = run("sec_form4", CollectorStatus.PARTIAL, [trade])
+    assert partial[INSIDER_FEATURES].isna().all()
+    assert run("sec_form4", CollectorStatus.OK, [])[INSIDER_FEATURES].tolist() == [0.0, 0.0, 0.0]  # covered
+    assert run("sec_form4", CollectorStatus.OK, [trade])["insider_buyers_90d"] == 1.0
+    failed = run("yfinance_analyst", CollectorStatus.FAILED, [])
+    assert failed[ANALYST_FEATURES].isna().all()
+    assert run("yfinance_analyst", CollectorStatus.OK, [view])[ANALYST_FEATURES[:3]].tolist() == [0.0, 0.0, 0.0]
 
 
 def test_a_partial_day_takes_volume_features_from_the_last_complete_session(tmp_path):

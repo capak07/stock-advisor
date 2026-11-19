@@ -77,7 +77,10 @@ def days_since(events: pd.DataFrame, days: pd.DatetimeIndex, symbols: Sequence[s
 
 
 def covered_symbols(facts: pd.DataFrame, tickers: pd.DataFrame) -> set[str]:
-    """The symbols whose CIK has at least one SEC fact."""
+    """The symbols whose CIK has at least one SEC fact; none when either frame lacks its `cik` column (or
+    `symbol`), as an empty frame built without the schema does."""
+    if facts is None or tickers is None or "cik" not in facts.columns or not {"symbol", "cik"} <= set(tickers.columns):
+        return set()
     ciks = set(pd.to_numeric(facts["cik"], errors="coerce").dropna().astype("int64"))
     tick = tickers.assign(cik=pd.to_numeric(tickers["cik"], errors="coerce")).dropna(subset=["cik"])
     return set(tick.loc[tick["cik"].astype("int64").isin(ciks), "symbol"])

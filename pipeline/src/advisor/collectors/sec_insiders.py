@@ -17,7 +17,7 @@ from advisor.collectors.sec import DocumentBudget, Filing, SecEdgar, number, pub
 from advisor.models import ET, AssetType, Market
 
 INSIDER_FORMS = frozenset({"4", "4/A"})
-LOOKBACK = timedelta(days=90)  # spec §5.1: insider net buys over 90 days
+LOOKBACK = timedelta(days=180)  # the model reads officer buys over 180 days (model.insider)
 MAX_DOCUMENTS = 1000  # per run; a first run over the whole shortlist finishes on later runs
 
 

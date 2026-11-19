@@ -95,6 +95,14 @@ def test_covered_symbols_are_those_whose_cik_has_a_fact():
     assert covered_symbols(facts.iloc[:0], tickers) == set()
 
 
+def test_covered_symbols_without_a_cik_column_are_none():
+    """A facts frame built without the schema (no `cik` column), or none at all, covers no symbol."""
+    tickers = pd.DataFrame({"symbol": ["A"], "cik": [1]})
+    assert covered_symbols(pd.DataFrame(), tickers) == set()
+    assert covered_symbols(None, tickers) == set()
+    assert covered_symbols(pd.DataFrame({"cik": [1]}), pd.DataFrame()) == set()
+
+
 def test_every_group_file_has_a_history_field():
     assert set(FILE_FIELDS) == {f for files in GROUP_FILES.values() for f in files}
     assert set(FILE_FIELDS.values()) <= {f.name for f in fields(GroupHistory)}

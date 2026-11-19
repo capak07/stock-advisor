@@ -9,6 +9,7 @@ from advisor.collectors.finra_short_volume import (
     candidate_days,
     parse_short_volume,
 )
+from advisor.model.short import VOLUME_SESSIONS
 from advisor.models import Market
 from advisor.symbols import requested_by_key, symbol_key
 
@@ -38,7 +39,7 @@ def test_finra_covers_only_us_stocks():
 
 
 def test_candidate_days_skip_weekends_and_wait_for_publication():
-    assert candidate_days(MONDAY_PRE_OPEN) == [
+    assert candidate_days(MONDAY_PRE_OPEN)[:5] == [
         date(2026, 10, 9), date(2026, 10, 8), date(2026, 10, 7), date(2026, 10, 6), date(2026, 10, 5),
     ]
     monday_evening = datetime(2026, 10, 12, 22, 45, tzinfo=UTC)  # 18:45 ET, after publication
@@ -71,7 +72,24 @@ def test_fetch_falls_back_from_an_unpublished_day(fixtures_dir):
     )
     records = collector.fetch(["AAPL"], TUESDAY_PRE_OPEN)
     assert [r.symbol for r in records] == ["AAPL"]
-    assert seen == [FINRA_SHORT_VOLUME_URL.format(day=date(2026, 10, 12)), published]
+    assert seen[:2] == [FINRA_SHORT_VOLUME_URL.format(day=date(2026, 10, 12)), published]
+    assert len(seen) == 30  # it looks for 21 files through all 30 weekdays
+
+
+def test_fetch_returns_twenty_one_days_of_short_volume(fixtures_dir):
+    """VOLUME_SESSIONS + 1 files: on a pre-open run the newest is the feature day's own, which the model
+    does not read yet (Ruling R3, F7)."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, text=fixture_text(fixtures_dir))  # every weekday published
+
+    collector = FinraShortVolume(httpx.Client(transport=httpx.MockTransport(handler)))
+    records = collector.fetch(["AAPL"], TUESDAY_PRE_OPEN)
+    assert len(seen) == 21 == VOLUME_SESSIONS + 1
+    assert seen == [FINRA_SHORT_VOLUME_URL.format(day=day) for day in candidate_days(TUESDAY_PRE_OPEN)[:21]]
+    assert [r.symbol for r in records] == ["AAPL"] * 21
 
 
 def test_fetch_gives_up_after_the_lookback():

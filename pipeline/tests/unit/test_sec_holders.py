@@ -46,13 +46,17 @@ def test_a_document_about_another_issuer_is_ignored(fixtures_dir):
     assert parse_schedule("PFE", filing("SCHEDULE 13G/A"), vanguard_on_apple, 78003) is None
 
 
-def test_only_filings_about_the_company_are_read(fixtures_dir):
+def test_filings_about_another_issuer_come_back_flagged(fixtures_dir):
+    """The model counts the filing list as training does, with no document check (Ruling R4)."""
     seen: list[httpx.Request] = []
     holdings = SecHolders(fake_sec(sec_routes(fixtures_dir), seen=seen)).fetch(["AAPL", "PFE"], AS_OF)
-    assert [(h.symbol, h.accession, h.form) for h in holdings] == [
-        ("AAPL", "0002100119-26-000139", "SCHEDULE 13G"),
-        ("AAPL", "0000102909-26-000630", "SCHEDULE 13G/A"),
-    ]  # PFE's two subject documents name Apple as issuer, so they're dropped
+    assert [(h.symbol, h.accession, h.form, h.other_issuer) for h in holdings] == [
+        ("AAPL", "0002100119-26-000139", "SCHEDULE 13G", False),
+        ("AAPL", "0000102909-26-000630", "SCHEDULE 13G/A", False),
+        ("PFE", "0002100119-26-001294", "SCHEDULE 13G", True),
+        ("PFE", "0000102909-26-002101", "SCHEDULE 13G/A", True),
+    ]  # PFE's two subject documents name Apple as issuer: their headers only
+    assert [h.reporting_persons for h in holdings[2:]] == [[], []]
     assert all(h.accepted_at is not None for h in holdings)
     documents = [str(r.url) for r in seen if "Archives" in str(r.url)]
     assert len(documents) == 4
@@ -89,3 +93,11 @@ def test_a_malformed_schedule_is_dropped_from_the_cache(fixtures_dir, tmp_path):
     SecHolders(fake_sec(routes, documents=tmp_path)).fetch(["AAPL"], AS_OF)
     assert not (tmp_path / "0000102909-26-000630.xml").exists()
     assert (tmp_path / "0002100119-26-000139.xml").exists()
+
+
+def test_a_holding_cached_before_the_flag_still_loads():
+    from advisor.collectors.sec_holders import LargeHolding
+
+    old = LargeHolding.model_validate({"symbol": "AAPL", "accession": "a", "form": "SC 13G", "filing_date": "2026-01-02",
+                                       "activist": False, "amendment": False})
+    assert old.other_issuer is False

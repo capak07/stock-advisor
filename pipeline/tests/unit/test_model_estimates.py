@@ -133,3 +133,14 @@ def test_report_timing_reads_before_open_after_close_and_unknown():
     assert timing.iloc[2] is None
     assert report_timing(stamps.dt.tz_localize(None)).tolist() == timing.tolist()  # naive: read as ET
     assert report_timing(stamps.dt.tz_convert("UTC")).tolist() == timing.tolist()
+
+
+def test_a_day_with_a_time_of_day_never_reads_a_report_from_its_own_date():
+    """A live timestamp (15:15 on the report day) is still the report day: the report is not yet read."""
+    reports = _reports([("2025-11-18", 1.0, 1.1)])
+    days = pd.DatetimeIndex([pd.Timestamp("2025-11-18 15:15"), pd.Timestamp("2025-11-19 09:00")])
+    out = estimates_features(reports, days, ["AAA"])
+    assert np.isnan(out["eps_surprise_last"]["AAA"].iloc[0])
+    assert np.isnan(out["days_to_next_report"]["AAA"].iloc[0])
+    assert out["eps_surprise_last"]["AAA"].iloc[1] == approx(0.1)
+    assert out["days_to_next_report"]["AAA"].iloc[1] == 363

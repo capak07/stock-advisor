@@ -2,8 +2,10 @@
 
 Only filings about the company count: SEC files them under the company's "005-" file number. The
 company's own 13D/Gs about other issuers (empty file number) are ignored. Structured SCHEDULE
-13D/G documents (from December 2024) are parsed, and their issuer CIK must match; legacy SC 13D/G
-filings are HTML only and kept as metadata. 13D signals possible activist or control intent.
+13D/G documents (from December 2024) are parsed; one whose issuer CIK is another company's comes
+back as its filing header flagged `other_issuer`, because the model counts the filing list as the
+training history does, with no document check (Ruling R4). Legacy SC 13D/G filings are HTML only
+and kept as metadata. 13D signals possible activist or control intent.
 """
 
 import xml.etree.ElementTree as ElementTree
@@ -45,6 +47,9 @@ class LargeHolding(BaseModel):
     amendment: bool
     event_date: date | None = None
     reporting_persons: list[ReportingPerson] = Field(default_factory=list)  # empty for legacy forms
+    # a structured document naming another issuer: listed under the company's "005-" number, but about
+    # someone else (only its header is kept); False on records cached before the flag existed
+    other_issuer: bool = False
 
 
 def _text(root: ElementTree.Element, *names: str) -> str | None:
@@ -146,8 +151,9 @@ class SecHolders:
                 except (ElementTree.ParseError, ValueError):
                     self._sec.forget(filing)  # fetched again next run
                     continue
-                if holding is not None:
-                    holdings.append(holding)
+                if holding is None:  # about another issuer: the filing list still counts it (Ruling R4)
+                    holding = holding_header(symbol, filing).model_copy(update={"other_issuer": True})
+                holdings.append(holding)
             return holdings
 
         return collect_per_symbol(symbols, one, is_fatal=sec_stop)

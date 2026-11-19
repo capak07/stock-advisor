@@ -1,7 +1,9 @@
 """Daily short-sale volume from FINRA's consolidated Reg SHO file (spec source 14, US only).
 
-One static file per trading day covers every symbol, so a run downloads one file and keeps the
-requested symbols. Missing files (weekend, holiday, not published yet) answer HTTP 403.
+One static file per trading day covers every symbol, so a run downloads the FILES newest published
+files and keeps the requested symbols. Missing files (weekend, holiday, not published yet) answer HTTP
+403. The model averages the last VOLUME_SESSIONS file days strictly before its day; on a pre-open run
+the newest file is that day's own and is not read, so a fetch takes one file more (Ruling R3, F7).
 """
 
 from collections.abc import Mapping, Sequence
@@ -18,12 +20,14 @@ from advisor.collectors.base import (
     check_deadline,
     get_with_retries,
 )
+from advisor.model.short import VOLUME_SESSIONS
 from advisor.models import ET, AssetType, Market
 from advisor.symbols import requested_by_key, symbol_key
 
 FINRA_SHORT_VOLUME_URL = "https://cdn.finra.org/equity/regsho/daily/CNMSshvol{day:%Y%m%d}.txt"
 PUBLISHED_AFTER = time(18, 30)  # files appear around 17:15 ET; leave a margin
-LOOKBACK_WEEKDAYS = 5
+LOOKBACK_WEEKDAYS = 30  # weekdays searched for FILES published files (holidays have none)
+FILES = VOLUME_SESSIONS + 1
 UNPUBLISHED = frozenset({403, 404})
 
 
@@ -95,7 +99,11 @@ class FinraShortVolume:
         self._limiter = limiter
 
     def fetch(self, symbols: Sequence[str], as_of: datetime) -> list[ShortVolume]:
+        """The requested symbols' rows of the FILES newest published files within LOOKBACK_WEEKDAYS,
+        newest first. Raises only when none is published."""
         wanted = requested_by_key(symbols)
+        records: list[ShortVolume] = []
+        found = 0
         for day in candidate_days(as_of):
             check_deadline()
             try:
@@ -106,5 +114,10 @@ class FinraShortVolume:
                 if exc.response.status_code in UNPUBLISHED:
                     continue
                 raise
-            return parse_short_volume(response.text, wanted)
-        raise RuntimeError(f"no FINRA short volume file in the last {LOOKBACK_WEEKDAYS} weekdays")
+            records.extend(parse_short_volume(response.text, wanted))
+            found += 1
+            if found == FILES:
+                break
+        if not found:
+            raise RuntimeError(f"no FINRA short volume file in the last {LOOKBACK_WEEKDAYS} weekdays")
+        return records

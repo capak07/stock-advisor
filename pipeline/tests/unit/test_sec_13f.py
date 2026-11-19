@@ -13,6 +13,7 @@ from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec_13f import (
     LISTING_URL,
     DataSet,
+    HeldQuarter,
     Holding,
     InstitutionalOwnership,
     Quarter,
@@ -241,6 +242,7 @@ def test_a_quarters_totals_survive_the_trip_to_disk(tmp_path):
 
 LATEST = "https://www.sec.gov/files/datastandardsinnovation/data/form-13f-data-sets/01jun2026-31aug2026_form13f.zip"
 PREVIOUS = "https://www.sec.gov/files/structureddata/data/form-13f-data-sets/01mar2026-31may2026_form13f.zip"
+EARLIER = "https://www.sec.gov/files/structureddata/data/form-13f-data-sets/01dec2025-28feb2026_form13f.zip"
 
 
 def openfigi_client(asked, *, fail=False):
@@ -266,6 +268,7 @@ def collector(fixtures_dir, folder, seen, asked, *, fail=False):
         LISTING_URL: (fixtures_dir / "sec" / "form13f_listing.html").read_bytes(),
         LATEST: quarter_zip("30-JUN-2026", 120, msft_holders=3),
         PREVIOUS: quarter_zip("31-MAR-2026", 100),
+        EARLIER: quarter_zip("31-DEC-2025", 90),
     }
     figis = FigiBook(openfigi_client(asked, fail=fail), folder / "figis.json")
     return Sec13f(fake_sec(routes, seen=seen), figis, folder)
@@ -278,14 +281,24 @@ def test_symbols_get_the_latest_quarter_and_the_one_before(fixtures_dir, tmp_pat
         InstitutionalOwnership(
             symbol="AAPL", cusip=AAPL, period=date(2026, 6, 30), shares=120, value_usd=30_000, holders=1,
             previous_period=date(2026, 3, 31), previous_shares=100, previous_holders=1,
+            quarters=[
+                HeldQuarter(period=date(2026, 6, 30), window_end=date(2026, 8, 31), shares=120, holders=1),
+                HeldQuarter(period=date(2026, 3, 31), window_end=date(2026, 5, 31), shares=100, holders=1),
+                HeldQuarter(period=date(2025, 12, 31), window_end=date(2026, 2, 28), shares=90, holders=1),
+            ],
         ),
         InstitutionalOwnership(
             symbol="MSFT", cusip=MSFT, period=date(2026, 6, 30), shares=30, value_usd=15_000, holders=3,
             previous_period=date(2026, 3, 31), previous_shares=10, previous_holders=1,
+            quarters=[
+                HeldQuarter(period=date(2026, 6, 30), window_end=date(2026, 8, 31), shares=30, holders=3),
+                HeldQuarter(period=date(2026, 3, 31), window_end=date(2026, 5, 31), shares=10, holders=1),
+                HeldQuarter(period=date(2025, 12, 31), window_end=date(2026, 2, 28), shares=10, holders=1),
+            ],
         ),
     ]  # no filer gave BRK.B's FIGIs, and OpenFIGI doesn't know ZZZZ
     assert asked == [["AAPL", "MSFT", "BRK/B", "ZZZZ"]]
-    assert [str(r.url) for r in seen] == [LISTING_URL, LATEST, PREVIOUS]
+    assert [str(r.url) for r in seen] == [LISTING_URL, LATEST, PREVIOUS, EARLIER]
     assert all(r.headers["User-Agent"] == "stock-advisor test@example.com" for r in seen)
 
 
@@ -297,7 +310,7 @@ def test_a_data_set_is_downloaded_once_and_old_totals_are_dropped(fixtures_dir, 
     assert collector(fixtures_dir, tmp_path, seen, asked).fetch(["AAPL"], AS_OF)[0].shares == 120
     assert [str(r.url) for r in seen] == [LISTING_URL]  # the listing only
     assert sorted(p.name for p in tmp_path.iterdir()) == [
-        "01jun2026-31aug2026.json.gz", "01mar2026-31may2026.json.gz", "figis.json",
+        "01dec2025-28feb2026.json.gz", "01jun2026-31aug2026.json.gz", "01mar2026-31may2026.json.gz", "figis.json",
     ]
 
 
@@ -328,7 +341,23 @@ def test_an_openfigi_failure_keeps_the_symbols_it_could_match(fixtures_dir, tmp_
     assert [r.symbol for r in raised.value.records] == ["AAPL"]
 
 
-def test_a_listing_with_fewer_than_two_data_sets_fails(tmp_path):
+def test_a_listing_with_fewer_than_three_data_sets_fails(tmp_path):
     sec = fake_sec({LISTING_URL: b'<a href="/files/x/01jun2026-31aug2026_form13f.zip">'})
     with pytest.raises(ValueError, match="names 1 data sets"):
         Sec13f(sec, FigiBook(openfigi_client([]), tmp_path / "figis.json"), tmp_path).fetch(["AAPL"], AS_OF)
+
+
+def test_a_quarter_without_the_stock_is_listed_without_numbers():
+    from advisor.collectors.sec_13f import _held
+
+    quarter = Quarter(date(2025, 12, 31), {MSFT: Holding(10, 5_000, 1)}, {})
+    held = _held(DataSet("01dec2025-28feb2026", "u", date(2026, 2, 28)), quarter, AAPL)
+    assert held == HeldQuarter(period=date(2025, 12, 31), window_end=date(2026, 2, 28), shares=None, holders=None)
+
+
+def test_a_record_cached_before_the_quarters_still_loads():
+    old = InstitutionalOwnership.model_validate({
+        "symbol": "AAPL", "cusip": AAPL, "period": "2026-06-30", "shares": 1, "value_usd": 1, "holders": 1,
+        "previous_period": "2026-03-31",
+    })
+    assert old.quarters == []

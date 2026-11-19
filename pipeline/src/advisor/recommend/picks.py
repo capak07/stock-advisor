@@ -3,6 +3,7 @@
 The qualify, ratio and sector rules mirror `simulate_picks`, so the backtest gate vouches for them.
 """
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
@@ -47,18 +48,19 @@ def _style(horizon: int) -> str:
 
 
 def top_by_horizon(rows: Sequence[PredictionRow], n: int) -> dict[int, dict[str, tuple[int, int]]]:
-    """Per horizon, the top `n` symbols by P(beat) (ties by symbol) → (rank, how many were ranked).
+    """Per horizon, the top `n` symbols by raw score (ties by symbol) → (rank, how many were ranked).
 
-    `rows` are the market's forecasts, so a stock without one never takes a place. Within a horizon
-    P is a monotone map of the model's score, so this is the model's own ranking (spec §11).
+    `rows` are the market's forecasts, so a stock without one never takes a place. P is a monotone
+    map of the score but clips and steps, so many rows tie on P; the score is the model's own
+    ranking (spec §11). A row with no P or no score isn't ranked.
     """
     by_h: dict[int, list[PredictionRow]] = {}
     for r in rows:
-        if r.p_beat == r.p_beat:  # a NaN P isn't ranked
+        if r.p_beat == r.p_beat and r.score is not None and math.isfinite(r.score):
             by_h.setdefault(r.horizon_days, []).append(r)
     out: dict[int, dict[str, tuple[int, int]]] = {}
     for h, its in by_h.items():
-        ordered = sorted(its, key=lambda r: (-r.p_beat, r.symbol))
+        ordered = sorted(its, key=lambda r: (-r.score, r.symbol))
         out[h] = {r.symbol: (i + 1, len(ordered)) for i, r in enumerate(ordered[:n])}
     return out
 

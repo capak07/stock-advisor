@@ -29,7 +29,7 @@ class _Model:
     def predict(self, x: pd.DataFrame) -> pd.DataFrame:
         parts = [
             pd.DataFrame(
-                {"horizon": h, "q10": -0.02, "q50": 0.05, "q90": 0.10, "p_beat": 0.70},
+                {"horizon": h, "q10": -0.02, "q50": 0.05, "q90": 0.10, "p_beat": 0.70, "score": 0.2},
                 index=x.index,
             )
             for h in self.horizons

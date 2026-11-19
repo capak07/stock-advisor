@@ -614,7 +614,8 @@ class FinalModel:
         return frame
 
     def predict(self, x: pd.DataFrame) -> pd.DataFrame:
-        """One row per input row per horizon (the input's index), with the range and P(beat)."""
+        """One row per input row per horizon (the input's index), with the range, P(beat) and
+        `score`, the raw output P is calibrated from (P clips and ties; the score does not)."""
         frame = self._with_betas(x)
         frames = []
         for h in self.horizons:
@@ -625,7 +626,8 @@ class FinalModel:
                     out[quantile] = out[quantile].to_numpy(dtype=float) + shift
             if h in self.ranges:
                 out[list(QUANTILE_NAMES)] = self.ranges[h](out[list(QUANTILE_NAMES)])
-            out["p_beat"] = self.calibrators[h](out.pop("p_raw").to_numpy())
+            out = out.rename(columns={"p_raw": "score"})
+            out["p_beat"] = self.calibrators[h](out["score"].to_numpy())
             out.insert(0, "horizon", h)
             frames.append(out)
         return pd.concat(frames)

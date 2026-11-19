@@ -73,7 +73,7 @@ class _GarchModel:
     def predict(self, x: pd.DataFrame) -> pd.DataFrame:
         self.seen.append(x.copy())
         return pd.concat([
-            pd.DataFrame({"horizon": h, "q10": -0.02, "q50": 0.05, "q90": 0.10, "p_beat": 0.70}, index=x.index)
+            pd.DataFrame({"horizon": h, "q10": -0.02, "q50": 0.05, "q90": 0.10, "p_beat": 0.70, "score": 0.2}, index=x.index)
             for h in self.horizons
         ])
 

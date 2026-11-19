@@ -8,7 +8,7 @@ from advisor.recommend.verdicts import TSX_BASIS, coin_verdict, stock_verdict
 
 
 def row(h, p, q50=0.04):
-    return PredictionRow("AAA", h, q50 - 0.05, q50, q50 + 0.06, p, "SPY", "v1")
+    return PredictionRow("AAA", h, q50 - 0.05, q50, q50 + 0.06, p, "SPY", "v1", p)
 
 
 def test_a_higher_sell_line_avoids_a_stock_the_default_holds():

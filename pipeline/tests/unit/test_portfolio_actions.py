@@ -7,7 +7,7 @@ from advisor.portfolio.actions import Holding, decide
 
 
 def _row(h: int = 10, p: float = 0.5, q10: float = -0.05, q50: float = 0.01, q90: float = 0.07) -> PredictionRow:
-    return PredictionRow("AAA", h, q10, q50, q90, p, "SPY", "v1")
+    return PredictionRow("AAA", h, q10, q50, q90, p, "SPY", "v1", p)
 
 
 def _holding(**kw) -> Holding:

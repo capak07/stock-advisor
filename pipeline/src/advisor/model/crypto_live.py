@@ -90,7 +90,7 @@ def forecast_coins(
         name = str(symbol)
         rows.setdefault(name, []).append(PredictionRow(
             name, int(row["horizon"]), float(row["q10"]), float(row["q50"]), float(row["q90"]),
-            float(row["p_beat"]), "SPY" if name == BTC else "BTC", str(version),
+            float(row["p_beat"]), "SPY" if name == BTC else "BTC", str(version), float(row["score"]),
         ))
     return rows, reasons
 

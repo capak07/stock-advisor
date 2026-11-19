@@ -34,6 +34,9 @@ def test_only_usable_horizons_are_predicted(db, trained):
     rows = predict_rows(active, x, "XIU.TO")
     assert {r.horizon_days for r in rows} == {63}
     assert all(r.q10 <= r.q50 <= r.q90 and 0 <= r.p_beat <= 1 and r.model_version == "stock_tsx-1" for r in rows)
+    assert all(r.score is not None and r.score == r.score for r in rows)  # the raw score P is calibrated from
+    by_score = sorted(rows, key=lambda r: r.score)
+    assert all(a.p_beat <= b.p_beat for a, b in zip(by_score, by_score[1:], strict=False))  # P never falls as it rises
     run_id = db.execute("insert into runs (kind, et_date) values ('pre_open', '2026-10-26') returning id").fetchone()["id"]
     repo.write_predictions(db, run_id, rows)
     assert db.execute("select count(*) as n from predictions where run_id = %s", (run_id,)).fetchone()["n"] == len(x)

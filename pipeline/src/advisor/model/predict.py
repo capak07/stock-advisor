@@ -43,7 +43,7 @@ def predict_rows(active: ActiveModel, features: pd.DataFrame, benchmark: str) ->
     return [
         PredictionRow(
             str(symbol), int(r.horizon), float(r.q10), float(r.q50), float(r.q90), float(r.p_beat),
-            benchmark, active.version,
+            benchmark, active.version, float(r.score),
         )
         for symbol, r in zip(out.index, out.itertuples(index=False), strict=True)
     ]

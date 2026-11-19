@@ -96,6 +96,7 @@ class PredictionRow:
     p_beat: float
     benchmark: str
     model_version: str
+    score: float | None = None  # the raw output P(beat) is calibrated from; a rank policy ranks by it
 
 
 @dataclass(frozen=True)

@@ -21,8 +21,8 @@ def test_min_edge_defaults_to_zero_and_is_stored_only_when_set():
 
 
 def test_a_pick_must_clear_its_costs_by_the_margin():
-    near = PredictionRow("A.TO", 21, -0.05, 0.015, 0.08, 0.49, "XIU.TO", "v1")
-    clear = PredictionRow("A.TO", 21, -0.05, 0.03, 0.08, 0.49, "XIU.TO", "v1")
+    near = PredictionRow("A.TO", 21, -0.05, 0.015, 0.08, 0.49, "XIU.TO", "v1", 0.49)
+    clear = PredictionRow("A.TO", 21, -0.05, 0.03, 0.08, 0.49, "XIU.TO", "v1", 0.49)
     top = top_by_horizon([near], 1)
     assert choose([near], 0.002, True, EDGE, top) is None  # 1.5% doesn't clear 0.2% + 2%
     assert choose([clear], 0.002, True, EDGE, top) is not None

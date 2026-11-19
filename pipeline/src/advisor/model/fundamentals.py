@@ -20,7 +20,7 @@ FUNDAMENTAL_FEATURES = [
 ]
 FLOWS = ("revenue", "gross_profit", "operating_income", "net_income", "operating_cash_flow", "capex", "eps_diluted")
 BALANCES = ("equity", "long_term_debt", "long_term_debt_noncurrent", "debt_current", "short_term_borrowings",
-            "commercial_paper", "shares_outstanding")
+            "commercial_paper")
 EPS_CLIP = 5.0
 STALE_DAYS = 548  # a figure whose period ended over 18 months ago is no longer read
 
@@ -122,6 +122,40 @@ def _ratio(num: pd.Series, den: pd.Series) -> pd.Series:
     return (num / den).where(den.abs() > 0)
 
 
+def _grid(tickers: pd.DataFrame, symbols: Sequence[str], days: pd.DatetimeIndex) -> pd.DataFrame:
+    """One row per (symbol, cik, day) for the `symbols` that have a ticker row, sorted by day."""
+    syms = tickers[tickers["symbol"].isin(symbols)][["symbol", "cik"]].drop_duplicates("symbol")
+    syms["cik"] = syms["cik"].astype("int64")
+    grid = syms.merge(pd.DataFrame({"day": _ns(days)}), how="cross")
+    return grid.sort_values("day", kind="stable").reset_index(drop=True)
+
+
+def _shares_today(first: pd.DataFrame, grid: pd.DataFrame, splits: pd.DataFrame) -> pd.Series:
+    """For each `grid` row, the latest first-reported share count filed strictly before the day (blank once
+    its period is over STALE_DAYS old), times the split factor at the count's period end."""
+    shares = first[first["start"].isna() & (first["metric"] == "shares_outstanding")].rename(columns={"filed": "known"})
+    shares = shares.sort_values("end", kind="stable").drop_duplicates(["cik", "metric", "known"], keep="last")
+    vals = _fresh(grid, _asof(shares, grid, ["value", "end"]))
+    return vals["value"] * _split_at(splits, grid["symbol"], vals["end"])
+
+
+def shares_outstanding(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.DatetimeIndex,
+                       symbols: Sequence[str], splits: pd.DataFrame) -> pd.DataFrame:
+    """Wide frame (days x `symbols`) of shares outstanding on today's share basis.
+
+    The latest first-reported count filed strictly before each day, NaN once its period ended over
+    STALE_DAYS before the day, times `_split_at(splits, symbol, period end)`. Symbols without a ticker
+    row or a count read NaN.
+    """
+    symbols = list(symbols)
+    if not set(tickers["symbol"]).intersection(symbols):
+        return pd.DataFrame(np.nan, index=days, columns=symbols)
+    grid = _grid(tickers, symbols, days)
+    grid["shares"] = _shares_today(first_reported(facts), grid, splits)
+    wide = grid.pivot(index="day", columns="symbol", values="shares")
+    return wide.reindex(index=_ns(days), columns=symbols).set_axis(days, axis=0)
+
+
 def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.DatetimeIndex,
                          split_adjusted_close: pd.DataFrame, splits: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """Wide frames (days x symbols) of FUNDAMENTAL_FEATURES, one column per symbol of the close.
@@ -135,10 +169,7 @@ def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.Da
     first = first_reported(facts)
     t = ttm(first)
     symbols = [s for s in split_adjusted_close.columns if s in wanted]
-    syms = tickers[tickers["symbol"].isin(symbols)][["symbol", "cik"]].drop_duplicates("symbol")
-    syms["cik"] = syms["cik"].astype("int64")
-    grid = syms.merge(pd.DataFrame({"day": _ns(days)}), how="cross")
-    grid = grid.sort_values("day", kind="stable").reset_index(drop=True)
+    grid = _grid(tickers, symbols, days)
     g = grid.copy()
 
     for metric in FLOWS:
@@ -156,14 +187,12 @@ def fundamental_features(facts: pd.DataFrame, tickers: pd.DataFrame, days: pd.Da
     for metric in BALANCES:
         vals = _fresh(grid, _asof(bal[bal["metric"] == metric], grid, ["value", "end"]))
         g[metric] = vals["value"]
-        if metric == "shares_outstanding":
-            g["shares_end"] = vals["end"]
 
     price = split_adjusted_close.rename_axis("day").reset_index().melt("day", var_name="symbol", value_name="price")
     price["day"] = price["day"].astype(grid["day"].dtype)
     g = g.merge(price, on=["day", "symbol"], how="left")
 
-    mcap = g["price"] * g["shares_outstanding"] * _split_at(splits, g["symbol"], g["shares_end"])
+    mcap = g["price"] * _shares_today(first, grid, splits)
     eps = g["eps_diluted"] / _split_at(splits, g["symbol"], g["eps_filed"])
     eps_1y = g["eps_diluted_1y"] / _split_at(splits, g["symbol"], g["eps_filed_1y"])
 

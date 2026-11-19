@@ -6,6 +6,7 @@ from advisor.model.fundamentals import (
     FUNDAMENTAL_FEATURES,
     first_reported,
     fundamental_features,
+    shares_outstanding,
     ttm,
 )
 
@@ -152,3 +153,27 @@ def test_eps_is_put_on_todays_shares_with_the_split_factor_at_filing():
     splits = pd.DataFrame({"X": [2.0, 1.0, 1.0]}, index=pd.DatetimeIndex(["2023-12-29", "2024-02-09", "2024-12-02"]))
     f = fundamental_features(facts, pd.DataFrame({"symbol": ["X"], "cik": [1]}), days, close, splits)
     assert f["eps_growth"]["X"].iloc[0] == pytest.approx(4.0 / (2.0 / 2.0) - 1)  # 3.0
+
+
+def test_shares_outstanding_is_on_todays_basis_after_a_split():
+    days = pd.DatetimeIndex(["2024-07-31", "2024-08-01", "2024-09-03"], name="day")
+    facts = frame(fact("shares_outstanding", None, "2024-06-30", 100.0, "2024-07-31",
+                       concept="dei:EntityCommonStockSharesOutstanding"))
+    # a 2-for-1 split on 2024-08-15, after the shares' period end: today's shares per then-share is 2
+    splits = pd.DataFrame({"X": [2.0, 2.0, 1.0]}, index=pd.DatetimeIndex(["2024-06-28", "2024-08-01", "2024-09-03"]))
+    out = shares_outstanding(facts, pd.DataFrame({"symbol": ["X"], "cik": [1]}), days, ["X", "Y"], splits)
+    assert list(out.columns) == ["X", "Y"] and out.index.equals(days)
+    assert np.isnan(out["X"].iloc[0])  # filed on 2024-07-31: read from the next day
+    assert out["X"].iloc[1:].tolist() == [200.0, 200.0]
+    assert out["Y"].isna().all()  # no ticker row
+
+
+def test_shares_outstanding_goes_stale_and_reads_nothing_without_a_matching_symbol():
+    days = pd.DatetimeIndex(["2024-07-01", "2026-01-02"], name="day")  # 2026-01-02 is over 548 days after 2024-06-30
+    facts = frame(fact("shares_outstanding", None, "2024-06-30", 100.0, "2024-06-30",
+                       concept="dei:EntityCommonStockSharesOutstanding"))
+    splits = pd.DataFrame({"X": [1.0]}, index=pd.DatetimeIndex(["2024-01-01"]))
+    out = shares_outstanding(facts, pd.DataFrame({"symbol": ["X"], "cik": [1]}), days, ["X"], splits)
+    assert out["X"].iloc[0] == 100.0 and np.isnan(out["X"].iloc[1])
+    none = shares_outstanding(facts, pd.DataFrame({"symbol": ["Q"], "cik": [9]}), days, ["X"], splits)
+    assert none.shape == (2, 1) and none.isna().all().all()

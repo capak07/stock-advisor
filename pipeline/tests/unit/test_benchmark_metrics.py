@@ -4,7 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from advisor.benchmark.metrics import model_metrics, pinball_loss, policy_metrics, summary
+from advisor.benchmark.metrics import (
+    model_metrics,
+    pinball_loss,
+    policy_metrics,
+    summary,
+    top_slice,
+)
 from advisor.model.train import calibration_error
 from advisor.models import Market
 
@@ -67,3 +73,49 @@ def test_the_default_policy_is_scored_per_calibrated_fold():
     assert m["1"]["trades"] == 2 and m["1"]["trades_per_month"] == pytest.approx(1.0)
     assert m["2"]["hit_rate_net"] == 0.0 and m["pooled"]["trades"] == 3
     assert m["pooled"]["claimed_gap_pts"] == pytest.approx(abs(0.7 - 2 / 3) * 100)
+
+
+def _slice_frame(scores, ys, day="2026-01-05", horizon=21, fold=1):
+    n = len(scores)
+    return pd.DataFrame({
+        "day": pd.Timestamp(day), "symbol": [f"S{i:03d}" for i in range(n)], "horizon": horizon, "fold": fold,
+        "score": scores, "y": ys, "dollar_volume_20": 5e7,
+    })
+
+
+def test_the_top_slice_is_the_highest_scores_against_the_whole_day():
+    frame = _slice_frame(list(range(40)), [0.0] * 38 + [0.10, 0.20])  # 5% of 40: the two best scores
+    leaf = top_slice(frame, Market.TSX, 0.0)["pooled"][21]
+    assert leaf["days"] == 1
+    assert leaf["top_excess"] == pytest.approx(0.15 - 0.30 / 40)
+    assert leaf["top_net"] == pytest.approx(0.15 - 0.001)  # the spread at this volume; no currency fee on TSX
+    assert leaf["bottom_excess"] == pytest.approx(0.0 - 0.30 / 40)
+
+
+def test_a_us_top_slice_pays_the_currency_fee_both_ways():
+    frame = _slice_frame(list(range(40)), [0.0] * 38 + [0.10, 0.20])
+    assert top_slice(frame, Market.US, 1.5)["pooled"][21]["top_net"] == pytest.approx(0.15 - 0.001 - 0.03)
+
+
+def test_a_thin_day_and_unknown_outcomes_are_skipped():
+    thin = _slice_frame(list(range(19)), [0.01] * 19)
+    unknown = _slice_frame(list(range(40)), [np.nan] * 40, day="2026-01-19")
+    unscored = _slice_frame([np.nan] * 40, [0.01] * 40, day="2026-02-02")
+    assert top_slice(pd.concat([thin, unknown, unscored]), Market.TSX, 0.0) == {}
+
+
+def test_equal_scores_break_ties_by_symbol():
+    frame = _slice_frame([1.0] * 40, [0.40, 0.20] + [0.0] * 38)  # S000 and S001 take the top
+    leaf = top_slice(frame, Market.TSX, 0.0)["pooled"][21]
+    assert leaf["top_excess"] == pytest.approx(0.30 - 0.60 / 40)
+    assert leaf["bottom_excess"] == pytest.approx(0.0 - 0.60 / 40)  # S039 and S038, not the top again
+
+
+def test_each_fold_and_horizon_gets_its_own_block_and_days_average():
+    up = _slice_frame(list(range(40)), [0.0] * 38 + [0.10, 0.10], fold=0)
+    flat = _slice_frame(list(range(40)), [0.0] * 40, day="2026-03-02", fold=1)
+    other = _slice_frame(list(range(40)), [0.0] * 40, day="2026-03-02", horizon=63, fold=1)
+    out = top_slice(pd.concat([up, flat, other]), Market.TSX, 0.0)
+    assert set(out) == {"0", "1", "pooled"} and set(out["pooled"]) == {21, 63} and set(out["0"]) == {21}
+    assert out["pooled"][21]["days"] == 2
+    assert out["pooled"][21]["top_excess"] == pytest.approx((0.10 - 0.20 / 40) / 2)

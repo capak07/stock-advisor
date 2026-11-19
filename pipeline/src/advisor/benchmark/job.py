@@ -30,7 +30,13 @@ from advisor.benchmark.accept import (
     choose_model,
 )
 from advisor.benchmark.folds import INNER_MIN_TRAIN_YEARS, INNER_SPLITS
-from advisor.benchmark.metrics import calibrated_horizons, model_metrics, policy_metrics, summary
+from advisor.benchmark.metrics import (
+    calibrated_horizons,
+    model_metrics,
+    policy_metrics,
+    summary,
+    top_slice,
+)
 from advisor.benchmark.policy_search import score, score_each, tune_for_outer
 from advisor.benchmark.report import render_markdown, write_reports
 from advisor.benchmark.simulate import DailyPanel, daily_panel
@@ -184,9 +190,10 @@ def _benchmark_market(
         means = summary(model, config.horizons)
         usable = calibrated_horizons(model)
         policy = policy_metrics(pred[pred["p"].notna() & pred["horizon"].isin(usable)], market, usd_fx_fee_pct)
+        top = top_slice(pred, market, usd_fx_fee_pct)
         variants[name] = {
             "status": "run", "seconds": round(time.monotonic() - began, 1),
-            "model": model, "summary": means, "policy": policy,
+            "model": model, "summary": means, "policy": policy, "top_slice": top,
         }
         if variant.garch:
             variants[name]["garch"] = {"fallbacks": wf.garch_fallbacks}
@@ -200,6 +207,7 @@ def _benchmark_market(
         results += [
             BenchmarkResult(str(market), name, fold, json_safe({
                 "model": model[fold], "summary": means[fold], "policy": policy.get(fold),
+                "top_slice": top.get(fold),
             }))
             for fold in model
         ]

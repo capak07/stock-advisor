@@ -105,6 +105,29 @@ def _outer_folds_table(name: str, variant: Mapping) -> list[str]:
     return lines
 
 
+def _signed(value: object) -> str:
+    return "—" if _missing(value) else f"{value:+.2%}"
+
+
+def _top_slice_table(name: str, variant: Mapping) -> list[str]:
+    """How the top 5% of each day's ranking did, pooled, per horizon (`metrics.top_slice`)."""
+    pooled = (variant.get("top_slice") or {}).get("pooled") or {}
+    lines = [
+        f"### Top 5% by score: {name}",
+        "",
+        "| Horizon | Days | Top vs all | Top after costs | Bottom vs all |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for horizon in sorted(pooled, key=int):  # a stored report's horizons are strings
+        row = pooled[horizon]
+        days = "—" if _missing(row.get("days")) else str(int(row["days"]))
+        lines.append(
+            f"| {horizon} | {days} | {_signed(row.get('top_excess'))} | {_signed(row.get('top_net'))} "
+            f"| {_signed(row.get('bottom_excess'))} |"
+        )
+    return lines
+
+
 def _policy_table(variant: Mapping) -> list[str]:
     policy = variant.get("policy") or {}
     lines = [
@@ -271,6 +294,9 @@ def render_markdown(report: Mapping) -> str:
                 continue
             lines += _outer_folds_table(name, variant)
             lines.append("")
+            if (variant.get("top_slice") or {}).get("pooled"):
+                lines += _top_slice_table(name, variant)
+                lines.append("")
             if "alpha_rank_ic" in variant or "fallback_count" in variant:
                 lines.append(
                     "Factor diagnostic: rank IC of q50_alpha vs alpha "

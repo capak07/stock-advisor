@@ -1,4 +1,4 @@
-"""Per-fold and pooled scores: rank IC, pinball, coverage, calibration, default policy."""
+"""Per-fold and pooled scores: rank IC, pinball, coverage, calibration, top slice, default policy."""
 from __future__ import annotations
 
 import math
@@ -7,9 +7,12 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from advisor.model.backtest import MAX_CALIBRATION_PTS, simulate_picks
+from advisor.model.backtest import MAX_CALIBRATION_PTS, round_trip_cost, simulate_picks
 from advisor.model.train import _bin_gaps, calibration_error, pinball_loss, rank_ic
 from advisor.models import Market
+
+TOP_SHARE = 0.05  # the slice of each day's ranking the top-slice measure reads
+MIN_DAY_ROWS = 20  # a day with fewer scored stocks has no meaningful 5%
 
 
 def _mean_or_nan(values: Sequence[float]) -> float:
@@ -127,4 +130,62 @@ def policy_metrics(
         fold_picks = picks.loc[picks["fold"] == fold] if len(picks) else picks
         out[str(int(fold))] = _policy_block(fold_picks, part["day"])
     out["pooled"] = _policy_block(picks, cal["day"])
+    return out
+
+
+def _slice_days(part: pd.DataFrame) -> pd.DataFrame:
+    """One row per (day, horizon) with enough stocks: the top and bottom slices against the day."""
+    out = []
+    for (day, horizon), g in part.groupby(["day", "horizon"], sort=True):
+        if len(g) < MIN_DAY_ROWS:
+            continue
+        k = max(1, int(len(g) * TOP_SHARE))
+        top = g.sort_values(["score", "symbol"], ascending=[False, True], kind="stable").head(k)
+        bottom = g.sort_values(["score", "symbol"], ascending=[True, False], kind="stable").head(k)
+        everyone = float(g["y"].mean())
+        out.append({
+            "day": day, "horizon": int(horizon),
+            "top_excess": float(top["y"].mean()) - everyone,
+            "top_net": float((top["y"] - top["cost"]).mean()),
+            "bottom_excess": float(bottom["y"].mean()) - everyone,
+        })
+    return pd.DataFrame(out, columns=["day", "horizon", "top_excess", "top_net", "bottom_excess"])
+
+
+def _slice_block(days: pd.DataFrame) -> dict[int, dict[str, float]]:
+    return {
+        int(h): {
+            "days": int(len(g)),
+            "top_excess": float(g["top_excess"].mean()),
+            "top_net": float(g["top_net"].mean()),
+            "bottom_excess": float(g["bottom_excess"].mean()),
+        }
+        for h, g in days.groupby("horizon", sort=True)
+    }
+
+
+def top_slice(
+    predictions: pd.DataFrame, market: Market | str, usd_fx_fee_pct: float
+) -> dict[str, dict[int, dict[str, float]]]:
+    """How the top of each day's ranking did: per fold and pooled, by horizon.
+
+    Each day the top `TOP_SHARE` of stocks by score (ties by symbol) is compared with all of that
+    day's stocks: `top_excess` is its mean excess return minus everyone's, `top_net` its mean
+    excess return after the round-trip cost, and `bottom_excess` the same comparison for the
+    lowest scores. Each number is the mean over days. Rank IC reads the whole ranking; picks come
+    from its top. Fold 0 counts: it has scores, only no P. A horizon with no day of at least
+    `MIN_DAY_ROWS` scored stocks with a known outcome is left out.
+    """
+    known = np.isfinite(predictions["score"].to_numpy(dtype=float)) & np.isfinite(predictions["y"].to_numpy(dtype=float))
+    pred = predictions.loc[known, ["day", "symbol", "horizon", "fold", "score", "y", "dollar_volume_20"]].copy()
+    pred["cost"] = round_trip_cost(market, pred["dollar_volume_20"].to_numpy(), usd_fx_fee_pct)
+    out: dict[str, dict[int, dict[str, float]]] = {}
+    pooled = []
+    for fold, part in pred.groupby("fold", sort=True):
+        days = _slice_days(part)
+        if not days.empty:
+            out[str(int(fold))] = _slice_block(days)
+            pooled.append(days)
+    if pooled:
+        out["pooled"] = _slice_block(pd.concat(pooled, ignore_index=True))
     return out

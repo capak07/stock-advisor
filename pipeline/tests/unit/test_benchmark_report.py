@@ -215,3 +215,21 @@ def test_a_garch_variant_without_a_range_reports_only_its_fallbacks():
 
 def test_variants_without_garch_render_as_before():
     assert "GARCH:" not in render_markdown(REPORT)
+
+
+def test_a_variant_with_a_top_slice_shows_how_the_top_of_its_ranking_did():
+    report = json.loads(json.dumps(REPORT))
+    leaf = {"days": 180, "top_excess": 0.0042, "top_net": -0.0275, "bottom_excess": -0.0031}
+    # stored reports come back from JSON, so horizons are strings and may arrive out of order
+    report["markets"]["TSX"]["variants"]["baseline"]["top_slice"] = {
+        "pooled": {"21": {**leaf, "days": 170, "top_net": None}, "5": leaf}, "1": {"5": leaf},
+    }
+    text = render_markdown(report)
+    table = text.split("### Top 5% by score: baseline", 1)[1].split("###", 1)[0]
+    assert "| Horizon | Days | Top vs all | Top after costs | Bottom vs all |" in table
+    rows = [line for line in table.splitlines() if line.startswith("| ") and line[2].isdigit()]
+    assert rows == ["| 5 | 180 | +0.42% | -2.75% | -0.31% |", "| 21 | 170 | +0.42% | — | -0.31% |"]
+
+
+def test_a_report_stored_before_the_top_slice_renders_without_the_table():
+    assert "Top 5% by score" not in render_markdown(REPORT)

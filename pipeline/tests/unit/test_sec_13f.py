@@ -79,9 +79,9 @@ def quarter_zip(period: str, aapl_shares: int, *, msft_holders: int = 1) -> byte
     return data_set(submissions, {}, holdings)
 
 
-def test_the_listing_gives_the_data_sets_newest_window_first(fixtures_dir):
+def test_the_listing_reads_quarterly_file_names_too(fixtures_dir):
     html = (fixtures_dir / "sec" / "form13f_listing.html").read_text(encoding="utf-8")
-    assert parse_listing(html) == [  # the quarter-named 2023q4 file isn't a window and is skipped
+    assert parse_listing(html) == [  # newest first; a quarterly file's window is its calendar quarter
         DataSet(
             "01jun2026-31aug2026",
             "https://www.sec.gov/files/datastandardsinnovation/data/form-13f-data-sets/01jun2026-31aug2026_form13f.zip",
@@ -96,6 +96,11 @@ def test_the_listing_gives_the_data_sets_newest_window_first(fixtures_dir):
             "01dec2025-28feb2026",
             "https://www.sec.gov/files/structureddata/data/form-13f-data-sets/01dec2025-28feb2026_form13f.zip",
             date(2026, 2, 28),
+        ),
+        DataSet(
+            "2023q4",
+            "https://www.sec.gov/files/structureddata/data/form-13f-data-sets/2023q4_form13f.zip",
+            date(2023, 12, 31),
         ),
     ]
 
@@ -180,6 +185,46 @@ def test_an_overflowing_number_skips_its_row_not_the_data_set(shares, value):
     with zipfile.ZipFile(io.BytesIO(archive)) as z:
         quarter = aggregate(z)
     assert quarter.holdings == {AAPL: Holding(40, 10_000, 1)}
+
+
+def _without(archive: bytes, name: str, column: str) -> bytes:
+    """The data set with `column` cut out of the file `name` (an older layout)."""
+    out = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive)) as source, zipfile.ZipFile(out, "w") as target:
+        for entry in source.namelist():
+            content = source.read(entry).decode("utf-8")
+            if entry == name:
+                lines = [line.split("\t") for line in content.splitlines()]
+                at = lines[0].index(column)
+                content = "".join("\t".join(v for i, v in enumerate(line) if i != at) + "\n" for line in lines)
+            target.writestr(entry, content)
+    return out.getvalue()
+
+
+@pytest.mark.parametrize("name, column", [("INFOTABLE.tsv", "FIGI"), ("COVERPAGE.tsv", "AMENDMENTTYPE")])
+def test_a_data_set_without_figis_still_totals_its_holdings(name, column):
+    archive = data_set(
+        [
+            ("acc-a", "10-AUG-2018", "13F-HR", "A", "30-JUN-2018"),
+            ("acc-b", "11-AUG-2018", "13F-HR", "B", "30-JUN-2018"),
+            ("acc-b2", "20-AUG-2018", "13F-HR/A", "B", "30-JUN-2018"),
+        ],
+        {"acc-b2": "NEW HOLDINGS"},
+        [
+            ("acc-a", AAPL, AAPL_FIGIS[1], 100, 25_000, "SH", ""),
+            ("acc-b", AAPL, "", 40, 10_000, "SH", ""),
+            ("acc-b2", MSFT, "", 7, 3_500, "SH", ""),
+        ],
+    )
+    with zipfile.ZipFile(io.BytesIO(_without(archive, name, column))) as z:
+        quarter = aggregate(z)
+    assert quarter.period == date(2018, 6, 30)
+    if column == "FIGI":
+        assert quarter.holdings == {AAPL: Holding(140, 35_000, 2), MSFT: Holding(7, 3_500, 1)}
+        assert quarter.figis == {}  # no votes, so no CUSIP map from this set
+    else:  # amendments of an unknown kind are left out; the reports still count
+        assert quarter.holdings == {AAPL: Holding(140, 35_000, 2)}
+        assert quarter.figis == {AAPL_FIGIS[1]: (AAPL, 1)}
 
 
 def test_the_run_deadline_stops_a_long_aggregation():

@@ -20,6 +20,10 @@ The totals follow the research (.superpowers/research/plan-2b/sec.md §5.3):
 13F rows name a holding by CUSIP, never by ticker; most filers also give its FIGI. A stock's
 FIGIs come from OpenFIGI (openfigi.FigiBook), and its CUSIP is the one most rows reported with
 them.
+
+SEC named the data sets after calendar quarters (`2018q4_form13f.zip`, the filings of October to
+December 2018) up to 2023q4, and after their filing windows since. Older data sets may lack the FIGI
+or AMENDMENTTYPE column: their rows cast no FIGI votes, and their amendments count as of no known kind.
 """
 
 import csv
@@ -46,8 +50,9 @@ from advisor.models import AssetType, Market
 
 LISTING_URL = "https://www.sec.gov/data-research/sec-markets-data/form-13f-data-sets"
 DATA_SET = re.compile(
-    r'href="(?P<path>[^"]*?(?P<name>\d{2}[a-z]{3}\d{4}-\d{2}[a-z]{3}\d{4})_form13f\.zip)"'
+    r'href="(?P<path>[^"]*?(?P<name>\d{2}[a-z]{3}\d{4}-\d{2}[a-z]{3}\d{4}|\d{4}q[1-4])_form13f\.zip)"'
 )
+QUARTER_NAME = re.compile(r"(?P<year>\d{4})q(?P<quarter>[1-4])")
 QUARTERS = 2  # the latest quarter and the one before
 CHECK_EVERY = 100_000  # INFOTABLE rows between deadline checks (a data set has about 3.8 million)
 ORIGINAL, RESTATEMENT, NEW_HOLDINGS = "13F-HR", "RESTATEMENT", "NEW HOLDINGS"
@@ -73,9 +78,18 @@ class InstitutionalOwnership(BaseModel):
 
 @dataclass(frozen=True)
 class DataSet:
-    name: str  # the filing window, e.g. "01jun2026-31aug2026"
+    name: str  # the filing window, e.g. "01jun2026-31aug2026", or a calendar quarter, e.g. "2018q4"
     url: str
     end: date
+
+
+def window_end(name: str) -> date:
+    """The last filing day of a data set: its window's end, or its calendar quarter's last day."""
+    quarter = QUARTER_NAME.fullmatch(name)
+    if quarter is None:
+        return datetime.strptime(name.split("-")[1], "%d%b%Y").date()
+    year, last_month = int(quarter["year"]), 3 * int(quarter["quarter"])
+    return date(year + last_month // 12, last_month % 12 + 1, 1) - timedelta(days=1)
 
 
 def parse_listing(html: str) -> list[DataSet]:
@@ -83,8 +97,7 @@ def parse_listing(html: str) -> list[DataSet]:
     found: dict[str, DataSet] = {}
     for match in DATA_SET.finditer(html):
         name = match["name"]
-        end = datetime.strptime(name.split("-")[1], "%d%b%Y").date()
-        found.setdefault(name, DataSet(name, urljoin(LISTING_URL, match["path"]), end))
+        found.setdefault(name, DataSet(name, urljoin(LISTING_URL, match["path"]), window_end(name)))
     return sorted(found.values(), key=lambda d: d.end, reverse=True)
 
 
@@ -164,7 +177,7 @@ def aggregate(archive: zipfile.ZipFile) -> Quarter:
         raise ValueError("the 13F data set has no 13F-HR reports")
     period = periods.most_common(1)[0][0]
     amendments = {
-        row[c["ACCESSION_NUMBER"]]: row[c["AMENDMENTTYPE"]].strip()
+        row[c["ACCESSION_NUMBER"]]: row[c["AMENDMENTTYPE"]].strip() if "AMENDMENTTYPE" in c else ""
         for c, row in _rows(archive, "COVERPAGE.tsv")
         if row[c["ISAMENDMENT"]].strip() == "Y"
     }
@@ -187,7 +200,7 @@ def aggregate(archive: zipfile.ZipFile) -> Quarter:
         cusip = row[c["CUSIP"]].strip().upper()
         if not cusip:
             continue
-        figi = row[c["FIGI"]].strip().upper()
+        figi = row[c["FIGI"]].strip().upper() if "FIGI" in c else ""
         if FIGI.fullmatch(figi):
             votes[(figi, cusip)] += 1  # every row votes, whatever its quarter
         cik = filer_of.get(row[c["ACCESSION_NUMBER"]])
@@ -237,6 +250,20 @@ def load_quarter(path: Path) -> Quarter:
         )
     except (EOFError, zlib.error, KeyError, TypeError, AttributeError, ValueError) as exc:
         raise ValueError(f"damaged totals {path.name}") from exc
+
+
+def quarter_totals(sec: SecEdgar, folder: Path, data_set: DataSet) -> Quarter:
+    """The data set's totals from `folder`, or downloaded, reduced and saved there once."""
+    path = folder / f"{data_set.name}.json.gz"
+    try:
+        return load_quarter(path)
+    except (OSError, ValueError):
+        pass  # not reduced yet, or a damaged file: download again
+    response = sec.get(data_set.url)
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        quarter = aggregate(archive)
+    save_quarter(path, quarter)
+    return quarter
 
 
 class Sec13f:
@@ -291,17 +318,7 @@ class Sec13f:
         return records
 
     def _quarter(self, data_set: DataSet) -> Quarter:
-        """The data set's totals from disk, or downloaded and reduced once."""
-        path = self._folder / f"{data_set.name}.json.gz"
-        try:
-            return load_quarter(path)
-        except (OSError, ValueError):
-            pass  # not reduced yet, or a damaged file: download again
-        response = self._sec.get(data_set.url)
-        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
-            quarter = aggregate(archive)
-        save_quarter(path, quarter)
-        return quarter
+        return quarter_totals(self._sec, self._folder, data_set)
 
     def _prune(self, kept: Sequence[DataSet]) -> None:
         """Drop the totals of data sets that are no longer among the newest."""

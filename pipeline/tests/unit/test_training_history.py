@@ -458,3 +458,12 @@ def test_accepted_builds_only_the_groups_of_the_us_config():
     for key in ("short", "analyst", "insider", "events", "holders", "estimates", "catalysts"):
         older.pop(key)
     assert history_module.accepted_groups(older) == frozenset()
+
+
+def test_an_unreadable_stored_config_builds_no_groups_instead_of_raising(caplog):
+    stored = ModelConfig(short=True).to_json()
+    for unreadable in (stored | {"version": 7}, stored | {"surprise": 1}, "not a mapping"):
+        caplog.clear()
+        with caplog.at_level("WARNING", logger=history_module.log.name):
+            assert history_module.accepted_groups(unreadable) == frozenset()
+        assert "can't be read" in caplog.text

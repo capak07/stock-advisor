@@ -160,10 +160,17 @@ def wanted_groups(choice: str) -> frozenset[str]:
 
 def accepted_groups(stored: Mapping[str, Any] | None) -> frozenset[str]:
     """The data groups with history files that the stored US config trains on (`--groups accepted`).
-    Empty without a config; `earnings` has no files, so it is never among them."""
+    Empty without a config, and when this code can't read it (an unknown version or bad keys, as after a
+    rollback): `config_for` runs the baseline then, and the baseline needs no groups. `earnings` has no
+    files, so it is never among them."""
     if stored is None:
         return frozenset()
-    return frozenset(data_groups(ModelConfig.from_json(stored))) & GROUP_FILES.keys()
+    try:
+        config = ModelConfig.from_json(stored)
+    except ValueError as error:
+        log.warning("the stored US config can't be read (%s): building no data groups", error)
+        return frozenset()
+    return frozenset(data_groups(config)) & GROUP_FILES.keys()
 
 
 def _write_parquet(frame: pd.DataFrame, path: Path) -> None:

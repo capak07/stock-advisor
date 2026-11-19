@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from advisor.collectors.openfda import APPROVAL_WINDOW_DAYS, FDA_LAG_DAYS, RECALL_WINDOW_DAYS
-from advisor.model.groups import window_count
+from advisor.model.pit import window_count
 
 CATALYSTS_FEATURES = ["fda_approvals_180d", "fda_recalls_90d"]
 _KINDS = (("approval", "fda_approvals_180d", APPROVAL_WINDOW_DAYS), ("recall", "fda_recalls_90d", RECALL_WINDOW_DAYS))

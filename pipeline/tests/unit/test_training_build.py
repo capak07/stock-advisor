@@ -1,9 +1,11 @@
+import contextlib
 import io
 import json
 import logging
 import zipfile
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 
 import httpx
 import pandas as pd
@@ -12,6 +14,7 @@ import pytest
 from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec import SecEdgar
 from advisor.model.groups import GROUP_FILES
+from advisor.model.variants import ModelConfig
 from advisor.models import Market
 from advisor.training import build as build_module
 from advisor.training.build import BuildDeps, BuildFailed, HistoryPlan, build, parse_args
@@ -435,3 +438,37 @@ def test_main_builds_history_deps_only_when_the_plan_downloads(monkeypatch, tmp_
     assert real.cache.root == cache and real.figis._path == cache / "openfigi.json"
     assert none_plan is None and none_deps is None  # --groups none: the build of before
     assert local_plan.cache == tmp_path / "history-cache" and local.cache.root == tmp_path / "history-cache"
+
+
+def test_accepted_groups_need_the_database():
+    with pytest.raises(SystemExit):
+        parse_args(["--out", "x", "--groups", "accepted", "--no-db"])
+    assert parse_args(["--out", "x", "--groups", "accepted"]).groups == "accepted"
+
+
+def test_main_resolves_accepted_to_the_groups_of_the_us_config(monkeypatch, tmp_path):
+    seen, asked = [], []
+    stored = ModelConfig(ranker=True, short=True, holders=True, earnings=True).to_json()
+
+    def fake_build(out, now, deps, limit=None, history=None):
+        seen.append(history)
+        return {}
+
+    def active(conn, market):
+        asked.append(market)
+        return SimpleNamespace(config=stored)
+
+    monkeypatch.setenv("SEC_USER_AGENT", "stock-advisor test@example.com")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
+    monkeypatch.setattr(build_module, "NasdaqSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "TmxSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "build", fake_build)
+    monkeypatch.setattr(build_module, "connect", lambda url: contextlib.nullcontext("conn"))
+    monkeypatch.setattr(build_module.repo, "active_config", active)
+    cache = tmp_path / "cache"
+    argv = ["--out", str(tmp_path), "--groups", "accepted", "--no-history-download", "--history-cache", str(cache)]
+    assert build_module.main(argv) == 0
+    assert asked == ["US"] and seen == [HistoryPlan(groups=frozenset({"short", "holders"}), cache=cache, download=False)]
+    monkeypatch.setattr(build_module.repo, "active_config", lambda conn, market: None)
+    assert build_module.main(argv) == 0
+    assert seen[-1] == HistoryPlan(groups=frozenset(), cache=cache, download=False)  # no config: no group

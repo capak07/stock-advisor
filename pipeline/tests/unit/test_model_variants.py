@@ -1,15 +1,21 @@
+import re
+from dataclasses import replace
+
 import pandas as pd
 import pytest
 
 from advisor.model.dataset import load_market
 from advisor.model.earnings import EARNINGS_FEATURES
 from advisor.model.features import EXTRA_FEATURES
+from advisor.model.groups import DATA_GROUPS, GROUP_FEATURES
 from advisor.model.train import PARAMS, TrainConfig, make_folds, walk_forward
 from advisor.model.variants import (
     BASELINE,
     ModelConfig,
+    data_groups,
     extra_features,
     fit_variant,
+    missing_groups,
     run_variant,
     unbuilt,
 )
@@ -29,8 +35,9 @@ def test_configs_name_themselves_and_round_trip():
     assert ModelConfig(ranker=True, extras=True, bagged=True).name == "ranker+extras+bagged"
     assert ModelConfig(extras=True).name == "extras"
     assert BASELINE.to_json() == {
-        "version": 5, "factors": False, "garch": False, "ranker": False, "forest": False, "extras": False,
-        "bagged": False, "earnings": False, "policy": None,
+        "version": 6, "factors": False, "garch": False, "ranker": False, "forest": False, "extras": False,
+        "bagged": False, "earnings": False, "short": False, "analyst": False, "insider": False, "events": False,
+        "holders": False, "estimates": False, "catalysts": False, "policy": None,
     }
     assert ModelConfig(ranker=True, garch=True, forest=True).name == "garch+ranker+forest"
     forest = ModelConfig(ranker=True, garch=True, forest=True)
@@ -46,7 +53,7 @@ def test_configs_name_themselves_and_round_trip():
 
 
 @pytest.mark.parametrize("stored, match", [
-    ({"version": 6, "factors": False, "garch": False, "ranker": False, "forest": False, "extras": False,
+    ({"version": 7, "factors": False, "garch": False, "ranker": False, "forest": False, "extras": False,
       "bagged": False, "earnings": False, "policy": None}, "version"),
     ({"version": 5, "factors": False, "garch": False, "ranker": False, "extras": False, "bagged": False,
       "earnings": False, "policy": None}, "forest"),
@@ -182,3 +189,44 @@ def test_an_earnings_config_stores_the_earnings_columns_in_its_model(tmp_path):
     plain = ModelConfig(ranker=True)
     other = fit_variant(data, run_variant(data, plain, fast), plain, fast)
     assert not set(EARNINGS_FEATURES) & set(other.features)
+
+
+def test_a_version_5_config_loads_with_the_new_groups_off():
+    stored = ModelConfig(ranker=True, garch=True, forest=True).to_json() | {"version": 5}
+    for key in ("short", "analyst", "insider", "events", "holders", "estimates", "catalysts"):
+        stored.pop(key)
+    assert ModelConfig.from_json(stored) == ModelConfig(ranker=True, garch=True, forest=True)
+
+
+def test_a_version_6_config_carries_its_groups_through_json():
+    config = ModelConfig(ranker=True, short=True, insider=True, catalysts=True)
+    assert ModelConfig.from_json(config.to_json()) == config
+    assert data_groups(config) == ("short", "insider", "catalysts")
+
+
+def test_a_name_that_would_pass_40_characters_uses_the_group_letters():
+    every = ModelConfig(garch=True, ranker=True, forest=True, short=True, analyst=True, insider=True, events=True,
+                        holders=True, earnings=True, estimates=True, catalysts=True)
+    assert every.name == "garch+ranker+forest+data+s+a+i+v+h+e+t+c"
+    assert re.fullmatch(r"[a-z+]{1,40}", every.name)
+    assert ModelConfig(garch=True, ranker=True, forest=True, short=True).name == "garch+ranker+forest+short"
+    assert ModelConfig(ranker=True, short=True, bagged=True).name == "ranker+short+bagged"
+
+
+def test_each_group_config_trains_on_only_its_own_columns(tmp_path):
+    write_market(tmp_path, Market.US, stocks=2, days=400)
+    data = replace(load_market(tmp_path, Market.US), groups=frozenset(DATA_GROUPS))  # as if every group was built
+    for group in DATA_GROUPS:
+        assert extra_features(data, ModelConfig(ranker=True, **{group: True})) == tuple(GROUP_FEATURES[group])
+    both = ModelConfig(extras=True, short=True, catalysts=True)
+    assert extra_features(data, both) == (*EXTRA_FEATURES, *GROUP_FEATURES["short"], *GROUP_FEATURES["catalysts"])
+
+
+def test_a_config_whose_group_was_not_built_is_refused_by_name(tmp_path):
+    write_market(tmp_path, Market.US, stocks=2, days=400)
+    data = load_market(tmp_path, Market.US)  # no group history files: only `earnings` is present
+    assert missing_groups(data, ModelConfig(earnings=True, insider=True, short=True)) == ["short", "insider"]
+    with pytest.raises(ValueError, match="needs the insider data, which this build did not write"):
+        extra_features(data, ModelConfig(ranker=True, insider=True))
+    with pytest.raises(ValueError, match="insider"):
+        run_variant(data, ModelConfig(ranker=True, insider=True), FAST)

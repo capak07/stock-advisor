@@ -11,6 +11,8 @@ The US data groups' history (`training.history`) lives in a cache (`--history-ca
   from the cache. No group history is downloaded.
 - neither (a local build): the full build, the group download, then the copy. `--groups none` skips
   the group history altogether, as before.
+`--groups accepted` (train.yml): only the groups of the US market's accepted config, read from the database,
+so train copies just what its model needs and a stale group it does not need is not recorded.
 """
 
 import argparse
@@ -51,6 +53,7 @@ from advisor.training.fundamentals import reduce_companyfacts, universe_ciks
 from advisor.training.history import (
     HistoryCache,
     HistoryDeps,
+    accepted_groups,
     build_history,
     copy_history,
     wanted_groups,
@@ -287,7 +290,12 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None,
     return _finish(out, manifest, build_began)
 
 
-def _groups_option(choice: str) -> frozenset[str]:
+ACCEPTED = "accepted"  # --groups accepted: resolved in `main`, which has the database
+
+
+def _groups_option(choice: str) -> frozenset[str] | str:
+    if choice.strip() == ACCEPTED:
+        return ACCEPTED
     try:
         return wanted_groups(choice)
     except ValueError as exc:
@@ -300,7 +308,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, help="stocks per market (a quick check, not a full build)")
     parser.add_argument("--no-db", action="store_true", help="don't write sectors to the database")
     parser.add_argument("--groups", type=_groups_option, default="all", metavar="CHOICE",
-                        help="data groups' history: all (default), none, or a comma list such as short,holders")
+                        help="data groups' history: all (default), none, accepted (the US config's groups; needs the "
+                             "database), or a comma list such as short,holders")
     parser.add_argument("--history-cache", type=Path, metavar="DIR",
                         help="the group-history cache (default: <out>/history-cache)")
     mode = parser.add_mutually_exclusive_group()
@@ -311,6 +320,8 @@ def parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if (args.history_only or args.no_history_download) and args.history_cache is None:
         parser.error("--history-only and --no-history-download need --history-cache")
+    if args.groups == ACCEPTED and args.no_db:
+        parser.error("--groups accepted reads the accepted config from the database, so it cannot run with --no-db")
     return args
 
 
@@ -345,6 +356,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         conn = None
         if not args.no_db:
             conn = stack.enter_context(connect(Settings.from_env().database_url))
+        if args.groups == ACCEPTED:  # parse_args refused --no-db, so there is a connection
+            row = repo.active_config(conn, str(Market.US))
+            args.groups = accepted_groups(row.config if row else None)
         plan = _history_plan(args)
         history = None
         if plan is not None and plan.download:

@@ -35,6 +35,7 @@ from advisor.collectors.base import RateLimiter
 from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec import SUBMISSIONS_ZIP_URL, SecEdgar
 from advisor.model.groups import GROUP_FILES
+from advisor.model.variants import ModelConfig, data_groups
 from advisor.models import ET
 from advisor.schedule import previous_sessions
 from advisor.training.fda_history import fda_history
@@ -155,6 +156,14 @@ def wanted_groups(choice: str) -> frozenset[str]:
     if unknown or not names:
         raise ValueError(f"unknown data groups: {', '.join(unknown) or choice!r} (known: {', '.join(GROUP_FILES)})")
     return names
+
+
+def accepted_groups(stored: Mapping[str, Any] | None) -> frozenset[str]:
+    """The data groups with history files that the stored US config trains on (`--groups accepted`).
+    Empty without a config; `earnings` has no files, so it is never among them."""
+    if stored is None:
+        return frozenset()
+    return frozenset(data_groups(ModelConfig.from_json(stored))) & GROUP_FILES.keys()
 
 
 def _write_parquet(frame: pd.DataFrame, path: Path) -> None:

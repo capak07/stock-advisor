@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from advisor.markets import MARKETS
-from advisor.model.earnings import EARNINGS_FEATURES, earnings_features
+from advisor.model.earnings import earnings_features
 from advisor.model.factors import (
     FACTORS,
     FactorFrames,
@@ -37,6 +37,13 @@ from advisor.model.features import (
     to_wide,
 )
 from advisor.model.fundamentals import FUNDAMENTAL_FEATURES, fundamental_features
+from advisor.model.groups import (
+    ALL_GROUP_FEATURES,
+    GroupHistory,
+    group_features,
+    load_history,
+    present,
+)
 from advisor.models import Market
 from advisor.screener import ADV_WINDOW
 from advisor.training.sectors import SECTOR_ETFS, sector_etf
@@ -58,6 +65,8 @@ class MarketData:
     # a fold start -> each symbol's GARCH parameters fitted before it, shared by the variants and folds
     # that run on this data (spec §4: fitted once per asset per training fold)
     garch_cache: dict = field(default_factory=dict, compare=False, repr=False)
+    # the data groups whose history this build wrote (`groups.present`); a config needing another is refused
+    groups: frozenset[str] = frozenset()
 
 
 def log_returns(close: pd.DataFrame, symbols) -> pd.DataFrame:
@@ -91,12 +100,13 @@ def feature_frames(
     facts: pd.DataFrame | None = None,
     tickers: pd.DataFrame | None = None,
     split_calendar: pd.DatetimeIndex | None = None,
+    history: GroupHistory | None = None,
 ) -> FeatureFrames:
     """The one feature step shared by training and live runs, so their features cannot drift apart.
 
     `prices` is Plan 3a's long layout. `split_calendar` is the calendar the daily split factor is
     built on for the fundamentals; it must reach back past any filing in use (default: the days
-    with a benchmark close).
+    with a benchmark close). `history` is the US data groups' history (None: every group's features read NaN).
     """
     benchmark = MARKETS[market].benchmark
     etfs = sorted(SECTOR_ETFS[market].values())
@@ -118,10 +128,12 @@ def feature_frames(
         splits = splits.loc[:, splits.ne(1).any()]
         features |= fundamental_features(facts, tickers, days, split_adjusted.loc[days], splits)
         names = names + FUNDAMENTAL_FEATURES
-        features |= earnings_features(facts, tickers, days, list(wide.close.columns), splits)
-    else:  # SEC filings cover US companies only
-        features |= {name: pd.DataFrame(np.nan, index=days, columns=wide.close.columns) for name in EARNINGS_FEATURES}
-    extras = list(EXTRA_FEATURES) + EARNINGS_FEATURES
+        symbols = list(wide.close.columns)
+        features |= earnings_features(facts, tickers, days, symbols, splits)
+        features |= group_features(history or GroupHistory(), facts, tickers, split_adjusted, splits, days, symbols)
+    else:  # the data groups cover US companies only
+        features |= {name: pd.DataFrame(np.nan, index=days, columns=wide.close.columns) for name in ALL_GROUP_FEATURES}
+    extras = list(EXTRA_FEATURES) + ALL_GROUP_FEATURES  # the earnings names are among them
     return FeatureFrames(wide, calendar, names, extras, features, dollar_volume, eligible(traded, dollar_volume))
 
 
@@ -143,7 +155,8 @@ def load_market(data_dir: Path, market: Market, with_factors: bool = False, with
     # the calendar is the days with a benchmark close; the sample days come from it
     bench = prices[(prices["symbol"] == benchmark) & prices["close"].notna()]
     days = pd.DatetimeIndex(sorted(pd.to_datetime(bench["day"]).unique()))[WARMUP::SAMPLE_EVERY]
-    built = feature_frames(prices, events, sectors, market, days, facts=facts, tickers=tickers)
+    history = load_history(data_dir) if market == Market.US else None
+    built = feature_frames(prices, events, sectors, market, days, facts=facts, tickers=tickers, history=history)
     wide, calendar, names, dollar_volume = built.wide, built.calendar, built.names, built.dollar_volume
 
     extras = built.extras
@@ -174,4 +187,5 @@ def load_market(data_dir: Path, market: Market, with_factors: bool = False, with
         rows = join_factor_columns(rows, betas, factors)
     returns = log_returns(wide.close, rows["symbol"].unique()) if with_garch else None
     del built, wide, dollar_volume, frames, stacked  # the full-calendar frames are large
-    return MarketData(market, rows, names, calendar, factors, tuple(extras), returns)
+    groups = present(history) if history is not None else frozenset()
+    return MarketData(market, rows, names, calendar, factors, tuple(extras), returns, groups=groups)

@@ -15,6 +15,7 @@ from advisor.collectors.finra_short_volume import FINRA_SHORT_VOLUME_URL
 from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec import SUBMISSIONS_ZIP_URL
 from advisor.model.groups import GROUP_FILES
+from advisor.model.variants import ModelConfig
 from advisor.training import history as history_module
 from advisor.training.fda_history import DOWNLOAD_URL
 from advisor.training.finra_history import PARTITIONS_URL
@@ -447,3 +448,13 @@ def test_the_group_files_are_the_planned_ones():
         "estimates": ("earnings_estimates.parquet",),
         "catalysts": ("fda_events.parquet",),
     }
+
+
+def test_accepted_builds_only_the_groups_of_the_us_config():
+    stored = ModelConfig(garch=True, ranker=True, forest=True, short=True, earnings=True).to_json()
+    assert history_module.accepted_groups(stored) == frozenset({"short"})  # earnings has no files
+    assert history_module.accepted_groups(None) == frozenset()
+    older = ModelConfig(ranker=True, earnings=True).to_json() | {"version": 5}
+    for key in ("short", "analyst", "insider", "events", "holders", "estimates", "catalysts"):
+        older.pop(key)
+    assert history_module.accepted_groups(older) == frozenset()

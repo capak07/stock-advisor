@@ -16,7 +16,7 @@ from collections.abc import Sequence
 import numpy as np
 import pandas as pd
 
-from advisor.model.groups import days_since, sec_known, window_count
+from advisor.model.pit import days_since, sec_known, window_count
 
 EVENT_ITEMS = ("5.02", "1.01", "2.01", "4.02", "3.01")
 EVENTS_FEATURES = ["ev_502_90d", "ev_101_90d", "ev_201_90d", "ev_402_90d", "ev_301_90d",

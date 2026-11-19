@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from advisor.model.fundamentals import _ns
-from advisor.model.groups import days_since, window_count
+from advisor.model.pit import days_since, window_count
 from advisor.models import ET
 
 ANALYST_FEATURES = ["net_upgrades_30d", "net_upgrades_90d", "net_target_raises_90d", "days_since_downgrade"]

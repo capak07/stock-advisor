@@ -1,7 +1,24 @@
+from dataclasses import fields
+
 import numpy as np
 import pandas as pd
 
-from advisor.model.groups import covered_symbols, days_since, sec_known, window_count
+from advisor.model.groups import (
+    ALL_GROUP_FEATURES,
+    DATA_GROUPS,
+    FILE_FIELDS,
+    GROUP_FEATURES,
+    GROUP_FILES,
+    LETTERS,
+    GroupHistory,
+    covered_symbols,
+    days_since,
+    group_features,
+    load_history,
+    present,
+    sec_known,
+    window_count,
+)
 
 
 def test_a_record_known_on_the_row_day_is_not_read():
@@ -76,3 +93,34 @@ def test_covered_symbols_are_those_whose_cik_has_a_fact():
     tickers = pd.DataFrame({"symbol": ["A", "B", "C", "D"], "cik": [1, 2, 3, np.nan]})
     assert covered_symbols(facts, tickers) == {"A", "C"}
     assert covered_symbols(facts.iloc[:0], tickers) == set()
+
+
+def test_every_group_file_has_a_history_field():
+    assert set(FILE_FIELDS) == {f for files in GROUP_FILES.values() for f in files}
+    assert set(FILE_FIELDS.values()) <= {f.name for f in fields(GroupHistory)}
+    assert FILE_FIELDS["earnings_estimates.parquet"] == "estimates"
+    assert set(LETTERS) == set(DATA_GROUPS) == set(GROUP_FEATURES)
+    assert len(ALL_GROUP_FEATURES) == len(set(ALL_GROUP_FEATURES)) == sum(map(len, GROUP_FEATURES.values()))
+
+
+def test_a_directory_without_group_files_loads_as_none_and_features_read_missing(tmp_path):
+    history = load_history(tmp_path)
+    assert all(getattr(history, f.name) is None for f in fields(GroupHistory))
+    assert present(history) == {"earnings"}
+    days = pd.DatetimeIndex(["2026-03-02", "2026-03-09"])
+    close = pd.DataFrame(10.0, index=days, columns=["A", "B"])
+    facts = pd.DataFrame(columns=["cik", "metric", "concept", "unit", "start", "end", "value", "filed", "form",
+                                  "accession"])
+    tickers = pd.DataFrame({"symbol": ["A"], "cik": pd.Series([1], dtype="int32")})
+    out = group_features(history, facts, tickers, close, pd.DataFrame(), days, ["A", "B"])
+    assert set(out) == set(ALL_GROUP_FEATURES) - set(GROUP_FEATURES["earnings"])
+    assert all(frame.isna().all().all() and list(frame.columns) == ["A", "B"] for frame in out.values())
+
+
+def test_load_history_reads_the_files_that_exist_and_builds_analyst_coverage(tmp_path):
+    pd.DataFrame({"symbol": ["A"], "graded_at": pd.to_datetime(["2026-01-05 15:00"]), "action": ["up"],
+                  "price_target_action": ["Raises"]}).to_parquet(tmp_path / "analyst_events.parquet", index=False)
+    history = load_history(tmp_path)
+    assert history.analyst_events is not None and history.analyst_coverage["symbol"].tolist() == ["A"]
+    assert history.insider_trades is None
+    assert present(history) == {"analyst", "earnings"}

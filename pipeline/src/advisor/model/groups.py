@@ -1,18 +1,35 @@
-"""Shared point-in-time helpers for the data groups, as wide day x symbol frames.
+"""The US data groups as model features: their history files, the frames they load into, and the one
+function that turns the frames into wide day x symbol feature frames.
 
-Every record has a `known` date K, and a row on day D reads it only when K < D (strictly before), as
-`fundamentals._asof` does. A window of N days is `D - N days <= K < D`. Live and training compute each
-feature through the same function, with the same known dates.
+The point-in-time helpers every group shares live in `advisor.model.pit` (re-exported here). A group's
+history is written weekly by `training.history`; `load_history` reads whatever of it the data directory
+holds, and a group whose files are missing loads as None: its features read NaN, never zero, and its
+rows fail closed in training (`variants.missing_groups`).
 """
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from advisor.model.fundamentals import _ns
-from advisor.models import ET, Market
-from advisor.schedule import sessions_after
+from advisor.model.analyst import ANALYST_FEATURES, analyst_features
+from advisor.model.analyst import coverage as analyst_coverage
+from advisor.model.catalysts import CATALYSTS_FEATURES, catalysts_features
+from advisor.model.earnings import EARNINGS_FEATURES
+from advisor.model.estimates import ESTIMATES_FEATURES, estimates_features
+from advisor.model.events import EVENTS_FEATURES, events_features
+from advisor.model.fundamentals import shares_outstanding
+from advisor.model.holders import HOLDERS_FEATURES, holders_features
+from advisor.model.insider import INSIDER_FEATURES, insider_features
+from advisor.model.pit import (  # noqa: F401  (re-exported: the helpers' original home)
+    covered_symbols,
+    days_since,
+    sec_known,
+    window_count,
+)
+from advisor.model.short import SHORT_FEATURES, short_features
 
 # Each data group's history files (written by `training.history`, read by the dataset), in the spec's
 # priority order. `earnings` needs only fundamentals.parquet, so it is not a key.
@@ -26,70 +43,86 @@ GROUP_FILES: dict[str, tuple[str, ...]] = {
     "catalysts": ("fda_events.parquet",),
 }
 
+# every data group, in the order a config name lists them
+DATA_GROUPS = ("short", "analyst", "insider", "events", "holders", "earnings", "estimates", "catalysts")
+GROUP_FEATURES: dict[str, list[str]] = {
+    "short": SHORT_FEATURES,
+    "analyst": ANALYST_FEATURES,
+    "insider": INSIDER_FEATURES,
+    "events": EVENTS_FEATURES,
+    "holders": HOLDERS_FEATURES,
+    "earnings": EARNINGS_FEATURES,
+    "estimates": ESTIMATES_FEATURES,
+    "catalysts": CATALYSTS_FEATURES,
+}
+ALL_GROUP_FEATURES = [name for group in DATA_GROUPS for name in GROUP_FEATURES[group]]
+# the letter each group takes in a config name that would pass 40 characters
+LETTERS = {"short": "s", "analyst": "a", "insider": "i", "events": "v", "holders": "h", "earnings": "e",
+           "estimates": "t", "catalysts": "c"}
 
-def sec_known(accepted_at: pd.Series, filing_date: pd.Series) -> pd.Series:
-    """The date an SEC filing becomes known (datetime64[ns] days, the index of `accepted_at`).
 
-    The Eastern date of its true acceptance time (a naive time is read as UTC); when that is missing,
-    the first session after its filing date, on the NYSE calendar. NaT when both are missing.
+@dataclass(frozen=True, eq=False)  # frames do not compare
+class GroupHistory:
+    """The groups' history frames; None for a file the data directory does not hold."""
+
+    short_interest: pd.DataFrame | None = None
+    short_volume: pd.DataFrame | None = None
+    analyst_events: pd.DataFrame | None = None
+    analyst_coverage: pd.DataFrame | None = None  # built from `analyst_events`, not a file
+    material_events: pd.DataFrame | None = None
+    large_holders: pd.DataFrame | None = None
+    insider_trades: pd.DataFrame | None = None
+    holders: pd.DataFrame | None = None
+    estimates: pd.DataFrame | None = None
+    fda_events: pd.DataFrame | None = None
+
+
+# each file of GROUP_FILES -> the GroupHistory field it loads into: the file stem, but `estimates`
+FILE_FIELDS: dict[str, str] = {
+    name: "estimates" if name == "earnings_estimates.parquet" else name.removesuffix(".parquet")
+    for files in GROUP_FILES.values() for name in files
+}
+
+
+def load_history(data_dir: Path) -> GroupHistory:
+    """The history files of `GROUP_FILES` that exist in `data_dir`; a missing file is None."""
+    loaded = {
+        field: pd.read_parquet(data_dir / name)
+        for name, field in FILE_FIELDS.items() if (data_dir / name).exists()
+    }
+    if (events := loaded.get("analyst_events")) is not None:
+        loaded["analyst_coverage"] = analyst_coverage(events)
+    return GroupHistory(**loaded)
+
+
+def present(history: GroupHistory) -> frozenset[str]:
+    """The groups whose every source frame is present. `earnings` needs only the SEC facts, so it is always there."""
+    have = {
+        group for group, files in GROUP_FILES.items()
+        if all(getattr(history, FILE_FIELDS[name]) is not None for name in files)
+    }
+    return frozenset(have | {"earnings"})
+
+
+def group_features(history: GroupHistory, facts: pd.DataFrame, tickers: pd.DataFrame, split_adjusted: pd.DataFrame,
+                   splits: pd.DataFrame, days: pd.DatetimeIndex, symbols: Sequence[str]) -> dict[str, pd.DataFrame]:
+    """Wide frames (days x `symbols`) of every name in ALL_GROUP_FEATURES except the earnings ones.
+
+    A source that is absent (None) leaves its features NaN. The shares outstanding the short, holders and
+    insider features divide by are computed once here, and only when one of those groups has its history.
     """
-    accepted = pd.to_datetime(accepted_at, utc=True)
-    known = accepted.dt.tz_convert(ET).dt.tz_localize(None).dt.normalize().astype("datetime64[ns]")
-    filed = pd.to_datetime(filing_date).astype("datetime64[ns]")
-    need = known.isna() & filed.notna()
-    if need.any():
-        after = {day: pd.Timestamp(sessions_after(Market.US, day.date(), 1)) for day in filed[need].unique()}
-        known = known.mask(need, filed.map(after)).astype("datetime64[ns]")
-    return known
-
-
-def _by_symbol(
-    events: pd.DataFrame, symbols: Sequence[str], weight: str | None
-) -> Iterator[tuple[str, np.ndarray, np.ndarray | None]]:
-    """Per wanted symbol: its sorted known dates and, with a weight, the leading-zero cumulative weights."""
-    cols = ["symbol", "known", *([weight] if weight else [])]
-    e = events[cols].dropna(subset=["symbol", "known"]).copy()
-    e["known"] = _ns(e["known"])
-    e = e[e["symbol"].isin(symbols)].sort_values("known", kind="stable")
-    for symbol, rows in e.groupby("symbol", sort=False):
-        known = rows["known"].to_numpy("datetime64[ns]")
-        cum = None
-        if weight:
-            cum = np.concatenate([[0.0], rows[weight].fillna(0.0).to_numpy(float).cumsum()])
-        yield symbol, known, cum
-
-
-def window_count(events: pd.DataFrame, days: pd.DatetimeIndex, symbols: Sequence[str], window_days: int,
-                 weight: str | None = None) -> pd.DataFrame:
-    """For each day and symbol, the number of `events` rows (`symbol`, `known`) with
-    `D - window_days <= known < D`, or the sum of column `weight` over them (a missing weight adds 0).
-    0 where there are none, including for symbols without events."""
     symbols = list(symbols)
-    day_ns = _ns(days).to_numpy("datetime64[ns]")
-    start = day_ns - np.timedelta64(window_days, "D")
-    out = pd.DataFrame(0.0, index=days, columns=symbols)
-    for symbol, known, cum in _by_symbol(events, symbols, weight):
-        end = np.searchsorted(known, day_ns, side="left")  # rows with known < D
-        begin = np.searchsorted(known, start, side="left")  # rows with known < D - window_days
-        out[symbol] = (cum[end] - cum[begin]) if cum is not None else (end - begin).astype(float)
+    needs_shares = any(
+        frame is not None for frame in (history.short_interest, history.holders, history.insider_trades))
+    shares = (shares_outstanding(facts, tickers, days, symbols, splits) if needs_shares
+              else pd.DataFrame(np.nan, index=days, columns=symbols))
+    market_value = split_adjusted.loc[days, symbols] * shares
+    covered = covered_symbols(facts, tickers)
+    out = short_features(history.short_interest, history.short_volume, shares, splits, days, symbols)
+    out |= analyst_features(history.analyst_events, history.analyst_coverage, days, symbols)
+    out |= insider_features(history.insider_trades, market_value, covered, days, symbols)
+    out |= events_features(history.material_events, history.large_holders, covered, days, symbols)
+    out |= holders_features(history.holders, shares, splits, days, symbols)
+    out |= estimates_features(history.estimates, days, symbols)
+    out |= catalysts_features(history.fda_events, days, symbols)
     return out
-
-
-def days_since(events: pd.DataFrame, days: pd.DatetimeIndex, symbols: Sequence[str], cap: int) -> pd.DataFrame:
-    """For each day and symbol, the days from the latest `known < D` to D, at most `cap`.
-    NaN where the symbol has no such row."""
-    symbols = list(symbols)
-    day_ns = _ns(days).to_numpy("datetime64[ns]")
-    out = pd.DataFrame(np.nan, index=days, columns=symbols)
-    for symbol, known, _ in _by_symbol(events, symbols, None):
-        last = np.searchsorted(known, day_ns, side="left") - 1  # latest row with known < D
-        gap = (day_ns - known[np.maximum(last, 0)]) / np.timedelta64(1, "D")
-        out[symbol] = np.where(last >= 0, np.minimum(gap, cap), np.nan)
-    return out
-
-
-def covered_symbols(facts: pd.DataFrame, tickers: pd.DataFrame) -> set[str]:
-    """The symbols whose CIK has at least one SEC fact."""
-    ciks = set(pd.to_numeric(facts["cik"], errors="coerce").dropna().astype("int64"))
-    tick = tickers.assign(cik=pd.to_numeric(tickers["cik"], errors="coerce")).dropna(subset=["cik"])
-    return set(tick.loc[tick["cik"].astype("int64").isin(ciks), "symbol"])

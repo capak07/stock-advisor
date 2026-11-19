@@ -46,3 +46,8 @@ def test_benchmark_and_train_only_restore_the_history_cache():
         assert "actions/cache/save" not in text and "--history-only" not in text, workflow.name
     restore = re.search(r"uses: actions/cache/restore@v4\n\s+if: (.+)", WORKFLOW.read_text())
     assert restore and restore.group(1) == "steps.due.outputs.run == 'true'"  # a non-due Sunday touches no cache
+
+
+def test_train_builds_only_the_accepted_groups():
+    assert "--groups accepted" in TRAIN.read_text()
+    assert "--groups accepted" not in WORKFLOW.read_text() and "--groups accepted" not in HISTORY.read_text()

@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from advisor.model.fundamentals import _ns
-from advisor.model.groups import sec_known, window_count
+from advisor.model.pit import sec_known, window_count
 
 INSIDER_FEATURES = ["insider_net_buy_90d", "insider_buyers_90d", "officer_buy_180d"]
 BUY, SELL = "P", "S"

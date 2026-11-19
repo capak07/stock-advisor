@@ -6,9 +6,9 @@ import pytest
 
 from advisor.markets import MARKETS
 from advisor.model.dataset import SAMPLE_EVERY, WARMUP, load_market
-from advisor.model.earnings import EARNINGS_FEATURES
 from advisor.model.features import EXTRA_FEATURES, HORIZONS, PRICE_FEATURES, RS_FEATURES
 from advisor.model.fundamentals import FUNDAMENTAL_FEATURES
+from advisor.model.groups import ALL_GROUP_FEATURES
 from advisor.models import Market
 from model_data import write_market
 
@@ -77,17 +77,34 @@ def test_a_failed_build_is_never_trained_on(tmp_path):
 def test_training_rows_carry_the_extras_but_the_baseline_names_do_not_change(tmp_path):
     write_market(tmp_path, Market.TSX, stocks=3, days=400)
     data = load_market(tmp_path, Market.TSX)
-    assert data.extras == (*EXTRA_FEATURES, *EARNINGS_FEATURES)
+    assert data.extras == (*EXTRA_FEATURES, *ALL_GROUP_FEATURES)
     assert set(EXTRA_FEATURES) <= set(data.rows.columns)
     assert data.features == PRICE_FEATURES + RS_FEATURES
     assert data.rows["amihud_20"].notna().all()
 
 
-def test_us_rows_carry_the_earnings_columns_and_tsx_rows_read_them_missing(tmp_path):
+def test_us_rows_carry_every_group_column_and_tsx_reads_them_missing(tmp_path):
     write_market(tmp_path / "us", Market.US, stocks=2, days=400)
     write_market(tmp_path / "tsx", Market.TSX, stocks=2, days=400)
     us, tsx = load_market(tmp_path / "us", Market.US), load_market(tmp_path / "tsx", Market.TSX)
     for data in (us, tsx):
-        assert set(EARNINGS_FEATURES) <= set(data.rows.columns)
-        assert not set(EARNINGS_FEATURES) & set(data.features)  # only configs that name them train on them
-    assert tsx.rows[EARNINGS_FEATURES].isna().all().all()
+        assert set(ALL_GROUP_FEATURES) <= set(data.rows.columns)
+        assert not set(ALL_GROUP_FEATURES) & set(data.features)  # only configs that name them train on them
+    assert tsx.rows[ALL_GROUP_FEATURES].isna().all().all()
+    assert tsx.groups == frozenset()
+    assert us.rows[ALL_GROUP_FEATURES].isna().all().all()  # no history files: missing, never zero
+    assert us.groups == {"earnings"}
+
+
+def test_load_market_records_which_groups_were_built(tmp_path):
+    write_market(tmp_path, Market.US, stocks=2, days=400)
+    pd.DataFrame({"symbol": ["QAA"], "settlement": pd.to_datetime(["2017-12-01"]), "short_interest": [1000.0],
+                  "days_to_cover": [2.0]}).to_parquet(tmp_path / "short_interest.parquet", index=False)
+    pd.DataFrame({"symbol": ["QAA"], "day": pd.to_datetime(["2017-03-15"]), "short_volume": [10.0],
+                  "total_volume": [100.0]}).to_parquet(tmp_path / "short_volume.parquet", index=False)
+    data = load_market(tmp_path, Market.US)
+    assert data.groups == {"short", "earnings"}
+    assert data.rows["days_to_cover"].notna().any()  # the report is read once its 12th session has passed
+    assert data.rows["insider_net_buy_90d"].isna().all()  # a group not built stays missing
+    (tmp_path / "short_volume.parquet").unlink()  # half a group is not a group
+    assert load_market(tmp_path, Market.US).groups == {"earnings"}

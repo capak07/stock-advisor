@@ -1,8 +1,10 @@
+import logging
+
 import pandas as pd
 import pytest
 
 from advisor.collectors.yahoo import SilentFailure
-from advisor.training.yahoo_history import YAHOO_CANARIES, analyst_history
+from advisor.training.yahoo_history import MAX_FAILED_SHARE, YAHOO_CANARIES, analyst_history
 
 COLUMNS = ["symbol", "graded_at", "firm", "action", "from_grade", "to_grade", "price_target_action"]
 
@@ -97,3 +99,63 @@ def test_an_empty_history_has_the_columns():
     events, empty = analyst_history(["ZZZ"], lambda s: pd.DataFrame(), None)
     assert empty == 1 and events.empty and list(events.columns) == COLUMNS
     assert events["graded_at"].dtype == "datetime64[ns]"
+
+
+def _hundred() -> list[str]:
+    return ["AAPL", "MSFT"] + [f"S{i:02d}" for i in range(98)]
+
+
+def test_a_failure_is_retried_once_through_the_limiter():
+    class Limiter:
+        tokens = 0
+
+        def acquire(self) -> None:
+            Limiter.tokens += 1
+
+    seen: dict[str, int] = {}
+
+    def load(symbol: str) -> pd.DataFrame:
+        seen[symbol] = seen.get(symbol, 0) + 1
+        if symbol == "XYZ" and seen[symbol] == 1:
+            raise ConnectionError("reset")
+        return _grades(ONE)
+
+    events, empty = analyst_history(["XYZ", "ABC"], load, Limiter())  # type: ignore[arg-type]
+    assert sorted(events["symbol"]) == ["ABC", "XYZ"] and empty == 0
+    assert seen == {"XYZ": 2, "ABC": 1} and Limiter.tokens == 3
+
+
+def test_a_symbol_that_fails_twice_is_logged_and_left_out(caplog):
+    def load(symbol: str) -> pd.DataFrame:
+        if symbol == "S05":
+            raise ConnectionError("reset")
+        return _grades(ONE)
+
+    with caplog.at_level(logging.WARNING):
+        events, empty = analyst_history(_hundred(), load, None)
+    assert len(events) == 99 and "S05" not in set(events["symbol"]) and empty == 0
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "S05" in warnings[0].getMessage() and "ConnectionError" in warnings[0].getMessage()
+
+
+def test_too_many_failed_symbols_is_a_silent_failure():
+    assert MAX_FAILED_SHARE == 0.02
+    broken = {"S01", "S02", "S03"}  # 3 of 100
+
+    def load(symbol: str) -> pd.DataFrame:
+        if symbol in broken:
+            raise TimeoutError("slow")
+        return _grades(ONE)
+
+    with pytest.raises(SilentFailure, match="3 of 100"):
+        analyst_history(_hundred(), load, None)
+
+
+def test_a_canary_that_fails_every_call_still_raises():
+    def load(symbol: str) -> pd.DataFrame:
+        if symbol == "MSFT":
+            raise ConnectionError("reset")
+        return _grades(ONE)
+
+    with pytest.raises(SilentFailure):
+        analyst_history(_hundred(), load, None)

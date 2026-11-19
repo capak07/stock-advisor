@@ -3,8 +3,10 @@
 One `Ticker.upgrades_downgrades` request per symbol, through the shared Yahoo limiter. Not
 `collect_yahoo`: its empty-share and empty-streak rules are tuned for a shortlist, and a whole-universe
 history has many symbols Yahoo does not cover. Here a symbol Yahoo has nothing for just adds no rows
-(and is counted); the run stops only on a rate limit, or when a canary symbol comes back empty (Yahoo
-blocked, not "no data").
+(and is counted as empty). Any other failure (a timeout, a reset connection, a parse error) is tried
+once more; a symbol that fails twice is logged and counted as failed, apart from empty, and the run
+raises SilentFailure when more than MAX_FAILED_SHARE of the symbols asked failed. It also stops at
+once on a rate limit, or when a canary symbol comes back empty or fails (Yahoo blocked, not "no data").
 
 Columns: `symbol`, `graded_at` (naive UTC), `firm`, `action`, `from_grade`, `to_grade`,
 `price_target_action`.
@@ -21,6 +23,7 @@ from advisor.collectors.yfinance_analyst import _quietly
 from advisor.collectors.yfinance_bars import to_yahoo
 
 YAHOO_CANARIES = ("AAPL", "MSFT")
+MAX_FAILED_SHARE = 0.02  # more symbols than this share failing (not "empty") means the run is unreliable
 EVENT_COLUMNS = ["symbol", "graded_at", "firm", "action", "from_grade", "to_grade", "price_target_action"]
 _SOURCE = {
     "Firm": "firm", "Action": "action", "FromGrade": "from_grade", "ToGrade": "to_grade",
@@ -52,21 +55,35 @@ def analyst_history(symbols: Sequence[str], load: Callable[[str], pd.DataFrame],
     """(the rating changes of `symbols`, how many symbols Yahoo had nothing for).
 
     `load(symbol)` returns Yahoo's `upgrades_downgrades` frame (GradeDate index; Firm, ToGrade, FromGrade,
-    Action and priceTargetAction columns). One call and one limiter token per symbol. A rate-limit error
-    (`yahoo.rate_limited`) is re-raised; any other failure of one symbol counts as nothing for it.
-    Raises SilentFailure when a canary among `symbols` has no rows.
+    Action and priceTargetAction columns). One call and one limiter token per symbol (two of each after
+    a failure). A rate-limit error (`yahoo.rate_limited`) is re-raised at once. Any other error is retried
+    once, then logged and counted as failed (not empty). Raises SilentFailure when a canary among `symbols`
+    has no rows or fails, or when failed symbols exceed MAX_FAILED_SHARE of those asked.
     """
     parts: list[pd.DataFrame] = []
-    empty = 0
-    for symbol in dict.fromkeys(symbols):
-        if limiter is not None:
-            limiter.acquire()
-        try:
-            frame = _events(symbol, load(symbol))
-        except Exception as exc:
-            if rate_limited(exc):
-                raise
-            frame = _events(symbol, None)
+    asked = list(dict.fromkeys(symbols))
+    empty = failed = 0
+    for symbol in asked:
+        frame = None
+        for attempt in (1, 2):  # a failure other than a rate limit gets one retry, through the limiter
+            if limiter is not None:
+                limiter.acquire()
+            try:
+                frame = _events(symbol, load(symbol))
+                break
+            except Exception as exc:
+                if rate_limited(exc):
+                    raise
+                if attempt == 2:
+                    logging.getLogger(__name__).warning(
+                        "Yahoo analyst history failed for %s: %s", symbol, type(exc).__name__)
+        if frame is None:
+            failed += 1
+            if symbol in YAHOO_CANARIES:
+                raise SilentFailure(f"Yahoo analyst history failed for canary {symbol}")
+            if failed > MAX_FAILED_SHARE * len(asked):
+                raise SilentFailure(f"Yahoo analyst history failed for {failed} of {len(asked)} symbols")
+            continue
         if frame.empty:
             empty += 1
             if symbol in YAHOO_CANARIES:

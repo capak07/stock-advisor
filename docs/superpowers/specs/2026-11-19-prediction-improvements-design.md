@@ -45,6 +45,10 @@ on its own.
 
 ## Goals
 
+The owner's goal, in their words (2026-11-19): "make sure we use all the data that is available in
+the app and see if it makes the model better." Every data source the app collects is accounted for
+in "Every source in the app" below: tested now, recorded for a later test, or out with a reason.
+
 1. Picks follow the model's actual ranking, in the benchmark and live, the same way in both.
 2. The benchmark shows how the top of the ranking performs, after costs.
 3. Every US data group the app already collects live, and that has free point-in-time history,
@@ -134,6 +138,10 @@ and the screener shortlist of 300), while the backtest ranks every eligible stoc
 
 **Features**
 
+- Short volume (part of `short`): `short_vol_ratio_20d`, the 20-session mean of FINRA's daily
+  short-sale volume over total volume (off-exchange venues only), from
+  `https://cdn.finra.org/equity/regsho/daily/CNMSshvolYYYYMMDD.txt`, August 2018 onward, known the
+  next session.
 - Short interest: `short_pct_shares` (shares short over shares outstanding from the fundamentals
   file), `days_to_cover`, `short_chg` (change from the previous report, as a share of shares
   outstanding).
@@ -199,7 +207,10 @@ affected, but the plan's first step re-checks the points marked unverified below
   (1 if an officer bought on the open market within 180 days).
 - 8-K events (`events`): counts over 90 days of item 5.02 (officer or director change), 1.01
   (material agreement), 2.01 (acquisition or sale of assets), 4.02 (restatement) and 3.01
-  (delisting notice), and `days_since_8k`.
+  (delisting notice), and `days_since_8k`. Large-holder filings from the same submissions file:
+  `activist_13d_180d` (Schedule 13D or 13D/A filed about the company within 180 days) and
+  `passive_13g_90d` (13G or 13G/A within 90 days), under both the old form names (SC 13D, SC 13G)
+  and the names SEC uses since 2025.
 - 13F (`holders`): `holder_count_chg` and `inst_shares_chg` (quarter on quarter, the second as a
   share of shares outstanding).
 
@@ -236,10 +247,16 @@ model, `garch+ranker+forest`.
 **Done when** the US benchmark runs with an `earnings` row on the current model and an `estimates`
 row, and the report shows each decision.
 
+**Catalysts (`catalysts`, last priority):** openFDA drug approvals (`drugsfda`, by approval date)
+and recalls (`enforcement`, by report date) matched to stocks with the existing
+`sponsors.SponsorMatcher`: `fda_approvals_180d`, `fda_recalls_90d`. Biotech and pharma only, and
+the name matching is noisy (deferred list), so this group is the one dropped first if time runs
+short. ClinicalTrials.gov is out: it keeps a trial's current status, not when it changed.
+
 ## Benchmark rows for 7b–7d
 
 - One row per new group on the current US config `garch+ranker+forest`: plus `short`, `analyst`,
-  `insider`, `events`, `holders`, `earnings` and `estimates`. Each must beat that base row as well
+  `insider`, `events`, `holders`, `earnings`, `estimates` and `catalysts`. Each must beat that base row as well
   as the baseline (7b's twin rule).
 - One more row, added by the last of these plans, with every group that passed. It is judged the
   same way. This is how the model gets "all the data": every group that earns its place.
@@ -249,6 +266,29 @@ row, and the report shows each decision.
   `ranker+extras+bagged` and `factors+garch`; my call). Each plan still measures its added time,
   and the 80% stop rule below applies.
 - Variant names must fit 40 characters. Fitting the combined row's name is the builder's call.
+- The report opens each market with a short "Did the new data help?" table: per group, the change
+  in pooled rank IC and in the top-5% return against the base row, and the decision. That table is
+  the answer to the owner's question.
+
+## Every source in the app
+
+| Source | Status in this work |
+|---|---|
+| Yahoo daily bars, SEC XBRL financials | Already in the model (price, fundamentals) |
+| FINRA short interest and daily short volume | Tested: `short` |
+| Yahoo analyst ratings | Tested: `analyst` |
+| SEC Form 4 insider trades | Tested: `insider` |
+| SEC 8-K events, Schedule 13D/13G | Tested: `events` |
+| SEC 13F ownership | Tested: `holders` |
+| SEC-filed earnings | Tested on the current model: `earnings` |
+| Yahoo earnings dates and estimates | Tested: `estimates` |
+| openFDA approvals and recalls | Tested last: `catalysts` |
+| News headlines and FinBERT sentiment (Google News, Yahoo) | No history to train on. Each run already stores the news features in `features_live` for the stocks it forecasts; the plan checks they are kept, and they are tested once about 12 months are stored. That sample is the shortlist, not every stock, so the test reads it with care. |
+| Yahoo option summaries | Same as news: recorded per run, tested later. |
+| ClinicalTrials.gov | Out: no history of status changes. |
+| FRED, Bank of Canada, FOMC, Cboe put/call, CNN Fear & Greed | Out: one value per day for every stock, so they cannot reorder stocks on a day, which is what the model is judged on. FRED macro is already an optional part of the training data. |
+| Crypto sources (Coinbase, Kraken, CoinGecko, DefiLlama, blockchain.com, crypto Fear & Greed) | Out of scope: the crypto model is separate. |
+| Nasdaq and TMX symbol lists, OpenFIGI | Plumbing, not signals. |
 
 ## Plan 7e: dead stocks in the US history
 

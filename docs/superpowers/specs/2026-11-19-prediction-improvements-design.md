@@ -47,8 +47,11 @@ on its own.
 
 1. Picks follow the model's actual ranking, in the benchmark and live, the same way in both.
 2. The benchmark shows how the top of the ranking performs, after costs.
-3. Two new feature groups, short interest and analyst events, are tested for US under the existing
-   acceptance rule.
+3. Every US data group the app already collects live, and that has free point-in-time history,
+   is tested as model input under the existing acceptance rule: short interest, analyst rating
+   events, insider trades, 8-K events, 13F ownership changes, and earnings (the SEC-filed numbers
+   and the result against the analysts' estimate). Added 2026-11-19 at the owner's request
+   ("give the model all the data").
 4. Dead stocks are in the US training and evaluation history, so results stop being flattered.
 5. Seed averaging: considered and left out of the build; see Plan 7a.
 
@@ -163,7 +166,91 @@ and the screener shortlist of 300), while the backtest ranks every eligible stoc
 more Yahoo call per symbol per training build and per forecast symbol per run. The owner's
 standing reading of data-source terms applies.
 
-## Plan 7c: dead stocks in the US history
+## Plan 7c: SEC events — insider trades, 8-K events, 13F ownership (US)
+
+Revised 2026-11-19. Sources checked: SEC's quarterly data sets and bulk files, plus files the
+project downloaded live in October. SEC refused this session's research requests (it wants an
+email in the User-Agent); the pipeline sends the owner's `SEC_USER_AGENT`, so the build is not
+affected, but the plan's first step re-checks the points marked unverified below.
+
+**History, built by `training/build.py`**
+
+- `insider_trades.parquet` from SEC's Insider Transactions Data Sets (Form 3/4/5), one zip a quarter
+  from 2018 Q1 (about 35 zips, 350 MB). Kept: Form 4 and 4/A, open-market purchases (P) and sales
+  (S) of common stock, with shares, price, the owner's role (officer, director, 10% owner), the
+  filing's acceptance time (joined from the submissions file by accession; the filing date plus
+  one session when that is missing), and the issuer's ticker as filed. The download links are read
+  from SEC's listing page, not built.
+- `material_events.parquet` from SEC's nightly `submissions.zip`: every 8-K and 8-K/A with its item
+  codes and acceptance time, for every US symbol's CIK, 2018 onward. The `acceptanceDateTime`
+  field is read as New York wall-clock time (a known SEC quirk, already handled in `sec.py`).
+  Unverified: whether the zip holds each company's older filing pages; if not, those pages are
+  fetched per company (about one extra request a company).
+- `holders.parquet` from SEC's Form 13F data sets, 2018 onward: per CUSIP per quarter, shares held
+  and the number of distinct holders, built with the same rules as the live `sec_13f` collector.
+  CUSIPs map to tickers through OpenFIGI, as live. A quarter's figure counts as known 45 days after
+  the quarter ends, or on the data set's publication date if later.
+- A symbol whose CIK or CUSIP cannot be found gets missing features, not zeros.
+
+**Features** (each reads only what was public strictly before the row's day)
+
+- Insider (`insider`): `insider_net_buy_90d` (open-market buy minus sell dollars over 90 days, as a
+  share of market value), `insider_buyers_90d` (distinct insiders who bought), `officer_buy_180d`
+  (1 if an officer bought on the open market within 180 days).
+- 8-K events (`events`): counts over 90 days of item 5.02 (officer or director change), 1.01
+  (material agreement), 2.01 (acquisition or sale of assets), 4.02 (restatement) and 3.01
+  (delisting notice), and `days_since_8k`.
+- 13F (`holders`): `holder_count_chg` and `inst_shares_chg` (quarter on quarter, the second as a
+  share of shares outstanding).
+
+**Live:** the existing `sec_insiders`, `sec_events` and `sec_13f` collectors give the same records
+for forecast symbols. Their lookbacks must cover the longest window above (180 days for insiders;
+today 90), and the insider collector's 1,000-document cap per run must cover the forecast set.
+
+**Done when** the US benchmark runs with the three rows and the report shows each decision.
+
+## Plan 7d: earnings (US)
+
+**What exists:** `model/earnings.py` already turns SEC-filed quarters into four features (revenue
+growth, margin change, standardised EPS surprise against the same quarter a year before, days
+since the report). They passed as `ranker+earnings` but have never been tried on the current US
+model, `garch+ranker+forest`.
+
+**What is new**
+
+- `earnings_estimates.parquet` from Yahoo's earnings calendar through yfinance
+  (`get_earnings_dates`, one request per US symbol, about 37 reports since 2018 each): report day,
+  before-open or after-close, the analysts' consensus EPS and the reported EPS. A report counts as
+  known from the first session after it.
+- Features (`estimates`): `eps_surprise_last` (reported minus consensus, over the absolute
+  consensus, clipped), `eps_beat_streak` (how many of the last four beat), and
+  `days_to_next_report`, estimated as the same quarter's report a year earlier plus 364 days. The
+  real announcement date of a future report is not known historically, so the actual date is never
+  used.
+- Yahoo shows the final consensus before each report. A row never reads a report on or after its
+  own day.
+- Nasdaq.com's earnings history is not used: its terms forbid automated capture and model training.
+
+**Live:** `yfinance_earnings` already collects the same fields for forecast symbols.
+
+**Done when** the US benchmark runs with an `earnings` row on the current model and an `estimates`
+row, and the report shows each decision.
+
+## Benchmark rows for 7b–7d
+
+- One row per new group on the current US config `garch+ranker+forest`: plus `short`, `analyst`,
+  `insider`, `events`, `holders`, `earnings` and `estimates`. Each must beat that base row as well
+  as the baseline (7b's twin rule).
+- One more row, added by the last of these plans, with every group that passed. It is judged the
+  same way. This is how the model gets "all the data": every group that earns its place.
+- Seven new rows at about 7–14 minutes each would push the US benchmark well past 80% of its limit.
+  So rows that the last two benchmarks rejected in every market they ran in are retired, after the
+  plan confirms that from the stored results (likely `factors`, `extras`, `ranker+extras`,
+  `ranker+extras+bagged` and `factors+garch`; my call). Each plan still measures its added time,
+  and the 80% stop rule below applies.
+- Variant names must fit 40 characters. Fitting the combined row's name is the builder's call.
+
+## Plan 7e: dead stocks in the US history
 
 **Prototype first.** Before a plan is written, a throwaway script measures: how many dead US
 common stocks 2018–2026 the sources give, how closely prices adjusted from DoltHub's split and
@@ -201,9 +288,9 @@ is dropped without asking.
 
 ## Order
 
-7a, then 7b, then 7c. 7a needs no new data and decides whether rank picks work at all. 7b is the
-first test of whether new data moves the benchmark. 7c changes every number, so it goes last and
-re-bases the comparison once.
+7a, 7b, 7c, 7d, then 7e. 7a needs no new data and decides whether rank picks work at all. 7b, 7c and
+7d each add data groups; their rows can share one monthly benchmark run once all three are in. 7e
+changes every number, so it goes last and re-bases the comparison once.
 
 ## Left out, and why
 
@@ -211,6 +298,11 @@ re-bases the comparison once.
   for about 1,500 large and mid caps from 2019, sparse before 2025, kept by a volunteer. Revisit
   after 7b shows whether a new data group can pass the acceptance rule.
 - **Estimate revisions.** Snapshots only; history would have to be stored for years first.
+- **The date a future earnings report was announced.** No free source keeps it; 7d estimates the
+  date from the year before instead.
+- **News and sentiment.** Collected live only, with no free history to train on.
+- **Insider plan trades (10b5-1).** SEC flags them only from 2023, so 2018–2022 cannot tell them
+  apart.
 - **TSX short positions.** The regulator's site blocks plain requests.
 - **More than three seeds.** Time limit, and no evidence of gain.
 
@@ -219,4 +311,4 @@ re-bases the comparison once.
 - How a dead stock is named so that every join keyed on `symbol` still works.
 - Exact function signatures, the migration number, and where the top-slice measure lives.
 - How the FINRA and Yahoo history downloads are batched, cached and retried.
-- The 7c prototype's method.
+- The 7e prototype's method.

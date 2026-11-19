@@ -140,8 +140,8 @@ def _slice_days(part: pd.DataFrame) -> pd.DataFrame:
         if len(g) < MIN_DAY_ROWS:
             continue
         k = max(1, int(len(g) * TOP_SHARE))
-        top = g.sort_values(["score", "symbol"], ascending=[False, True], kind="stable").head(k)
-        bottom = g.sort_values(["score", "symbol"], ascending=[True, False], kind="stable").head(k)
+        top = g.sort_values(["p_raw", "symbol"], ascending=[False, True], kind="stable").head(k)
+        bottom = g.sort_values(["p_raw", "symbol"], ascending=[True, False], kind="stable").head(k)
         everyone = float(g["y"].mean())
         out.append({
             "day": day, "horizon": int(horizon),
@@ -169,15 +169,20 @@ def top_slice(
 ) -> dict[str, dict[int, dict[str, float]]]:
     """How the top of each day's ranking did: per fold and pooled, by horizon.
 
-    Each day the top `TOP_SHARE` of stocks by score (ties by symbol) is compared with all of that
+    Each day the top `TOP_SHARE` of stocks by raw score `p_raw` (ties by symbol), the ranking a
+    rank policy picks from (`in_top_n`), is compared with all of that
     day's stocks: `top_excess` is its mean excess return minus everyone's, `top_net` its mean
     excess return after the round-trip cost, and `bottom_excess` the same comparison for the
     lowest scores. Each number is the mean over days. Rank IC reads the whole ranking; picks come
-    from its top. Fold 0 counts: it has scores, only no P. A horizon with no day of at least
-    `MIN_DAY_ROWS` scored stocks with a known outcome is left out.
+    from its top. The walk-forward `score` column is not used: for a model without a ranker it is
+    q50. A flagged jump never takes a place, as in the backtest. Fold 0 counts: it has raw scores,
+    only no P. A horizon with no day of at least `MIN_DAY_ROWS` scored stocks with a known outcome
+    is left out.
     """
-    known = np.isfinite(predictions["score"].to_numpy(dtype=float)) & np.isfinite(predictions["y"].to_numpy(dtype=float))
-    pred = predictions.loc[known, ["day", "symbol", "horizon", "fold", "score", "y", "dollar_volume_20"]].copy()
+    known = np.isfinite(predictions["p_raw"].to_numpy(dtype=float)) & np.isfinite(predictions["y"].to_numpy(dtype=float))
+    if "jump_5d" in predictions:
+        known &= predictions["jump_5d"].fillna(0).to_numpy() != 1
+    pred = predictions.loc[known, ["day", "symbol", "horizon", "fold", "p_raw", "y", "dollar_volume_20"]].copy()
     pred["cost"] = round_trip_cost(market, pred["dollar_volume_20"].to_numpy(), usd_fx_fee_pct)
     out: dict[str, dict[int, dict[str, float]]] = {}
     pooled = []

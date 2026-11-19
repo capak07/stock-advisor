@@ -267,7 +267,7 @@ Plans 4a (picks and watchlist verdicts), 4b (the suggestions dashboard: Today's 
 
 ## Plan 7a: rank picks by the raw score
 
-- **The benchmark has to be run to see the effect.** Plan 7a changed how a rank policy's top N is chosen (by `p_raw`, not the clipped P) and added the top-5% table. The next `benchmark.yml` run shows the table for every variant and re-tunes the policy row on the new ranking. Until then the live policy is unchanged: no market has an accepted rank policy.
+- **The benchmark has to be run to see the effect.** Plan 7a changed how a rank policy's top N is chosen (by `p_raw`, not the clipped P) and added the top-5% table. The next `benchmark.yml` run shows the table for every variant and re-tunes the policy row on the new ranking. Until then the live policy is unchanged. The last benchmark rejected the policy row in every market; if an older accepted policy has `top_n` set, its stored gate result was computed under the old P ordering.
 - **Seed averaging was left out.** A bagged `garch+ranker+forest` row would add about 43 minutes to the US benchmark, and about 90 more if it were chosen (the policy row's inner runs triple), which passes 80% of the 360-minute limit. The earlier three-seed test showed no gain. Run it as a one-off if the number is wanted.
 - **The raw score is not stored.** `PredictionRow.score` lives only in the run; the `predictions` table has no column for it. Add one if a page or a diagnostic needs to show why a stock ranked where it did.
 - **Live and backtest still rank different populations** (the forecast shortlist against every eligible stock); see "Plan 4a known limits".

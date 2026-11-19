@@ -79,7 +79,7 @@ def _slice_frame(scores, ys, day="2026-01-05", horizon=21, fold=1):
     n = len(scores)
     return pd.DataFrame({
         "day": pd.Timestamp(day), "symbol": [f"S{i:03d}" for i in range(n)], "horizon": horizon, "fold": fold,
-        "score": scores, "y": ys, "dollar_volume_20": 5e7,
+        "p_raw": scores, "y": ys, "dollar_volume_20": 5e7,
     })
 
 
@@ -90,6 +90,18 @@ def test_the_top_slice_is_the_highest_scores_against_the_whole_day():
     assert leaf["top_excess"] == pytest.approx(0.15 - 0.30 / 40)
     assert leaf["top_net"] == pytest.approx(0.15 - 0.001)  # the spread at this volume; no currency fee on TSX
     assert leaf["bottom_excess"] == pytest.approx(0.0 - 0.30 / 40)
+
+
+def test_the_top_slice_follows_the_raw_score_not_the_walk_forward_score():
+    # a model without a ranker has score = q50 in its walk-forward frame; picks rank by p_raw
+    frame = _slice_frame(list(range(40)), [0.0] * 38 + [0.10, 0.20]).assign(score=list(range(40, 0, -1)))
+    assert top_slice(frame, Market.TSX, 0.0)["pooled"][21]["top_excess"] == pytest.approx(0.15 - 0.30 / 40)
+
+
+def test_a_flagged_jump_never_takes_a_place_in_the_top_slice():
+    frame = _slice_frame(list(range(41)), [0.0] * 38 + [0.10, 0.20, 0.90]).assign(jump_5d=[0.0] * 40 + [1.0])
+    leaf = top_slice(frame, Market.TSX, 0.0)["pooled"][21]
+    assert leaf["top_excess"] == pytest.approx(0.15 - 0.30 / 40)  # S040's jump row is out of the day too
 
 
 def test_a_us_top_slice_pays_the_currency_fee_both_ways():

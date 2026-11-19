@@ -48,6 +48,11 @@ from advisor.sponsors import SponsorMatcher
 APPROVALS_URL = "https://api.fda.gov/drug/drugsfda.json"
 RECALLS_URL = "https://api.fda.gov/drug/enforcement.json"
 WINDOW_DAYS = 90
+# The model's windows (`model.catalysts`): a record is read a week after its date, as openFDA publishes
+# about weekly, in training and live alike. Task 11 sets WINDOW_DAYS = APPROVAL_WINDOW_DAYS + FDA_LAG_DAYS.
+FDA_LAG_DAYS = 7
+APPROVAL_WINDOW_DAYS = 180
+RECALL_WINDOW_DAYS = 90
 PAGE = 1000  # openFDA's largest page
 OPENFDA_PER_MINUTE = 60
 

@@ -33,6 +33,7 @@ TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 COMPANYFACTS_ZIP_URL = "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip"
+SUBMISSIONS_ZIP_URL = "https://www.sec.gov/Archives/edgar/daily-index/bulkdata/submissions.zip"
 DOWNLOAD_TIMEOUT = httpx.Timeout(60.0, read=120.0)
 DOWNLOAD_CHUNK = 1 << 20
 CONTACT_EXAMPLE = "stock-advisor you@example.com"

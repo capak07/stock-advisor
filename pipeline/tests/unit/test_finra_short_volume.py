@@ -56,6 +56,13 @@ def test_parse_maps_provider_symbols_and_skips_header_and_trailer(fixtures_dir):
     assert rows["BRK.B"].short_volume == pytest.approx(691652.708894)
 
 
+def test_parsing_without_a_wanted_list_keeps_every_finra_symbol(fixtures_dir):
+    rows = {r.symbol: r for r in parse_short_volume(fixture_text(fixtures_dir), None)}
+    assert {"A", "AAPL", "BRK/A", "BRK/B"} <= set(rows)  # the symbol as FINRA wrote it
+    assert rows["BRK/B"].short_volume == pytest.approx(691652.708894)
+    assert len(rows) > len(parse_short_volume(fixture_text(fixtures_dir), requested_by_key(["AAPL"])))
+
+
 def test_fetch_falls_back_from_an_unpublished_day(fixtures_dir):
     seen: list[str] = []
     published = FINRA_SHORT_VOLUME_URL.format(day=date(2026, 10, 9))

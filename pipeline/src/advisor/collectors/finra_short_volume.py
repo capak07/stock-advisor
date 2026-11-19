@@ -49,16 +49,17 @@ def candidate_days(as_of: datetime, lookback: int = LOOKBACK_WEEKDAYS) -> list[d
     return days
 
 
-def parse_short_volume(text: str, wanted: Mapping[str, str]) -> list[ShortVolume]:
-    """Rows for the wanted symbols; the header and the row-count trailer are skipped."""
+def parse_short_volume(text: str, wanted: Mapping[str, str] | None) -> list[ShortVolume]:
+    """Rows for the wanted symbols (None: every row, the symbol as FINRA wrote it); the header and the
+    row-count trailer are skipped."""
     rows: list[ShortVolume] = []
     seen: set[str] = set()
     for line in text.splitlines():
         parts = line.strip().split("|")
         if len(parts) != 6 or parts[0] == "Date":
             continue
-        symbol = wanted.get(symbol_key(parts[1]))
-        if symbol is None or symbol in seen:
+        symbol = parts[1].strip() if wanted is None else wanted.get(symbol_key(parts[1]))
+        if not symbol or symbol in seen:
             continue
         try:
             rows.append(ShortVolume(

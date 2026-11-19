@@ -53,8 +53,30 @@ def test_days_to_cover_is_none_when_there_is_no_volume():
 
 
 def test_an_unexpected_header_is_rejected():
+    header = (
+        '"symbolCode"|"previousShortPositionQuantity"|"averageDailyVolumeQuantity"|'
+        '"daysToCoverQuantity"|"settlementDate"'
+    )  # no currentShortPositionQuantity
     with pytest.raises(ValueError, match="unexpected FINRA short interest header"):
-        parse_short_interest('"symbol"|"shares"\n"AAPL"|"1"\n', requested_by_key(["AAPL"]))
+        parse_short_interest(f'{header}\n"AAPL"|"1"|"2"|"3"|"2026-09-30"\n', requested_by_key(["AAPL"]))
+
+
+def test_an_older_header_with_the_named_columns_still_parses():
+    # an extra column and a different order: the named columns are read by name
+    header = (
+        '"settlementDate"|"extraColumn"|"daysToCoverQuantity"|"averageDailyVolumeQuantity"|'
+        '"previousShortPositionQuantity"|"currentShortPositionQuantity"|"symbolCode"'
+    )
+    row = '"2017-12-29"|"x"|"2.50"|"400"|"900"|"1000"|"OLD"'
+    [record] = parse_short_interest(f"{header}\n{row}\n", requested_by_key(["OLD"]))
+    assert (record.symbol, record.settlement_date, record.short_interest) == ("OLD", date(2017, 12, 29), 1000)
+    assert (record.previous_short_interest, record.avg_daily_volume, record.days_to_cover) == (900, 400, 2.5)
+
+
+def test_parsing_without_a_wanted_list_keeps_every_finra_symbol(fixtures_dir):
+    rows = parse_short_interest(fixture_text(fixtures_dir), None)
+    assert {"A", "AA", "AAPL", "BRKB"} <= {r.symbol for r in rows}  # FINRA's own spelling of the share class
+    assert len(rows) > len(parse_short_interest(fixture_text(fixtures_dir), requested_by_key(["AAPL"])))
 
 
 def test_fetch_takes_the_newest_published_settlement(fixtures_dir):

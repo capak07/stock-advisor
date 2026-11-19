@@ -27,12 +27,10 @@ from advisor.schedule import previous_sessions
 from advisor.symbols import requested_by_key, symbol_key
 
 FINRA_SHORT_INTEREST_URL = "https://cdn.finra.org/equity/otcmarket/biweekly/shrt{day:%Y%m%d}.csv"
-HEADER = [
-    "accountingYearMonthNumber", "symbolCode", "issueName", "issuerServicesGroupExchangeCode",
-    "marketClassCode", "currentShortPositionQuantity", "previousShortPositionQuantity",
-    "stockSplitFlag", "averageDailyVolumeQuantity", "daysToCoverQuantity", "revisionFlag",
-    "changePercent", "changePreviousNumber", "settlementDate",
-]
+REQUIRED_COLUMNS = (
+    "symbolCode", "currentShortPositionQuantity", "previousShortPositionQuantity",
+    "averageDailyVolumeQuantity", "daysToCoverQuantity", "settlementDate",
+)  # read by name: older files and later layouts add, drop or reorder the others
 NO_VOLUME_DAYS_TO_COVER = "999.99"  # FINRA's placeholder when average daily volume is zero
 UNPUBLISHED = frozenset({403, 404})
 
@@ -66,19 +64,22 @@ def _optional_int(value: str) -> int | None:
     return int(value) if value else None
 
 
-def parse_short_interest(text: str, wanted: Mapping[str, str]) -> list[ShortInterest]:
+def parse_short_interest(text: str, wanted: Mapping[str, str] | None) -> list[ShortInterest]:
+    """One record per symbol, columns read by name. `wanted` maps `symbol_key` to the canonical symbol
+    and drops every other row; None keeps every row, the symbol as FINRA wrote it."""
     reader = csv.reader(io.StringIO(text), delimiter="|", quotechar='"')
     header = next(reader, None)
-    if header != HEADER:
+    if header is None or any(name not in header for name in REQUIRED_COLUMNS):
         raise ValueError(f"unexpected FINRA short interest header: {header}")
-    column = {name: index for index, name in enumerate(HEADER)}
+    column = {name: header.index(name) for name in REQUIRED_COLUMNS}
     rows: list[ShortInterest] = []
     seen: set[str] = set()
     for row in reader:
-        if len(row) != len(HEADER):
+        if len(row) != len(header):
             continue
-        symbol = wanted.get(symbol_key(row[column["symbolCode"]]))
-        if symbol is None or symbol in seen:
+        raw = row[column["symbolCode"]].strip()
+        symbol = raw if wanted is None else wanted.get(symbol_key(raw))
+        if not symbol or symbol in seen:
             continue
         try:
             volume = _optional_int(row[column["averageDailyVolumeQuantity"]])

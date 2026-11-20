@@ -56,6 +56,9 @@ def grade(
     fee_pct: float,
     us: bool,
     exit_now: date | None = None,
+    recheck_by: date | None = None,
+    sell_at: float | None = None,
+    breakeven: float | None = None,
 ) -> Outcome | None:
     """How a hold that started at `feature_day`'s close ended, or None while it hasn't.
 
@@ -64,7 +67,15 @@ def grade(
     `exit_now`'s close, and the rest at exit-by's close, or the last one before it when exit-by
     had no session. Exit-by's exit waits for a close on or after it, so the close it takes is
     final. The benchmark exits on the same day; without its close that day nothing is graded.
+
+    A holding action with an exit plan passes its `recheck_by` (R4): nothing is graded until a close
+    on or after it exists, so the whole window is known even when a stop exited earlier. The exit
+    itself is decided as above. The outcome then records the highest close after the feature day up
+    to `recheck_by` (R5: the plan's window, not a later exit-by) and whether `sell_at` and
+    `breakeven` were reached by a close in it. Without `recheck_by` those three fields stay None.
     """
+    if recheck_by is not None and not any(d >= recheck_by for d in closes):
+        return None
     end = exit_by if exit_now is None else min(exit_by, exit_now)
     held = sorted(d for d in closes if feature_day < d <= end)
     exit_day = next((d for d in held if stop is not None and closes[d] <= stop), None)
@@ -80,6 +91,10 @@ def grade(
     ret = exit_price / entry - 1
     bench_ret = bench_closes[exit_day] / bench_ref - 1
     excess = ret - bench_ret
+    max_close = None
+    if recheck_by is not None:
+        window = [closes[d] for d in closes if feature_day < d <= recheck_by]
+        max_close = max(window, default=None)
     return Outcome(
         exit_day=exit_day,
         exit_price=exit_price,
@@ -90,6 +105,9 @@ def grade(
         excess=excess,
         beat=excess > 0,
         hit_stop=reason == "stop",
+        max_close=max_close,
+        touched_sell_at=None if max_close is None or sell_at is None else max_close >= sell_at,
+        touched_breakeven=None if max_close is None or breakeven is None else max_close >= breakeven,
     )
 
 
@@ -184,6 +202,7 @@ def grade_stage(
             outcome = grade(
                 action.ref_price, action.trailing_stop, action.feature_day, action.exit_by, final(action.symbol),
                 action.bench_ref_price, final(benchmark), fee_pct, market is Market.US,
+                recheck_by=action.recheck_by, sell_at=action.sell_at, breakeven=action.breakeven,
             )
             if outcome is not None:
                 graded_actions.append((action, outcome))

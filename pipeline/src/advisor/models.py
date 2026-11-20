@@ -148,6 +148,11 @@ class Outcome:
     excess: float
     beat: bool
     hit_stop: bool
+    # holding actions with an exit plan only: the highest close in the plan's window, and whether
+    # the sell-at and break-even prices were reached by a close in it
+    max_close: float | None = None
+    touched_sell_at: bool | None = None
+    touched_breakeven: bool | None = None
 
 
 @dataclass(frozen=True)

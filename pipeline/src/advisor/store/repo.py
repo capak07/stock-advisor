@@ -71,6 +71,10 @@ class ActionToGrade:
     ref_price: float
     bench_ref_price: float
     trailing_stop: float | None
+    # from the exit plan; all None for an action stored without one
+    sell_at: float | None = None
+    breakeven: float | None = None
+    recheck_by: date | None = None
 
 
 PUBLISHABLE = frozenset({RunStatus.SUCCESS, RunStatus.DEGRADED})
@@ -425,7 +429,9 @@ def actions_to_grade(conn: psycopg.Connection) -> list[ActionToGrade]:
     """Stock holding actions with an exit-by date and what grading needs, not yet graded."""
     rows = conn.execute(
         "select a.run_id, a.account, a.symbol, a.asset_type, a.feature_day, a.exit_by, a.ref_price,"
-        " a.bench_ref_price, a.trailing_stop from holding_actions a"
+        " a.bench_ref_price, a.trailing_stop, (a.exit_plan->>'sell_at')::float8 as sell_at,"
+        " (a.exit_plan->>'breakeven')::float8 as breakeven, (a.exit_plan->>'recheck_by')::date as recheck_by"
+        " from holding_actions a"
         " where a.asset_type = 'stock' and a.exit_by is not null and a.feature_day is not null"
         " and a.ref_price is not null and a.bench_ref_price is not null"
         " and not exists (select 1 from holding_action_outcomes o where (o.run_id, o.account, o.symbol,"
@@ -437,6 +443,7 @@ def actions_to_grade(conn: psycopg.Connection) -> list[ActionToGrade]:
             r["run_id"], r["account"], r["symbol"], r["asset_type"], r["feature_day"], r["exit_by"],
             float(r["ref_price"]), float(r["bench_ref_price"]),
             None if r["trailing_stop"] is None else float(r["trailing_stop"]),
+            r["sell_at"], r["breakeven"], r["recheck_by"],
         )
         for r in rows
     ]
@@ -461,12 +468,12 @@ def write_action_outcomes(conn: psycopg.Connection, rows: Sequence[tuple[ActionT
     with conn.cursor() as cur:
         cur.executemany(
             "insert into holding_action_outcomes (run_id, account, symbol, asset_type, exit_price, ret,"
-            " ret_net_of_fx, bench_ret, excess, beat, hit_stop)"
-            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " ret_net_of_fx, bench_ret, excess, beat, hit_stop, touched_sell_at, touched_breakeven, max_close)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 (
                     a.run_id, a.account, a.symbol, a.asset_type, o.exit_price, o.ret, o.ret_net_of_fx,
-                    o.bench_ret, o.excess, o.beat, o.hit_stop,
+                    o.bench_ret, o.excess, o.beat, o.hit_stop, o.touched_sell_at, o.touched_breakeven, o.max_close,
                 )
                 for a, o in rows
             ],

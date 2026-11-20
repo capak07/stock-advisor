@@ -119,3 +119,62 @@ def test_an_early_exit_grades_at_that_days_close():
     # a stop hit before it still exits at the stop
     hit = _grade({**closes, date(2026, 10, 5): 9.0}, BENCH, exit_by=date(2027, 1, 13), exit_now=date(2026, 10, 7))
     assert (hit.exit_day, hit.exit_reason, hit.hit_stop) == (date(2026, 10, 5), "stop", True)
+
+
+def _day(n: int) -> date:
+    return date(2026, 10, n)
+
+
+def _plan_grade(closes, *, stop=None, exit_by, recheck_by, sell_at=None, breakeven=None):
+    """An action with an exit plan, entry 10 on 10-1; days 2, 3, 5, 6 are the sessions after it."""
+    bench = {d: 20.0 for d in closes} | {FEATURE_DAY: 20.0}
+    return grade(
+        10.0, stop, FEATURE_DAY, exit_by, closes, 20.0, bench, 1.5, False,
+        recheck_by=recheck_by, sell_at=sell_at, breakeven=breakeven,
+    )
+
+
+def test_a_graded_action_records_its_highest_close_and_whether_the_sell_at_price_was_touched():
+    closes = {_day(2): 10.0, _day(3): 12.0, _day(5): 11.0}
+    out = _plan_grade(closes, exit_by=_day(5), recheck_by=_day(5), sell_at=11.5)
+    assert out.max_close == 12.0
+    assert out.touched_sell_at is True
+    assert _plan_grade(closes, exit_by=_day(5), recheck_by=_day(5), sell_at=12.5).touched_sell_at is False
+    assert _plan_grade(closes, exit_by=_day(5), recheck_by=_day(5), sell_at=12.0).touched_sell_at is True
+    none = _plan_grade(closes, exit_by=_day(5), recheck_by=_day(5), breakeven=None)
+    assert (none.touched_sell_at, none.touched_breakeven) == (None, None)
+    assert _plan_grade(closes, exit_by=_day(5), recheck_by=_day(5), breakeven=11.9).touched_breakeven is True
+    assert _plan_grade(closes, exit_by=_day(5), recheck_by=_day(5), breakeven=12.1).touched_breakeven is False
+
+
+def test_a_stop_exit_waits_for_the_recheck_date_and_reads_the_whole_window():
+    closes = {_day(2): 8.5, _day(3): 10.0}
+    kwargs = {"stop": 9.0, "exit_by": _day(5), "recheck_by": _day(5), "sell_at": 12.5}
+    assert _plan_grade(closes, **kwargs) is None  # the stop hit on day 1, but the window isn't over
+    out = _plan_grade({**closes, _day(5): 13.0}, **kwargs)
+    assert out.exit_reason == "stop"
+    assert out.exit_day == _day(2)
+    assert out.exit_price == 8.5
+    assert out.max_close == 13.0
+    assert out.touched_sell_at is True
+
+
+def test_touches_count_up_to_the_recheck_date_not_a_later_exit_by():
+    closes = {_day(2): 10.0, _day(3): 12.0, _day(5): 11.0, _day(6): 14.0}
+    out = _plan_grade(closes, exit_by=_day(6), recheck_by=_day(5), sell_at=13.0)
+    assert out.exit_reason == "exit_by"
+    assert out.exit_price == 14.0
+    assert out.max_close == 12.0  # day 3's: day 6 is past the plan's window
+    assert out.touched_sell_at is False
+
+
+def test_without_a_recheck_date_a_stop_exit_is_graded_at_once_with_no_touch_fields():
+    closes = {_day(2): 8.5, _day(3): 10.0}
+    out = _plan_grade(closes, stop=9.0, exit_by=_day(5), recheck_by=None)
+    assert (out.exit_day, out.exit_price, out.exit_reason) == (_day(2), 8.5, "stop")
+    assert (out.max_close, out.touched_sell_at, out.touched_breakeven) == (None, None, None)
+
+
+def test_a_pick_outcome_has_no_touch_fields():
+    out = _grade({date(2026, 10, 9): 11.0}, BENCH)
+    assert (out.max_close, out.touched_sell_at, out.touched_breakeven) == (None, None, None)

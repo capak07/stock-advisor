@@ -18,6 +18,7 @@ from advisor.models import (
     DailyClose,
     HoldingActionRow,
     Market,
+    Outcome,
     PickRow,
     RunKind,
     RunStatus,
@@ -1067,3 +1068,38 @@ def test_holding_actions_round_trip_their_exit_plan(db):
     ])
     rows = db.execute("select symbol, exit_plan from holding_actions order by symbol").fetchall()
     assert [(r["symbol"], r["exit_plan"]) for r in rows] == [("AAPL", plan), ("MSFT", None)]
+
+
+def test_actions_to_grade_carry_their_plans_prices_and_recheck_date(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    plan = {"version": 1, "sell_at": 25.5, "breakeven": 21.25, "recheck_by": "2026-11-13"}
+    repo.write_holding_actions(db, run_id, [
+        replace(_action("AAPL"), exit_plan=plan),
+        replace(_action("NVDA"), exit_plan={"version": 1, "sell_at": None, "breakeven": None, "recheck_by": None}),
+        _action("MSFT"),  # stored before the plan existed
+    ])
+    got = {a.symbol: (a.sell_at, a.breakeven, a.recheck_by) for a in repo.actions_to_grade(db)}
+    assert got == {
+        "AAPL": (25.5, 21.25, date(2026, 11, 13)),
+        "NVDA": (None, None, None),
+        "MSFT": (None, None, None),
+    }
+
+
+def test_an_actions_outcome_round_trips_its_touch_columns(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    repo.write_holding_actions(db, run_id, [_action("AAPL"), _action("MSFT")])
+    by_symbol = {a.symbol: a for a in repo.actions_to_grade(db)}
+    base = Outcome(date(2026, 11, 13), 24.0, "exit_by", 0.2, 0.2, 0.05, 0.15, True, False)
+    repo.write_action_outcomes(db, [
+        (by_symbol["AAPL"], replace(base, max_close=26.0, touched_sell_at=True, touched_breakeven=False)),
+        (by_symbol["MSFT"], base),
+    ])
+    rows = db.execute(
+        "select symbol, touched_sell_at, touched_breakeven, max_close from holding_action_outcomes order by symbol"
+    ).fetchall()
+    assert [(r["symbol"], r["touched_sell_at"], r["touched_breakeven"], r["max_close"]) for r in rows] == [
+        ("AAPL", True, False, 26),
+        ("MSFT", None, None, None),
+    ]
+    assert repo.actions_to_grade(db) == []

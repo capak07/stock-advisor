@@ -109,9 +109,12 @@ def choose_model(
 
     `incumbent` is the accepted non-baseline configuration, scored in this same benchmark. It is
     held to INCUMBENT_CALIBRATION_PTS rather than MAX_CALIBRATION_PTS; every other rule is the same.
-    `twins` maps a candidate to the row it must also beat: a bagged row to the same row without
-    bagging, so seed averaging's triple cost is paid only for a measured gain (spec §9). A twin
-    that wasn't scored fails the candidate closed.
+    `twins` maps a candidate to the row it must also beat, its base row (`job.base_rows`): the same
+    config without bagging and without its data groups. A bagged row must beat the same row without
+    bagging, so seed averaging's triple cost is paid only for a measured gain (spec §9); a data group
+    row (and the combined row of the groups that passed) must beat garch+ranker+forest, and
+    ranker+earnings must beat ranker, so a group earns its place over the model it adds to, not just
+    over the baseline. A twin that wasn't scored fails the candidate closed.
     """
     decisions = {name: accept_model(scores, baseline) for name, scores in candidates.items()}
     for name, twin in (twins or {}).items():

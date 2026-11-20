@@ -45,31 +45,46 @@ from advisor.model.backtest import MAX_CALIBRATION_PTS
 from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS, load_crypto
 from advisor.model.dataset import SAMPLE_EVERY, MarketData, load_market
 from advisor.model.factors import french_cross_check
+from advisor.model.groups import DATA_GROUPS
 from advisor.model.train import BAG_SEEDS, Fold, TrainConfig, WalkForward
-from advisor.model.variants import BASELINE, ModelConfig, run_variant, unbuilt
+from advisor.model.variants import (
+    BASELINE,
+    ModelConfig,
+    data_groups,
+    missing_groups,
+    run_variant,
+    unbuilt,
+)
 from advisor.model.weekly import crypto_skipped, json_safe
 from advisor.models import BenchmarkResult, Market
 from advisor.policy import DEFAULT_POLICY, Policy
 from advisor.store import repo
 from advisor.store.db import connect
 
+# The base the US data group rows build on: each adds one group's features to it, and must beat it.
+GROUP_BASE = "garch+ranker+forest"
+_GROUP_BASE_CONFIG = ModelConfig(ranker=True, garch=True, forest=True)
+# One row per US data group, in `DATA_GROUPS` order.
+GROUP_ROWS: dict[str, ModelConfig] = {
+    config.name: config for config in (replace(_GROUP_BASE_CONFIG, **{group: True}) for group in DATA_GROUPS)
+}
+
 # The ablation rows, in report order. The last is the chosen model plus a policy tuned for it.
+# Retired in Plan 7b (rejected in every market by the benchmarks of 2026-11-03 and 2026-11-15):
+# factors, extras, ranker+extras and ranker+extras+bagged.
 ABLATIONS: dict[str, ModelConfig | None] = {
     "baseline": BASELINE,
-    "factors": ModelConfig(factors=True),
     "ranker": ModelConfig(ranker=True),
-    "extras": ModelConfig(extras=True),
-    "ranker+extras": ModelConfig(ranker=True, extras=True),
-    "ranker+extras+bagged": ModelConfig(ranker=True, extras=True, bagged=True),
     "garch": ModelConfig(garch=True),
     "factors+garch": ModelConfig(factors=True, garch=True),
     "garch+ranker": ModelConfig(ranker=True, garch=True),
-    "garch+ranker+forest": ModelConfig(ranker=True, garch=True, forest=True),
+    GROUP_BASE: _GROUP_BASE_CONFIG,
     "ranker+earnings": ModelConfig(ranker=True, earnings=True),
+    **GROUP_ROWS,
     "full+policy": None,
 }
 POLICY_ROW = "full+policy"
-US_ONLY = {"ranker+earnings"}  # SEC filings cover US companies only
+US_ONLY = {"ranker+earnings", *GROUP_ROWS}  # SEC filings and the data groups cover US companies only
 
 
 def rows_for(market: Market | str) -> dict[str, ModelConfig | None]:
@@ -77,21 +92,39 @@ def rows_for(market: Market | str) -> dict[str, ModelConfig | None]:
     return {name: c for name, c in ABLATIONS.items() if market == Market.US or name not in US_ONLY}
 
 
-def bagging_twins(ablations: Mapping[str, ModelConfig | None]) -> dict[str, str]:
-    """Each bagged row and the row with the same config but no bagging, which it must also beat."""
-    twins = {}
+def base_row(config: ModelConfig) -> ModelConfig | None:
+    """The config with no bagging and no data group: the row a bagged or data group row must also beat.
+    None when that is the config itself."""
+    base = replace(config, bagged=False, **dict.fromkeys(DATA_GROUPS, False))
+    return None if base == config else base
+
+
+def base_rows(ablations: Mapping[str, ModelConfig | None]) -> dict[str, str]:
+    """Each row that has a base row, and that row's name: seed averaging's triple cost and a data
+    group's download are paid only for a measured gain over the same model without them."""
+    rows = {}
     for name, config in ablations.items():
-        if config is None or not config.bagged:
+        base = None if config is None else base_row(config)
+        if base is None:
             continue
-        plain = replace(config, bagged=False)
-        twin = next((n for n, c in ablations.items() if c == plain), None)
-        if twin is None:
-            raise ValueError(f"{name} has no row without bagging")
-        twins[name] = twin
-    return twins
+        found = next((n for n, c in ablations.items() if c == base), None)
+        if found is None:
+            raise ValueError(f"{name} has no base row")
+        rows[name] = found
+    return rows
 
 
-BAGGING_TWINS = bagging_twins(ABLATIONS)
+BASE_ROWS = base_rows(ABLATIONS)
+
+
+def combined_config(passed: Sequence[str]) -> ModelConfig | None:
+    """`GROUP_BASE`'s config with each data group that passed on its own turned on; None with fewer than two."""
+    groups = list(dict.fromkeys(passed))
+    if len(groups) < 2:
+        return None
+    return replace(ABLATIONS[GROUP_BASE], **dict.fromkeys(groups, True))
+
+
 FIRST = "first benchmark: today's model"
 MARKET_ORDER = [Market.TSX, Market.US, CRYPTO]  # the smaller load first, as in the weekly job
 
@@ -169,15 +202,20 @@ def _benchmark_market(
     variants: dict[str, dict] = {}
     runs: dict[str, tuple[WalkForward, tuple[int, ...]]] = {}
     scores: dict[str, Scores] = {}
+    # every row this run scored, by name: the fixed rows, the combined row and the incumbent's row
+    configs: dict[str, ModelConfig] = {}
     results: list[BenchmarkResult] = []
     reference = None
-    for name, variant in rows_for(market).items():
-        if variant is None:  # the policy row runs once a model is chosen
-            continue
+
+    def score_row(name: str, variant: ModelConfig) -> None:
+        nonlocal reference
         plan = unbuilt(variant)
         if plan is not None:
             variants[name] = {"status": "not built", "plan": plan}
-            continue
+            return
+        if missing := missing_groups(data, variant):  # fails closed: no score, so no decision
+            variants[name] = {"status": "no data", "groups": missing}
+            return
         began = time.monotonic()
         wf = run_variant(data, variant, config)
         pred = wf.predictions
@@ -204,24 +242,46 @@ def _benchmark_market(
                 variants[name]["french"] = french_cross_check(data.factors.daily)
         scores[name] = Scores.of(model, config.horizons)
         runs[name] = (wf, usable)
-        results += [
+        configs[name] = variant
+        results.extend(
             BenchmarkResult(str(market), name, fold, json_safe({
                 "model": model[fold], "summary": means[fold], "policy": policy.get(fold),
                 "top_slice": top.get(fold),
             }))
             for fold in model
-        ]
+        )
 
+    for name, variant in rows_for(market).items():
+        if variant is not None:  # the policy row runs once a model is chosen
+            score_row(name, variant)
+
+    # the data group rows that beat both the baseline and their base row, combined into one more row
+    twins = dict(BASE_ROWS)
+    group_rows = [name for name in scores if BASE_ROWS.get(name) == GROUP_BASE]
+    combined = None
+    if len(group_rows) >= 2:
+        others = {name: s for name, s in scores.items() if name != "baseline"}
+        _, strict = choose_model(scores["baseline"], others, None, BASE_ROWS)
+        passed = [group for name in group_rows if strict[name].accepted for group in data_groups(configs[name])]
+        combined = combined_config(passed)
+    if combined is not None and combined.name not in variants:
+        score_row(combined.name, combined)
+        twins[combined.name] = GROUP_BASE
+
+    # the accepted configuration is scored even when it has no row here (a retired or combined row),
+    # so the incumbent rule still holds
     active = repo.active_config(conn, str(market))
     active_name = _model_name(active.config) if active else None
+    if active_name is not None and active_name not in variants:
+        score_row(active_name, replace(ModelConfig.from_json(active.config), policy=None))
     incumbent = (active_name, scores[active_name]) if active_name in scores and active_name != "baseline" else None
     others = {name: s for name, s in scores.items() if name != "baseline"}
-    chosen, decisions = choose_model(scores["baseline"], others, incumbent, BAGGING_TWINS)
+    chosen, decisions = choose_model(scores["baseline"], others, incumbent, twins)
 
     began = time.monotonic()
     panel = daily_panel(data_dir, market)
     wf, usable = runs[chosen]
-    model_config = ABLATIONS[chosen]
+    model_config = configs[chosen]
     policy_report, policy_decision, policy, final_reason = _policy_row(
         data, model_config, wf, usable, panel, market, usd_fx_fee_pct, config
     )
@@ -261,6 +321,7 @@ def _benchmark_market(
         "decisions": {n: {"accepted": d.accepted, "reasons": list(d.reasons)} for n, d in decisions.items()},
         "chosen": chosen,
         "accepted": accepted,
+        "combined": combined.name if combined is not None else None,
     }
 
 

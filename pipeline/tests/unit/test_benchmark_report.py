@@ -123,10 +123,12 @@ def test_ablation_rows_print_in_a_fixed_order_whatever_order_the_dict_arrives_in
         for line in ablation.splitlines()
         if line.startswith("| ") and "Variant" not in line and "---" not in line
     ]
+    # garch+ranker isn't in this fixture; its place is after factors+garch. The rows the benchmark no longer
+    # runs follow the known ones, and the policy row closes the table
     assert names == [
-        "baseline", "factors", "ranker", "extras", "ranker+extras", "ranker+extras+bagged", "garch",
-        "factors+garch", "full+policy",
-    ]  # garch+ranker isn't in this fixture; its place is after factors+garch
+        "baseline", "ranker", "garch", "factors+garch", "factors", "extras", "ranker+extras",
+        "ranker+extras+bagged", "full+policy",
+    ]
 
 
 def _score(pooled: dict) -> dict:
@@ -233,3 +235,77 @@ def test_a_variant_with_a_top_slice_shows_how_the_top_of_its_ranking_did():
 
 def test_a_report_stored_before_the_top_slice_renders_without_the_table():
     assert "Top 5% by score" not in render_markdown(REPORT)
+
+
+def _group_market(**rows) -> dict:
+    """A US market holding the base row and the given rows: name -> (rank IC, {horizon: top_excess})."""
+    market = copy.deepcopy(REPORT["markets"]["TSX"])
+    variants = market["variants"]
+    template = variants.pop("baseline")
+    variants.pop("factors")
+    variants["baseline"] = template
+    for name, (ic, tops) in rows.items():
+        variant = copy.deepcopy(template)
+        variant["summary"]["pooled"] = {**SUMMARY, "rank_ic": ic}
+        variant["top_slice"] = {"pooled": {h: {"days": 100, "top_excess": t, "top_net": t, "bottom_excess": -t}
+                                           for h, t in tops.items()}}
+        variants[name] = variant
+    return market
+
+
+def test_the_new_data_table_opens_each_market_with_a_group_row():
+    market = _group_market(**{
+        "garch+ranker+forest": (0.061, {"5": 0.0040, "21": 0.0020}),
+        "garch+ranker+forest+short": (0.065, {"5": 0.0052, "21": 0.0032}),
+    })
+    market["decisions"] = {
+        "garch+ranker+forest+short": {"accepted": False, "reasons": [
+            "not better than garch+ranker+forest", "rank IC better in 2 of 4 outer folds (needs 3)"]},
+    }
+    md = render_markdown({**REPORT, "markets": {"US": market}})
+    us = md.split("## US", 1)[1]
+    assert us.split("\n### Did the new data help?\n", 1)[0].strip() == "**Chosen:** baseline — first benchmark: today's model"
+    table = us.split("### Did the new data help?", 1)[1].split("### Ablations", 1)[0]
+    assert [line for line in table.splitlines() if line.startswith("|")] == [
+        "| Group | Rank IC vs base | Top 5% vs base | Decision |",
+        "| --- | --- | --- | --- |",
+        "| short | +0.004 | +0.12% | rejected: not better than garch+ranker+forest |",
+    ]
+
+
+def test_the_new_data_table_ends_with_the_combined_row_and_dashes_what_is_missing():
+    market = _group_market(**{
+        "garch+ranker+forest": (0.061, {"5": 0.0040}),
+        "garch+ranker+forest+short": (0.070, {"5": 0.0050, "21": 0.0100}),  # 21 days: the base has none
+        "garch+ranker+forest+estimates": (0.068, {}),
+        "garch+ranker+forest+short+estimates": (0.072, {"5": 0.0045}),
+    })
+    market["variants"]["garch+ranker+forest+insider"] = {"status": "no data", "groups": ["insider"]}
+    market["combined"] = "garch+ranker+forest+short+estimates"
+    market["decisions"] = {name: {"accepted": True, "reasons": ["ok"]} for name in market["variants"]}
+    md = render_markdown({**REPORT, "markets": {"US": market}})
+    table = md.split("### Did the new data help?", 1)[1].split("### Ablations", 1)[0]
+    assert [line for line in table.splitlines() if line.startswith("| ") and "Group" not in line and "---" not in line] == [
+        "| short | +0.009 | +0.10% | accepted |",
+        "| insider | — | — | no data |",
+        "| estimates | +0.007 | — | accepted |",
+        "| garch+ranker+forest+short+estimates | +0.011 | +0.05% | accepted |",
+    ]
+
+
+def test_a_market_without_group_rows_has_no_new_data_table():
+    assert "Did the new data help?" not in render_markdown(REPORT)
+    base_only = _group_market(**{"garch+ranker+forest": (0.061, {"5": 0.0040})})
+    assert "Did the new data help?" not in render_markdown({**REPORT, "markets": {"US": base_only}})
+
+
+def test_a_row_without_its_data_reads_no_data_and_its_groups():
+    report = copy.deepcopy(REPORT)
+    del report["markets"]["TSX"]["variants"]["factors"]  # the fixture's one "not built" row
+    report["markets"]["TSX"]["variants"]["garch+ranker+forest+insider"] = {"status": "no data", "groups": ["insider"]}
+    report["markets"]["TSX"]["variants"]["garch+ranker+forest+data+s+i"] = {
+        "status": "no data", "groups": ["short", "insider"]}
+    md = render_markdown(report)
+    assert "| garch+ranker+forest+insider | no data: insider | — | — | — | no data |" in md
+    assert "| garch+ranker+forest+data+s+i | no data: short, insider | — | — | — | no data |" in md
+    assert not [line for line in md.splitlines() if "arrives with" in line]

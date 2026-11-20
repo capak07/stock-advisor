@@ -178,3 +178,14 @@ def test_the_accepted_config_is_dropped_past_the_looser_limit():
 def test_the_looser_limit_does_not_excuse_the_other_rules():
     ranker = scores(ic=0.039, folds=(0.039,) * 4, cal={5: 3.0, 63: 5.2})
     assert choose_model(BASE, {"ranker": ranker}, ("ranker", ranker))[0] == "baseline"
+
+
+def test_a_group_row_that_only_beats_the_baseline_is_rejected():
+    base = scores(ic=0.089, folds=(0.089,) * 4)
+    short = scores(ic=0.0891, folds=(0.095, 0.095, 0.085, 0.085))  # beats the baseline; 2 of 4 folds vs its base
+    rows = {"garch+ranker+forest": base, "garch+ranker+forest+short": short}
+    name, decisions = choose_model(BASE, rows, None, {"garch+ranker+forest+short": "garch+ranker+forest"})
+    assert name == "garch+ranker+forest"
+    d = decisions["garch+ranker+forest+short"]
+    assert not d.accepted and d.reasons[0] == "not better than garch+ranker+forest"
+    assert "rank IC better in 2 of 4 outer folds (needs 3)" in d.reasons

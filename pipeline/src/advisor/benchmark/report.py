@@ -6,10 +6,17 @@ import math
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from advisor.model.groups import DATA_GROUPS
+
+_GROUP_BASE = "garch+ranker+forest"  # `job.GROUP_BASE`: the row each data group row adds one group to
+_GROUP_ROWS = {f"{_GROUP_BASE}+{group}": group for group in DATA_GROUPS}
+_POLICY_ROW = "full+policy"
 _ABLATION_ORDER = (
-    "baseline", "factors", "ranker", "extras", "ranker+extras", "ranker+extras+bagged", "garch", "factors+garch",
-    "garch+ranker", "full+policy",
+    "baseline", "ranker", "garch", "factors+garch", "garch+ranker", _GROUP_BASE, "ranker+earnings",
+    *_GROUP_ROWS, _POLICY_ROW,
 )
+# rows a stored report may hold that the benchmark no longer runs (Plan 7b): shown after the known ones
+_RETIRED = ("factors", "extras", "ranker+extras", "ranker+extras+bagged")
 
 SURVIVORSHIP = (
     "Survivorship: the stock universes are today's listings — Yahoo has no delisted tickers "
@@ -61,6 +68,8 @@ def _choice_line(market: Mapping) -> str:
 def _decision(name: str, market: Mapping) -> str:
     if name == "baseline":
         return "reference"
+    if ((market.get("variants") or {}).get(name) or {}).get("status") == "no data":
+        return "no data"
     decision = (market.get("decisions") or {}).get(name)
     if not decision:
         return "—"
@@ -71,6 +80,8 @@ def _decision(name: str, market: Mapping) -> str:
 
 
 def _ablation_row(name: str, variant: Mapping, market: Mapping) -> str:
+    if variant.get("status") == "no data":  # the build did not write these groups' history
+        return f"| {name} | no data: {', '.join(variant.get('groups') or [])} | — | — | — | no data |"
     if variant.get("status") != "run":
         return f"| {name} | arrives with {variant.get('plan', '')} | — | — | — | — |"
     if "summary" not in variant:  # the policy row: no model scores of its own
@@ -152,9 +163,56 @@ def _policy_table(variant: Mapping) -> list[str]:
 
 
 def _ordered(variants: Mapping) -> list[tuple[str, Mapping]]:
-    names = [name for name in _ABLATION_ORDER if name in variants]
-    names += [name for name in variants if name not in names]
+    """The known rows in benchmark order, then the rest (a combined or incumbent row in the order they
+    ran, then retired rows), and the policy row last."""
+    names = [name for name in _ABLATION_ORDER if name in variants and name != _POLICY_ROW]
+    names += [name for name in variants if name not in names and name not in _RETIRED and name != _POLICY_ROW]
+    names += [name for name in (*_RETIRED, _POLICY_ROW) if name in variants]
     return [(name, variants[name]) for name in names]
+
+
+def _mean_top_excess(variant: Mapping, horizons: Iterable) -> float | None:
+    pooled = (variant.get("top_slice") or {}).get("pooled") or {}
+    values = [(pooled.get(h) or {}).get("top_excess") for h in horizons]
+    return sum(values) / len(values) if values else None
+
+
+def _vs_base(variant: Mapping, base: Mapping) -> tuple[object, object]:
+    """The row's pooled rank IC and mean top-5% excess return, each minus the base row's; None when unmeasured."""
+    if variant.get("status") != "run" or base.get("status") != "run":
+        return None, None
+    ic, base_ic = (((v.get("summary") or {}).get("pooled") or {}).get("rank_ic") for v in (variant, base))
+    rank_ic = None if _missing(ic) or _missing(base_ic) else ic - base_ic
+
+    def measured(v: Mapping) -> set:
+        pooled = (v.get("top_slice") or {}).get("pooled") or {}
+        return {h for h, row in pooled.items() if not _missing((row or {}).get("top_excess"))}
+
+    both = measured(variant) & measured(base)  # the horizons both rows have
+    top = None if not both else _mean_top_excess(variant, both) - _mean_top_excess(base, both)
+    return rank_ic, top
+
+
+def _new_data_table(market: Mapping) -> list[str]:
+    """Each data group row against the base row it adds its group to, then the combined row."""
+    variants = market.get("variants") or {}
+    base = variants.get(_GROUP_BASE)
+    rows = [(group, name) for name, group in _GROUP_ROWS.items() if name in variants]
+    if base is None or not rows:
+        return []
+    combined = market.get("combined")
+    if combined and combined in variants:
+        rows.append((combined, combined))
+    lines = [
+        "### Did the new data help?",
+        "",
+        "| Group | Rank IC vs base | Top 5% vs base | Decision |",
+        "| --- | --- | --- | --- |",
+    ]
+    for label, name in rows:
+        rank_ic, top = _vs_base(variants[name], base)
+        lines.append(f"| {label} | {_fmt(rank_ic, '+.3f')} | {_signed(top)} | {_decision(name, market)} |")
+    return lines
 
 
 def _book(value: object) -> Mapping:
@@ -275,7 +333,10 @@ def render_markdown(report: Mapping) -> str:
         if "skipped" in market:
             lines += [f"Skipped: {market['skipped']}", ""]
             continue
-        lines += [_choice_line(market), "", "### Ablations", ""]
+        lines += [_choice_line(market), ""]
+        if new_data := _new_data_table(market):
+            lines += [*new_data, ""]
+        lines += ["### Ablations", ""]
         lines += [
             "| Variant | Status | Rank IC (pooled) | Pinball (pooled) | Worst calibration | Decision |",
             "| --- | --- | --- | --- | --- | --- |",

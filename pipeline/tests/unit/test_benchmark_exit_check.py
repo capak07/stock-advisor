@@ -114,6 +114,33 @@ def test_rows_without_a_calibrated_p_or_a_finite_quantile_are_not_sampled():
     assert len([j for j in judged if j.cls == "forecast"]) == 4 + 3
 
 
+@pytest.mark.parametrize("masked", ["nan", "unusable"])
+def test_the_volatility_class_is_judged_whatever_the_models_calibration(masked):
+    # R16: the volatility class reads no forecast, so rows with no P or quantiles, or at a horizon
+    # that is not calibrated, still give it pairs; the forecast class gets none
+    panel = _panel(symbols=10)
+    rows = _rows(panel, [150, 160, 170], horizons=(5, 10), folds=[1, 2, 3])
+    usable: tuple[int, ...] = (5, 10)
+    if masked == "nan":
+        rows[["q10", "q50", "q90", "p"]] = math.nan
+    else:
+        usable = ()
+    judged = judge_pairs(rows, panel, Market.TSX, usable, 0.0, DEFAULT_POLICY)
+    assert {j.cls for j in judged} == {"volatility"}
+    assert len(judged) == 10 * 3  # one pair per symbol and day, whatever the number of horizons
+    assert sorted({j.fold for j in judged}) == [1, 2, 3]
+    assert all(j.plan["basis"] == "volatility" and j.plan["horizon"] == 21 for j in judged)
+
+
+def test_fold_0_rows_are_never_sampled():
+    panel = _panel(symbols=5)
+    rows = _rows(panel, [150, 160], horizons=(5,), folds=[0, 1])  # fold 0 here even has a P
+    for market, bench in ((Market.TSX, BENCH), (CRYPTO, "BTC")):
+        p = panel if bench == BENCH else _panel(symbols=5, bench="BTC")
+        judged = judge_pairs(rows, p, market, (5,), 0.0, DEFAULT_POLICY)
+        assert judged and {j.fold for j in judged} == {1}
+
+
 def test_sampling_takes_at_most_pairs_per_fold_rows_and_is_seeded():
     panel = _panel()
     rows = _rows(panel, list(range(100, 160, 2)), horizons=(5,))  # 10 days x 100 symbols per fold
@@ -127,8 +154,9 @@ def test_sampling_takes_at_most_pairs_per_fold_rows_and_is_seeded():
 def test_a_coin_market_judges_its_rows_with_the_forecast_masked():
     panel = _panel(bench="BTC", symbols=10)
     rows = _rows(panel, [150, 170, 190], horizons=(7, 30), folds=[1, 2, 3])
-    judged = judge_pairs(rows, panel, CRYPTO, [7, 30], 0.25, DEFAULT_POLICY)
-    assert len(judged) == 10 * 3 * 2
+    rows[["q10", "q50", "q90", "p"]] = math.nan  # R16: a coin plan needs neither, nor a usable horizon
+    judged = judge_pairs(rows, panel, CRYPTO, (), 0.25, DEFAULT_POLICY)
+    assert len(judged) == 10 * 3  # one pair per coin and day, at any horizon
     assert all(j.cls == "coin" for j in judged)
     assert all(j.plan["basis"] == "volatility" and j.plan["horizon"] == 21 for j in judged)
     assert sorted({j.fold for j in judged}) == [1, 2, 3]
@@ -141,7 +169,9 @@ def test_the_plan_is_built_as_live_builds_it():
     panel = _panel(symbols=2)
     d = 200
     rows = _rows(panel, [d], horizons=(5,), folds=[1])
-    judged = judge_pairs(rows, panel, Market.US, [5], 1.5, DEFAULT_POLICY)
+    found = judge_pairs(rows, panel, Market.US, [5], 1.5, DEFAULT_POLICY)
+    judged = [j for s in ("S000", "S001") for c in ("forecast", "volatility") for j in found
+              if j.cls == c and j.atr_pct == panel.atr_pct[s].iloc[d]]
     assert [j.cls for j in judged] == ["forecast", "volatility", "forecast", "volatility"]
     dates = [t.date() for t in panel.close.index]
     cost = 0.001 + 2 * 1.5 / 100  # a large company's spread and the currency fee both ways

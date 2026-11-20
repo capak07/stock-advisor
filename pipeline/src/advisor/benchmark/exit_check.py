@@ -116,8 +116,20 @@ def walk_exits(
     return Exits(False, last / price - 1 - cost, without)
 
 
-def _sample(predictions: pd.DataFrame, usable: Sequence[int], seed: int) -> pd.DataFrame:
-    """Up to PAIRS_PER_FOLD rows per calibrated fold, with finite quantiles and P and a usable horizon."""
+def _per_fold(pool: pd.DataFrame, order: list[str], rng: np.random.Generator) -> pd.DataFrame:
+    """Up to PAIRS_PER_FOLD rows of each fold, sorted first so the sample does not depend on the
+    frame's order."""
+    picked = []
+    for fold in sorted(pool["fold"].unique()):
+        here = pool[pool["fold"] == fold].sort_values(order)
+        n = min(PAIRS_PER_FOLD, len(here))
+        picked.append(here.iloc[np.sort(rng.choice(len(here), size=n, replace=False))])
+    return pd.concat(picked) if picked else pool.iloc[:0]
+
+
+def _forecast_rows(predictions: pd.DataFrame, usable: Sequence[int], rng: np.random.Generator) -> pd.DataFrame:
+    """The forecast class's sample: calibrated folds' rows with finite quantiles and P and a usable
+    horizon (R6)."""
     keep = (
         predictions["horizon"].isin(list(usable))
         & (predictions["fold"] > 0)
@@ -125,13 +137,16 @@ def _sample(predictions: pd.DataFrame, usable: Sequence[int], seed: int) -> pd.D
     )
     pool = predictions.loc[keep, ["day", "symbol", "horizon", "fold", *_QUANTILES, "p", "dollar_volume_20"]]
     pool = pool[np.isfinite(pool[[*_QUANTILES, "p"]].to_numpy(dtype=float)).all(axis=1)]
-    rng = np.random.default_rng(seed)
-    picked = []
-    for fold in sorted(pool["fold"].unique()):
-        here = pool[pool["fold"] == fold].sort_values(["day", "symbol", "horizon"])
-        n = min(PAIRS_PER_FOLD, len(here))
-        picked.append(here.iloc[np.sort(rng.choice(len(here), size=n, replace=False))])
-    return pd.concat(picked) if picked else pool.iloc[:0]
+    return _per_fold(pool, ["day", "symbol", "horizon"], rng)
+
+
+def _volatility_rows(predictions: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
+    """The volatility-only classes' sample (R16): one row per (day, symbol) of folds 1 and later, at
+    any horizon, calibrated or not, with or without a finite P or quantiles, since the plan reads
+    none of them. Rows at several horizons of one day and symbol are one pair."""
+    pool = predictions.loc[predictions["fold"] > 0, ["day", "symbol", "fold", "dollar_volume_20"]]
+    pool = pool.drop_duplicates(["day", "symbol"])
+    return _per_fold(pool, ["day", "symbol"], rng)
 
 
 @dataclass(frozen=True)
@@ -256,26 +271,31 @@ def judge_pairs(
 ) -> list[Judged]:
     """Sample the chosen model's walk-forward rows and judge a plan for each (see the module docstring).
 
-    A stock's row gives a "forecast" plan (its quantiles and horizon) and a "volatility" plan (the
-    forecast masked, NO_FORECAST_HORIZON sessions). A coin's row gives one "coin" plan, always
-    volatility only (R3), over NO_FORECAST_HORIZON panel rows (one per day with a BTC close)."""
-    coins = market == CRYPTO
-    rows = _sample(predictions, usable, seed)
-    if rows.empty:
+    For a stock, rows at a usable horizon with finite quantiles and P give "forecast" plans (their
+    quantiles and horizon); separately sampled rows at any horizon of folds 1 and later give
+    "volatility" plans (no forecast read, NO_FORECAST_HORIZON sessions), so a model with no
+    calibrated horizon still has its volatility class judged (R16). A coin's rows give "coin" plans,
+    always volatility only (R3), over NO_FORECAST_HORIZON panel rows (one per day with a BTC close)."""
+    rng = np.random.default_rng(seed)
+    if market == CRYPTO:
+        samples = [("coin", _volatility_rows(predictions, rng))]
+    else:
+        samples = [("forecast", _forecast_rows(predictions, usable, rng)),
+                   ("volatility", _volatility_rows(predictions, rng))]
+    if all(rows.empty for _, rows in samples):
         return []
     a = _arrays(panel)
-    costs = round_trip_cost(market, rows["dollar_volume_20"].to_numpy(dtype=float), usd_fx_fee_pct)
     out = []
-    for row, cost in zip(rows.itertuples(index=False), costs, strict=True):
-        i, j = a.rows.get(pd.Timestamp(row.day)), a.cols.get(row.symbol)
-        if i is None or j is None:
-            continue
-        if coins:
-            plans = [("coin", NO_FORECAST_HORIZON, None)]
-        else:
-            forecast = (float(row.q10), float(row.q50), float(row.q90))
-            plans = [("forecast", int(row.horizon), forecast), ("volatility", NO_FORECAST_HORIZON, None)]
-        for cls, horizon, forecast in plans:
+    for cls, rows in samples:
+        costs = round_trip_cost(market, rows["dollar_volume_20"].to_numpy(dtype=float), usd_fx_fee_pct)
+        for row, cost in zip(rows.itertuples(index=False), costs, strict=True):
+            i, j = a.rows.get(pd.Timestamp(row.day)), a.cols.get(row.symbol)
+            if i is None or j is None:
+                continue
+            if cls == "forecast":
+                horizon, forecast = int(row.horizon), (float(row.q10), float(row.q50), float(row.q90))
+            else:
+                horizon, forecast = NO_FORECAST_HORIZON, None
             judged = _judge(a, cls, row.fold, row.symbol, i, j, horizon, forecast, float(cost), policy.trail_atr)
             if judged is not None:
                 out.append(judged)

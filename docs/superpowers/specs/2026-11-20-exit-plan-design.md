@@ -264,7 +264,8 @@ always wins that conflict.
   in `exit_plan.recheck_by`; the `exit_by` column keeps today's behaviour (null for coins and for
   holdings without a horizon).
 - **Which result a plan may use:** a benchmark result is keyed by class and by a plan-code version
-  constant; the forecast classes are also keyed by the model config version. No matching result means
+  constant; the forecast classes are also keyed by the chosen model's config name (R2), not the config
+  schema version, which every config shares. No matching result means
   "Not validated yet". The first result exists after the owner dispatches `benchmark.yml` once after
   the merge; showing unvalidated plans under that note until then is intended, as on Invest.
 - **Live calibration:** touches are counted on closes after the feature day up to the horizon's end.
@@ -277,6 +278,7 @@ always wins that conflict.
 - **2026-11-20, controller ruling R12** *(call)*: the simulated stop trails along each path as `trailing_stop` moves it (today's ATR fraction held fixed; the highest close starts at today's price), replacing §3's "held fixed" and the fixed-stop note above. Reason: the benchmark check walks a trailing stop, and against it the fixed-stop chance was 24 points off on driftless random walks (9.6 after the change, inside the 10-point tolerance). Without an ATR or a trail multiple the stop stays fixed.
 - **2026-11-20, controller ruling R13** *(call)*: in the benchmark's value test the sell-at order exits at the close of the first day that closes at or above the sell-at price, not at the sell-at price itself (amends R10's fill). Reason: filling at the sell-at price while the check sees only closes made the order lose about 0.55% to holding on driftless random walks, an artefact of the fill (about −0.07% after the change).
 - **2026-11-20, controller ruling R14** *(call)*: the sell-at price is hidden only when the order tests measurably worse than holding: t under −2 on the sample days' mean (with order − without), with at least 20 sample days (fewer cannot be judged); replaces R10's "pooled mean ≥ 0 and 2 of 3 folds" pass rule, whose fold count was close to a coin flip for an order with no edge. The fold counts stay in the report as information.
+- **2026-11-20, controller ruling R16** *(call)*: "usable horizons only" (R6) binds the forecast class alone. The volatility-only classes ("volatility" for stocks, "coin") read no forecast, so they sample walk-forward rows of folds 1 and later at any horizon, calibrated or not and with or without a finite P or quantiles, one pair per (day, symbol); a stock market whose model has no usable horizon gets a volatility verdict and no forecast verdict, and a coin market always gets its coin verdict when it has enough pairs.
 
 ## Constraints
 

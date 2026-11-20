@@ -165,24 +165,21 @@ def test_the_factors_variant_runs_on_us_data_and_keeps_the_baseline_rows(db, tmp
     assert "| short | — | — | no data |" in text and "arrives with" not in text
 
 
-def test_the_benchmark_scores_crypto(db, tmp_path, monkeypatch):
-    from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS
+def test_the_benchmark_scores_crypto(db, tmp_path):
+    from advisor.model.crypto import CRYPTO
     from model_data import write_crypto
     write_crypto(tmp_path, coins=30, days=1300)
-    real = job.judge_pairs
-
-    def every_horizon(predictions, panel, market, usable, *args):
-        assert usable == ()  # no horizon of this synthetic coin model is calibrated: sample them all anyway
-        return real(predictions, panel, market, CRYPTO_HORIZONS, *args)
-
-    monkeypatch.setattr(job, "judge_pairs", every_horizon)
     report = job.run(tmp_path, [CRYPTO], db, NOW, None, FAST)
     assert report["markets"]["crypto"]["chosen"] == "baseline"
     folds = {r["fold"] for r in db.execute("select fold from benchmark_results where market = 'crypto' and variant = 'baseline'").fetchall()}
     assert folds == {"0", "1", "2", "3", "pooled"}
     assert repo.active_config(db, "crypto").reason == "first benchmark: today's model"
-    block = report["markets"]["crypto"]["exit_plan"]  # every coin plan is volatility only (R3)
+    # every coin plan is volatility only (R3), so it is judged though this synthetic coin model has no
+    # calibrated horizon (R16)
+    block = report["markets"]["crypto"]["exit_plan"]
     assert block["model"] == "baseline" and set(block["classes"]) == {"coin"}
+    assert block["classes"]["coin"]["pairs"] >= 200
+    assert block["classes"]["coin"]["result"] in {"pass", "range_only", "fail"}
 
 
 def test_the_combined_row_runs_when_two_groups_pass(db, tmp_path, monkeypatch):

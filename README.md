@@ -77,6 +77,7 @@ Holdings links to Ticker pages; runs still publish, with a `sources_error` in th
 `0007` adds a table and a view, so run the grants in `web/README.md` (Deploy, step 3) again
 after applying it. Before deploying Plan 2d's code, add the `SEC_USER_AGENT` secret (step 5); without it every run is degraded and the health job emails you daily.
 `0010` for Plan 6a; apply it before the next `train.yml` or `benchmark.yml` run.
+`0016` for the exit plan (`holding_actions.exit_plan` and the touch columns on `holding_action_outcomes`); apply it before the first run after deploy, then run `benchmark.yml` once by hand (until it has run, plans show under "Not validated yet"). See `docs/superpowers/deferred.md`, "Exit plan".
 
 ## Manual run
 

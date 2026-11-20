@@ -117,3 +117,4 @@ Inputs per line: side and kind (buy, add, sell, trim, stop, recurring), the last
 - Wealthsimple, crypto order types: https://help.wealthsimple.com/hc/en-ca/articles/31804031644059-Choose-a-crypto-order-type
 - Wealthsimple, recurring investments: https://help.wealthsimple.com/hc/en-ca/articles/9544942923547
 - Wealthsimple, bracket orders (2026-11-01): https://help.wealthsimple.com/hc/en-ca/articles/57814660213147-Understanding-bracket-orders
+- Unverified (2026-11-20): whether Wealthsimple lets a limit sell and a stop-limit sell rest on the same shares at once. The exit plan's "sell at" line is a limit sell, offered only for a Hold or an Add with no stop, so it never sits beside a stop-limit the app has told the owner to keep. A holding that has a stop never shows that line. Check Wealthsimple's help centre before offering it beside a stop.

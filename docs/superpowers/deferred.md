@@ -306,3 +306,35 @@ Nothing is pushed or merged. This work sits on branch `all-data`, which is built
 2. Run the new `history.yml` workflow once by hand (Actions, history, Run workflow). Its `history-report` artifact (`manifest.json`) lists seconds per group, `unavailable`, `empty`, the OpenFIGI mapped and failed counts, and insider rows per quarter. Check that no group is unavailable and that insider rows per quarter look sane: a wrong date format would show as near-zero rows.
 3. Then run `benchmark.yml` by hand. Read the per-variant seconds in its `benchmark-report.json` (each market's `variants` → row → `seconds`) and the job's total, which is the Actions run's duration. If the job passes 288 minutes (80% of 360), or the history job passes 144 (80% of 180), stop and decide what to drop, `catalysts` first.
 4. Read the "Did the new data help?" table at the top of each market in the benchmark report.
+
+## Exit plan
+
+Each holding's action now carries an exit plan: a likely range, a sell-at price, and the chances of a stop-out and of getting back to break-even (spec §7.3). It sits on branch `exit-plan`. What it left for later:
+
+### Owner steps
+
+Nothing is pushed or merged. In order:
+
+1. Apply `supabase/migrations/0016_exit_plan.sql` to production Supabase (`python -m advisor.store.migrate`) before the first run after deploy. It adds `holding_actions.exit_plan` and three columns on `holding_action_outcomes`; code without it fails the holdings stage.
+2. Push the branch and merge as you choose.
+3. Run `benchmark.yml` once by hand. Until it has run, every plan shows its numbers under "Not validated yet". A forecast plan reads "Not validated yet" again after every change of model, until the next benchmark.
+4. Read the "Exit plan check" section of each market in the benchmark report (`benchmark-report.json`, each market's `exit_plan` block, keyed by the model's name). Per class (forecast, volatility, coin) it says whether the range, the sell-at touch rate, the break-even and stop-first chances passed, and the measured gain of the sell-at order against holding.
+
+### Known limits
+
+- **Coin and no-forecast plans are never graded live.** The grader only grades stock actions with an exit-by date, so the benchmark check is their only test.
+- **A holding with a plan is graded only once its window has ended** (its re-check date has a final close). A holding whose stop exits before that date gets its outcome only after that date, so the touch record reads the whole window.
+- **The re-check date is the end of the plan's own horizon, also for a holding bought on a pick.** The pick's later exit-by date stays in the `exit_by` column only. This deviates from the last sentence of the design's §1: the chances are simulated over the plan's horizon, and a later date would overstate them.
+- **Every coin plan is volatility-only for now.** The design's coin-with-forecast path (excess over BTC) is deferred until a coin forecast class is built and checked. A volatility-only coin is checked whatever the coin model's calibration.
+- **Touches are counted on daily closes.** Intraday touches are not measured, because `DailyPanel` holds closes only (the design asked for both). A real limit order's chance of filling is a little higher than shown, and the page says "closes at or above".
+- **The simulation matches the forecast's median and its 10–90 width, not its skew.** For a skewed forecast, q10 and q90 alone can each be off by about 0.005 in log terms.
+- **The simulated stop trails as the real one does, with today's ATR held fixed.** The real stop uses each day's ATR. Holding the stop fixed would miss the trailing reality by 24 points on random walks, so the design's "stop held fixed" was changed.
+- **The live simulation starts the trailing high at today's price,** not the highest close since purchase (second order).
+- **The simple-return excess is treated as a log difference** when the benchmark's moves are added back.
+- **The sell-at order's value check is a call.** The order exits at the close of the first day that closes at or above the sell-at price. The check fails only when the order tests measurably worse than holding: t under −2 on the sample days' mean gains, with at least 20 sample days (fewer cannot judge it). A mildly harmful sell-at price can pass when history is too noisy to show it.
+- **That check uses a plain standard error on overlapping windows.** The daily means are correlated, so it calls an order measurably worse a little too often and hides a sell-at price a little too often (the safe side). A Newey-West correction was left out.
+- **Every model config's quantiles are excess over the benchmark** (`model/train.py:533-541` adds the factor shift back into every quantile), so adding the benchmark's drift back holds for every config today. A config whose quantiles were factor-adjusted excess would need the plan to refuse.
+- **A benchmark block from an older run may carry a stop-first calibration** made under a different trailing-stop policy. The block does not record the policy.
+- **A benchmark run where any market fails is skipped** when the live run looks up verdicts (`latest_exit_check`), even for its good markets; the lookup takes the newest successful run that has a block for the market.
+- **The sell-at limit-sell line appears only for a Hold or an Add with no stop,** never for a Sell or a Trim. After a trim, no sell-at order line shows until the next run's Hold. Whether Wealthsimple holds a limit sell and a stop on the same shares is unverified (see the order-guidance spec's Sources).
+- **If the forecast class fails the benchmark,** approach C (a trained touch model) is the fallback.

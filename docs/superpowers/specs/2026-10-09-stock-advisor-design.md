@@ -23,6 +23,7 @@
 - **Plan 6e (2026-10-29):** the policy is tuned on inner folds and goes live only on held-out evidence (§6).
 - **Plan 6b (2026-10-29):** the crypto model replaces 'no crypto model yet' (§5.4).
 - **Plan 6c (2026-10-29):** factor-adjusted training target (accepted only by the benchmark); TSX forecasts say they are price and sector only.
+- **Exit plan (2026-11-20):** each holding's action carries an exit plan: a likely price range, a sell-at price, and the chances of a stop-out and of getting back to break-even (§7.3, §9). On a holding "exit by" becomes "re-check by"; picks keep "exit by". Design: `docs/superpowers/specs/2026-11-20-exit-plan-design.md`; owner steps and known limits: `docs/superpowers/deferred.md`, "Exit plan".
 
 ## 1. Purpose
 
@@ -475,10 +476,19 @@ Each holding gets exactly one action, chosen in this order of precedence:
 2. **Trim:**
    - the unrealized gain is 25% or more **and** the 21-day momentum percentile has dropped below 40.
 3. **Add:** the holding would qualify as a Buy pick today (§6.1) **and** the position is below its max size. An oversized holding is never an Add.
-4. **Hold:** everything else, shown with the expected remaining hold time and an exit-by date.
+4. **Hold:** everything else, shown with the expected remaining hold time and a re-check date (the end of the plan's own horizon, see "Exit plan" below).
 
 **Badges on top of the action:**
 - **Review:** earnings or a binary catalyst is within 5 trading days, **or** the latest bar is a flagged, unconfirmed jump.
+
+**Exit plan (2026-11-20):** every holding's action also carries an exit plan, a note beside the action that does not change it (`decide()` and the four rules above are untouched). It comes from 4,000 simulated price paths of the asset's own past daily moves, resampled five days at a time:
+- **What it shows:** a likely price range (the 10th to 90th percentile at the plan's horizon), a sell-at price that the simulated paths close at or above in about 1 in 3 cases, the chance of a stop-out before the sell-at price, and the chance of getting back to break-even after costs. Prices are in the asset's own currency. The page never says "target price" or "will reach".
+- **Basis:** a stock with a forecast takes the model's median and 10–90 width ("from the model's forecast"); a stock without one, and every coin for now, uses volatility only ("from volatility only — no view on direction"). The plan's horizon is the forecast's horizon, or 21 sessions when there is no forecast.
+- **Re-check by:** the feature day plus the plan's own horizon (sessions for a stock, calendar days for a coin). On a holding this replaces "exit by". A holding bought on a pick keeps the pick's later exit-by date in the stored `exit_by` column only, because the chances are simulated over the plan's horizon and a later date would overstate them (a deviation from the design's §1, a controller call).
+- **The stop** trails along each path as the real one does, with today's ATR held fixed.
+- **Checked before it is shown:** the monthly benchmark replays the same plan on history and judges the range (80% stated), the sell-at touch rate (1 in 3 stated), the break-even and stop-first chances, and whether a sell-at order does measurably worse than holding with the stop (the order exits at the close of the first day that closes at or above the sell-at price; it fails when t on the sample days' mean gains is under −2, with at least 20 sample days). A class (forecast, volatility, coin) that fails the range hides every number; one that fails the touch or value check shows the range only; a failed break-even or stop-first check hides just that chance. A plan with no matching benchmark result is shown with its numbers under "Not validated yet".
+- **Graded live:** a holding action with a plan is graded once its re-check date has a final close, and records whether a close reached the sell-at price or break-even and the highest close in the window. Touches are counted on daily closes, so a real limit order's chance is a little higher than shown.
+- **The order line:** My Portfolio offers a limit sell at the sell-at price only for a Hold or an Add with no stop, never for a Sell or a Trim.
 
 **Size is a warning, not a Trim** (owner decision 2026-10-27). A position over its risk-based max is flagged by §7.4's warning and keeps whatever action the other rules give it, and an oversized holding is never an Add. Why: the portfolio is small (four holdings, about C$2,800), so every holding is far over its risk-based max and a size Trim would fire on every holding at every run.
 
@@ -560,9 +570,9 @@ Informational only, labeled "not tax advice". These rules add warnings and never
 |---|---|
 | Find box (all pages) | The same list as the Watchlist's box; picking a match opens its Ticker Detail page. A last row opens a ticker the lists don't have (an ETF like SPY) |
 | Top bar (all pages) | Last runs with status, Paper/Validated badge per market, sources OK (e.g. 49/53), stale banner if the latest run failed, missed-slot notice |
-| **My Portfolio** (home) | **Value and returns:** total value in CAD, with return vs XIU.TO and SPY. **Actions:** cards sorted Sell → Trim → Review → Add → Hold. **Holdings table:** account, symbol, market, P/L in CAD, action, range, trailing stop, exit-by, risk, warnings. **Warnings:** portfolio-level checks, plus TFSA trading-frequency and superficial-loss warnings. **Data entry:** add a buy, add a sell, import a file |
+| **My Portfolio** (home) | **Value and returns:** total value in CAD, with return vs XIU.TO and SPY. **Actions:** cards sorted Sell → Trim → Review → Add → Hold. **Holdings table:** account, symbol, market, P/L in CAD, action, exit plan (range, sell-at, chances, re-check by), trailing stop, risk, warnings. **Warnings:** portfolio-level checks, plus TFSA trading-frequency and superficial-loss warnings. **Data entry:** add a buy, add a sell, import a file |
 | **Today's Picks** | **US and TSX tabs**, each with Swing and Position lists. A card per pick shows the range bar, P(beat), hold time and exit-by, stop, risk and max size, estimated cost (US shows the conversion fee), top factors, catalysts, a TFSA note and an "I bought this" button. Also: watchlist verdicts and an **Exit early** card for the picks this run exited (P fell to 0.42 or below, or the stop was hit) |
-| **Ticker Detail** | Price chart with forecast cone and horizon tabs, the odds, median and likely range at the selected horizon, top factors, news, catalysts, which sources contributed (TSX shows its thinner coverage), and past picks with their results |
+| **Ticker Detail** | Price chart with forecast cone and horizon tabs, the odds, median and likely range at the selected horizon, a held stock's exit plan per account, top factors, news, catalysts, which sources contributed (TSX shows its thinner coverage), and past picks with their results |
 | **Track Record** | Per market, live vs backtest shown separately: hit rate, average excess return (gross and net of costs), calibration by horizon and risk level, every past pick, and the survivorship-bias note |
 | **Watchlist** | Add a stock or coin by typing part of its name or ticker and picking it from the list under the box (best match first, the typed part in bold, a US/TSX/Crypto tag); only listed stocks and the stored coins can be added. A ticker that is both a stock and a coin (LINK) is never guessed: Enter asks the owner to pick one. Remove any. The latest verdict for each, and why: a Buy's style, hold, exit-by and odds, with its pick rank or that it's held; a Hold's or Avoid's reasons. A symbol held at the run shows My Portfolio's action for it instead (Sell, Trim, Review, Add or Hold, with its reason; held in several accounts, the most urgent, saying the others differ), here and in the Picks sidebar, so the two pages never disagree (2026-11-02). A symbol added since the run shows "New" until the next run |
 | **Source Health** | All sources: last success, latency, records, errors, circuit-breaker state, latest daily check |

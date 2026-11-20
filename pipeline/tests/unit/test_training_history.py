@@ -530,3 +530,22 @@ def test_an_unreadable_stored_config_builds_no_groups_instead_of_raising(caplog)
         with caplog.at_level("WARNING", logger=history_module.log.name):
             assert history_module.accepted_groups(unreadable) == frozenset()
         assert "can't be read" in caplog.text
+
+
+def test_a_group_not_copied_leaves_no_file_in_the_build_folder(tmp_path):
+    """A local build reuses its folder: an earlier build's files of a group this one calls unavailable (or did
+    not want) must not be loaded by `load_history` and trained on."""
+    cache = HistoryCache(tmp_path / "cache")
+    _write_group(cache, "short", NOW - timedelta(days=1))
+    _write_group(cache, "holders", NOW - timedelta(days=30))  # stale in the cache
+    out = tmp_path / "out"
+    out.mkdir()
+    for name in ("holders.parquet", "analyst_events.parquet", "short_volume.parquet", "fundamentals.parquet"):
+        pd.DataFrame({"symbol": ["OLD"]}).to_parquet(out / name)  # left by an earlier build
+    manifest: dict = {}
+    copied = copy_history(cache, out, frozenset({"short", "holders"}), NOW, manifest)
+    assert copied == frozenset({"short"})
+    assert sorted(p.name for p in out.iterdir()) == [
+        "fundamentals.parquet", "short_interest.parquet", "short_volume.parquet"]  # not a group file: kept
+    assert pd.read_parquet(out / "short_volume.parquet")["symbol"].tolist() == ["AAPL"]  # the fresh copy
+    assert manifest["unavailable"] == {"holders": "cached history is 30 days old"}

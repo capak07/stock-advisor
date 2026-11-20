@@ -411,6 +411,8 @@ def copy_history(cache: HistoryCache, out: Path, groups: frozenset[str], now: da
     history"`; an older one is "cached history is N days old". Neither is copied, so the dataset leaves
     it out and its rows fail closed. A copied group that this run failed to download (a local build) is
     moved from `unavailable` to `manifest["history_failed"]`: the earlier, still fresh, files are used.
+    Every group file in `out` of a group not copied (unavailable or not wanted) is deleted, so a local
+    build that reuses its folder never loads an earlier build's files of a group it calls unavailable.
     """
     times = cache.written()
     unavailable: dict[str, str] = manifest.setdefault("unavailable", {})
@@ -435,6 +437,10 @@ def copy_history(cache: HistoryCache, out: Path, groups: frozenset[str], now: da
         if group in unavailable:
             manifest.setdefault("history_failed", {})[group] = unavailable.pop(group)
         copied.add(group)
+    for group, names in GROUP_FILES.items():
+        if group not in copied:
+            for name in names:
+                (out / name).unlink(missing_ok=True)
     if not unavailable:
         manifest.pop("unavailable")
     return frozenset(copied)

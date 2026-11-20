@@ -166,6 +166,35 @@ describe('holdingGuides', () => {
     expect(stop!.steps[0].text).toMatch(/^Stop-limit sell 10 sh: stop C\$146\.10, .* · raise it from C\$140\.00$/)
   })
 
+  it('offers a limit sell at the exit plan\'s sell-at price only for a holding without a trailing stop', () => {
+    const exitPlan = {
+      status: 'pass' as const,
+      basis: 'forecast' as const,
+      horizon: 21,
+      recheckBy: '2026-11-27',
+      low: 140,
+      mid: 152,
+      high: 165,
+      sellAt: 160.004,
+      pTouch: 0.33,
+      pStopFirst: null,
+      pUp: 0.55,
+      breakeven: null,
+      pBreakeven: null,
+      drift: 0.009,
+      costPrice: 120,
+    }
+    const bare = holdingGuides(action({ refPrice: 150, exitPlan }), { ...held, qty: 12.4 }, ctx)
+    expect(bare.order).toBeNull()
+    expect(bare.stop!.steps).toMatchObject([{ kind: 'limit', side: 'sell', qty: 12, price: 160, expiry: '90 days' }])
+    expect(bare.stop!.steps[0].text).toBe('Limit sell 12 sh at C$160.00, expiry 90 days')
+    // beside a stop it stays hidden until Wealthsimple is known to hold both orders on the same shares
+    const stopped = holdingGuides(action({ refPrice: 150, trailingStop: 140, exitPlan }), { ...held, qty: 12.4 }, ctx)
+    expect(kinds(stopped.stop)).toEqual(['stop-limit'])
+    // no sell-at price, no order
+    expect(holdingGuides(action({ refPrice: 150, exitPlan: { ...exitPlan, sellAt: null } }), held, ctx).stop).toBeNull()
+  })
+
   it("converts a coin's USD prices to CAD, and gives USD holdings nothing without a rate", () => {
     const coin = action({ symbol: 'ETH', assetType: 'crypto', account: 'crypto', trailingStop: 1800, refPrice: 2000 })
     const { stop } = holdingGuides(coin, held, ctx)

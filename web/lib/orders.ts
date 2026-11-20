@@ -344,6 +344,30 @@ export function planStop(i: Instrument, { qty, stop, previousStop }: { qty: numb
   return { steps, notes }
 }
 
+/**
+ * A holding's exit plan as an order: a 90-day limit sell of its whole shares at the plan's sell-at
+ * price (exit plan spec §7). Whole shares only, since Wealthsimple fills fractions only at market, so
+ * nothing for a coin or a holding under one share.
+ */
+export function planSellAt(i: Instrument, { qty, sellAt }: { qty: number; sellAt: number }): OrderPlan {
+  const whole = Math.floor(qty + 1e-9)
+  if (i.assetType !== 'stock' || whole < 1) return { steps: [], notes: [] }
+  const price = roundPrice(sellAt)
+  return {
+    steps: [
+      step({
+        kind: 'limit',
+        side: 'sell',
+        qty: whole,
+        price,
+        expiry: '90 days',
+        text: `Limit sell ${whole} sh at ${fmtPrice(price, i.currency)}, expiry 90 days`,
+      }),
+    ],
+    notes: [],
+  }
+}
+
 /** The Invest page's BTC share as a weekly recurring buy, as an alternative to buying it at once. */
 export function planRecurring({ amountCad, symbol }: { amountCad: number; symbol: string }): OrderPlan {
   const each = Math.round(amountCad / RECURRING_WEEKS)

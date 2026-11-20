@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays } from './dates'
 import { FxRates } from './portfolio/lookup'
 import type { Close } from './portfolio/types'
-import { fmtScore, headlineSince, inRange, lastMove, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
+import { alertHref, alertPrefill, fmtScore, headlineSince, inRange, lastMove, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
 
 const FX = new FxRates([
   { day: '2026-10-01', usdCad: 1.4 },
@@ -71,6 +71,40 @@ describe('tickerHref', () => {
   it('links a stock by its symbol and a coin with its asset type', () => {
     expect(tickerHref('RY.TO', 'stock')).toBe('/ticker/RY.TO')
     expect(tickerHref('BTC', 'crypto')).toBe('/ticker/BTC?asset=crypto')
+  })
+})
+
+describe('alertHref and alertPrefill', () => {
+  const sellAt = { direction: 'above' as const, note: 'exit plan sell-at' }
+
+  it("links to the ticker page's alert form with the level rounded as an order form takes it", () => {
+    expect(alertHref('ABCD', 'stock', { level: 5.603472918, ...sellAt })).toBe(
+      '/ticker/ABCD?alertLevel=5.6&alertDir=above&alertNote=exit+plan+sell-at#alerts',
+    )
+    expect(alertHref('DOGE', 'crypto', { level: 0.123456, ...sellAt })).toBe(
+      '/ticker/DOGE?asset=crypto&alertLevel=0.1235&alertDir=above&alertNote=exit+plan+sell-at#alerts',
+    )
+  })
+
+  it('reads the link back, ignoring each bad value', () => {
+    expect(alertPrefill('ABCD', 'stock', { alertLevel: '5.6', alertDir: 'above', alertNote: 'exit plan sell-at' })).toEqual({
+      level: '5.6',
+      direction: 'above',
+      note: 'exit plan sell-at',
+    })
+    expect(alertPrefill('ABCD', 'stock', {})).toEqual({ level: null, direction: null, note: null })
+    expect(alertPrefill('ABCD', 'stock', { alertLevel: '0', alertDir: 'sideways', alertNote: 'x'.repeat(201) })).toEqual({
+      level: null,
+      direction: null,
+      note: null,
+    })
+    expect(alertPrefill('ABCD', 'stock', { alertLevel: '5.603472918', alertDir: 'below' })).toEqual({
+      level: null, // more than 8 decimals
+      direction: 'below',
+      note: null,
+    })
+    expect(alertPrefill('ABCD', 'stock', { alertLevel: ['5.6', '7'], alertDir: 'above' }).level).toBeNull()
+    expect(alertPrefill('ABCD', 'stock', { alertLevel: 'abc' }).level).toBeNull()
   })
 })
 

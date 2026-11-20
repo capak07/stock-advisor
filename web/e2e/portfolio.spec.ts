@@ -243,3 +243,109 @@ test('an Add also offers the buy as one bracket order on the new shares', async 
   )
   await expect(guide).toContainText('A bracket covers only the shares this buy adds; the shares you hold keep their own stop-limit.')
 })
+
+test("a holding's exit plan shows in the table, the cards and the hold list, and its alert link prefills the form", async ({ page }) => {
+  const days = weekdays(daysAgo(30))
+  await seedSymbols([
+    { symbol: 'SHOP.TO', market: 'TSX', name: 'Shopify Inc.' },
+    { symbol: 'MSFT', market: 'US', name: 'Microsoft Corporation' },
+  ])
+  await seedFx(days, 1.4)
+  await seedCloses('SHOP.TO', 'stock', 'CAD', days, 160, -0.5)
+  await seedCloses('MSFT', 'stock', 'USD', days, 400, 0.5)
+  await seedLot({ account: 'tfsa', symbol: 'SHOP.TO', asset_type: 'stock', qty: 10, price: 180, currency: 'CAD', bought_at: days[0] })
+  await seedLot({ account: 'tfsa', symbol: 'MSFT', asset_type: 'stock', qty: 5, price: 400, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
+  const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: new Date().toISOString() })
+  const recheck = addDays(today(), 29)
+  // a plain Hold without a stop: its plan passed the check and has a sell-at price
+  await seedHoldingAction(runId, {
+    account: 'tfsa',
+    symbol: 'MSFT',
+    asset_type: 'stock',
+    action: 'hold',
+    reasons: ['Hold.'],
+    ref_price: 420,
+    horizon_days: 21,
+    exit_by: recheck,
+    exit_plan: {
+      status: 'pass',
+      basis: 'forecast',
+      horizon: 21,
+      recheck_by: recheck,
+      low: 400,
+      mid: 425,
+      high: 455,
+      sell_at: 440.123456,
+      p_touch: 0.33,
+      p_stop_first: null,
+      p_up: 0.55,
+      breakeven: null,
+      p_breakeven: null,
+      drift: 0.009,
+      cost_price: 400,
+    },
+  })
+  // a Sell under water whose plan no benchmark has checked yet
+  await seedHoldingAction(runId, {
+    account: 'tfsa',
+    symbol: 'SHOP.TO',
+    asset_type: 'stock',
+    action: 'sell',
+    reasons: ['closed at 145.00, under its trailing stop 146.10'],
+    trailing_stop: 146.1,
+    ref_price: 145,
+    exit_plan: {
+      status: 'unvalidated',
+      basis: 'volatility',
+      horizon: 21,
+      recheck_by: recheck,
+      low: 130,
+      mid: 145,
+      high: 160,
+      sell_at: 155,
+      p_touch: 0.33,
+      p_stop_first: 0.4,
+      p_up: 0.5,
+      breakeven: 180,
+      p_breakeven: 0.05,
+      drift: null,
+      cost_price: 180,
+    },
+  })
+  await page.goto('/')
+
+  const by = shortDay(recheck)
+  await expect(page.locator('#holdings thead')).toContainText('Exit plan')
+  const msft = holdings(page).filter({ hasText: 'MSFT' })
+  await expect(msft.locator('.h-exit')).toContainText(`Range by ${by}: US$400.00 – 425.00 – 455.00 (+1%)`)
+  await expect(msft.locator('.h-exit')).toContainText('Sell at US$440.12 · about 1 in 3 · +10% on cost')
+  // without a stop the sell-at price is also an order to place
+  await expect(msft.locator('.order-note')).toHaveText('Limit sell 5 sh at US$440.12, expiry 90 days')
+  const shop = holdings(page).filter({ hasText: 'SHOP.TO' })
+  await expect(shop.locator('.h-exit')).toContainText(`Range by ${by}: C$130.00 – 145.00 – 160.00 (0%)`)
+  await expect(shop.locator('.h-exit')).toContainText('Not validated yet: the first benchmark run after this change checks these chances.')
+  await expect(shop.locator('.h-exit')).toContainText('From volatility only — no view on direction')
+  await expect(page.getByText('Chances count closes at or above the price.')).toHaveCount(1)
+
+  const card = page.locator('.action-card.sell')
+  await expect(card).toContainText(`Range by ${by}: C$130.00 – 145.00 – 160.00 (0%)`)
+  await expect(card.locator('.warn-cell')).toContainText(`Unlikely to get back to your cost by ${by}: reached in 5% of cases.`)
+  await expect(card).toContainText('Not validated yet')
+  await page.getByRole('button', { name: /1 holding · MSFT/ }).click()
+  await expect(page.locator('#hold-list')).toContainText(`hold ~21 days · range US$400.00–455.00 · sell at US$440.12 · re-check ${by}`)
+
+  const alert = msft.getByRole('link', { name: 'Alert me at US$440.12' })
+  await expect(alert).toHaveAttribute('href', '/ticker/MSFT?alertLevel=440.12&alertDir=above&alertNote=exit+plan+sell-at#alerts')
+  await alert.click()
+  await expect(page).toHaveURL(/\/ticker\/MSFT\?alertLevel=440\.12/)
+  const plan = page.locator('#exit-plan')
+  await expect(plan.getByRole('heading', { name: 'Your exit plan' })).toBeVisible()
+  await expect(plan).toContainText("From the model's forecast · assumes SPY drifts +0.9% over 21 days")
+  await expect(plan).toContainText('Chances count closes at or above the price.')
+  const form = page.locator('#alerts form')
+  await expect(form.locator('select[name="direction"]')).toHaveValue('above')
+  await expect(form.locator('input[name="level"]')).toHaveValue('440.12')
+  await expect(form.locator('input[name="note"]')).toHaveValue('exit plan sell-at')
+  // nothing is saved until the owner adds it
+  await expect(page.getByText('No alerts on MSFT.')).toBeVisible()
+})

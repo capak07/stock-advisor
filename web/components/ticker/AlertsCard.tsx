@@ -5,20 +5,38 @@ import { useActionState, useEffect, useState, useTransition } from 'react'
 import { addAlert, deleteAlert, dismissAlert } from '@/app/(app)/ticker/[symbol]/alerts'
 import { useToast } from '@/components/Toast'
 import { useFieldErrors } from '@/components/useFieldErrors'
-import { alertCurrency, fmtLevel } from '@/lib/alert-form'
+import { alertCurrency, fmtLevel, type AlertDirection } from '@/lib/alert-form'
 import type { PriceAlert } from '@/lib/data/monitor'
 import { shortDay, todayInToronto } from '@/lib/dates'
 import type { AssetType } from '@/lib/portfolio/types'
 import type { FormState } from '@/lib/trade-form'
 
-/** Above/below price alerts on this asset: add one, see which are active or hit, dismiss or delete. */
-export function AlertsCard({ symbol, assetType, alerts }: { symbol: string; assetType: AssetType; alerts: PriceAlert[] }) {
+/**
+ * Above/below price alerts on this asset: add one, see which are active or hit, dismiss or delete.
+ * The form starts from `initialLevel`, `initialDirection` and `initialNote` when a link prefilled it (an
+ * exit plan's "Alert me at"); nothing is saved until the owner adds it. Key the card on them to re-seed.
+ */
+export function AlertsCard({
+  symbol,
+  assetType,
+  alerts,
+  initialLevel = null,
+  initialDirection = null,
+  initialNote = null,
+}: {
+  symbol: string
+  assetType: AssetType
+  alerts: PriceAlert[]
+  initialLevel?: string | null
+  initialDirection?: AlertDirection | null
+  initialNote?: string | null
+}) {
   const toast = useToast()
   const currency = alertCurrency(symbol, assetType)
   const [state, action, pending] = useActionState<FormState, FormData>(addAlert, {})
-  const [level, setLevel] = useState('')
-  const [note, setNote] = useState('')
-  const [direction, setDirection] = useState('above')
+  const [level, setLevel] = useState(initialLevel ?? '')
+  const [note, setNote] = useState(initialNote ?? '')
+  const [direction, setDirection] = useState<string>(initialDirection ?? 'above')
   const { error, touch } = useFieldErrors(state)
   const [busy, startTransition] = useTransition()
 

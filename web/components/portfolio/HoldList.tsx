@@ -9,6 +9,8 @@ export interface HoldLine {
   symbol: string
   name: string | null
   text: string
+  /** The exit plan's status note ("Not validated yet…"), shown under the line; null for a passed plan or none. */
+  note: string | null
   /** Low model rank in the latest run: how many US stocks it ranked; null when not flagged. */
   lowRank: number | null
 }
@@ -47,6 +49,7 @@ export function HoldList({ lines }: { lines: HoldLine[] }) {
                   )}
                 </span>
                 <span className="num sub">{l.text}</span>
+                {l.note && <span className="sub hold-note">{l.note}</span>}
               </div>
             ))}
           </div>

@@ -1,8 +1,9 @@
 import 'server-only'
 import { addDays, todayInToronto } from '../dates'
+import { parseExitPlan, type ExitPlan } from '../portfolio/exit-plan'
 import { buildLedger } from '../portfolio/ledger'
 import type { FxRates } from '../portfolio/lookup'
-import { assetKey, type AssetType, type Close, type Currency, type Market, type Position } from '../portfolio/types'
+import { assetKey, type Account, type AssetType, type Close, type Currency, type Market, type Position } from '../portfolio/types'
 import type { Run } from '../runs'
 import { isValidSymbol, marketOf } from '../symbols'
 import type { Supabase } from '../supabase/server'
@@ -200,6 +201,44 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
     positions: buildLedger(trades, fx).positions,
     forecast,
   }
+}
+
+/** One account's exit plan for a held asset, from the newest published run's actions. */
+export interface HeldPlan {
+  account: Account
+  /** Null for a row stored before plans existed, or one that can't be read. */
+  exitPlan: ExitPlan | null
+  /** The close the plan was built on, in the asset's own currency. */
+  refPrice: number | null
+}
+
+/**
+ * The newest published run's action rows for this asset, one per account that holds it, with each
+ * exit plan (exit plan spec §7). Empty before the first run with actions or when that run didn't act on it.
+ */
+export async function loadHeldAction(supabase: Supabase, symbol: string, assetType: AssetType): Promise<HeldPlan[]> {
+  const newest = must(
+    await supabase
+      .from('holding_actions')
+      .select('run_id, runs!inner(published)')
+      .eq('runs.published', true)
+      .order('run_id', { ascending: false })
+      .limit(1),
+  ) as { run_id: number }[]
+  if (newest.length === 0) return []
+  const rows = must(
+    await supabase
+      .from('holding_actions')
+      .select('account, exit_plan, ref_price')
+      .eq('run_id', newest[0].run_id)
+      .eq('symbol', symbol)
+      .eq('asset_type', assetType)
+      .order('account'),
+  ) as { account: Account; exit_plan: unknown; ref_price: string | number | null }[]
+  return rows.map((r) => {
+    const ref = r.ref_price === null ? null : Number(r.ref_price)
+    return { account: r.account, exitPlan: parseExitPlan(r.exit_plan), refPrice: ref !== null && Number.isFinite(ref) ? ref : null }
+  })
 }
 
 /** A forecast, and for a stock its explanation and past picks (Plan 4b). Coins are never picks. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isMarketHours, pickStop, stopRulesOf, planBracket, planBuy, planRecurring, planSell, planStop, planTrim, type Instrument } from './orders'
+import { isMarketHours, pickStop, stopRulesOf, planBracket, planBuy, planRecurring, planSell, planSellAt, planStop, planTrim, type Instrument } from './orders'
 
 // Tuesday Oct 27, 2026: 2 PM and 10 PM in Toronto (EDT, UTC−4)
 const OPEN = new Date('2026-10-27T18:00:00Z')
@@ -238,5 +238,19 @@ describe('stopRulesOf', () => {
     expect(stopRulesOf({ config: { policy: null } })).toEqual({ swingAtr: 2, positionAtr: 3 })
     expect(stopRulesOf({})).toEqual({ swingAtr: 2, positionAtr: 3 })
     expect(stopRulesOf({ config: { policy: { swing_atr: 'x', position_atr: -1 } } })).toEqual({ swingAtr: 2, positionAtr: 3 })
+  })
+})
+
+describe('planSellAt', () => {
+  it("sells the whole shares at the plan's sell-at price, rounded, for 90 days", () => {
+    const plan = planSellAt(veea, { qty: 12.4, sellAt: 5.603472918 })
+    expect(plan.steps).toHaveLength(1)
+    expect(plan.steps[0]).toMatchObject({ kind: 'limit', side: 'sell', qty: 12, price: 5.6, expiry: '90 days' })
+    expect(plan.steps[0].text).toBe('Limit sell 12 sh at US$5.60, expiry 90 days')
+  })
+
+  it('has nothing for under one share or a coin', () => {
+    expect(planSellAt(veea, { qty: 0.4, sellAt: 5.6 }).steps).toEqual([])
+    expect(planSellAt(tsx({ assetType: 'crypto', currency: 'CAD' }), { qty: 3, sellAt: 5.6 }).steps).toEqual([])
   })
 })

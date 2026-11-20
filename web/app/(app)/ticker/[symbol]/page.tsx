@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation'
 import { ForecastCard, ForecastProvider } from '@/components/ticker/ForecastCard'
 import { NewsCard, type HeadlineView, type NewsKpi } from '@/components/ticker/NewsCard'
 import { AlertsCard } from '@/components/ticker/AlertsCard'
+import { ExitPlanLines, planBenchmark } from '@/components/portfolio/ExitPlan'
 import { EarningsCard } from '@/components/ticker/EarningsCard'
 import { FilingsCard } from '@/components/ticker/FilingsCard'
 import { InsidersCard } from '@/components/ticker/InsidersCard'
@@ -16,19 +17,20 @@ import { loadAlerts, loadHoldingData } from '@/lib/data/monitor'
 import { loadSettings } from '@/lib/data/settings'
 import { loadSourceHealth } from '@/lib/data/sources'
 import { loadLowRanks } from '@/lib/data/low-rank'
-import { loadTicker, resolveAssetType } from '@/lib/data/ticker'
+import { loadHeldAction, loadTicker, resolveAssetType } from '@/lib/data/ticker'
 import { shortDay, timeOrDate } from '@/lib/dates'
 import { fmtMoney, fmtPct, fmtPrice, fmtQty } from '@/lib/format'
+import { assetCurrency } from '@/lib/portfolio/exit-plan'
 import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 import type { AssetType } from '@/lib/portfolio/types'
 import { runWhen } from '@/lib/runs'
 import { answered, covers, coverageName, type Coverage } from '@/lib/sources'
 import { isValidSymbol, normalizeSymbol } from '@/lib/symbols'
-import { fmtScore, lastMove, priceSeries, safeLink, tone } from '@/lib/ticker'
+import { alertHref, alertPrefill, fmtScore, lastMove, priceSeries, safeLink, tone } from '@/lib/ticker'
 
 interface Props {
   params: Promise<{ symbol: string }>
-  searchParams: Promise<{ asset?: string | string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
 }
 
 const symbolOf = (raw: string): string | null => {
@@ -55,7 +57,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
   const symbol = symbolOf((await params).symbol)
-  const asked = (await searchParams).asset
+  const query = await searchParams
+  const asked = query.asset
   if (!symbol) notFound()
   const assetType: AssetType | null =
     asked === 'crypto' || asked === 'stock' ? asked : await resolveAssetType(supabase, symbol)
@@ -70,10 +73,15 @@ export default async function TickerPage({ params, searchParams }: Props) {
   // Filings, insider trades and quarterly numbers exist for US stocks only; earnings dates for US and TSX.
   const us = !coin && data.market === 'US'
   const lowRank = assetType === 'stock' ? (await loadLowRanks(supabase, [symbol])).get(symbol) : undefined
-  const [holding, alerts] = await Promise.all([
+  const [holding, alerts, held] = await Promise.all([
     coin ? null : loadHoldingData(supabase, symbol, { us }),
     loadAlerts(supabase, symbol, assetType),
+    data.positions.length > 0 ? loadHeldAction(supabase, symbol, assetType) : [],
   ])
+  // an exit plan's "Alert me at" link prefills the alert form; each bad value is ignored
+  const prefill = alertPrefill(symbol, assetType, query)
+  const plans = held.filter((h) => h.exitPlan !== null)
+  const planCurrency = assetCurrency(assetType, symbol)
   const series = priceSeries(data.closes, assetType, data.fx)
   const move = lastMove(series)
   // A TSX stock trades on the TSX; a US stock names its exchange (NYSE, Nasdaq…).
@@ -166,7 +174,47 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 </div>
               </section>
             )}
-            <AlertsCard symbol={symbol} assetType={assetType} alerts={alerts} />
+            {plans.length > 0 && (
+              <section className="card card-pad enter" aria-labelledby="exit-plan-h" id="exit-plan">
+                <div className="section-head" style={{ marginBottom: 10 }}>
+                  <h2 id="exit-plan-h">Your exit plan</h2>
+                  <span className="sub">{planCurrency}</span>
+                </div>
+                <div className="grid gap-4">
+                  {plans.map((h) => {
+                    const sellAt = h.exitPlan?.status === 'pass' || h.exitPlan?.status === 'unvalidated' ? h.exitPlan.sellAt : null
+                    return (
+                      <div key={h.account}>
+                        {plans.length > 1 && <span className="label plan-card-account">{ACCOUNT_LABELS[h.account]}</span>}
+                        <ExitPlanLines
+                          plan={h.exitPlan}
+                          currency={planCurrency}
+                          price={h.refPrice}
+                          benchmark={data.forecast?.benchmark ?? planBenchmark(assetType, symbol)}
+                        />
+                        {sellAt !== null && (
+                          <Link
+                            className="text-link plan-alert"
+                            href={alertHref(symbol, assetType, { level: sellAt, direction: 'above', note: 'exit plan sell-at' })}
+                          >
+                            Alert me at {fmtPrice(sellAt, planCurrency)}
+                          </Link>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
+            <AlertsCard
+              key={`${prefill.level}|${prefill.direction}|${prefill.note}`}
+              symbol={symbol}
+              assetType={assetType}
+              alerts={alerts}
+              initialLevel={prefill.level}
+              initialDirection={prefill.direction}
+              initialNote={prefill.note}
+            />
             {holding && (
               <EarningsCard
                 quarters={holding.quarters}

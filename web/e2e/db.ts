@@ -125,9 +125,11 @@ export async function seedHoldingAction(
     exit_by?: string | null
     risk_level?: 'low' | 'medium' | 'high' | 'very_high' | null
     ref_price?: number | null
+    /** The stored plan, snake_case as the pipeline writes it (migration 0016); null when omitted. */
+    exit_plan?: Record<string, unknown> | null
   },
 ) {
-  const { reasons, warnings = [], ...rest } = row
+  const { reasons, warnings = [], exit_plan = null, ...rest } = row
   await sql`insert into holding_actions ${sql({
     run_id: runId,
     review: false,
@@ -142,6 +144,7 @@ export async function seedHoldingAction(
     ...rest,
     reasons: sql.json(reasons),
     warnings: sql.json(warnings),
+    exit_plan: exit_plan === null ? null : sql.json(exit_plan as JSONValue),
   })}`
 }
 

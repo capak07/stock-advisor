@@ -16,18 +16,20 @@ import {
   holdText,
   type HoldingAction,
 } from '@/lib/portfolio/actions'
+import { assetCurrency, statusNote } from '@/lib/portfolio/exit-plan'
 import { positionKey } from '@/lib/portfolio/ledger'
 import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 import { NOT_RATED, type Slice } from '@/lib/portfolio/valuation'
 import type { HoldingRow } from '@/lib/portfolio/view'
 import type { Warning } from '@/lib/portfolio/warnings'
-import { tickerHref } from '@/lib/ticker'
+import { alertHref, tickerHref } from '@/lib/ticker'
+import { CLOSES_LINE, ExitPlanCardLines, ExitPlanLines, planBenchmark, showsChance } from './ExitPlan'
 import { HoldList } from './HoldList'
 
 /** A holding with its latest run action. */
 type Acted = HoldingRow & { action: HoldingAction }
 
-/** Each acted holding's order for its action and the stop to keep, by position key. */
+/** Each acted holding's order for its action and the stop to keep (or, without a stop, its sell-at limit sell), by position key. */
 export type HoldingGuides = Map<string, { order: OrderPlan | null; stop: OrderPlan | null }>
 
 const acted = (holdings: readonly HoldingRow[]): Acted[] => holdings.filter((h): h is Acted => h.action !== null)
@@ -106,6 +108,7 @@ export function ActionsCard({
                       )}
                     </div>
                     <p style={{ fontSize: 13, margin: 0 }}>{cardReason(a)}</p>
+                    <ExitPlanCardLines plan={a.exitPlan} currency={assetCurrency(a.assetType, a.symbol)} price={a.refPrice} />
                     <div className={`num ${tone}`} style={{ fontSize: 13 }}>
                       {fmtMoney(h.gainCad, { signed: true })} · {fmtPct(h.gainPct)}
                     </div>
@@ -123,7 +126,9 @@ export function ActionsCard({
                   key: h.key,
                   symbol: a.symbol,
                   name: h.name,
-                  text: holdText(a),
+                  text: holdText(a, assetCurrency(a.assetType, a.symbol)),
+                  // the line shows the plan's range and sell-at, so it carries the plan's status (R17)
+                  note: a.exitPlan === null ? null : statusNote(a.exitPlan),
                   lowRank: a.assetType === 'stock' ? (lowRanks.get(a.symbol) ?? null) : null,
                 }
               })}
@@ -157,7 +162,30 @@ const stopCurrency = (h: HoldingRow): 'CAD' | 'USD' => (h.market === 'TSX' ? 'CA
 
 const dash = <span className="sub">—</span>
 
-/** Action, likely range, trailing stop, exit by and risk; dashes for a holding the run didn't cover. */
+/**
+ * The exit plan cell: the plan's compact lines and, with a sell-at price, a link that opens the
+ * price-alert form prefilled. A row stored before plans existed shows its exit-by date, or the dash.
+ */
+function ExitPlanCell({ a }: { a: HoldingAction }) {
+  if (a.exitPlan === null) return <td className="num h-exit">{a.exitBy === null ? dash : shortDay(a.exitBy)}</td>
+  const currency = assetCurrency(a.assetType, a.symbol)
+  const sellAt = a.exitPlan.status === 'pass' || a.exitPlan.status === 'unvalidated' ? a.exitPlan.sellAt : null
+  return (
+    <td className="h-exit">
+      <ExitPlanLines plan={a.exitPlan} currency={currency} price={a.refPrice} benchmark={planBenchmark(a.assetType, a.symbol)} compact />
+      {sellAt !== null && (
+        <Link
+          className="text-link plan-alert"
+          href={alertHref(a.symbol, a.assetType, { level: sellAt, direction: 'above', note: 'exit plan sell-at' })}
+        >
+          Alert me at {fmtPrice(sellAt, currency)}
+        </Link>
+      )}
+    </td>
+  )
+}
+
+/** Action, likely range, trailing stop, exit plan and risk; dashes for a holding the run didn't cover. */
 function ModelCells({ h }: { h: HoldingRow }) {
   const a = h.action
   if (a === null) {
@@ -193,7 +221,7 @@ function ModelCells({ h }: { h: HoldingRow }) {
         )}
       </td>
       <td className="r num h-stop">{a.trailingStop === null ? dash : fmtPrice(a.trailingStop, stopCurrency(h))}</td>
-      <td className="num h-exit">{a.exitBy === null ? dash : shortDay(a.exitBy)}</td>
+      <ExitPlanCell a={a} />
       <td className="h-risk">
         {a.riskLevel === null ? (
           dash
@@ -304,7 +332,7 @@ export function HoldingsCard({ holdings, accounts, guides }: { holdings: Holding
       {!modelled && (
         <div className="before-note">
           <Info />
-          <span>Actions, likely ranges, trailing stops, exit dates and risk levels appear once the model runs.</span>
+          <span>Actions, likely ranges, trailing stops, exit plans and risk levels appear once the model runs.</span>
         </div>
       )}
       {holdings.length === 0 ? (
@@ -326,7 +354,7 @@ export function HoldingsCard({ holdings, accounts, guides }: { holdings: Holding
                     <th>Action</th>
                     <th>Likely range</th>
                     <th className="r">Trailing stop</th>
-                    <th>Exit by</th>
+                    <th>Exit plan</th>
                     <th>Risk</th>
                   </>
                 )}
@@ -384,6 +412,12 @@ export function HoldingsCard({ holdings, accounts, guides }: { holdings: Holding
             </tbody>
           </table>
         </div>
+      )}
+      {/* the cells leave it out; the page says it once (R9) */}
+      {holdings.some((h) => showsChance(h.action?.exitPlan ?? null)) && (
+        <p className="sub" style={{ margin: '10px 0 0', fontSize: 12 }}>
+          {CLOSES_LINE}
+        </p>
       )}
     </section>
   )

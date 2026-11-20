@@ -1,6 +1,8 @@
 /** What the Ticker page shows before the model exists (spec §9, Plan 5c). */
 
+import { parseAlert, type AlertDirection } from './alert-form'
 import { addDays } from './dates'
+import { roundPrice } from './orders'
 import type { FxRates } from './portfolio/lookup'
 import type { AssetType, Close, Currency } from './portfolio/types'
 
@@ -75,6 +77,44 @@ export function lastMove(series: PriceSeries): LastMove | null {
 /** The Ticker page of an asset: a coin says so, since a coin and a stock can share a symbol. */
 export const tickerHref = (symbol: string, assetType: AssetType): string =>
   `/ticker/${encodeURIComponent(symbol)}${assetType === 'crypto' ? '?asset=crypto' : ''}`
+
+/**
+ * The Ticker page's alert form, prefilled (exit plan spec §7): `tickerHref` with the level, direction
+ * and note, then `#alerts`. The level is rounded as an order form takes it, so the form's 8-decimal
+ * rule accepts it. Nothing is saved until the owner adds the alert.
+ */
+export function alertHref(
+  symbol: string,
+  assetType: AssetType,
+  { level, direction, note }: { level: number; direction: AlertDirection; note: string },
+): string {
+  const base = tickerHref(symbol, assetType)
+  const query = new URLSearchParams({ alertLevel: String(roundPrice(level)), alertDir: direction, alertNote: note })
+  return `${base}${base.includes('?') ? '&' : '?'}${query}#alerts`
+}
+
+export interface AlertPrefill {
+  level: string | null
+  direction: AlertDirection | null
+  note: string | null
+}
+
+/** An `alertHref` link's values, each checked by the alert form's rules; a bad or repeated one is left out. */
+export function alertPrefill(
+  symbol: string,
+  assetType: AssetType,
+  query: { [key: string]: string | string[] | undefined },
+): AlertPrefill {
+  const one = (key: string): string | null => (typeof query[key] === 'string' ? query[key] : null)
+  const [level, direction, note] = [one('alertLevel'), one('alertDir'), one('alertNote')]
+  const checked = parseAlert({ symbol, assetType, direction: direction ?? '', level: level ?? '', note: note ?? '' })
+  const errors = checked.ok ? {} : checked.errors
+  return {
+    level: level !== null && !errors.level ? level : null,
+    direction: direction === 'above' || direction === 'below' ? direction : null,
+    note: note !== null && note.trim() !== '' && !errors.note ? note.trim() : null,
+  }
+}
 
 /** The news stage reads two days of feeds (spec §4.2). */
 export const NEWS_HOURS = 48

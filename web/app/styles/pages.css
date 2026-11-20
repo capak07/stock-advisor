@@ -241,6 +241,20 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .order-guide .og-note { font-size: 11.5px; }
 .h-note .order-note { display: block; font-size: 12px; }
 
+/* ---------- Exit plan (2026-11-20 exit plan design; Ledger classes, no mockup file) ---------- */
+.plan-lines { display: grid; gap: 2px; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.plan-lines .warn-cell { display: flex; align-items: flex-start; font-size: 12.5px; }
+.plan-lines .warn-cell svg { flex: none; margin-top: 2px; }
+.plan-alert { display: inline-block; margin-top: 4px; font-size: 12px; }
+.plan-card-account { display: block; margin-bottom: 4px; }
+.hold-note { grid-column: 1 / -1; text-align: right; font-size: 12px; }
+#holdings td.h-exit:has(.plan-lines) { white-space: normal; min-width: 240px; max-width: 320px; }
+/* Phones: the plan gets its own row of the stacked holding, under the likely range. */
+@media (max-width: 639px) {
+  #holdings tr:has(td.h-action):has(td.h-exit .plan-lines) { grid-template-areas: "sym sym act" "acct val pl" "rng rng rng" "plan plan plan" "note note note"; }
+  #holdings td.h-exit:has(.plan-lines) { display: block; grid-area: plan; min-width: 0; max-width: none; }
+}
+
 /* ---------- Day trade (2026-11-10 day trade design; Ledger classes, no mockup file) ---------- */
 .dt-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
 .dt-card { overflow-wrap: anywhere; }

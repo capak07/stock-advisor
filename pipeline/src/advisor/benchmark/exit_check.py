@@ -4,7 +4,8 @@ Per calibrated outer fold, rows of the chosen model's walk-forward predictions a
 a plan built by `exit_plan.build_plan` exactly as the holdings stage builds one live (R6), from closes
 dated on or before the sample day only. The pair is then judged on the closes after that day: where
 it ended against the range, whether a close reached the sell-at price or the break-even, and what a
-sell-at order did against simply holding with the trailing stop (R10). Touches are counted on daily
+sell-at order did against simply holding with the trailing stop (R10; the order sells at the close
+that reaches the sell-at price, R13). Touches are counted on daily
 closes; intraday touches are not measured (R9).
 
 The verdict per class decides what the live page may show (R7): `fail` when the range is off,
@@ -74,23 +75,24 @@ def walk_exits(
     trail_atr: float,
     cost: float,
 ) -> Exits:
-    """The exits of a pair bought at `price` on the sample day, on the `after` closes (R10).
+    """The exits of a pair bought at `price` on the sample day, on the `after` closes (R10, R13).
 
     `atrs` holds the ATR fraction on the sample day, then on each session of `after`. The stop starts
     at `price * (1 - trail_atr * atrs[0])`; each close is checked against the stop in force, then the
     stop rises to the highest close since the sample day less `trail_atr` ATRs of that close, as
-    `stops.trailing_stop` sets it. A day whose close is at or under the stop is a stop day. The order
-    fills at `sell_at` on the first close at or above it; without one, or before it fills, the pair
+    `stops.trailing_stop` sets it. A day whose close is at or under the stop is a stop day. With the
+    order, the pair exits at the close of the first day that closes at or above `sell_at` (R13: that
+    close, not `sell_at` itself, since only closes are seen); without it, or before that day, it
     exits at the close on a stop day, else at the last close."""
     if len(after) == 0:
         raise ValueError("no closes after the sample day")
     stop = price * (1 - trail_atr * atrs[0])
     high = price
     sold = stopped = None  # the step of the first close at or above the sell-at price; of the stop day
-    stop_close = math.nan
+    sold_close = stop_close = math.nan
     for k, close in enumerate(after, start=1):
         if sold is None and sell_at is not None and close >= sell_at:
-            sold = k
+            sold, sold_close = k, close
         if close <= stop:
             stopped, stop_close = k, close
             break  # both exits are known: nothing after the stop day is read
@@ -102,8 +104,8 @@ def walk_exits(
     without = (stop_close if stopped is not None else last) / price - 1 - cost
     if sell_at is None:
         return Exits(None, None, without)
-    if sold is not None:  # filled first (the order rests in the market; the stop is judged at the close)
-        return Exits(False, sell_at / price - 1 - cost, without)
+    if sold is not None:  # reached first (a close at or above the sell-at is never under the stop)
+        return Exits(False, sold_close / price - 1 - cost, without)
     if stopped is not None:
         return Exits(True, stop_close / price - 1 - cost, without)
     return Exits(False, last / price - 1 - cost, without)

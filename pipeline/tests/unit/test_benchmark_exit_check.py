@@ -24,13 +24,17 @@ SESSIONS, SYMBOLS = 300, 100
 BENCH = "XIU.TO"
 
 
-def _panel(seed: int = 1, bench: str = BENCH, sessions: int = SESSIONS, symbols: int = SYMBOLS) -> DailyPanel:
-    """Driftless random walks (in log terms), each symbol with a known daily volatility."""
+def _panel(
+    seed: int = 1, bench: str = BENCH, sessions: int = SESSIONS, symbols: int = SYMBOLS, martingale: bool = False,
+) -> DailyPanel:
+    """Driftless random walks, each symbol with a known daily volatility: driftless in log terms, or
+    with `martingale` driftless in price terms (a log drift of -sigma^2 / 2 a day)."""
     rng = np.random.default_rng(seed)
     days = pd.bdate_range("2024-01-01", periods=sessions)
     sigma = np.linspace(0.01, 0.04, symbols)
     names = [f"S{k:03d}" for k in range(symbols)]
-    logs = np.cumsum(rng.normal(0.0, 1.0, (sessions, symbols)) * sigma, axis=0)
+    drift = -sigma**2 / 2 if martingale else 0.0
+    logs = np.cumsum(rng.normal(0.0, 1.0, (sessions, symbols)) * sigma + drift, axis=0)
     close = pd.DataFrame(50.0 * np.exp(logs), index=days, columns=names)
     close[bench] = 100.0 * np.exp(np.cumsum(rng.normal(0.0, 0.01, sessions)))
     atr = pd.DataFrame(np.tile(1.25 * sigma, (sessions, 1)), index=days, columns=names)
@@ -181,6 +185,22 @@ def test_random_walk_plans_are_calibrated():
     assert volatility["checks"]["stop_first"] is True
 
 
+def test_on_a_driftless_walk_the_order_neither_gains_nor_loses():
+    # R13: prices with no drift (a martingale) give an order that sells at a close no edge over holding
+    # (optional stopping: both exits are bounded stopping times, and the cost comes off both). Sample
+    # days 21 sessions apart give each symbol non-overlapping windows, so each pair's difference has
+    # mean zero given everything before it and the differences are uncorrelated: the bound is 3
+    # standard errors of the mean, std / sqrt(n), a 0.3% chance of failing by luck.
+    panel = _panel(seed=3, martingale=True)
+    rows = _rows(panel, list(range(100, SESSIONS - 21, 21)), horizons=(21,))
+    judged = [j for j in judge_pairs(rows, panel, Market.TSX, [21], 0.0, DEFAULT_POLICY) if j.cls == "volatility"]
+    gains = np.array([j.with_order - j.without_order for j in judged if j.with_order is not None])
+    assert len(gains) >= 500
+    bound = 3 * gains.std(ddof=1) / math.sqrt(len(gains))
+    assert abs(gains.mean()) <= bound, (gains.mean(), bound)
+    assert verdicts(judged)["volatility"]["order_gain"] == pytest.approx(gains.mean())
+
+
 # ---- verdicts on hand-built pairs ----
 
 def _judged(
@@ -303,9 +323,10 @@ def test_the_value_rule_needs_the_pooled_mean_and_two_of_three_folds(means, per_
 
 # ---- the real exits ----
 
-def test_the_order_fills_at_the_sell_at_price_on_the_first_close_at_or_above_it():
+def test_the_order_sells_at_the_first_close_at_or_above_the_sell_at_price():
+    # R13: the order exits at the close of the first day that closes at or above the sell-at price
     out = walk_exits(100.0, [104.0, 112.0, 95.0], [0.02] * 4, sell_at=110.0, trail_atr=2.5, cost=0.01)
-    assert out.with_order == pytest.approx(0.09)  # filled at 110, not 112
+    assert out.with_order == pytest.approx(0.11)  # the 112 close, not the 110 sell-at price
     assert out.without_order == pytest.approx(-0.06)  # the stop went 95 -> 98.8 -> 106.4, so 95 exits
     assert out.stop_first is False
 

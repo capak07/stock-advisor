@@ -322,7 +322,7 @@ Nothing is pushed or merged. In order:
 
 ### Known limits
 
-- **Coin and no-forecast plans are graded live only when an open pick supplies an exit-by date.** The grader only grades stock actions with an exit-by date. A holding linked to an open pick gets its date from the pick even with no forecast, and is then graded with its 21-session volatility plan; otherwise the benchmark check is the plan's only test.
+- **Coin plans are never graded live, and a stock's no-forecast plan only when an open pick supplies its exit-by date.** The grader only grades stock actions that have an exit-by date (`repo.actions_to_grade`). Coins have no picks, so a coin plan has none. A stock held on an open pick gets its date from the pick even with no forecast, and is then graded with its 21-session volatility plan. Otherwise the benchmark check is the plan's only test.
 - **A holding with a plan is graded only once its window has ended** (its re-check date has a final close). A holding whose stop exits before that date gets its outcome only after that date, so the touch record reads the whole window.
 - **The re-check date is the end of the plan's own horizon, also for a holding bought on a pick.** The pick's later exit-by date stays in the `exit_by` column only. This deviates from the last sentence of the design's §1: the chances are simulated over the plan's horizon, and a later date would overstate them.
 - **Every coin plan is volatility-only for now.** The design's coin-with-forecast path (excess over BTC) is deferred until a coin forecast class is built and checked. A volatility-only coin is checked whatever the coin model's calibration.

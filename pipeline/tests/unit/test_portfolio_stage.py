@@ -1,3 +1,4 @@
+import math
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
@@ -11,8 +12,15 @@ from advisor.collectors.yfinance_earnings import EarningsReport
 from advisor.model.market_run import Forecast
 from advisor.models import ET, AssetType, DailyBar, LinkedPick, Market, PredictionRow
 from advisor.policy import DEFAULT_POLICY
+from advisor.portfolio.actions import Holding, decide
 from advisor.portfolio.ledger import Loss, Position
-from advisor.portfolio.stage import RunView, action_rows, holding_inputs, signals_reversed
+from advisor.portfolio.stage import (
+    RunView,
+    _plan_cost,
+    action_rows,
+    holding_inputs,
+    signals_reversed,
+)
 from advisor.portfolio.stops import atr_pct, trailing_stop
 from advisor.recommend.stage import NOT_ELIGIBLE, MarketAdvice, StockInputs, scheduled_events
 from advisor.schedule import sessions_after
@@ -105,7 +113,7 @@ def test_a_stocks_row_carries_what_grading_needs():
     view = _view(forecasts={Market.TSX: forecast}, advice={Market.TSX: advice},
                  bars={**_view().bars, "RY.TO": _bars("RY.TO", [60.0])})
     positions = [_position("RY.TO")]
-    (row,) = action_rows(positions, holding_inputs(positions, [], view), view)
+    (row,), _ = action_rows(positions, holding_inputs(positions, [], view), view)
     assert (row.account, row.symbol, row.asset_type, row.action) == ("tfsa", "RY.TO", AssetType.STOCK, "hold")
     assert (row.horizon_days, row.exit_by, row.feature_day) == (63, date(2027, 1, 13), DAY)
     assert (row.ref_price, row.bench_ref_price) == (60.0, 40.0)
@@ -129,7 +137,7 @@ def test_a_stock_without_a_forecast_says_why():
     assert failed.why_no_forecast == "the model failed this run"
     assert failed.value_cad == pytest.approx(10.0 * 10 * 1.4)  # a US stock's USD close at the latest rate
     assert (unpriced.why_no_forecast, unpriced.value_cad, unpriced.trailing_stop) == ("not priced this run", 500.0, None)
-    rows = action_rows(positions, [ineligible, failed, unpriced], view)
+    rows, _ = action_rows(positions, [ineligible, failed, unpriced], view)
     assert [(r.action, r.reasons) for r in rows] == [
         ("hold", [NOT_ELIGIBLE]), ("hold", ["the model failed this run"]), ("hold", ["not priced this run"]),
     ]
@@ -147,7 +155,7 @@ def test_a_coin_is_valued_from_its_quote_and_stopped_on_its_candles():
     closes = [c.close for c in candles if c.day >= OPENED]
     assert coin.trailing_stop == pytest.approx(trailing_stop(closes, candles[-1].close, atr_pct(candles), None, None))
     assert (coin.why_no_forecast, coin.risk_level, coin.max_position_pct) == ("no crypto model yet", "very_high", 0.5)
-    (row,) = action_rows(positions, [coin], view)
+    (row,), _ = action_rows(positions, [coin], view)
     assert (row.action, row.reasons) == ("hold", ["no crypto model yet"])
     assert (row.feature_day, row.ref_price, row.bench_ref_price) == (DAY, candles[-1].close, None)
     assert (row.horizon_days, row.exit_by) == (None, None)
@@ -165,7 +173,7 @@ def test_a_held_coin_under_the_sell_line_is_sold_and_its_stop_uses_the_policy():
     positions = [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)]
     (coin,) = holding_inputs(positions, [], view)
     assert coin.rows == [row] and coin.sane and coin.benchmark == "BTC" and coin.policy == DEFAULT_POLICY
-    (action,) = action_rows(positions, [coin], view)
+    (action,), _ = action_rows(positions, [coin], view)
     assert action.action == "sell"
     wide = replace(DEFAULT_POLICY, trail_atr=5.0)
     looser = holding_inputs(positions, [], replace(view, coin_policy=wide))[0]
@@ -181,7 +189,7 @@ def test_a_coin_without_candles_holds_without_a_stop():
     positions = [_position("WIF", "crypto", qty=100.0, asset_type=AssetType.CRYPTO)]
     (coin,) = holding_inputs(positions, [], view)
     assert (coin.value_cad, coin.trailing_stop) == (250.0, None)
-    (row,) = action_rows(positions, [coin], view)
+    (row,), _ = action_rows(positions, [coin], view)
     assert (row.action, row.trailing_stop, row.ref_price, row.feature_day) == ("hold", None, None, None)
     assert row.reasons == ["no crypto model yet, and no daily candles for a trailing stop"]
 
@@ -194,7 +202,7 @@ def test_one_stock_in_two_accounts_gets_two_rows():
     holdings = holding_inputs(positions, [], view)
     assert [h.value_cad for h in holdings] == [600.0, 300.0]
     assert holdings[0].rows == holdings[1].rows == [_row("RY.TO")]
-    rows = action_rows(positions, holdings, view)
+    rows, _ = action_rows(positions, holdings, view)
     assert [(r.account, r.symbol) for r in rows] == [("tfsa", "RY.TO"), ("rrsp", "RY.TO")]
 
 
@@ -220,7 +228,7 @@ def test_the_review_window_is_five_sessions_and_includes_today_at_pre_close():
     at_pre_close = replace(view, days={Market.TSX: (DAY, True), Market.US: (DAY, True)})
     ry, td = holding_inputs(positions, [], at_pre_close)
     assert ry.review == ["earnings on Oct 13", "phase 2/3 trial completion on Oct 20"]
-    row, _ = action_rows(positions, [ry, td], at_pre_close)
+    (row, _), _ = action_rows(positions, [ry, td], at_pre_close)
     assert row.review is True and row.reasons[-2:] == ry.review
 
 
@@ -259,7 +267,7 @@ def test_a_linked_pick_sets_the_floor_the_reversal_and_a_later_exit_by():
     assert asked == [(Market.TSX, "RY.TO", 63)]
     assert h.signals_reversed is True
     assert h.trailing_stop == 55.0  # the ATR stop (60 - 75) is under the pick's own
-    (row,) = action_rows(positions, [h], view)
+    (row,), _ = action_rows(positions, [h], view)
     assert row.action == "sell"
     assert row.exit_by == date(2027, 2, 1)  # the open pick's, later than 63 sessions after the feature day
 
@@ -329,3 +337,141 @@ def test_a_graded_picks_stop_isnt_a_floor():
     assert h.trailing_stop == pytest.approx(60 - 2.5 * 0.04 * 60)  # not the graded pick's stale 70
     (h,) = holding_inputs([_position("RY.TO", pick_id=7)], [], replace(view, picks={7: replace(pick, status="open")}))
     assert h.trailing_stop == 70.0
+
+
+# --- the exit plan ---------------------------------------------------------------------------------
+
+
+def _wave(symbol: str, n: int, base: float, step: int = 7, end: date = DAY) -> list[DailyBar]:
+    """n daily bars ending `end`, with a wiggle (its pattern set by `step`) so the moves are not all alike."""
+    return [
+        bar(symbol, end - timedelta(days=n - 1 - i), base * (1 + 0.01 * ((i * step) % 5 - 2) + 0.001 * i))
+        for i in range(n)
+    ]
+
+
+def _plan_view(symbol: str = "RY.TO", n: int = 120, **kw) -> RunView:
+    """A TSX stock with a forecast, and n closes for it and for XIU.TO."""
+    forecast, advice = _tsx({symbol: [_row(symbol, 21)]}, {symbol: {}}, {symbol: ("low", 5.0)})
+    bars = {**_view().bars, "XIU.TO": _wave("XIU.TO", n, 40.0, step=3), symbol: _wave(symbol, n, 60.0)}
+    return _view(forecasts={Market.TSX: forecast}, advice={Market.TSX: advice}, bars=bars, **kw)
+
+
+def _rows(view: RunView, positions: list[Position]):
+    return action_rows(positions, holding_inputs(positions, [], view), view)
+
+
+def test_a_holding_with_a_forecast_gets_a_forecast_plan_rechecked_at_its_horizon():
+    (row,), reasons = _rows(_plan_view(), [_position("RY.TO")])
+    assert reasons == {}
+    assert row.exit_plan["basis"] == "forecast"
+    assert row.exit_plan["horizon"] == row.horizon_days == 21
+    assert row.exit_plan["recheck_by"] == sessions_after(Market.TSX, DAY, 21).isoformat()
+    assert row.exit_plan["recheck_by"] == row.exit_by.isoformat()
+
+
+def test_a_pick_linked_holding_rechecks_at_its_own_horizon_not_the_picks_later_exit_by():
+    pick = LinkedPick(id=7, horizon_days=21, exit_by=date(2027, 2, 1), stop=1.0, status="open", top_factors=[])
+    (row,), _ = _rows(_plan_view(picks={7: pick}), [_position("RY.TO", pick_id=7)])
+    assert row.exit_by == pick.exit_by
+    assert row.exit_plan["recheck_by"] == sessions_after(Market.TSX, DAY, 21).isoformat()
+    assert row.exit_plan["recheck_by"] < row.exit_by.isoformat()
+
+
+def test_a_forecast_without_benchmark_bars_falls_back_to_volatility_rechecked_in_21_sessions():
+    view = _plan_view()
+    view = replace(view, bars={k: v for k, v in view.bars.items() if k != "XIU.TO"})
+    (row,), reasons = _rows(view, [_position("RY.TO")])
+    assert reasons == {}
+    assert row.exit_plan["basis"] == "volatility"
+    assert row.exit_plan["horizon"] == 21
+    assert row.exit_plan["recheck_by"] == sessions_after(Market.TSX, DAY, 21).isoformat()
+
+
+def test_a_coin_gets_a_volatility_plan_rechecked_in_21_calendar_days_even_with_model_rows():
+    coin_row = PredictionRow("BONK", 7, -0.02, 0.03, 0.08, 0.60, "BTC", "v")
+    quote = CryptoQuote(symbol="BONK", coin_id="bonk", price_cad=1.8, updated_at=datetime(2026, 10, 14, tzinfo=UTC))
+    view = _view(
+        candles={"BONK": _candles("BONK", n=120)}, quotes={"BONK": quote}, coin_rows={"BONK": [coin_row]},
+        coin_cost={"BONK": 0.001},
+        bars={**_view().bars, "BTC": _wave("BTC", 120, 100.0, 3), "SPY": _wave("SPY", 120, 600.0, 3)},
+    )
+    positions = [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)]
+    (row,), reasons = _rows(view, positions)
+    assert reasons == {}
+    plan = row.exit_plan
+    assert (plan["basis"], plan["drift"], plan["horizon"]) == ("volatility", None, 21)
+    assert plan["recheck_by"] == (DAY + timedelta(days=21)).isoformat()
+
+
+def test_a_holding_with_too_little_history_has_no_plan_and_a_reason_while_the_others_keep_theirs():
+    view = _plan_view()
+    forecast, advice = _tsx(
+        {"NEW": [_row("NEW", 21)], "RY.TO": [_row("RY.TO", 21)]}, {"NEW": {}, "RY.TO": {}},
+        {"NEW": ("low", 5.0), "RY.TO": ("low", 5.0)},
+    )
+    view = replace(view, forecasts={Market.TSX: forecast}, advice={Market.TSX: advice},
+                   bars={**view.bars, "NEW": _wave("NEW", 10, 5.0)})
+    rows, reasons = _rows(view, [_position("NEW", "tfsa"), _position("RY.TO", "rrsp")])
+    assert rows[0].exit_plan is None
+    assert reasons == {"tfsa:NEW": "too little price history"}
+    assert rows[1].exit_plan["basis"] == "forecast"
+
+
+def test_an_unpriced_holding_has_no_plan_and_the_reason_no_price():
+    view = _plan_view()
+    (row,), reasons = _rows(view, [_position("ZZ.TO")])  # no bars at all: not priced, no feature day
+    assert row.exit_plan is None and reasons == {"tfsa:ZZ.TO": "no price"}
+    # a holding whose price is NaN gets the same reason through build_plan
+    (h,) = holding_inputs([_position("RY.TO")], [], view)
+    (row,), reasons = action_rows([_position("RY.TO")], [replace(h, price=math.nan)], view)
+    assert row.exit_plan is None and reasons == {"tfsa:RY.TO": "no price"}
+
+
+def test_a_holding_under_water_gets_its_break_even_price():
+    view = _plan_view()
+    positions = [_position("RY.TO")]
+    (h,) = holding_inputs(positions, [], view)
+    under = replace(h, cost_cad=1000.0, value_cad=800.0, price=4.0)
+    (row,), reasons = action_rows(positions, [under], view)
+    assert reasons == {}
+    assert row.exit_plan["breakeven"] == pytest.approx(5.0)
+    assert row.exit_plan["cost_price"] == pytest.approx(5.0)
+
+
+def _bare(symbol: str, asset_type: AssetType = AssetType.STOCK, cost: float = 0.0) -> Holding:
+    return Holding(
+        "tfsa", symbol, asset_type, None, 10.0, 100.0, 100.0, 1000.0, None, [], None, cost, False, "low", 5.0,
+        None, None, [], None,
+    )
+
+
+def test_the_plan_cost_matches_the_benchmark_checks_cost():
+    view = _view(fees=(1.5, 1.0))
+    assert _plan_cost(_bare("AAPL"), view) == pytest.approx(0.033)  # 0.003 spread + 2 x 1.5%
+    assert _plan_cost(_bare("RY.TO"), view) == pytest.approx(0.003)
+    coin = _bare("BONK", AssetType.CRYPTO)
+    assert _plan_cost(coin, view) == pytest.approx(0.023)  # 0.003 + 2 x 1.0%
+    assert _plan_cost(coin, replace(view, coin_cost={"BONK": 0.0042})) == pytest.approx(0.0042)
+    assert _plan_cost(_bare("AAPL", cost=0.0123), view) == 0.0123
+
+
+def test_a_stocks_plan_cost_reads_its_dollar_volume_from_the_features():
+    forecast, _ = _tsx({"AAPL": [_row("AAPL")]}, {"AAPL": {"dollar_volume_20": 5e9}}, {"AAPL": ("low", 5.0)})
+    view = _view(fees=(1.5, 1.0), forecasts={Market.US: forecast})
+    assert _plan_cost(_bare("AAPL"), view) == pytest.approx(0.001 + 0.03)  # the large-company spread
+
+
+def test_decide_is_unchanged_by_the_plan():
+    view = _plan_view()
+    positions = [_position("RY.TO")]
+    (h,) = holding_inputs(positions, [], view)
+    expected = decide(h)
+    (row,), _ = action_rows(positions, [h], view)
+    assert (row.action, row.review, row.reasons, row.warnings) == (
+        expected.action, expected.review, expected.reasons, expected.warnings,
+    )
+    assert (row.horizon_days, row.exit_by, row.q10, row.q50, row.q90) == (
+        expected.horizon, sessions_after(Market.TSX, DAY, 21), expected.q10, expected.q50, expected.q90,
+    )
+    assert row.action == "hold" and row.exit_plan is not None

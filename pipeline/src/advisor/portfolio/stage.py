@@ -12,12 +12,15 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
+import numpy as np
 import pandas as pd
 import psycopg
 
 from advisor.collectors.base import CollectorResult
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.markets import MARKETS, market_of
+from advisor.model.backtest import round_trip_cost
+from advisor.model.crypto import CRYPTO
 from advisor.model.market_run import Forecast, MarketModel, feature_day, model_failure
 from advisor.models import (
     ET,
@@ -31,6 +34,7 @@ from advisor.models import (
 )
 from advisor.policy import DEFAULT_POLICY, Policy, policy_of
 from advisor.portfolio.actions import TAXABLE, Holding, decide
+from advisor.portfolio.exit_plan import NoPlan, build_plan
 from advisor.portfolio.ledger import Loss, Position, build_ledger
 from advisor.portfolio.stops import atr_pct, trailing_stop
 from advisor.recommend.picks import market_top
@@ -83,6 +87,7 @@ class RunView:
     coin_cost: Mapping[str, float] = field(default_factory=dict)
     coin_why: Mapping[str, str] = field(default_factory=dict)
     coin_policy: Policy = DEFAULT_POLICY
+    fees: tuple[float, float] = (0.0, 0.0)  # (USD FX fee, crypto fee) in percent
 
 
 @dataclass(frozen=True)
@@ -277,11 +282,71 @@ def holding_inputs(
     return out
 
 
+def _plan_cost(h: Holding, view: RunView) -> float:
+    """The round-trip cost the exit plan uses: the same `round_trip_cost` the benchmark check uses (R6).
+
+    `h.cost` when positive (stage 8's, or the coin's own); else a coin's `coin_cost` when it has one;
+    else the market's spread, and the currency fee (a stock) or the crypto fee (a coin) both ways."""
+    if h.cost > 0:
+        return float(h.cost)
+    if h.asset_type is AssetType.CRYPTO:
+        if h.symbol in view.coin_cost:
+            return float(view.coin_cost[h.symbol])
+        return float(round_trip_cost(CRYPTO, np.array([math.nan]), view.fees[1])[0])
+    market = market_of(h.symbol)
+    forecast = view.forecasts.get(market)
+    volume = math.nan  # unknown: the small-company spread
+    if forecast is not None and h.symbol in forecast.features.index and "dollar_volume_20" in forecast.features:
+        volume = float(forecast.features.at[h.symbol, "dollar_volume_20"])
+    return float(round_trip_cost(market, np.array([volume]), view.fees[0])[0])
+
+
+def _exit_plan(h: Holding, seen: _Priced, view: RunView, action) -> dict:
+    """The holding's exit plan, or NoPlan with the reason. Any other failure inside is NoPlan too."""
+    if seen.day is None:
+        raise NoPlan("no price")
+    flagged = view.flagged.get(h.symbol, ())
+    closes = {b.day: b.close for b in seen.history if b.day not in flagged}
+    day = seen.day
+    forecast = None
+    bench_closes = None
+    if seen.market is None:  # a coin: volatility only, and `view.bars` is never read (R3)
+        def recheck(n: int) -> date:
+            return day + timedelta(days=n)
+    else:
+        market = seen.market
+
+        def recheck(n: int) -> date:
+            return sessions_after(market, day, n)
+
+        if None not in (action.q10, action.q50, action.q90):
+            forecast = (float(action.q10), float(action.q50), float(action.q90))
+            bench = view.bars.get(h.benchmark) if h.benchmark is not None else None
+            if bench:
+                bench_closes = {b.day: b.close for b in bench}
+    return build_plan(
+        symbol=h.symbol,
+        day=day,
+        closes=closes,
+        price=h.price,
+        horizon=None if action.horizon is None else int(action.horizon),
+        forecast=forecast,
+        bench_closes=bench_closes,
+        stop=h.trailing_stop,
+        cost_cad=h.cost_cad,
+        value_cad=h.value_cad,
+        cost=_plan_cost(h, view),
+        recheck=recheck,
+    )
+
+
 def action_rows(
     positions: Sequence[Position], holdings: Sequence[Holding], view: RunView
-) -> list[HoldingActionRow]:
-    """Each holding's action as its `holding_actions` row, with what grading it later needs."""
+) -> tuple[list[HoldingActionRow], dict[str, str]]:
+    """Each holding's action as its `holding_actions` row, with what grading it later needs, and for
+    each holding without an exit plan, "{account}:{symbol}" -> why."""
     out = []
+    no_plan: dict[str, str] = {}
     for p, h in zip(positions, holdings, strict=True):
         action = decide(h)
         seen = _priced(p, view)
@@ -295,6 +360,13 @@ def action_rows(
         if seen.market is not None:
             bench = view.bars.get(MARKETS[seen.market].benchmark)
             bench_ref = bench[-1].close if bench else None
+        plan = None
+        try:
+            plan = _exit_plan(h, seen, view, action)
+        except NoPlan as exc:
+            no_plan[f"{p.account}:{p.symbol}"] = str(exc)
+        except Exception as exc:  # one holding's plan never fails the stage
+            no_plan[f"{p.account}:{p.symbol}"] = f"{type(exc).__name__}: {exc}"
         out.append(HoldingActionRow(
             account=p.account,
             symbol=p.symbol,
@@ -314,8 +386,9 @@ def action_rows(
             bench_ref_price=bench_ref,
             risk_level=h.risk_level,
             max_position_pct=h.max_position_pct,
+            exit_plan=plan,
         ))
-    return out
+    return out, no_plan
 
 
 def advise_stage(
@@ -378,9 +451,10 @@ def advise_stage(
             coin_cost=coin_cost or {},
             coin_why=coin_why or {},
             coin_policy=coin_policy or DEFAULT_POLICY,
+            fees=repo.fee_settings(conn),
         )
         policies = {market: policy_of(model.metrics) for market, model in models.items()}
-        rows = action_rows(positions, holding_inputs(positions, ledger.losses, view, policies), view)
+        rows, no_plan = action_rows(positions, holding_inputs(positions, ledger.losses, view, policies), view)
         with conn.transaction():  # every holding's action lands together or not at all
             repo.write_holding_actions(conn, run_id, rows)
     except Exception as exc:
@@ -389,4 +463,6 @@ def advise_stage(
     summary: dict = {"written": len(rows), "by_action": by_action}
     if ledger.problems:
         summary["problems"] = ledger.problems
+    if no_plan:
+        summary["no_exit_plan"] = no_plan
     return summary

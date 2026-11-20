@@ -492,13 +492,14 @@ def write_holding_actions(conn: psycopg.Connection, run_id: int, rows: Sequence[
         cur.executemany(
             "insert into holding_actions (run_id, account, symbol, asset_type, action, review, reasons, warnings,"
             " trailing_stop, q10, q50, q90, exit_by, horizon_days, feature_day, ref_price, bench_ref_price,"
-            " risk_level, max_position_pct)"
-            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            " risk_level, max_position_pct, exit_plan)"
+            " values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [
                 (
                     run_id, r.account, r.symbol, r.asset_type.value, r.action, r.review, Jsonb(r.reasons),
                     Jsonb(r.warnings), r.trailing_stop, r.q10, r.q50, r.q90, r.exit_by, r.horizon_days,
                     r.feature_day, r.ref_price, r.bench_ref_price, r.risk_level, r.max_position_pct,
+                    None if r.exit_plan is None else Jsonb(r.exit_plan),
                 )
                 for r in rows
             ],

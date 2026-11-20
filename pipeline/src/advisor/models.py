@@ -175,6 +175,7 @@ class HoldingActionRow:
     bench_ref_price: float | None  # the benchmark's close that day; None for a coin
     risk_level: str
     max_position_pct: float
+    exit_plan: dict | None = None  # the plan `build_plan` made; None when it could not be built
 
 
 class SymbolInfo(BaseModel):

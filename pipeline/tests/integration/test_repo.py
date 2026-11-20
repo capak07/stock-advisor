@@ -1057,3 +1057,13 @@ def test_the_upsert_does_not_touch_skill_rank(db):
     repo.assign_skill_ranks(db, day, [ids["AAPL"]])
     repo.upsert_daytrade_signal(db, signal_row("AAPL", entry=11.0))
     assert _skill_ranks(db, day)["AAPL"] == 1
+
+
+def test_holding_actions_round_trip_their_exit_plan(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    plan = {"version": 1, "basis": "volatility", "horizon": 21, "sell_at": [{"price": 25.5, "chance": 0.33}]}
+    repo.write_holding_actions(db, run_id, [
+        replace(_action("AAPL"), exit_plan=plan), _action("MSFT"),
+    ])
+    rows = db.execute("select symbol, exit_plan from holding_actions order by symbol").fetchall()
+    assert [(r["symbol"], r["exit_plan"]) for r in rows] == [("AAPL", plan), ("MSFT", None)]

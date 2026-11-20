@@ -692,3 +692,35 @@ def test_features_live_rows_are_kept_with_their_run(db):
     ).fetchone()
     assert row is not None
     assert row["features"] == {"news_stories_48h": 3.0, "opt_atm_iv_near": 0.24}
+
+
+def test_the_exit_plan_and_its_outcome_columns_exist_and_are_nullable(db):
+    rows = db.execute(
+        "select table_name, column_name, is_nullable, data_type from information_schema.columns"
+        " where table_schema = 'public' and column_name in"
+        " ('exit_plan', 'touched_sell_at', 'touched_breakeven', 'max_close')"
+    ).fetchall()
+    found = {(r["table_name"], r["column_name"]): (r["is_nullable"], r["data_type"]) for r in rows}
+    assert found == {
+        ("holding_actions", "exit_plan"): ("YES", "jsonb"),
+        ("holding_action_outcomes", "touched_sell_at"): ("YES", "boolean"),
+        ("holding_action_outcomes", "touched_breakeven"): ("YES", "boolean"),
+        ("holding_action_outcomes", "max_close"): ("YES", "numeric"),
+    }
+
+
+def test_a_max_close_must_be_positive(db):
+    run_id = _run(db)
+    db.execute(
+        "insert into holding_actions (run_id, account, symbol, asset_type, action)"
+        " values (%s, 'tfsa', 'AAPL', 'stock', 'hold')",
+        (run_id,),
+    )
+    outcome = (
+        "insert into holding_action_outcomes (run_id, account, symbol, asset_type, exit_price,"
+        " ret, ret_net_of_fx, bench_ret, excess, beat, hit_stop, max_close)"
+        " values (%s, 'tfsa', 'AAPL', 'stock', 110, 0.05, 0.04, 0.01, 0.04, true, false, %s)"
+    )
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(outcome, (run_id, 0))
+    db.execute(outcome, (run_id, 111))

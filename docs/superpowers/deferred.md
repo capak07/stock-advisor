@@ -315,14 +315,14 @@ Each holding's action now carries an exit plan: a likely range, a sell-at price,
 
 Nothing is pushed or merged. In order:
 
-1. Apply `supabase/migrations/0016_exit_plan.sql` to production Supabase (`python -m advisor.store.migrate`) before the first run after deploy. It adds `holding_actions.exit_plan` and three columns on `holding_action_outcomes`; code without it fails the holdings stage.
+1. Apply `supabase/migrations/0016_exit_plan.sql` to production Supabase (`python -m advisor.store.migrate`) first, before deploying the code and before the first run after it. It adds `holding_actions.exit_plan` and three columns on `holding_action_outcomes`. The new code needs them: `repo.write_holding_actions` inserts `exit_plan`, so a run writes no holding actions; `repo.actions_to_grade` selects it, so the grade stage fails; and the web's My Portfolio and ticker pages select it, so they break. The reverse order is harmless, because the columns are nullable.
 2. Push the branch and merge as you choose.
 3. Run `benchmark.yml` once by hand. Until it has run, every plan shows its numbers under "Not validated yet". A forecast plan reads "Not validated yet" again after every change of model, until the next benchmark.
-4. Read the "Exit plan check" section of each market in the benchmark report (`benchmark-report.json`, each market's `exit_plan` block, keyed by the model's name). Per class (forecast, volatility, coin) it says whether the range, the sell-at touch rate, the break-even and stop-first chances passed, and the measured gain of the sell-at order against holding.
+4. Read the "Exit plan check" section of each market in the benchmark report (`benchmark-report.json`, each market's `exit_plan` block; its `model` field names the model config the forecast class was measured on). Per class (forecast, volatility, coin) it says whether the range, the sell-at touch rate, the break-even and stop-first chances passed, and the measured gain of the sell-at order against holding.
 
 ### Known limits
 
-- **Coin and no-forecast plans are never graded live.** The grader only grades stock actions with an exit-by date, so the benchmark check is their only test.
+- **Coin and no-forecast plans are graded live only when an open pick supplies an exit-by date.** The grader only grades stock actions with an exit-by date. A holding linked to an open pick gets its date from the pick even with no forecast, and is then graded with its 21-session volatility plan; otherwise the benchmark check is the plan's only test.
 - **A holding with a plan is graded only once its window has ended** (its re-check date has a final close). A holding whose stop exits before that date gets its outcome only after that date, so the touch record reads the whole window.
 - **The re-check date is the end of the plan's own horizon, also for a holding bought on a pick.** The pick's later exit-by date stays in the `exit_by` column only. This deviates from the last sentence of the design's §1: the chances are simulated over the plan's horizon, and a later date would overstate them.
 - **Every coin plan is volatility-only for now.** The design's coin-with-forecast path (excess over BTC) is deferred until a coin forecast class is built and checked. A volatility-only coin is checked whatever the coin model's calibration.

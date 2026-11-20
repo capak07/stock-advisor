@@ -74,6 +74,9 @@ Inputs per line: side and kind (buy, add, sell, trim, stop, recurring), the last
 - **The holding's stop** (each held stock, on its action card and in the holdings table's note):
   - "Stop-limit sell {qty} sh: stop {trailing stop}, limit {…}, 90 days".
   - When the previous published run's stop was lower: "raise it from {old}".
+- **The exit plan's sell-at order** (added 2026-11-20, exit plan spec §7): "**Limit sell {n} sh at {sell_at}, expiry 90 days**", whole shares only, for a Hold or an Add with no stop, and only when the plan passed the benchmark check (an unvalidated plan's numbers are shown but never made an order; ruling R20b). Never for a Sell or a Trim, which show no sell-at price at all (R20a).
+  - It notes: "Replace any earlier sell-at order. Cancel it before you sell, trim or place a stop." Each run can give a new price, and a resting limit sell holds the shares (R20c).
+  - A stock holding with an exit plan (any status: an earlier run may have offered the order) has its Sell, Trim and stop orders note: "Cancel any resting limit sell on these shares first." (R20c).
 - **Coins:**
   - Buy: "**Limit buy {amount} at {price × (1 + b)}**; it cancels after 24 hours unless you extend it". The ATR comes from candles where stored.
   - Stop: "If Wealthsimple offers a stop order for this coin: stop {trailing stop}…", otherwise "set a price alert at {stop}".
@@ -117,4 +120,4 @@ Inputs per line: side and kind (buy, add, sell, trim, stop, recurring), the last
 - Wealthsimple, crypto order types: https://help.wealthsimple.com/hc/en-ca/articles/31804031644059-Choose-a-crypto-order-type
 - Wealthsimple, recurring investments: https://help.wealthsimple.com/hc/en-ca/articles/9544942923547
 - Wealthsimple, bracket orders (2026-11-01): https://help.wealthsimple.com/hc/en-ca/articles/57814660213147-Understanding-bracket-orders
-- Unverified (2026-11-20): whether Wealthsimple lets a limit sell and a stop-limit sell rest on the same shares at once. The exit plan's "sell at" line is a limit sell, offered only for a Hold or an Add with no stop, so it never sits beside a stop-limit the app has told the owner to keep. A holding that has a stop never shows that line. Check Wealthsimple's help centre before offering it beside a stop.
+- Unverified (2026-11-20): whether Wealthsimple lets a limit sell and a stop-limit sell rest on the same shares at once. The exit plan's "sell at" line is a limit sell, offered only for a Hold or an Add with no stop whose plan passed the benchmark check, so it never sits beside a stop-limit the app has told the owner to keep. A holding that has a stop never shows that line. Check Wealthsimple's help centre before offering it beside a stop.

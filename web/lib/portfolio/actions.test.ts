@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { actionGroups, cardReason, holdText, type HoldingAction } from './actions'
+import type { ExitPlan } from './exit-plan'
 
 const action = (over: Partial<HoldingAction>): HoldingAction => ({
   account: 'tfsa',
@@ -21,6 +22,7 @@ const action = (over: Partial<HoldingAction>): HoldingAction => ({
   dollarVolume20: null,
   previousStop: null,
   maxPositionPct: null,
+  exitPlan: null,
   ...over,
 })
 
@@ -81,9 +83,54 @@ describe('cardReason', () => {
   })
 })
 
+const exitPlan = (over: Partial<ExitPlan> = {}): ExitPlan => ({
+  status: 'pass',
+  basis: 'volatility',
+  horizon: 21,
+  recheckBy: '2026-12-19',
+  low: 4.2,
+  mid: 5.05,
+  high: 6.1,
+  sellAt: 5.6,
+  pTouch: 0.33,
+  pStopFirst: 0.22,
+  pUp: 0.55,
+  breakeven: 1.9,
+  pBreakeven: 0.06,
+  drift: null,
+  costPrice: 4.75,
+  ...over,
+})
+
 describe('holdText', () => {
   it('names the horizon and exit day, or the capitalised reason without them', () => {
     expect(holdText(action({ horizonDays: 40, exitBy: '2026-12-11' }))).toBe('hold ~40 days · exit by Dec 11')
     expect(holdText(action({ reasons: ['no rule fired'] }))).toBe('No rule fired')
+  })
+
+  it("gives the plan's range, sell-at and re-check date when it has a plan and a currency", () => {
+    const a = action({ horizonDays: 40, exitBy: '2026-12-11', exitPlan: exitPlan() })
+    expect(holdText(a, 'USD')).toBe('hold ~21 days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19')
+    expect(holdText(action({ exitPlan: exitPlan(), reasons: ['no rule fired'] }), 'CAD')).toBe(
+      'hold ~21 days · range C$4.20–6.10 · sell at C$5.60 · re-check Dec 19',
+    )
+  })
+
+  it('drops the sell-at part without a sell-at price and the re-check part without a date', () => {
+    const a = action({ exitPlan: exitPlan({ sellAt: null, recheckBy: null }) })
+    expect(holdText(a, 'USD')).toBe('hold ~21 days · range US$4.20–6.10')
+  })
+
+  it("keeps today's text without a currency, without a plan, or when the plan has no range", () => {
+    const base = { horizonDays: 40, exitBy: '2026-12-11' }
+    expect(holdText(action({ ...base, exitPlan: exitPlan() }))).toBe('hold ~40 days · exit by Dec 11')
+    expect(holdText(action({ ...base, exitPlan: null }), 'USD')).toBe('hold ~40 days · exit by Dec 11')
+    expect(holdText(action({ ...base, exitPlan: exitPlan({ low: null, mid: null, high: null, sellAt: null }) }), 'USD')).toBe(
+      'hold ~40 days · exit by Dec 11',
+    )
+  })
+
+  it('shows the numbers of an unvalidated plan (R17)', () => {
+    expect(holdText(action({ exitPlan: exitPlan({ status: 'unvalidated' }) }), 'USD')).toContain('range US$4.20–6.10')
   })
 })

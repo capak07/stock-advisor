@@ -55,6 +55,7 @@ const AAPL_ACTION: HoldingAction = {
   dollarVolume20: null,
   previousStop: null,
   maxPositionPct: null,
+  exitPlan: null,
 }
 const GUIDE = { roundTrips: 24, shortHoldShare: 0.5 }
 const INPUTS = {

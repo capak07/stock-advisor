@@ -6,6 +6,7 @@
 
 import { holdText } from './advice'
 import { ACTION_LABELS, actionGroup, cardReason, type HoldingAction, holdText as holdingHoldText } from './portfolio/actions'
+import { assetCurrency } from './portfolio/exit-plan'
 import { assetKey } from './portfolio/types'
 
 export type Verdict = 'buy' | 'hold' | 'avoid'
@@ -50,7 +51,7 @@ export function verdictWhy(v: VerdictLike, form: 'long' | 'short'): string {
 export type HeldActionLike = Pick<
   HoldingAction,
   'account' | 'symbol' | 'assetType' | 'action' | 'review' | 'reasons' | 'horizonDays' | 'exitBy'
->
+> & { exitPlan?: HoldingAction['exitPlan'] }
 
 /** My Portfolio's group: a Hold or Add with a review flag is Review there. */
 export type HeldGroup = 'sell' | 'trim' | 'review' | 'add' | 'hold'
@@ -76,7 +77,7 @@ export function heldCalls(actions: readonly HeldActionLike[]): Map<string, HeldC
     const call = {
       group,
       label: group === 'review' ? 'Review' : ACTION_LABELS[a.action],
-      why: group === 'hold' ? holdingHoldText(a) : cardReason(a),
+      why: group === 'hold' ? holdingHoldText(a, assetCurrency(a.assetType, a.symbol)) : cardReason(a),
     }
     const key = assetKey(a.assetType, a.symbol)
     const seen = found.get(key)

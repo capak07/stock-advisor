@@ -1,4 +1,6 @@
 import { shortDay } from '../dates'
+import { fmtPrice } from '../format'
+import { barePrice, type Currency, type ExitPlan } from './exit-plan'
 import type { Account, AssetType } from './types'
 
 export type ActionKind = 'sell' | 'trim' | 'add' | 'hold'
@@ -36,6 +38,8 @@ export interface HoldingAction {
   previousStop: number | null
   /** The suggested max position for its risk level, in percent of the portfolio (spec §6.4), as the run stored it. */
   maxPositionPct: number | null
+  /** The holding's exit plan (spec §1); null for a row stored before plans existed. */
+  exitPlan: ExitPlan | null
 }
 
 /** The Actions card's groups, in the order they show. */
@@ -68,8 +72,23 @@ export function cardReason(a: Pick<HoldingAction, 'action' | 'review' | 'reasons
   return sentence(review || (a.reasons[0] ?? ''))
 }
 
-/** A plain Hold's line: how long to hold and when to exit, or its reason without a horizon (coins). */
-export const holdText = (a: Pick<HoldingAction, 'horizonDays' | 'exitBy' | 'reasons'>): string =>
-  a.horizonDays !== null && a.exitBy !== null
+/**
+ * A plain Hold's line. With an exit plan that has a range, and the asset's currency: the plan's
+ * horizon, range, sell-at and re-check date. Otherwise how long to hold and when to exit, or its
+ * reason without a horizon (coins).
+ */
+export function holdText(
+  a: Pick<HoldingAction, 'horizonDays' | 'exitBy' | 'reasons'> & { exitPlan?: ExitPlan | null },
+  currency?: Currency,
+): string {
+  const plan = a.exitPlan
+  if (plan && currency && plan.low !== null && plan.high !== null) {
+    const parts = [`hold ~${plan.horizon} days`, `range ${fmtPrice(plan.low, currency)}–${barePrice(plan.high, currency)}`]
+    if (plan.sellAt !== null) parts.push(`sell at ${fmtPrice(plan.sellAt, currency)}`)
+    if (plan.recheckBy !== null) parts.push(`re-check ${shortDay(plan.recheckBy)}`)
+    return parts.join(' · ')
+  }
+  return a.horizonDays !== null && a.exitBy !== null
     ? `hold ~${a.horizonDays} days · exit by ${shortDay(a.exitBy)}`
     : sentence(a.reasons[0] ?? '')
+}

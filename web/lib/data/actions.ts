@@ -1,5 +1,6 @@
 import 'server-only'
 import type { ActionKind, HoldingAction, RiskLevel } from '../portfolio/actions'
+import { parseExitPlan } from '../portfolio/exit-plan'
 import type { Account, AssetType } from '../portfolio/types'
 import type { Supabase } from '../supabase/server'
 import { heldCalls, type HeldCall } from '../verdicts'
@@ -22,10 +23,11 @@ interface ActionRow {
   risk_level: RiskLevel | null
   ref_price: string | number | null
   max_position_pct: number | null
+  exit_plan: unknown
 }
 
 const COLUMNS =
-  'account, symbol, asset_type, action, review, reasons, warnings, trailing_stop, q10, q50, q90, horizon_days, exit_by, risk_level, ref_price, max_position_pct'
+  'account, symbol, asset_type, action, review, reasons, warnings, trailing_stop, q10, q50, q90, horizon_days, exit_by, risk_level, ref_price, max_position_pct, exit_plan'
 
 const num = (value: unknown): number | null => {
   const n = typeof value === 'string' ? Number(value) : value
@@ -58,6 +60,7 @@ const toAction = (r: ActionRow, extra: OrderData): HoldingAction => ({
   dollarVolume20: r.asset_type === 'stock' ? (extra.features.get(r.symbol)?.dollarVolume20 ?? null) : null,
   previousStop: extra.previousStops.get(keyOf(r)) ?? null,
   maxPositionPct: num(r.max_position_pct),
+  exitPlan: parseExitPlan(r.exit_plan),
 })
 
 /** The holding actions of the newest published run that has any, with that run's day; null before the first. */
@@ -133,9 +136,12 @@ export async function loadHeldCalls(supabase: Supabase, runId: number): Promise<
   const rows = must(
     await supabase
       .from('holding_actions')
-      .select('account, symbol, asset_type, action, review, reasons, horizon_days, exit_by')
+      .select('account, symbol, asset_type, action, review, reasons, horizon_days, exit_by, exit_plan')
       .eq('run_id', runId),
-  ) as Pick<ActionRow, 'account' | 'symbol' | 'asset_type' | 'action' | 'review' | 'reasons' | 'horizon_days' | 'exit_by'>[]
+  ) as Pick<
+    ActionRow,
+    'account' | 'symbol' | 'asset_type' | 'action' | 'review' | 'reasons' | 'horizon_days' | 'exit_by' | 'exit_plan'
+  >[]
   return heldCalls(
     rows.map((r) => ({
       account: r.account,
@@ -146,6 +152,7 @@ export async function loadHeldCalls(supabase: Supabase, runId: number): Promise<
       reasons: r.reasons ?? [],
       horizonDays: r.horizon_days,
       exitBy: r.exit_by,
+      exitPlan: parseExitPlan(r.exit_plan),
     })),
   )
 }

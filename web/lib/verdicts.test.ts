@@ -98,6 +98,32 @@ describe('heldCalls', () => {
     expect(calls.get('stock:VEEA')).toEqual({ group: 'hold', label: 'Hold', why: 'You hold it · hold ~21 days · exit by Nov 30' })
   })
 
+  it("gives a Hold with an exit plan its range, sell-at and re-check date", () => {
+    const exitPlan = {
+      status: 'pass' as const,
+      basis: 'volatility' as const,
+      horizon: 21,
+      recheckBy: '2026-12-19',
+      low: 4.2,
+      mid: 5.05,
+      high: 6.1,
+      sellAt: 5.6,
+      pTouch: 0.33,
+      pStopFirst: 0.22,
+      pUp: 0.55,
+      breakeven: 1.9,
+      pBreakeven: 0.3,
+      drift: null,
+      costPrice: 4.75,
+    }
+    const calls = heldCalls([action({ symbol: 'VEEA', horizonDays: 21, exitBy: '2026-11-30', exitPlan })])
+    expect(calls.get('stock:VEEA')?.why).toBe(
+      'You hold it · hold ~21 days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19',
+    )
+    const tsx = heldCalls([action({ symbol: 'KEEL.TO', horizonDays: 21, exitBy: '2026-11-30', exitPlan })])
+    expect(tsx.get('stock:KEEL.TO')?.why).toContain('range C$4.20–6.10')
+  })
+
   it('keeps a coin and a stock with the same ticker apart', () => {
     const calls = heldCalls([
       action({ symbol: 'LINK', assetType: 'crypto', action: 'sell', reasons: ['closed at 9.10, under its trailing stop 10.00'] }),

@@ -29,7 +29,11 @@ def test_the_history_workflow_downloads_weekly_and_saves_the_cache_even_on_failu
     assert 'cron: "0 2 * * 6"' in text and "workflow_dispatch" in text
     assert "--history-only" in text and CACHE_OPTION in text
     assert "actions/cache/restore@v4" in text
-    assert "key: history-${{ github.run_id }}" in text and "restore-keys: history-" in text
+    assert "restore-keys: history-" in text
+    # a re-run (same run id) saves under a new key: a cache key is never overwritten, so it would be lost
+    save = re.search(r"uses: actions/cache/save@v4\n(?:\s+.*\n)*?\s+key: (.+)", text)
+    assert save and save.group(1) == "history-${{ github.run_id }}-${{ github.run_attempt }}"
+    assert text.count("key: history-${{ github.run_id }}-${{ github.run_attempt }}") == 2  # restore and save
     assert re.search(r"uses: actions/cache/save@v4\n\s+if: always\(\)", text)
     # the build exits 1 when a group fails: the cache and the manifest are still saved
     assert re.search(r"uses: actions/upload-artifact@v4[^\n]*\n\s+if: always\(\)", text)

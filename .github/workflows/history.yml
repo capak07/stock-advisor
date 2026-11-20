@@ -33,7 +33,7 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/history-cache
-          key: history-${{ github.run_id }}
+          key: history-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: history-
       - name: Download the data groups' history into the cache
         env:
@@ -43,7 +43,7 @@ jobs:
         if: always()  # a failed or timed-out run keeps what it downloaded
         with:
           path: ${{ runner.temp }}/history-cache
-          key: history-${{ github.run_id }}
+          key: history-${{ github.run_id }}-${{ github.run_attempt }}
       - uses: actions/upload-artifact@v4  # which groups were written, failed or empty, for 30 days
         if: always()
         with:

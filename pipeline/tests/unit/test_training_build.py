@@ -440,6 +440,32 @@ def test_main_builds_history_deps_only_when_the_plan_downloads(monkeypatch, tmp_
     assert local_plan.cache == tmp_path / "history-cache" and local.cache.root == tmp_path / "history-cache"
 
 
+def test_history_only_exits_1_when_a_wanted_group_ends_unavailable(monkeypatch, tmp_path, caplog):
+    """The weekly history job's only alarm: the manifest is written (and the workflow saves the cache with
+    `if: always()`), then the exit code reports the failed groups."""
+    manifests = iter([
+        {"unavailable": {"short": "FinraMissing: FINRA answered 404"}},
+        {"history_groups": sorted(GROUP_FILES)},
+        {"unavailable": {"holders": "NewestSetMissing: 13F"}},
+    ])
+
+    def fake_build(out, now, deps, limit=None, history=None):
+        return next(manifests)
+
+    monkeypatch.setenv("SEC_USER_AGENT", "stock-advisor test@example.com")
+    monkeypatch.setattr(build_module, "NasdaqSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "TmxSymbols", NoSymbols)
+    monkeypatch.setattr(build_module, "build", fake_build)
+    cache = tmp_path / "cache"
+    only = ["--out", str(tmp_path), "--no-db", "--history-only", "--history-cache", str(cache)]
+    assert build_module.main(only) == 1
+    assert any("short" in r.getMessage() for r in caplog.records if r.levelno == logging.ERROR)
+    assert build_module.main(only) == 0  # every group written
+    # a training build copies what is fresh and fails closed on the rest: not an error exit
+    assert build_module.main(["--out", str(tmp_path), "--no-db", "--no-history-download",
+                              "--history-cache", str(cache)]) == 0
+
+
 def test_accepted_groups_need_the_database():
     with pytest.raises(SystemExit):
         parse_args(["--out", "x", "--groups", "accepted", "--no-db"])

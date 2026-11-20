@@ -4,11 +4,13 @@ import zipfile
 from datetime import UTC, date, datetime
 
 import httpx
+import pytest
 
 from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec_13f import LISTING_URL, DataSet, Holding, Quarter
 from advisor.training.holders_history import (
     HOLDERS_COLUMNS,
+    NewestSetMissing,
     cusip_map,
     holders_build,
     holders_history,
@@ -166,3 +168,12 @@ def test_the_build_counts_the_symbols_openfigi_failed_and_mapped(tmp_path):
     holders_build(fake_sec(_routes()), _figi_book(tmp_path / "f.json", []), tmp_path / "sec_13f", ["AAPL", "MSFT"],
                   AS_OF, date(2026, 1, 1), counts=counts)
     assert counts == {"asked": 2, "figi_failed": 0, "mapped": 1, "with_holdings": 1, "data_sets": 1, "gaps": 0}
+
+
+def test_a_gap_on_the_newest_data_set_fails_the_build(tmp_path):
+    """Older gaps are recorded; without the newest set every symbol's latest quarter-on-quarter pair is
+    missing and the CUSIP map has no source, so the group fails (and the history job reports it)."""
+    routes = {**_routes(), f"{BASE}01mar2026-31may2026_form13f.zip": 404}
+    with pytest.raises(NewestSetMissing, match="01mar2026-31may2026"):
+        holders_build(fake_sec(routes), _figi_book(tmp_path / "f.json", []), tmp_path / "sec_13f", ["AAPL"],
+                      AS_OF, date(2023, 1, 1))

@@ -5,7 +5,8 @@ name: history
 # UTC) and benchmark.yml (the month's first Sunday) restore that cache and never download group
 # history, so neither pays the long Yahoo download (Ruling R0). A run of about 98 minutes ends near
 # 03:40; one that reaches its limit ends by 05:00, still five hours before train. The cache is saved
-# even when the run fails or times out, so what it downloaded warms the next run.
+# even when the run fails or times out, so what it downloaded warms the next run. A group that ends
+# unavailable (its earlier files kept) fails the download step, so the run shows red.
 on:
   schedule:
     - cron: "0 2 * * 6"  # Saturday 02:00 UTC

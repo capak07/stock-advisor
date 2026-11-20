@@ -31,6 +31,8 @@ def test_the_history_workflow_downloads_weekly_and_saves_the_cache_even_on_failu
     assert "actions/cache/restore@v4" in text
     assert "key: history-${{ github.run_id }}" in text and "restore-keys: history-" in text
     assert re.search(r"uses: actions/cache/save@v4\n\s+if: always\(\)", text)
+    # the build exits 1 when a group fails: the cache and the manifest are still saved
+    assert re.search(r"uses: actions/upload-artifact@v4[^\n]*\n\s+if: always\(\)", text)
     assert text.count("path: ${{ runner.temp }}/history-cache") == 2  # restore and save: the same path
     assert "SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}" in text
     assert "cancel-in-progress: false" in text and "contents: read" in text

@@ -6,7 +6,8 @@ missing benchmark or sector ETF. A few stocks without bars are only recorded in 
 
 The US data groups' history (`training.history`) lives in a cache (`--history-cache`, Ruling R0):
 - `--history-only` (the weekly history.yml): the universe and tickers.parquet, then the group download
-  into the cache. Nothing else is built.
+  into the cache. Nothing else is built. It exits 1 when a wanted group ends unavailable (after writing
+  the manifest; the workflow still saves the cache), so a failed group is never silent.
 - `--no-history-download` (benchmark.yml, train.yml): the full build, then the fresh groups are copied
   from the cache. No group history is downloaded.
 - neither (a local build): the full build, the group download, then the copy. `--groups none` skips
@@ -387,6 +388,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             log.error("%s (see %s)", exc, args.out / "manifest.json", exc_info=exc.__cause__ or exc)
             return 1
     print(json.dumps({k: v for k, v in manifest.items() if k != "missing"}))
+    if plan is not None and plan.only:
+        failed = sorted(set(manifest.get("unavailable", {})) & plan.groups)
+        if failed:
+            log.error("history groups unavailable, earlier files kept: %s (see %s)", ", ".join(failed),
+                      args.out / "manifest.json")
+            return 1
     return 0
 
 

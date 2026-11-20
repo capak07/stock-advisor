@@ -56,6 +56,11 @@ def holders_history(quarters: Sequence[tuple[DataSet, Quarter]], cusips: Mapping
     return frame.sort_values(["symbol", "period", "known"], kind="stable").reset_index(drop=True)
 
 
+class NewestSetMissing(Exception):
+    """The newest 13F data set could not be read: without it no symbol has its latest quarter-on-quarter
+    pair and the CUSIP map loses its source, so the holders group fails rather than write a stale history."""
+
+
 def read_quarters(sec: SecEdgar, folder: Path, data_sets: Sequence[DataSet]
                   ) -> tuple[list[tuple[DataSet, Quarter]], dict[str, str]]:
     """Each data set's totals (cached in `folder`), and the gaps: data set name -> why it was left out."""
@@ -74,12 +79,15 @@ def read_quarters(sec: SecEdgar, folder: Path, data_sets: Sequence[DataSet]
 def holders_build(sec: SecEdgar, figis: FigiBook, folder: Path, symbols: Sequence[str], as_of: datetime,
                   since: date, counts: dict[str, int] | None = None) -> tuple[pd.DataFrame, dict[str, str]]:
     """`holders.parquet` for `symbols` from every data set whose window ends on or after `since`, and the
-    gaps. The totals stay in `folder` and the FIGIs in `figis`' file, for the next history run. A symbol
+    gaps. A gap on the newest data set raises NewestSetMissing; an older one is only recorded. The totals
+    stay in `folder` and the FIGIs in `figis`' file, for the next history run. A symbol
     OpenFIGI could not look up has no CUSIP, so no rows. The counts are logged and, when `counts` is
     given, put in it: `asked`, `figi_failed` (OpenFIGI failed before looking them up), `mapped` (to a
     CUSIP), `with_holdings`, `data_sets` (read) and `gaps`."""
     data_sets = [d for d in parse_listing(sec.get(LISTING_URL).text) if d.end >= since]
     quarters, gaps = read_quarters(sec, folder, data_sets)
+    if data_sets and (newest := max(data_sets, key=lambda d: d.end).name) in gaps:
+        raise NewestSetMissing(f"13F data set {newest}: {gaps[newest]}")
     lookup = figis.lookup(symbols, as_of)
     if lookup.failed:
         log.warning("OpenFIGI failed for %d symbols: %s", len(lookup.failed), lookup.error)

@@ -13,6 +13,7 @@ from advisor.model.market_run import Forecast
 from advisor.models import ET, AssetType, DailyBar, LinkedPick, Market, PredictionRow
 from advisor.policy import DEFAULT_POLICY
 from advisor.portfolio.actions import Holding, decide
+from advisor.portfolio.exit_plan import build_plan
 from advisor.portfolio.ledger import Loss, Position
 from advisor.portfolio.stage import (
     RunView,
@@ -475,3 +476,54 @@ def test_decide_is_unchanged_by_the_plan():
         expected.horizon, sessions_after(Market.TSX, DAY, 21), expected.q10, expected.q50, expected.q90,
     )
     assert row.action == "hold" and row.exit_plan is not None
+
+
+def test_the_plan_trails_the_stop_with_the_holdings_own_atr_and_policy(monkeypatch):
+    # R12: the live plan gets the ATR `_stop` used (the model's 4% here) and the policy's trail_atr,
+    # so its stop-first chance is simulated with the stop trailing, not held fixed
+    from advisor.portfolio import stage
+
+    seen = []
+
+    def spy(**kwargs):
+        seen.append(kwargs)
+        return build_plan(**kwargs)
+
+    monkeypatch.setattr(stage, "build_plan", spy)
+    policy = replace(DEFAULT_POLICY, trail_atr=1.5)
+    view = _plan_view()
+    positions = [_position("RY.TO")]
+    (row,), reasons = action_rows(positions, holding_inputs(positions, [], view, {Market.TSX: policy}), view)
+    assert reasons == {}
+    (kw,) = seen
+    assert (kw["atr_pct"], kw["trail_atr"]) == (0.04, 1.5)
+    assert kw["stop"] == pytest.approx(row.trailing_stop)
+    plan = row.exit_plan
+    assert plan["sell_at"] is not None and plan["p_stop_first"] is not None
+    fixed = build_plan(**{**kw, "atr_pct": None, "trail_atr": None})
+    assert plan["p_stop_first"] > fixed["p_stop_first"]
+
+
+def test_a_coins_plan_trails_with_the_atr_of_its_candles(monkeypatch):
+    from advisor.portfolio import stage
+
+    seen = []
+    monkeypatch.setattr(stage, "build_plan", lambda **kw: seen.append(kw) or build_plan(**kw))
+    candles = _candles("BONK", n=120)
+    quote = CryptoQuote(symbol="BONK", coin_id="bonk", price_cad=1.8, updated_at=datetime(2026, 10, 14, tzinfo=UTC))
+    view = _view(candles={"BONK": candles}, quotes={"BONK": quote})
+    positions = [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)]
+    _rows(view, positions)
+    (kw,) = seen
+    assert kw["atr_pct"] == pytest.approx(atr_pct(candles)) and kw["trail_atr"] == DEFAULT_POLICY.trail_atr
+
+
+def test_a_holding_without_an_atr_gets_a_fixed_stop_plan(monkeypatch):
+    from advisor.portfolio import stage
+
+    seen = []
+    monkeypatch.setattr(stage, "build_plan", lambda **kw: seen.append(kw) or build_plan(**kw))
+    view = _view(candles={"BONK": _candles("BONK", n=10)})  # too few candles for an ATR
+    _rows(view, [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)])
+    (kw,) = seen
+    assert kw["atr_pct"] is None

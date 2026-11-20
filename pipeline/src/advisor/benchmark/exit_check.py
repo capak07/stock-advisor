@@ -206,6 +206,8 @@ def _judge(
             value_cad=float(price),
             cost=cost,
             recheck=None,
+            atr_pct=float(atr),  # R12: the plan's stop trails as `walk_exits` then walks it
+            trail_atr=trail_atr,
         )
     except NoPlan:
         return None

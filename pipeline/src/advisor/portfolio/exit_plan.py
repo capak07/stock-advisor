@@ -132,16 +132,50 @@ def touch_share(paths: np.ndarray, level: float) -> float:
     return float(np.mean(np.max(paths, axis=1) >= level))
 
 
-def _stop_first(paths: np.ndarray, stop_level: float, sell_level: float) -> float:
-    """The share of paths whose first step at or under `stop_level` comes before their first
-    step at or above `sell_level`; a path that never reaches `sell_level` counts if it reaches
-    the stop at all."""
-    horizon = paths.shape[1]
+def trail_of(atr_pct: float | None, trail_atr: float | None) -> float | None:
+    """How far under the highest close the stop trails, as a fraction of the latest close
+    (`trail_atr * atr_pct`); None, a fixed stop, when either is missing or not finite or the
+    product is not in (0, 1)."""
+    if atr_pct is None or trail_atr is None:
+        return None
+    trail = trail_atr * atr_pct
+    return trail if math.isfinite(trail) and 0 < trail < 1 else None
 
-    def first(hit: np.ndarray) -> np.ndarray:
-        return np.where(hit.any(axis=1), hit.argmax(axis=1), horizon)
 
-    return float(np.mean(first(paths <= stop_level) < first(paths >= sell_level)))
+def _first(hit: np.ndarray) -> np.ndarray:
+    """Each path's first step where `hit` is true; the horizon when it never is."""
+    return np.where(hit.any(axis=1), hit.argmax(axis=1), hit.shape[1])
+
+
+def _trailing_hits(paths: np.ndarray, stop: float, trail: float) -> np.ndarray:
+    """Each path's first step whose close is at or under its stop then in force, as
+    `stops.trailing_stop` moves it (R12): the stop starts at `stop` (relative to today's price);
+    after each step it becomes max(stop, highest close so far - trail * that step's close), the
+    highest close starting at today's price. The horizon when the stop is never hit."""
+    closes = np.exp(paths)  # each step's close over today's price
+    count, horizon = closes.shape
+    level = np.full(count, stop)
+    high = np.ones(count)
+    hit = np.full(count, horizon)
+    for t in range(horizon):
+        close = closes[:, t]
+        hit[(hit == horizon) & (close <= level)] = t
+        high = np.maximum(high, close)
+        level = np.maximum(level, high - trail * close)
+    return hit
+
+
+def _stop_first(
+    paths: np.ndarray, stop_level: float, sell_level: float, trail: float | None = None
+) -> float:
+    """The share of paths whose stop hit comes before their first step at or above `sell_level`;
+    a path that never reaches `sell_level` counts if it hits the stop at all. Without `trail` the
+    stop is held at `stop_level` (a log return); with it, the stop trails (R12)."""
+    if trail is None:
+        stopped = _first(paths <= stop_level)
+    else:
+        stopped = _trailing_hits(paths, math.exp(stop_level), trail)
+    return float(np.mean(stopped < _first(paths >= sell_level)))
 
 
 def read_plan(
@@ -151,12 +185,15 @@ def read_plan(
     stop: float | None,
     breakeven: float | None,
     cost: float,
+    atr_pct: float | None = None,
+    trail_atr: float | None = None,
 ) -> dict:
     """The range, the sell-at price and the chances, read off cumulative log-return paths.
 
     The sell-at price is the k-th highest path maximum, k = ceil(TOUCH * N), so about one path
     in three closes at or above it. It is not given when it sits inside the round-trip cost or
-    at or under the stop."""
+    at or under today's stop. With today's ATR fraction and the policy's `trail_atr`, the stop
+    trails along each path for the stop-first chance (R12); without them it is held fixed."""
     paths = np.asarray(paths, dtype=float)
     ends = paths[:, -1]
     q10, q50, q90 = np.quantile(ends, [0.1, 0.5, 0.9])
@@ -169,7 +206,7 @@ def read_plan(
     else:
         p_touch = touch_share(paths, level)
         if stop is not None:
-            p_stop_first = _stop_first(paths, math.log(stop / price), level)
+            p_stop_first = _stop_first(paths, math.log(stop / price), level, trail_of(atr_pct, trail_atr))
     return {
         "low": price * math.exp(q10),
         "mid": price * math.exp(q50),
@@ -208,19 +245,22 @@ def build_plan(
     value_cad: float,
     cost: float,
     recheck: Callable[[int], date] | None = None,
+    atr_pct: float | None = None,
+    trail_atr: float | None = None,
 ) -> dict:
     """The stored exit plan for one holding on feature day `day`; the one builder the holdings
     stage and the benchmark check share (R6).
 
     With a forecast, its horizon and the benchmark's closes, the paths follow the forecast;
-    otherwise they are volatility only, over NO_FORECAST_HORIZON steps. Only closes dated on or
-    before `day` are read. Raises NoPlan, and only NoPlan, when no plan can be built."""
+    otherwise they are volatility only, over NO_FORECAST_HORIZON steps. With the ATR fraction that
+    set `stop` and the policy's `trail_atr`, the stop trails along each path (R12). Only closes
+    dated on or before `day` are read. Raises NoPlan, and only NoPlan, when no plan can be built."""
     if not _usable(price):
         raise NoPlan("no price")
     try:
         plan = _build_plan(
             symbol, day, closes, price, horizon, forecast, bench_closes, stop,
-            cost_cad, value_cad, cost, recheck,
+            cost_cad, value_cad, cost, recheck, atr_pct, trail_atr,
         )
     except NoPlan:
         raise
@@ -233,7 +273,7 @@ def build_plan(
 
 def _build_plan(
     symbol, day, closes, price, horizon, forecast, bench_closes, stop,
-    cost_cad, value_cad, cost, recheck,
+    cost_cad, value_cad, cost, recheck, atr_pct, trail_atr,
 ) -> dict:
     seed = seed_of(symbol, day)
     own = _up_to(closes, day)
@@ -250,7 +290,10 @@ def _build_plan(
     cost_price = float(price * cost_cad / value_cad) if value_cad > 0 else None
     breakeven = cost_price if cost_price is not None and value_cad < cost_cad else None
     return {
-        **read_plan(paths, float(price), stop=stop, breakeven=breakeven, cost=cost),
+        **read_plan(
+            paths, float(price), stop=stop, breakeven=breakeven, cost=cost,
+            atr_pct=atr_pct, trail_atr=trail_atr,
+        ),
         "version": PLAN_VERSION,
         "basis": basis,
         "drift": drift,

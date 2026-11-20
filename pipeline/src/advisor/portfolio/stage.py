@@ -169,6 +169,14 @@ def _review(p: Position, seen: _Priced, view: RunView) -> list[str]:
     return reasons
 
 
+def _atr(symbol: str, seen: _Priced, forecast: Forecast | None) -> float:
+    """The ATR fraction a holding's stop trails by: the model's own `atr_14_pct` when the forecast
+    has the symbol, else one from its bars or candles. NaN when there is none."""
+    if forecast is not None and symbol in forecast.features.index:
+        return float(forecast.features.at[symbol, "atr_14_pct"])
+    return atr_pct(seen.history)
+
+
 def _stop(
     p: Position,
     seen: _Priced,
@@ -179,10 +187,7 @@ def _stop(
     """The trailing stop, native; None without a price to set it from."""
     if seen.price is None:
         return None
-    if forecast is not None and p.symbol in forecast.features.index:
-        atr = float(forecast.features.at[p.symbol, "atr_14_pct"])  # the model's own
-    else:
-        atr = atr_pct(seen.history)
+    atr = _atr(p.symbol, seen, forecast)
     # an unconfirmed jump would raise the stop for good, so it never sets the high
     history = seen.history
     if seen.market is None and view.crypto_features.get(p.symbol, {}).get("unconfirmed_price") is True:
@@ -305,6 +310,8 @@ def _exit_plan(h: Holding, seen: _Priced, view: RunView, action) -> dict:
     """The holding's exit plan, or NoPlan with the reason. Any other failure inside is NoPlan too."""
     if seen.day is None:
         raise NoPlan("no price")
+    # the stop trails along each path by the ATR `_stop` used and the policy's multiple (R12)
+    atr = _atr(h.symbol, seen, view.forecasts.get(seen.market) if seen.market is not None else None)
     flagged = view.flagged.get(h.symbol, ())
     closes = {b.day: b.close for b in seen.history if b.day not in flagged}
     day = seen.day
@@ -337,6 +344,8 @@ def _exit_plan(h: Holding, seen: _Priced, view: RunView, action) -> dict:
         value_cad=h.value_cad,
         cost=_plan_cost(h, view),
         recheck=recheck,
+        atr_pct=atr if math.isfinite(atr) else None,
+        trail_atr=h.policy.trail_atr,
     )
 
 

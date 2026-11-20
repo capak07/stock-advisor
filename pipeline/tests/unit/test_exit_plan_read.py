@@ -58,6 +58,54 @@ def test_the_stop_first_chance_counts_paths_that_reach_the_stop_before_the_sell_
     assert plan["p_stop_first"] == pytest.approx(2 / 6)
 
 
+# R12: the simulated stop trails as `stops.trailing_stop` does, with today's ATR held fixed. Maxima
+# 1.3, 1.25, 1.1, 1.0, 1.0, 1.0: sell_at 125. The stop starts at 95 and, with 2.5 x 2% ATR, rises
+# to the highest close less 5% of each close.
+TRAILING = [[1.3, 1.0, 1.0], [1.0, 1.25, 1.0], [1.10, 1.04, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
+
+
+def test_a_path_that_rises_and_falls_back_to_its_raised_stop_is_a_stop_hit():
+    # path 3: after 110 the stop is 110 - 5.5 = 104.5, so 104 hits it; a fixed stop at 95 never would
+    paths = _paths(TRAILING)
+    plan = read_plan(paths, 100.0, stop=95.0, breakeven=None, cost=0.0, atr_pct=0.02, trail_atr=2.5)
+    assert plan["sell_at"] == pytest.approx(125.0)
+    assert plan["p_stop_first"] == pytest.approx(1 / 6)
+    fixed = read_plan(paths, 100.0, stop=95.0, breakeven=None, cost=0.0)
+    assert fixed["p_stop_first"] == 0.0
+
+
+def test_a_path_that_reaches_the_sell_at_before_its_raised_stop_is_not_a_stop_hit():
+    # path 2 reaches 125 on step 2, then 100 is under its raised stop 118.75 on step 3: the sell-at came first
+    paths = _paths([TRAILING[1], *TRAILING[3:]] + [[1.3, 1.0, 1.0]])
+    plan = read_plan(paths, 100.0, stop=95.0, breakeven=None, cost=0.0, atr_pct=0.02, trail_atr=2.5)
+    assert plan["sell_at"] == pytest.approx(125.0)
+    assert plan["p_stop_first"] == 0.0
+
+
+@pytest.mark.parametrize(("atr", "trail"), [
+    (None, 2.5), (0.02, None), (math.nan, 2.5), (0.02, math.inf), (0.5, 2.5), (0.0, 2.5), (-0.02, 2.5),
+])
+def test_without_a_usable_trail_the_stop_stays_fixed(atr, trail):
+    paths = _paths(TRAILING)
+    plan = read_plan(paths, 100.0, stop=95.0, breakeven=None, cost=0.0, atr_pct=atr, trail_atr=trail)
+    assert plan == read_plan(paths, 100.0, stop=95.0, breakeven=None, cost=0.0)
+    old = _paths([[1.3, 1.0], [0.8, 1.3], [1.0, 1.25], [0.85, 0.9], [1.0, 1.0], [1.0, 1.0]])
+    assert read_plan(old, 100.0, stop=90.0, breakeven=None, cost=0.0, atr_pct=atr, trail_atr=trail)[
+        "p_stop_first"] == pytest.approx(2 / 6)
+
+
+def test_build_plan_passes_the_trail_through():
+    closes = {DAY - timedelta(days=k): 50.0 * math.exp(0.02 * math.sin(k) + 0.001 * k) for k in range(120)}
+    kw = dict(symbol="RY.TO", day=DAY, closes=closes, price=closes[DAY], horizon=None, forecast=None,
+              bench_closes=None, stop=closes[DAY] * 0.9, cost_cad=1.0, value_cad=1.0, cost=0.0)
+    fixed = build_plan(**kw)
+    trailing = build_plan(**kw, atr_pct=0.04, trail_atr=2.5)
+    assert fixed["sell_at"] is not None and fixed["sell_at"] == trailing["sell_at"]
+    assert trailing["p_stop_first"] > fixed["p_stop_first"]
+    assert {k: v for k, v in trailing.items() if k != "p_stop_first"} == {
+        k: v for k, v in fixed.items() if k != "p_stop_first"}
+
+
 def test_a_sell_at_price_inside_the_cost_or_under_the_stop_is_not_given():
     paths = _paths([[1.01, 1.0]] * 2 + [[1.0, 1.0]] * 4)  # sell_at 101 <= 100 * 1.032 = 103.2
     plan = read_plan(paths, 100.0, stop=None, breakeven=None, cost=0.032)

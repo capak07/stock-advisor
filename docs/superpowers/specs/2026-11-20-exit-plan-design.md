@@ -274,6 +274,7 @@ always wins that conflict.
 - **Limit sell beside a stop:** hidden by default for a holding with a stop, until the Wealthsimple
   check says both orders can stand on the same shares.
 - **2026-11-20, controller rulings R5 and R3** *(calls)*: the re-check date is the feature day plus the plan's own horizon, also for a holding linked to an open pick (the pick's later exit-by stays only in `exit_by`), replacing §1's last sentence on the horizon; coin plans are volatility-only for now, and §2's coin-with-forecast path is deferred.
+- **2026-11-20, controller ruling R12** *(call)*: the simulated stop trails along each path as `trailing_stop` moves it (today's ATR fraction held fixed; the highest close starts at today's price), replacing §3's "held fixed" and the fixed-stop note above. Reason: the benchmark check walks a trailing stop, and against it the fixed-stop chance was 24 points off on driftless random walks (9.6 after the change, inside the 10-point tolerance). Without an ATR or a trail multiple the stop stays fixed.
 
 ## Constraints
 

@@ -146,6 +146,7 @@ def test_the_plan_is_built_as_live_builds_it():
             "symbol": symbol, "day": dates[d], "closes": dict(zip(dates[:d + 1], series.iloc[:d + 1], strict=True)),
             "price": price, "stop": price * (1 - DEFAULT_POLICY.trail_atr * atr),
             "cost_cad": float(series.iloc[d - 125:d + 1].max()), "value_cad": price, "cost": cost,
+            "atr_pct": atr, "trail_atr": DEFAULT_POLICY.trail_atr,  # R12: the stop trails as it is walked
         }
         bench = dict(zip(dates[:d + 1], panel.close[BENCH].iloc[:d + 1], strict=True))
         forecast = build_plan(**common, horizon=5, forecast=(row.q10, row.q50, row.q90), bench_closes=bench)
@@ -175,6 +176,9 @@ def test_random_walk_plans_are_calibrated():
     assert abs(volatility["touch_rate"] - TOUCH) * 100 <= TOLERANCE["touch"]
     assert abs(volatility["coverage"] - 0.80) * 100 <= TOLERANCE["coverage"]
     assert volatility["result"] != "fail"
+    # R12: the simulated stop trails as `walk_exits` walks it, so the stated chance holds up
+    assert volatility["stop_first_worst_bin"] * 100 <= TOLERANCE["bins"]
+    assert volatility["checks"]["stop_first"] is True
 
 
 # ---- verdicts on hand-built pairs ----

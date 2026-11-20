@@ -194,10 +194,15 @@ def build(out: Path, now: datetime, deps: BuildDeps, limit: int | None = None,
             _write(macro_history(deps.http, start, today, sleep=deps.sleep), out, "macro.parquet", manifest)
         except MacroUnavailable as exc:
             # nothing trains on macro.parquet yet (spec §5.1), and FRED stalls requests from
-            # GitHub's runners, so a source that never answers is recorded, not fatal. A series
-            # refused or sent empty still fails: that is a change to fix, not an outage.
+            # GitHub's runners, so a source that never answers is recorded, not fatal.
             manifest.setdefault("unavailable", {})["macro"] = str(exc)
             log.warning("macro: skipped, macro.parquet not written: %s", exc)
+        except MacroRefused as exc:
+            # FRED also blocks GitHub's runners with a 404 page (2026-11-20, DFF), so a refusal can't
+            # be told from a renamed series; recorded like an outage, logged as an error so a series
+            # that really was renamed is still seen. A series sent empty still fails the build.
+            manifest.setdefault("unavailable", {})["macro"] = str(exc)
+            log.error("macro: skipped, macro.parquet not written: %s", exc)
         timed("macro", began)
 
         for market in Market:

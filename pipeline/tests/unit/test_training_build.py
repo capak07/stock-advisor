@@ -181,15 +181,21 @@ def test_a_fred_that_never_answers_is_recorded_and_the_build_goes_on(fixtures_di
     assert any(r.levelno == logging.WARNING and reason in r.getMessage() for r in caplog.records)
 
 
-def test_a_series_fred_refuses_still_fails_the_build(fixtures_dir, tmp_path):
+def test_a_series_fred_refuses_is_recorded_and_the_build_goes_on(fixtures_dir, tmp_path, caplog):
+    # FRED answers GitHub's runners with a 404 page when it blocks them (2026-11-20, DFF), so a refusal
+    # can't be told from a renamed series; nothing trains on macro.parquet, so it is recorded, not fatal
     def refuse(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(404, text="Series not found")
+        return httpx.Response(404, text="<!DOCTYPE html><html>Not Found</html>")
 
-    with fred_down(fixtures_dir, refuse) as client, pytest.raises(
-        BuildFailed, match=r"macro step failed: FRED refused T10Y2Y \(HTTP 404\)"
-    ):
-        build(tmp_path, NOW, deps(client, []), limit=10)
-    assert json.loads((tmp_path / "manifest.json").read_text())["failed"]["step"] == "macro"
+    with caplog.at_level(logging.ERROR, logger="advisor.training"), fred_down(fixtures_dir, refuse) as client:
+        manifest = build(tmp_path, NOW, deps(client, []), limit=10)
+    reason = manifest["unavailable"]["macro"]
+    assert reason.startswith("FRED refused T10Y2Y (HTTP 404)")
+    assert "failed" not in manifest
+    assert "macro.parquet" not in manifest["files"] and not (tmp_path / "macro.parquet").exists()
+    assert {"prices_US.parquet", "prices_TSX.parquet", "fundamentals.parquet"} <= set(manifest["files"])
+    # louder than an outage: a series that really was renamed must still be seen in the log
+    assert any(r.levelno == logging.ERROR and "FRED refused T10Y2Y" in r.getMessage() for r in caplog.records)
 
 
 def test_a_series_fred_sends_empty_still_fails_the_build(fixtures_dir, tmp_path):

@@ -328,7 +328,7 @@ def _exit_class(**over) -> dict:
     return {
         "pairs": 1200, "touch_rate": 0.31, "touch_by_third": [0.30, 0.32, 0.31], "coverage": 0.78,
         "breakeven_worst_bin": 0.042, "stop_first_worst_bin": 0.061, "order_gain": 0.0012,
-        "order_folds_not_worse": 2, "folds": 3, "checks": checks, "result": "pass", **over,
+        "order_t": 0.84, "order_days": 60, "order_folds_not_worse": 2, "folds": 3, "checks": checks, "result": "pass", **over,
     }
 
 
@@ -337,16 +337,21 @@ def test_the_exit_plan_check_renders_a_row_per_class():
     report["markets"]["TSX"]["exit_plan"] = {
         "plan_version": 1, "model": "garch+ranker", "classes": {
             "forecast": _exit_class(),
-            "volatility": _exit_class(pairs=1150, order_gain=-0.0034, stop_first_worst_bin=None, result="range_only"),
+            "volatility": _exit_class(pairs=1150, order_gain=-0.0034, order_t=-2.31, order_folds_not_worse=0,
+                                      stop_first_worst_bin=None, result="range_only"),
+            "coin": _exit_class(pairs=400, order_t=None, order_days=12, folds=1, order_folds_not_worse=1),
         },
     }
     md = render_markdown(report)
     section = md.split("### Exit plan check", 1)[1].split("## US", 1)[0]
     assert "garch+ranker" in section.splitlines()[2]
     assert "| Class | Pairs | Touch rate (stated 33%) | Coverage (stated 80%) | Worst break-even bin " \
-           "| Worst stop-first bin | Order gain | Result |" in section
-    assert "| forecast | 1200 | 31% | 78% | 4.2 pts | 6.1 pts | +0.12% | pass |" in section
-    assert "| volatility | 1150 | 31% | 78% | 4.2 pts | — | -0.34% | range_only |" in section
+           "| Worst stop-first bin | Order gain | Order t (days) | Folds not worse | Result |" in section
+    assert "| forecast | 1200 | 31% | 78% | 4.2 pts | 6.1 pts | +0.12% | +0.84 (60) | 2 of 3 | pass |" in section
+    assert "| volatility | 1150 | 31% | 78% | 4.2 pts | — | -0.34% | -2.31 (60) | 0 of 3 | range_only |" in section
+    assert "| coin | 400 | 31% | 78% | 4.2 pts | 6.1 pts | +0.12% | — (12) | 1 of 1 | pass |" in section
+    # R14: the order's value fails only when it tests measurably worse; the fold counts are information
+    assert "The order's value fails only when it tests measurably worse than holding (t under -2 on "            "the sample days' mean gains, at least 20 days)." in section
     assert "nan" not in md.lower() and "None" not in md
 
 

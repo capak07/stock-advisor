@@ -9,13 +9,15 @@ that reaches the sell-at price, R13). Touches are counted on daily
 closes; intraday touches are not measured (R9).
 
 The verdict per class decides what the live page may show (R7): `fail` when the range is off,
-`range_only` when the touch rate or the order's value is off, else `pass`. A failed break-even or
+`range_only` when the touch rate is off or the order tests measurably worse than holding (R14),
+else `pass`. A failed break-even or
 stop-first check hides only that chance.
 """
 
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -34,6 +36,8 @@ MIN_PAIRS = 200  # a class with fewer has no verdict ("Not validated yet")
 MIN_VALUES = 50  # a check with fewer judged values fails
 BINS = 5
 THIRDS = 3
+MIN_VALUE_DAYS = 20  # fewer sample days with an order cannot judge it (R14)
+VALUE_T = -2.0  # the order fails only when it tests measurably worse than holding (R14)
 HIGH_SESSIONS = 126  # the synthetic cost: the highest close of these sessions up to the sample day
 CLASSES = ("forecast", "volatility", "coin")
 _QUANTILES = ["q10", "q50", "q90"]
@@ -54,6 +58,7 @@ class Judged:
 
     cls: str  # "forecast", "volatility" or "coin"
     fold: int
+    day: date  # the sample day
     atr_pct: float  # on the sample day
     plan: dict
     end_price: float  # the re-check date's close
@@ -226,6 +231,7 @@ def _judge(
     return Judged(
         cls=cls,
         fold=int(fold),
+        day=day,
         atr_pct=float(atr),
         plan=plan,
         end_price=end,
@@ -308,6 +314,20 @@ def _within(gap: float | None, tolerance: float) -> bool:
     return gap is not None and gap * 100 <= tolerance
 
 
+def _value(daily: np.ndarray) -> tuple[bool, float | None]:
+    """Whether the order passes the value check (R14), and its t: the mean of the sample days' mean
+    (with order - without) over its standard error. It fails only when the order tests measurably
+    worse than holding (t under VALUE_T), or with fewer than MIN_VALUE_DAYS days to judge it on.
+    With no spread between the days, t is None and the order passes when their mean is at least 0."""
+    if len(daily) < MIN_VALUE_DAYS:
+        return False, None
+    spread = float(np.std(daily, ddof=1))
+    if spread == 0:
+        return bool(daily.mean() >= 0), None
+    t = float(daily.mean() / (spread / math.sqrt(len(daily))))
+    return t >= VALUE_T, t
+
+
 def _verdict(pairs: Sequence[Judged]) -> dict:
     thirds = _thirds(pairs)
     sold = [(p.touched_sell_at, t) for p, t in zip(pairs, thirds, strict=True) if p.touched_sell_at is not None]
@@ -329,15 +349,16 @@ def _verdict(pairs: Sequence[Judged]) -> dict:
     with_sf = [p for p in pairs if p.stop_first is not None and p.plan.get("p_stop_first") is not None]
     stop_first_worst = _worst_bin([p.plan["p_stop_first"] for p in with_sf], [p.stop_first for p in with_sf])
 
-    gains = [(p.fold, p.with_order - p.without_order) for p in pairs
-             if p.with_order is not None and p.without_order is not None]
-    order_gain = _mean([g for _, g in gains])
+    gains = [p for p in pairs if p.with_order is not None and p.without_order is not None]
+    order_gain = _mean([p.with_order - p.without_order for p in gains])
     by_fold: dict[int, list[float]] = {}
-    for fold, g in gains:
-        by_fold.setdefault(fold, []).append(g)
-    folds = len(by_fold)
+    by_day: dict[date, list[float]] = {}
+    for p in gains:
+        by_fold.setdefault(p.fold, []).append(p.with_order - p.without_order)
+        by_day.setdefault(p.day, []).append(p.with_order - p.without_order)
+    folds = len(by_fold)  # the fold counts are information only (R14)
     not_worse = sum(1 for values in by_fold.values() if np.mean(values) >= 0)
-    value = len(gains) >= MIN_VALUES and order_gain >= 0 and not_worse >= math.ceil(folds / 2)
+    value, order_t = _value(np.array([np.mean(values) for values in by_day.values()]))
 
     checks = {
         "range": bool(in_range),
@@ -360,6 +381,8 @@ def _verdict(pairs: Sequence[Judged]) -> dict:
         "breakeven_worst_bin": breakeven_worst,
         "stop_first_worst_bin": stop_first_worst,
         "order_gain": order_gain,
+        "order_t": order_t,
+        "order_days": len(by_day),
         "order_folds_not_worse": not_worse,
         "folds": folds,
         "checks": checks,

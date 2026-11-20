@@ -1,14 +1,17 @@
 """The benchmark's exit plan check: plans built as live builds them, judged on later closes."""
 
 import math
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from advisor.benchmark.exit_check import (
+    MIN_VALUE_DAYS,
     PAIRS_PER_FOLD,
     TOLERANCE,
+    VALUE_T,
     Judged,
     judge_pairs,
     verdicts,
@@ -183,6 +186,9 @@ def test_random_walk_plans_are_calibrated():
     # R12: the simulated stop trails as `walk_exits` walks it, so the stated chance holds up
     assert volatility["stop_first_worst_bin"] * 100 <= TOLERANCE["bins"]
     assert volatility["checks"]["stop_first"] is True
+    # R14: an order with no edge on a driftless walk is not measurably worse than holding
+    assert volatility["order_days"] >= MIN_VALUE_DAYS
+    assert volatility["checks"]["value"] is True
 
 
 def test_on_a_driftless_walk_the_order_neither_gains_nor_loses():
@@ -216,9 +222,11 @@ def _judged(
     stop_first: bool | None = None,
     gain: float = 0.01,
     breakeven: bool = True,
+    day: date | None = None,
 ) -> Judged:
     """Pair k of 100 in a fold: 80% in range, 1 in 3 touches in every atr third, break-even and
-    stop-first chances as stated, and an order that gains `gain`."""
+    stop-first chances as stated, and an order that gains `gain`. Five pairs a sample day, so a
+    fold of 100 pairs has 20 days."""
     plan = {
         "low": 90.0, "mid": 100.0, "high": 110.0, "sell_at": 108.0, "p_touch": TOUCH,
         "p_stop_first": p_stop_first, "breakeven": 120.0, "p_breakeven": p_breakeven,
@@ -229,7 +237,8 @@ def _judged(
     in_range = k % 5 != 0 if in_range is None else in_range
     end = 100.0 if in_range else 130.0
     return Judged(
-        cls=cls, fold=fold, atr_pct=0.01 + k / 10_000, plan=plan, end_price=end, max_close=end,
+        cls=cls, fold=fold, day=day or date(2024, 1, 1) + timedelta(days=100 * fold + k // 5),
+        atr_pct=0.01 + k / 10_000, plan=plan, end_price=end, max_close=end,
         in_range=in_range,
         touched_sell_at=k % 3 == 0 if touched is None else touched,
         touched_breakeven=(
@@ -307,18 +316,50 @@ def test_a_check_with_fewer_than_50_values_fails():
     assert v["result"] == "pass"
 
 
-@pytest.mark.parametrize(("means", "per_fold", "value"), [
-    ((0.01, 0.01, -0.01), 100, True),
-    ((0.03, -0.01, -0.01), 100, False),  # pooled +0.0033, but 1 of 3 folds
-    ((-0.01, -0.01, 0.01), 100, False),
-    ((0.01,), 250, True),  # pairs in one fold only: needs 1
+def _days(means: list[float], per_day: int = 10) -> list[Judged]:
+    """`per_day` pairs on each sample day, the day's pairs spread +-0.005 around its mean `gain`."""
+    out = []
+    for n, mean in enumerate(means):
+        day = date(2024, 1, 1) + timedelta(days=n)
+        for k in range(per_day):
+            out.append(_judged(k, 1 + n % 3, day=day, gain=mean + (0.005 if k % 2 else -0.005)))
+    return out
+
+
+SPREAD = [0.01 if n % 2 else -0.01 for n in range(30)]  # zero mean; sd 0.01 x sqrt(30 / 29)
+SE = 0.01 * math.sqrt(30 / 29) / math.sqrt(30)  # its standard error over 30 days
+
+
+@pytest.mark.parametrize(("means", "per_day", "t", "value"), [
+    # about -1% a day with small noise: measurably worse than holding
+    ([-0.01 + 0.0005 * ((7 * n) % 5 - 2) for n in range(30)], 10, -0.01 / (0.0005 * math.sqrt(2 * 30 / 29)) * math.sqrt(30), False),
+    (SPREAD, 10, 0.0, True),  # zero-mean noise
+    ([m - SE for m in SPREAD], 10, -1.0, True),  # mildly negative, inside the noise
+    ([0.01 if n % 2 else 0.02 for n in range(10)], 26, None, False),  # 10 days cannot be judged
 ])
-def test_the_value_rule_needs_the_pooled_mean_and_two_of_three_folds(means, per_fold, value):
-    judged = [_judged(k, f, gain=m) for f, m in enumerate(means, start=1) for k in range(per_fold)]
-    v = verdicts(judged)["forecast"]
-    assert v["folds"] == len(means)
-    assert v["order_gain"] == pytest.approx(sum(means) / len(means))
+def test_the_value_check_fails_only_when_the_order_is_measurably_worse(means, per_day, t, value):
+    v = verdicts(_days(means, per_day))["forecast"]
+    assert v["order_days"] == len(means)
+    assert v["order_gain"] == pytest.approx(float(np.mean(means)))
+    if t is not None:
+        assert v["order_t"] == pytest.approx(t, rel=1e-6)
     assert v["checks"]["value"] is value
+    assert MIN_VALUE_DAYS == 20 and VALUE_T == -2.0
+
+
+@pytest.mark.parametrize(("gain", "value"), [(0.0, True), (-0.001, False)])
+def test_daily_means_with_no_spread_pass_only_at_or_above_zero(gain, value):
+    judged = [_judged(k, 1 + n % 3, day=date(2024, 1, 1) + timedelta(days=n), gain=gain)
+              for n in range(30) for k in range(10)]
+    v = verdicts(judged)["forecast"]
+    assert v["order_days"] == 30 and v["order_t"] is None
+    assert v["checks"]["value"] is value
+
+
+def test_the_fold_counts_are_kept_as_information():
+    judged = _days([m - SE for m in SPREAD])
+    v = verdicts(judged)["forecast"]
+    assert v["folds"] == 3 and 0 <= v["order_folds_not_worse"] <= 3
 
 
 # ---- the real exits ----

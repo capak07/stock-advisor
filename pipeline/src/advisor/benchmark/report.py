@@ -273,6 +273,10 @@ def _tuned_policy(policy: Mapping, market: Mapping) -> list[str]:
     return lines
 
 
+def _count(value: object) -> str:
+    return "—" if _missing(value) else str(int(value))
+
+
 def _points(value: object) -> str:
     return "—" if _missing(value) else f"{value * 100:.1f} pts"
 
@@ -288,16 +292,21 @@ def _exit_plan_check(block: Mapping) -> list[str]:
         return [*lines, "No class had enough pairs for a verdict (not validated yet)."]
     lines += [
         "| Class | Pairs | Touch rate (stated 33%) | Coverage (stated 80%) | Worst break-even bin "
-        "| Worst stop-first bin | Order gain | Result |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Worst stop-first bin | Order gain | Order t (days) | Folds not worse | Result |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for name, v in classes.items():
-        pairs = "—" if _missing(v.get("pairs")) else str(int(v["pairs"]))
         lines.append(
-            f"| {name} | {pairs} | {_pct(v.get('touch_rate'))} | {_pct(v.get('coverage'))} "
+            f"| {name} | {_count(v.get('pairs'))} | {_pct(v.get('touch_rate'))} | {_pct(v.get('coverage'))} "
             f"| {_points(v.get('breakeven_worst_bin'))} | {_points(v.get('stop_first_worst_bin'))} "
-            f"| {_signed(v.get('order_gain'))} | {v.get('result') or '—'} |"
+            f"| {_signed(v.get('order_gain'))} | {_fmt(v.get('order_t'), '+.2f')} ({_count(v.get('order_days'))}) "
+            f"| {_count(v.get('order_folds_not_worse'))} of {_count(v.get('folds'))} | {v.get('result') or '—'} |"
         )
+    lines += [
+        "",
+        "The order's value fails only when it tests measurably worse than holding (t under -2 on "
+        "the sample days' mean gains, at least 20 days).",
+    ]
     return lines
 
 

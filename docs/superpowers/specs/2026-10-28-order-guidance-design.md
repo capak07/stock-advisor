@@ -74,8 +74,8 @@ Inputs per line: side and kind (buy, add, sell, trim, stop, recurring), the last
 - **The holding's stop** (each held stock, on its action card and in the holdings table's note):
   - "Stop-limit sell {qty} sh: stop {trailing stop}, limit {…}, 90 days".
   - When the previous published run's stop was lower: "raise it from {old}".
-- **The exit plan's sell-at order** (added 2026-11-20, exit plan spec §7): "**Limit sell {n} sh at {sell_at}, expiry 90 days**", whole shares only, for a Hold or an Add with no stop, and only when the plan passed the benchmark check (an unvalidated plan's numbers are shown but never made an order; ruling R20b). Never for a Sell or a Trim, which show no sell-at price at all (R20a).
-  - It notes: "Replace any earlier sell-at order. Cancel it before you sell, trim or place a stop." Each run can give a new price, and a resting limit sell holds the shares (R20c).
+- **The exit plan's sell-at order** (added 2026-11-20, exit plan spec §7): "**Limit sell {n} sh at {sell_at}, expiry 90 days · replace any earlier sell-at order**", whole shares only, for a Hold or an Add with no stop, and only when the plan passed the benchmark check (an unvalidated plan's numbers are shown but never made an order; ruling R20b). Never for a Sell or a Trim, which show no sell-at price at all (R20a).
+  - The step itself says to replace an earlier one, so it shows wherever the step renders, the holdings table's note included (R21): each run can give a new price. It notes: "Cancel a resting sell-at order before you sell, trim or place a stop.", since a resting limit sell holds the shares (R20c).
   - A stock holding with an exit plan (any status: an earlier run may have offered the order) has its Sell, Trim and stop orders note: "Cancel any resting limit sell on these shares first." (R20c).
 - **Coins:**
   - Buy: "**Limit buy {amount} at {price × (1 + b)}**; it cancels after 24 hours unless you extend it". The ATR comes from candles where stored.

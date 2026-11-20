@@ -344,15 +344,17 @@ export function planStop(i: Instrument, { qty, stop, previousStop }: { qty: numb
   return { steps, notes }
 }
 
-/** Each run can give a new sell-at price, and a resting limit sell reserves the shares (R20c). */
-export const SELL_AT_NOTE = 'Replace any earlier sell-at order. Cancel it before you sell, trim or place a stop.'
+/** A resting limit sell reserves the shares (R20c); the step itself says to replace an earlier one (R21). */
+export const SELL_AT_NOTE = 'Cancel a resting sell-at order before you sell, trim or place a stop.'
 /** On a Sell, a Trim and a stop of a holding that has an exit plan (R20c). */
 export const CANCEL_SELL_AT_NOTE = 'Cancel any resting limit sell on these shares first.'
 
 /**
  * A holding's exit plan as an order: a 90-day limit sell of its whole shares at the plan's sell-at
- * price (exit plan spec §7), saying it replaces an earlier one. Whole shares only, since Wealthsimple
- * fills fractions only at market, so nothing for a coin or a holding under one share.
+ * price (exit plan spec §7). Each run can give a new price, so the step itself says to replace an
+ * earlier one (R21): it shows wherever the step renders, the holdings table's note included. Whole
+ * shares only, since Wealthsimple fills fractions only at market, so nothing for a coin or a holding
+ * under one share.
  */
 export function planSellAt(i: Instrument, { qty, sellAt }: { qty: number; sellAt: number }): OrderPlan {
   const whole = Math.floor(qty + 1e-9)
@@ -366,7 +368,7 @@ export function planSellAt(i: Instrument, { qty, sellAt }: { qty: number; sellAt
         qty: whole,
         price,
         expiry: '90 days',
-        text: `Limit sell ${whole} sh at ${fmtPrice(price, i.currency)}, expiry 90 days`,
+        text: `Limit sell ${whole} sh at ${fmtPrice(price, i.currency)}, expiry 90 days · replace any earlier sell-at order`,
       }),
     ],
     notes: [SELL_AT_NOTE],

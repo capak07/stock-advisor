@@ -209,7 +209,7 @@ describe('holdingGuides', () => {
     const bare = holdingGuides(action({ refPrice: 150, exitPlan }), { ...held, qty: 12.4 }, ctx)
     expect(bare.order).toBeNull()
     expect(bare.stop!.steps).toMatchObject([{ kind: 'limit', side: 'sell', qty: 12, price: 160, expiry: '90 days' }])
-    expect(bare.stop!.steps[0].text).toBe('Limit sell 12 sh at C$160.00, expiry 90 days')
+    expect(bare.stop!.steps[0].text).toBe('Limit sell 12 sh at C$160.00, expiry 90 days · replace any earlier sell-at order')
     // beside a stop it stays hidden until Wealthsimple is known to hold both orders on the same shares
     const stopped = holdingGuides(action({ refPrice: 150, trailingStop: 140, exitPlan }), { ...held, qty: 12.4 }, ctx)
     expect(kinds(stopped.stop)).toEqual(['stop-limit'])
@@ -241,7 +241,7 @@ describe('holdingGuides', () => {
       holdingGuides(action({ refPrice: 150, riskLevel: 'medium', exitPlan, ...over }), { ...held, qty }, ctx)
     const steps = (g: ReturnType<typeof holdingGuides>) => [...(g.order?.steps ?? []), ...(g.stop?.steps ?? [])]
     const mentionsSellAt = (g: ReturnType<typeof holdingGuides>) => steps(g).filter((s) => s.text.includes('C$160.00'))
-    const sellAtStep = { kind: 'limit', side: 'sell', qty: 12, price: 160, expiry: '90 days', text: 'Limit sell 12 sh at C$160.00, expiry 90 days' }
+    const sellAtStep = { kind: 'limit', side: 'sell', qty: 12, price: 160, expiry: '90 days', text: 'Limit sell 12 sh at C$160.00, expiry 90 days · replace any earlier sell-at order' }
 
     // a Sell: no step in either slot names the sell-at price
     expect(mentionsSellAt(guide({ action: 'sell' }))).toEqual([])

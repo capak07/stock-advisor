@@ -246,11 +246,11 @@ describe('planSellAt', () => {
     const plan = planSellAt(veea, { qty: 12.4, sellAt: 5.603472918 })
     expect(plan.steps).toHaveLength(1)
     expect(plan.steps[0]).toMatchObject({ kind: 'limit', side: 'sell', qty: 12, price: 5.6, expiry: '90 days' })
-    expect(plan.steps[0].text).toBe('Limit sell 12 sh at US$5.60, expiry 90 days')
+    expect(plan.steps[0].text).toBe('Limit sell 12 sh at US$5.60, expiry 90 days · replace any earlier sell-at order')
   })
 
-  it('says to replace an earlier sell-at order and to cancel it before selling, trimming or placing a stop (R20c)', () => {
-    expect(SELL_AT_NOTE).toBe('Replace any earlier sell-at order. Cancel it before you sell, trim or place a stop.')
+  it('notes to cancel it before selling, trimming or placing a stop; the step itself says to replace an earlier one (R20c, R21)', () => {
+    expect(SELL_AT_NOTE).toBe('Cancel a resting sell-at order before you sell, trim or place a stop.')
     expect(planSellAt(veea, { qty: 12.4, sellAt: 5.6 }).notes).toEqual([SELL_AT_NOTE])
   })
 

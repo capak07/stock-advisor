@@ -320,7 +320,7 @@ test("a holding's exit plan shows in the table, the cards and the hold list, and
   await expect(msft.locator('.h-exit')).toContainText(`Range by ${by}: US$400.00 – 425.00 – 455.00 (+1%)`)
   await expect(msft.locator('.h-exit')).toContainText('Sell at US$440.12 · about 1 in 3 · +10% on cost')
   // without a stop the sell-at price is also an order to place
-  await expect(msft.locator('.order-note')).toHaveText('Limit sell 5 sh at US$440.12, expiry 90 days')
+  await expect(msft.locator('.order-note')).toHaveText('Limit sell 5 sh at US$440.12, expiry 90 days · replace any earlier sell-at order')
   const shop = holdings(page).filter({ hasText: 'SHOP.TO' })
   await expect(shop.locator('.h-exit')).toContainText(`Range by ${by}: C$130.00 – 145.00 – 160.00 (0%)`)
   await expect(shop.locator('.h-exit')).toContainText('Not validated yet: the first benchmark run after this change checks these chances.')

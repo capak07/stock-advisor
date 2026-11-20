@@ -5,6 +5,8 @@ calm and stormy days stay together. Without a forecast the past drift is removed
 direction); with one, the asset's excess over its benchmark is scaled and shifted to the
 forecast's median and 10-90 width, and the benchmark's own moves are shifted to its median
 drift. All path arithmetic is in log space; a simple return q becomes log(1 + q).
+
+A stored plan shows only what the benchmark check passed for its class (`apply_verdict`).
 """
 
 import hashlib
@@ -13,6 +15,8 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 
 import numpy as np
+
+from advisor.models import AssetType
 
 PLAN_VERSION = 1
 PATHS = 4000
@@ -302,3 +306,72 @@ def _build_plan(
         "recheck_by": None if recheck is None else recheck(horizon).isoformat(),
         "status": None,
     }
+
+
+UNVALIDATED = "unvalidated"
+RESULTS = ("pass", "range_only", "fail")
+NUMBERS = ("low", "mid", "high", "sell_at", "p_touch", "p_stop_first", "p_up", "breakeven", "p_breakeven")
+SELL_AT = ("sell_at", "p_touch", "p_stop_first")
+
+
+def plan_class(asset_type: AssetType, basis: str) -> str:
+    """The benchmark check's class a plan is judged in: "coin" for a coin (R3), else its basis."""
+    return "coin" if asset_type is AssetType.CRYPTO else basis
+
+
+def _verdict_for(plan: Mapping, check: object, model: str | None, asset_type: AssetType) -> Mapping | None:
+    """The plan's class's verdict in `check`, or None when there is none that applies or it is malformed."""
+    if not isinstance(check, Mapping) or "error" in check or check.get("plan_version") != PLAN_VERSION:
+        return None
+    cls = plan_class(asset_type, plan.get("basis"))
+    # only the forecast class reads the model, so only it must be the live one (R2)
+    if cls == "forecast" and (model is None or check.get("model") != model):
+        return None
+    classes = check.get("classes")
+    verdict = classes.get(cls) if isinstance(classes, Mapping) else None
+    if not isinstance(verdict, Mapping) or verdict.get("result") not in RESULTS:
+        return None
+    checks = verdict.get("checks")
+    if not isinstance(checks, Mapping) or not all(
+        isinstance(checks.get(k), bool) for k in ("breakeven", "stop_first")
+    ):
+        return None
+    rate = verdict.get("touch_rate")
+    if verdict["result"] == "pass" and not (
+        isinstance(rate, int | float) and not isinstance(rate, bool) and math.isfinite(rate) and 0 <= rate <= 1
+    ):
+        return None
+    return verdict
+
+
+def apply_verdict(
+    plan: Mapping, check: Mapping | None, *, model: str | None, asset_type: AssetType = AssetType.STOCK
+) -> dict:
+    """A copy of the plan showing only what the benchmark check passed for its class, its `status` set.
+
+    `check` is the market's `exit_plan` block from the latest benchmark; `model` is the live model's
+    config name without its policy. "unvalidated" when no verdict applies (no block, an errored one,
+    another plan version, no verdict for the class, or a forecast plan checked on another model);
+    "fail" nulls every number; otherwise the status is the result and `p_touch` the measured rate.
+    "range_only" hides the sell-at price and its chances. A failed break-even or stop-first check
+    hides only its own chance (R7)."""
+    out = dict(plan)
+    verdict = _verdict_for(plan, check, model, asset_type)
+    if verdict is None:
+        out["status"] = UNVALIDATED
+        return out
+    result = verdict["result"]
+    out["status"] = result
+    if result == "fail":
+        out.update(dict.fromkeys(NUMBERS))
+        return out
+    if result == "range_only":
+        out.update(dict.fromkeys(SELL_AT))
+    elif out.get("sell_at") is not None:  # a plan without a sell-at price has no touch chance to show
+        out["p_touch"] = float(verdict["touch_rate"])
+    checks = verdict["checks"]
+    if not checks["stop_first"]:
+        out["p_stop_first"] = None
+    if not checks["breakeven"]:
+        out["p_breakeven"] = None
+    return out

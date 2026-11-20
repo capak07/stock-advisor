@@ -4,12 +4,15 @@ It reads what stages 7 and 8 already computed (`MarketAdvice`), so a holding is 
 rows, costs, sanity checks and risk as the picks and the watchlist. A coin, or a stock without a
 forecast, gets the fallback rules: the stop and the size warning only.
 
+Each holding's exit plan shows only what the latest benchmark check passed for its class (`apply_verdict`).
+
 `advise_stage` catches its own failures: they degrade a run and never stop its prices from publishing.
 """
 
+import logging
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -22,6 +25,7 @@ from advisor.markets import MARKETS, market_of
 from advisor.model.backtest import round_trip_cost
 from advisor.model.crypto import CRYPTO
 from advisor.model.market_run import Forecast, MarketModel, feature_day, model_failure
+from advisor.model.variants import ModelConfig
 from advisor.models import (
     ET,
     AssetType,
@@ -34,7 +38,7 @@ from advisor.models import (
 )
 from advisor.policy import DEFAULT_POLICY, Policy, policy_of
 from advisor.portfolio.actions import TAXABLE, Holding, decide
-from advisor.portfolio.exit_plan import NoPlan, build_plan
+from advisor.portfolio.exit_plan import UNVALIDATED, NoPlan, apply_verdict, build_plan
 from advisor.portfolio.ledger import Loss, Position, build_ledger
 from advisor.portfolio.stops import atr_pct, trailing_stop
 from advisor.recommend.picks import market_top
@@ -62,6 +66,7 @@ ACTIONS = ("sell", "trim", "add", "hold")
 FALLBACK_RISK, _, FALLBACK_MAX_PCT = LEVELS[-1]
 
 Explain = Callable[[Market, str, int], list[dict]]
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,8 @@ class RunView:
     coin_why: Mapping[str, str] = field(default_factory=dict)
     coin_policy: Policy = DEFAULT_POLICY
     fees: tuple[float, float] = (0.0, 0.0)  # (USD FX fee, crypto fee) in percent
+    exit_check: Mapping[str, dict] = field(default_factory=dict)  # the market's (or "crypto") latest check
+    model_names: Mapping[Market, str] = field(default_factory=dict)  # each live model's config, no policy
 
 
 @dataclass(frozen=True)
@@ -349,6 +356,40 @@ def _exit_plan(h: Holding, seen: _Priced, view: RunView, action) -> dict:
     )
 
 
+def _checked(plan: dict, p: Position, seen: _Priced, view: RunView) -> dict:
+    """The plan as the latest benchmark check lets it be shown; "unvalidated" when matching it fails."""
+    try:
+        if seen.market is None:  # a coin: the "coin" class never compares models
+            return apply_verdict(plan, view.exit_check.get(CRYPTO), model=None, asset_type=AssetType.CRYPTO)
+        check = view.exit_check.get(seen.market.value)
+        return apply_verdict(plan, check, model=view.model_names.get(seen.market), asset_type=p.asset_type)
+    except Exception:  # reading the verdict never fails the stage
+        log.exception("the exit plan check could not be applied to %s", p.symbol)
+        return {**plan, "status": UNVALIDATED}
+
+
+def _model_names(models: Mapping[Market, MarketModel]) -> dict[Market, str]:
+    """Each market's live model config name without its policy, as the benchmark check names it (R2).
+    A market whose stored config is missing or unreadable is left out."""
+    out = {}
+    for market, model in models.items():
+        try:
+            out[market] = replace(ModelConfig.from_json(model.metrics["config"]), policy=None).name
+        except Exception as exc:
+            log.warning("no model name for %s's exit plan check: %s: %s", market, type(exc).__name__, exc)
+    return out
+
+
+def _exit_check(conn: psycopg.Connection) -> dict[str, dict]:
+    """The latest benchmark check per market, or {} when it cannot be read: never a failed stage."""
+    try:
+        with conn.transaction():
+            return repo.latest_exit_check(conn)
+    except Exception:
+        log.exception("the latest exit plan check could not be read")
+        return {}
+
+
 def action_rows(
     positions: Sequence[Position], holdings: Sequence[Holding], view: RunView
 ) -> tuple[list[HoldingActionRow], dict[str, str]]:
@@ -376,6 +417,8 @@ def action_rows(
             no_plan[f"{p.account}:{p.symbol}"] = str(exc)
         except Exception as exc:  # one holding's plan never fails the stage
             no_plan[f"{p.account}:{p.symbol}"] = f"{type(exc).__name__}: {exc}"
+        if plan is not None:
+            plan = _checked(plan, p, seen, view)
         out.append(HoldingActionRow(
             account=p.account,
             symbol=p.symbol,
@@ -461,6 +504,8 @@ def advise_stage(
             coin_why=coin_why or {},
             coin_policy=coin_policy or DEFAULT_POLICY,
             fees=repo.fee_settings(conn),
+            exit_check=_exit_check(conn),
+            model_names=_model_names(models),
         )
         policies = {market: policy_of(model.metrics) for market, model in models.items()}
         rows, no_plan = action_rows(positions, holding_inputs(positions, ledger.losses, view, policies), view)

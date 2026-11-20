@@ -1,24 +1,29 @@
+import contextlib
 import math
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 
 import pandas as pd
+import psycopg
 import pytest
 
 from advisor.collectors.base import CollectorResult, CollectorStatus
 from advisor.collectors.clinical_trials import TrialActivity
 from advisor.collectors.coingecko import CryptoQuote
 from advisor.collectors.yfinance_earnings import EarningsReport
-from advisor.model.market_run import Forecast
-from advisor.models import ET, AssetType, DailyBar, LinkedPick, Market, PredictionRow
+from advisor.model.market_run import Forecast, MarketModel
+from advisor.model.variants import BASELINE
+from advisor.models import ET, AssetType, DailyBar, LinkedPick, Market, PredictionRow, RunKind
 from advisor.policy import DEFAULT_POLICY
 from advisor.portfolio.actions import Holding, decide
-from advisor.portfolio.exit_plan import build_plan
+from advisor.portfolio.exit_plan import PLAN_VERSION, build_plan
 from advisor.portfolio.ledger import Loss, Position
 from advisor.portfolio.stage import (
     RunView,
     _plan_cost,
     action_rows,
+    advise_stage,
     holding_inputs,
     signals_reversed,
 )
@@ -527,3 +532,122 @@ def test_a_holding_without_an_atr_gets_a_fixed_stop_plan(monkeypatch):
     _rows(view, [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)])
     (kw,) = seen
     assert kw["atr_pct"] is None
+
+
+# --- the benchmark check's verdict ---------------------------------------------------------------
+
+
+def _verdict(result: str = "pass") -> dict:
+    checks = {"range": True, "touch": True, "value": True, "breakeven": True, "stop_first": True}
+    return {"pairs": 500, "touch_rate": 0.31, "checks": checks, "result": result}
+
+
+def _check(model: str = "factors", **classes: dict) -> dict:
+    return {"plan_version": PLAN_VERSION, "model": model, "classes": classes, "seconds": 2.0}
+
+
+def test_a_holdings_stored_plan_carries_the_checks_status():
+    view = _plan_view(exit_check={"TSX": _check(forecast=_verdict())}, model_names={Market.TSX: "factors"})
+    (row,), reasons = _rows(view, [_position("RY.TO")])
+    assert reasons == {}
+    built = _rows(_plan_view(), [_position("RY.TO")])[0][0].exit_plan
+    assert built["status"] == "unvalidated"  # no check read at all
+    assert built["sell_at"] is not None
+    assert row.exit_plan == {**built, "status": "pass", "p_touch": 0.31}
+
+
+def test_a_forecast_plan_checked_on_another_model_is_unvalidated():
+    view = _plan_view(exit_check={"TSX": _check(forecast=_verdict())}, model_names={Market.TSX: "baseline"})
+    (row,), _ = _rows(view, [_position("RY.TO")])
+    assert row.exit_plan["status"] == "unvalidated" and row.exit_plan["p_touch"] != 0.31
+    view = _plan_view(exit_check={"TSX": _check(forecast=_verdict())})  # the market's model name is unknown
+    (row,), _ = _rows(view, [_position("RY.TO")])
+    assert row.exit_plan["status"] == "unvalidated"
+
+
+def test_a_stocks_plan_reads_its_own_markets_check():
+    view = _plan_view(exit_check={"US": _check(forecast=_verdict())}, model_names={Market.TSX: "factors"})
+    (row,), _ = _rows(view, [_position("RY.TO")])
+    assert row.exit_plan["status"] == "unvalidated"
+
+
+def test_a_coins_plan_reads_the_crypto_checks_coin_verdict_whatever_the_model():
+    quote = CryptoQuote(symbol="BONK", coin_id="bonk", price_cad=1.8, updated_at=datetime(2026, 10, 14, tzinfo=UTC))
+    positions = [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)]
+    base = _view(candles={"BONK": _candles("BONK", n=120)}, quotes={"BONK": quote})
+    crypto = _check("baseline", coin=_verdict("range_only"), volatility=_verdict())
+    (row,), reasons = _rows(replace(base, exit_check={"crypto": crypto}), positions)
+    assert reasons == {}
+    assert row.exit_plan["status"] == "range_only" and row.exit_plan["sell_at"] is None
+    (row,), _ = _rows(replace(base, exit_check={"crypto": _check("baseline", volatility=_verdict())}), positions)
+    assert row.exit_plan["status"] == "unvalidated"  # a coin never reads the stocks' volatility verdict
+
+
+def test_a_verdict_that_breaks_the_matching_leaves_the_plan_unvalidated(monkeypatch):
+    from advisor.portfolio import stage
+
+    def broken(plan, check, **kw):
+        raise RuntimeError("verdict broke")
+
+    monkeypatch.setattr(stage, "apply_verdict", broken)
+    view = _plan_view(exit_check={"TSX": _check(forecast=_verdict())}, model_names={Market.TSX: "factors"})
+    (row,), reasons = _rows(view, [_position("RY.TO")])
+    assert reasons == {} and row.exit_plan["status"] == "unvalidated" and row.exit_plan["sell_at"] is not None
+
+
+class _Conn:
+    def transaction(self):
+        return contextlib.nullcontext()
+
+
+def _advise(monkeypatch, latest_exit_check, configs: dict) -> tuple[dict, list]:
+    """advise_stage on one TSX holding with a forecast, every read of the database faked."""
+    from advisor.portfolio import stage
+    from advisor.store import repo
+
+    view = _plan_view()
+    written = []
+    position = _position("RY.TO")
+    ledger = SimpleNamespace(positions=[position], losses=[], problems=[])
+    monkeypatch.setattr(stage, "build_ledger", lambda trades, rates: ledger)
+    for name, value in {
+        "load_trades": [], "load_fx_rates": {}, "latest_fx_rate": 1.4, "previous_trailing_stops": {},
+        "load_picks": {}, "fee_settings": (0.0, 0.0),
+    }.items():
+        monkeypatch.setattr(repo, name, lambda *a, value=value, **k: value)
+    monkeypatch.setattr(repo, "latest_exit_check", latest_exit_check)
+    monkeypatch.setattr(repo, "write_holding_actions", lambda conn, run_id, rows: written.extend(rows))
+    models = {
+        m: MarketModel(active=None, sectors=pd.DataFrame(), metrics={"config": config}) for m, config in configs.items()
+    }
+    summary = advise_stage(
+        _Conn(), 1, models=models, forecasts=view.forecasts, advice=view.advice, model_summary={},
+        bars=view.bars, flagged={}, quotes={}, candles={}, crypto_features={}, results={},
+        kind=RunKind.PRE_OPEN, now_utc=datetime(2026, 10, 14, 12, 15, tzinfo=UTC),
+    )
+    return summary, written
+
+
+def test_the_stage_matches_the_check_on_the_live_models_name_without_its_policy(monkeypatch):
+    stored = replace(BASELINE, policy=DEFAULT_POLICY).to_json()  # the live config carries a policy
+    summary, (row,) = _advise(monkeypatch, lambda conn: {"TSX": _check("baseline", forecast=_verdict())},
+                              {Market.TSX: stored})
+    assert summary["written"] == 1
+    assert row.exit_plan["status"] == "pass"
+
+
+@pytest.mark.parametrize("config", [None, {"version": 999}, "odd"])
+def test_a_market_whose_stored_config_cannot_be_read_has_unvalidated_forecast_plans(monkeypatch, config):
+    summary, (row,) = _advise(monkeypatch, lambda conn: {"TSX": _check("baseline", forecast=_verdict())},
+                              {Market.TSX: config})
+    assert summary["written"] == 1
+    assert row.exit_plan["status"] == "unvalidated"
+
+
+def test_a_failed_read_of_the_check_leaves_every_plan_unvalidated_and_the_stage_succeeds(monkeypatch):
+    def broken(conn):
+        raise psycopg.OperationalError("the check broke")
+
+    summary, (row,) = _advise(monkeypatch, broken, {Market.TSX: BASELINE.to_json()})
+    assert "failed" not in summary and summary["written"] == 1
+    assert row.exit_plan is not None and row.exit_plan["status"] == "unvalidated"

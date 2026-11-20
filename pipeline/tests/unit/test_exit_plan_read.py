@@ -4,14 +4,17 @@ from datetime import date, timedelta
 import numpy as np
 import pytest
 
+from advisor.models import AssetType
 from advisor.portfolio import exit_plan
 from advisor.portfolio.exit_plan import (
     LOOKBACK,
     NO_FORECAST_HORIZON,
     PLAN_VERSION,
     NoPlan,
+    apply_verdict,
     build_plan,
     median_drift,
+    plan_class,
     read_plan,
     seed_of,
     simulate,
@@ -306,3 +309,121 @@ def test_every_number_in_a_plan_is_a_finite_float():
         if key in ("basis", "recheck_by", "status", "version", "horizon") or value is None:
             continue
         assert type(value) is float and math.isfinite(value), key
+
+
+# --- the benchmark check's verdict ---------------------------------------------------------------
+
+STORED = {
+    "version": PLAN_VERSION, "basis": "forecast", "status": None, "low": 9.0, "mid": 10.2, "high": 11.5,
+    "sell_at": 11.0, "p_touch": 0.333, "p_stop_first": 0.2, "p_up": 0.55, "breakeven": 10.5,
+    "p_breakeven": 0.4, "cost_price": 10.5, "drift": 0.01, "horizon": 21, "recheck_by": "2026-12-21",
+}
+VOLATILITY = {**STORED, "basis": "volatility", "drift": None}
+
+
+def _verdict(result: str = "pass", **checks: bool) -> dict:
+    every = {"range": True, "touch": True, "value": True, "breakeven": True, "stop_first": True}
+    return {"pairs": 500, "touch_rate": 0.31, "coverage": 0.8, "checks": every | checks, "result": result}
+
+
+def _block(classes: dict | None = None, model: str = "factors", version: int = PLAN_VERSION) -> dict:
+    if classes is None:
+        classes = {"forecast": _verdict(), "volatility": _verdict()}
+    return {"plan_version": version, "model": model, "classes": classes, "seconds": 1.5}
+
+
+def test_a_coins_plan_class_is_coin_and_a_stocks_is_its_basis():
+    assert plan_class(AssetType.CRYPTO, "volatility") == "coin"
+    assert plan_class(AssetType.STOCK, "forecast") == "forecast"
+    assert plan_class(AssetType.STOCK, "volatility") == "volatility"
+
+
+@pytest.mark.parametrize("check", [
+    None,
+    {"error": "RuntimeError: broke"},
+    _block(version=PLAN_VERSION + 1),
+    _block(classes={"volatility": _verdict()}),  # no verdict for the forecast class
+])
+def test_a_plan_without_a_usable_verdict_is_unvalidated_and_otherwise_unchanged(check):
+    assert apply_verdict(STORED, check, model="factors") == {**STORED, "status": "unvalidated"}
+
+
+@pytest.mark.parametrize("model", ["baseline", None])
+def test_a_forecast_plan_is_unvalidated_unless_the_live_model_is_the_checked_one(model):
+    assert apply_verdict(STORED, _block(), model=model) == {**STORED, "status": "unvalidated"}
+
+
+@pytest.mark.parametrize("model", ["baseline", None])
+def test_a_volatility_plan_is_matched_whatever_the_model(model):
+    assert apply_verdict(VOLATILITY, _block(), model=model) == {**VOLATILITY, "status": "pass", "p_touch": 0.31}
+
+
+def test_a_coins_plan_reads_the_coin_verdict_and_never_the_volatility_one():
+    coin = _block(classes={"coin": _verdict("range_only")}, model="baseline")
+    assert apply_verdict(VOLATILITY, coin, model=None, asset_type=AssetType.CRYPTO) == {
+        **VOLATILITY, "status": "range_only", "sell_at": None, "p_touch": None, "p_stop_first": None,
+    }
+    stocks_only = _block(classes={"volatility": _verdict()})
+    assert apply_verdict(VOLATILITY, stocks_only, model=None, asset_type=AssetType.CRYPTO) == {
+        **VOLATILITY, "status": "unvalidated",
+    }
+
+
+def test_a_failed_check_nulls_every_number_and_keeps_the_context():
+    got = apply_verdict(STORED, _block({"forecast": _verdict("fail", range=False)}), model="factors")
+    assert got == {
+        "version": PLAN_VERSION, "basis": "forecast", "status": "fail", "low": None, "mid": None, "high": None,
+        "sell_at": None, "p_touch": None, "p_stop_first": None, "p_up": None, "breakeven": None,
+        "p_breakeven": None, "cost_price": 10.5, "drift": 0.01, "horizon": 21, "recheck_by": "2026-12-21",
+    }
+
+
+def test_range_only_nulls_the_sell_at_trio_and_keeps_the_range():
+    got = apply_verdict(STORED, _block({"forecast": _verdict("range_only", touch=False)}), model="factors")
+    assert got == {**STORED, "status": "range_only", "sell_at": None, "p_touch": None, "p_stop_first": None}
+
+
+def test_a_pass_shows_the_measured_touch_rate():
+    got = apply_verdict(STORED, _block(), model="factors")
+    assert got == {**STORED, "status": "pass", "p_touch": 0.31}
+
+
+def test_a_failed_break_even_check_hides_only_its_chance_and_the_plan_still_passes():
+    got = apply_verdict(STORED, _block({"forecast": _verdict(breakeven=False)}), model="factors")
+    assert got == {**STORED, "status": "pass", "p_touch": 0.31, "p_breakeven": None}
+    assert got["breakeven"] == 10.5
+
+
+def test_a_failed_stop_first_check_hides_only_its_chance_and_the_plan_still_passes():
+    got = apply_verdict(STORED, _block({"forecast": _verdict(stop_first=False)}), model="factors")
+    assert got == {**STORED, "status": "pass", "p_touch": 0.31, "p_stop_first": None}
+
+
+def test_a_pass_on_a_plan_without_a_sell_at_price_shows_no_touch_chance():
+    plan = {**STORED, "sell_at": None, "p_touch": None, "p_stop_first": None}
+    assert apply_verdict(plan, _block(), model="factors") == {**plan, "status": "pass"}
+
+
+@pytest.mark.parametrize("verdict", [
+    {**_verdict(), "result": "maybe"},
+    {k: v for k, v in _verdict().items() if k != "checks"},
+    {**_verdict(), "checks": {"range": True}},
+    {**_verdict(), "touch_rate": None},
+    {**_verdict(), "touch_rate": math.nan},
+    "pass",
+])
+def test_a_verdict_that_cannot_be_read_leaves_the_plan_unvalidated(verdict):
+    assert apply_verdict(STORED, _block({"forecast": verdict}), model="factors") == {
+        **STORED, "status": "unvalidated",
+    }
+
+
+def test_a_block_that_cannot_be_read_leaves_the_plan_unvalidated():
+    for check in ("odd", {"plan_version": PLAN_VERSION, "model": "factors", "classes": ["forecast"]}):
+        assert apply_verdict(STORED, check, model="factors") == {**STORED, "status": "unvalidated"}
+
+
+def test_applying_a_verdict_leaves_the_stored_plan_alone():
+    plan = dict(STORED)
+    apply_verdict(plan, _block({"forecast": _verdict("fail", range=False)}), model="factors")
+    assert plan == STORED

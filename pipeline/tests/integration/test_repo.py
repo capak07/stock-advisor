@@ -740,6 +740,45 @@ def test_accepting_a_config_retires_the_markets_previous_one(db):
     assert db.execute("select metrics from benchmark_results").fetchone()["metrics"] == {"a": 1}
 
 
+def _benchmark(db, started: datetime, status: str, report: dict) -> int:
+    run_id = repo.start_benchmark_run(db, started, None)
+    repo.finish_benchmark_run(db, run_id, started + timedelta(hours=1), status, report)
+    return run_id
+
+
+def _exit_block(model: str) -> dict:
+    verdict = {"result": "pass", "touch_rate": 0.31, "checks": {"range": True, "stop_first": False}}
+    return {"plan_version": 1, "model": model, "classes": {"forecast": verdict}, "seconds": 1.5}
+
+
+def test_there_is_no_exit_check_before_a_benchmark_has_one(db):
+    assert repo.latest_exit_check(db) == {}
+    _benchmark(db, T0, "success", {"markets": {"US": {"exit_plan": {"error": "RuntimeError: broke"}}}})
+    _benchmark(db, T0 + timedelta(days=1), "failed", {"markets": {"US": {"exit_plan": _exit_block("factors")}}})
+    _benchmark(db, T0 + timedelta(days=2), "failed", {"error": "abandoned: no finish was recorded"})
+    assert repo.latest_exit_check(db) == {}
+
+
+def test_each_markets_exit_check_is_its_newest_successful_block(db):
+    us_old, us_new, tsx, crypto = (_exit_block(m) for m in ("baseline", "factors", "garch", "ranker"))
+    day = timedelta(days=1)
+    _benchmark(db, T0, "success", {"markets": {"US": {"exit_plan": us_old}, "TSX": {"exit_plan": tsx}}})
+    _benchmark(db, T0 + day, "success", {"markets": {
+        "US": {"exit_plan": us_new}, "crypto": {"exit_plan": crypto},
+    }})
+    # newer, but none of these is usable: a failed run, a held market without a block, an errored check
+    _benchmark(db, T0 + 2 * day, "failed", {"markets": {
+        "US": {"exit_plan": _exit_block("ranker")}, "TSX": {"exit_plan": _exit_block("ranker")},
+        "crypto": {"error": "ValueError: no data"},
+    }})
+    _benchmark(db, T0 + 3 * day, "success", {"markets": {
+        "US": {"held": "missing data"}, "TSX": {"exit_plan": {"error": "RuntimeError: broke"}},
+        "crypto": {"skipped": "no coin data"},
+    }})
+    repo.start_benchmark_run(db, T0 + 4 * day, None)  # still running
+    assert repo.latest_exit_check(db) == {"US": us_new, "TSX": tsx, "crypto": crypto}
+
+
 def test_the_top_coins_are_the_largest_listed_ones_without_stablecoins(db):
     now = datetime(2026, 10, 20, 13, tzinfo=UTC)
     repo.upsert_coins(db, [

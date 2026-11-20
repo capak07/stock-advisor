@@ -1072,6 +1072,22 @@ def write_benchmark_results(
         )
 
 
+def latest_exit_check(conn: psycopg.Connection) -> dict[str, dict]:
+    """Each market's `exit_plan` block from its own newest successful benchmark run that has one
+    without an "error" key: a market held for missing data has no block that run. {} when none has."""
+    rows = conn.execute(
+        "select distinct on (m.key) m.key as market, m.value -> 'exit_plan' as block"
+        " from benchmark_runs r,"
+        " jsonb_each(case when jsonb_typeof(r.report -> 'markets') = 'object'"
+        " then r.report -> 'markets' else '{}'::jsonb end) m"
+        " where r.status = 'success'"
+        " and jsonb_typeof(m.value -> 'exit_plan') = 'object'"
+        " and not jsonb_exists(m.value -> 'exit_plan', 'error')"
+        " order by m.key, r.started_at desc, r.id desc"
+    ).fetchall()
+    return {r["market"]: r["block"] for r in rows}
+
+
 def active_config(conn: psycopg.Connection, market: str) -> AcceptedConfig | None:
     row = conn.execute(
         "select id, market, config, reason, accepted_at, benchmark_run_id"

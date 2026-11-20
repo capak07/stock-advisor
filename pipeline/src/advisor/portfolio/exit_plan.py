@@ -9,7 +9,7 @@ drift. All path arithmetic is in log space; a simple return q becomes log(1 + q)
 
 import hashlib
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import date
 
 import numpy as np
@@ -21,6 +21,7 @@ LOOKBACK = 252
 MIN_CLOSES = 60
 TOUCH = 1 / 3
 NO_FORECAST_HORIZON = 21
+MIN_WIDTH = 1e-9  # a simulated 10-90 excess width under this is float noise, not a range (R11)
 
 
 class NoPlan(ValueError):
@@ -117,10 +118,144 @@ def simulate(
     excess = simulate_raw(moves[:, 0] - moves[:, 1], horizon, seed)
     ends = excess[:, -1]
     width = np.quantile(ends, 0.9) - np.quantile(ends, 0.1)
-    if not width > 0:
+    if not width >= MIN_WIDTH:  # also refuses a NaN width
         raise NoPlan("forecast range has no width")
     excess = _shift_median(excess * ((math.log1p(q90) - math.log1p(q10)) / width), math.log1p(q50))
 
     bench = simulate_raw(moves[:, 1] - moves[:, 1].mean(), horizon, seed)
     bench = _shift_median(bench, math.log1p(drift))
     return excess + bench
+
+
+def touch_share(paths: np.ndarray, level: float) -> float:
+    """The share of paths whose highest cumulative log return is at or above `level`."""
+    return float(np.mean(np.max(paths, axis=1) >= level))
+
+
+def _stop_first(paths: np.ndarray, stop_level: float, sell_level: float) -> float:
+    """The share of paths whose first step at or under `stop_level` comes before their first
+    step at or above `sell_level`; a path that never reaches `sell_level` counts if it reaches
+    the stop at all."""
+    horizon = paths.shape[1]
+
+    def first(hit: np.ndarray) -> np.ndarray:
+        return np.where(hit.any(axis=1), hit.argmax(axis=1), horizon)
+
+    return float(np.mean(first(paths <= stop_level) < first(paths >= sell_level)))
+
+
+def read_plan(
+    paths: np.ndarray,
+    price: float,
+    *,
+    stop: float | None,
+    breakeven: float | None,
+    cost: float,
+) -> dict:
+    """The range, the sell-at price and the chances, read off cumulative log-return paths.
+
+    The sell-at price is the k-th highest path maximum, k = ceil(TOUCH * N), so about one path
+    in three closes at or above it. It is not given when it sits inside the round-trip cost or
+    at or under the stop."""
+    paths = np.asarray(paths, dtype=float)
+    ends = paths[:, -1]
+    q10, q50, q90 = np.quantile(ends, [0.1, 0.5, 0.9])
+    k = math.ceil(round(TOUCH * len(paths), 9))  # rounding first: float error never adds one
+    level = float(np.sort(np.max(paths, axis=1))[-k])
+    sell_at: float | None = price * math.exp(level)
+    p_touch = p_stop_first = None
+    if sell_at <= price * (1 + cost) or (stop is not None and sell_at <= stop):
+        sell_at = None
+    else:
+        p_touch = touch_share(paths, level)
+        if stop is not None:
+            p_stop_first = _stop_first(paths, math.log(stop / price), level)
+    return {
+        "low": price * math.exp(q10),
+        "mid": price * math.exp(q50),
+        "high": price * math.exp(q90),
+        "sell_at": sell_at,
+        "p_touch": p_touch,
+        "p_stop_first": p_stop_first,
+        "p_up": float(np.mean(ends > 0)),
+        "breakeven": breakeven,
+        "p_breakeven": (
+            None if breakeven is None else touch_share(paths, math.log(breakeven / price))
+        ),
+    }
+
+
+def _up_to(closes: Mapping[date, float], day: date) -> dict[date, float]:
+    """The usable closes dated on or before `day` (point-in-time), oldest first."""
+    return {d: closes[d] for d in sorted(closes) if d <= day and _usable(closes[d])}
+
+
+def _finite(value: object) -> bool:
+    return not isinstance(value, float) or math.isfinite(value)
+
+
+def build_plan(
+    *,
+    symbol: str,
+    day: date,
+    closes: Mapping[date, float],
+    price: float | None,
+    horizon: int | None,
+    forecast: tuple[float, float, float] | None,
+    bench_closes: Mapping[date, float] | None,
+    stop: float | None,
+    cost_cad: float,
+    value_cad: float,
+    cost: float,
+    recheck: Callable[[int], date] | None = None,
+) -> dict:
+    """The stored exit plan for one holding on feature day `day`; the one builder the holdings
+    stage and the benchmark check share (R6).
+
+    With a forecast, its horizon and the benchmark's closes, the paths follow the forecast;
+    otherwise they are volatility only, over NO_FORECAST_HORIZON steps. Only closes dated on or
+    before `day` are read. Raises NoPlan, and only NoPlan, when no plan can be built."""
+    if not _usable(price):
+        raise NoPlan("no price")
+    try:
+        plan = _build_plan(
+            symbol, day, closes, price, horizon, forecast, bench_closes, stop,
+            cost_cad, value_cad, cost, recheck,
+        )
+    except NoPlan:
+        raise
+    except Exception as exc:  # one holding's plan must never fail the stage
+        raise NoPlan(f"plan could not be built: {type(exc).__name__}: {exc}") from exc
+    if not all(_finite(v) for v in plan.values()):
+        raise NoPlan("plan is not finite")
+    return plan
+
+
+def _build_plan(
+    symbol, day, closes, price, horizon, forecast, bench_closes, stop,
+    cost_cad, value_cad, cost, recheck,
+) -> dict:
+    seed = seed_of(symbol, day)
+    own = _up_to(closes, day)
+    if forecast is not None and horizon is not None and bench_closes is not None:
+        basis = "forecast"
+        bench = _up_to(bench_closes, day)
+        drift = float(median_drift(list(bench.values())[-LOOKBACK:], horizon))
+        paths = simulate(paired_moves(own, bench), horizon, seed, forecast=forecast, drift=drift)
+    else:
+        basis, horizon, drift = "volatility", NO_FORECAST_HORIZON, None
+        last = np.array(list(own.values())[-LOOKBACK:], dtype=float)
+        paths = simulate(np.diff(np.log(last)), horizon, seed)
+
+    cost_price = float(price * cost_cad / value_cad) if value_cad > 0 else None
+    breakeven = cost_price if cost_price is not None and value_cad < cost_cad else None
+    return {
+        **read_plan(paths, float(price), stop=stop, breakeven=breakeven, cost=cost),
+        "version": PLAN_VERSION,
+        "basis": basis,
+        "drift": drift,
+        "horizon": horizon,
+        "cost_price": cost_price,
+        "recheck_by": None if recheck is None else recheck(horizon).isoformat(),
+        "status": None,
+    }

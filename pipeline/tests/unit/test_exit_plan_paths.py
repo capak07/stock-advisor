@@ -8,6 +8,7 @@ import pytest
 from advisor.portfolio.exit_plan import (
     BLOCK,
     LOOKBACK,
+    MIN_WIDTH,
     PATHS,
     NoPlan,
     median_drift,
@@ -107,6 +108,17 @@ def test_an_unusable_forecast_is_refused(forecast):
 def test_a_flat_excess_has_no_width():
     bench = _moves()
     pair = np.column_stack([bench, bench])  # e.g. the benchmark itself: the excess is 0 every day
+    with pytest.raises(NoPlan, match="forecast range has no width"):
+        simulate(pair, 21, 7, forecast=(-0.08, 0.02, 0.15), drift=0.0)
+
+
+def test_an_excess_with_only_float_noise_has_no_width():
+    bench = _moves()
+    noise = np.random.default_rng(9).normal(0.0, 1e-12, 252)
+    pair = np.column_stack([bench + noise, bench])  # the excess is float noise, not exactly 0
+    ends = simulate_raw(pair[:, 0] - pair[:, 1], 21, 7)[:, -1]
+    width = np.quantile(ends, 0.9) - np.quantile(ends, 0.1)
+    assert 0 < width < MIN_WIDTH == 1e-9
     with pytest.raises(NoPlan, match="forecast range has no width"):
         simulate(pair, 21, 7, forecast=(-0.08, 0.02, 0.15), drift=0.0)
 

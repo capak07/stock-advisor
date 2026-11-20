@@ -110,3 +110,19 @@ export function ExitPlanCardLines({ plan, currency, price }: { plan: ExitPlan | 
   const range = plan.status === 'fail' ? null : rangeLine(plan, currency, price)
   return <Lines lines={[plain(range), plan.status === 'fail' ? null : breakeven(plan, currency), note(plan)]} />
 }
+
+/** The compact cells leave a forecast plan's basis out (R19). */
+export const FORECAST_BASIS_NOTE = "Plans are from the model's forecast unless marked “From volatility only”."
+
+/**
+ * Under the holdings table, once: the cells leave out the closes line and a forecast plan's basis,
+ * so the page says both here (R9, R19). Nothing when no plan there shows a chance.
+ */
+export function PlanFootnote({ plans }: { plans: readonly (ExitPlan | null)[] }) {
+  if (!plans.some(showsChance)) return null
+  return (
+    <p className="sub" style={{ margin: '10px 0 0', fontSize: 12 }}>
+      {CLOSES_LINE} {FORECAST_BASIS_NOTE}
+    </p>
+  )
+}

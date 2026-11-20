@@ -117,7 +117,7 @@ const ADD_BRACKET_NOTE = 'A bracket covers only the shares this buy adds; the sh
 
 /**
  * A holding's order for its action (Sell, Trim, Add; a Hold has none) and the stop to keep on it,
- * or for a holding without a stop, the limit sell at its exit plan's sell-at price.
+ * or for a Hold or an Add without a stop, the limit sell at its exit plan's sell-at price.
  * An Add also gets the buy as one bracket order on the new shares, its take-profit at the top of
  * the holding's range and its stop loss the trailing stop.
  * Prices are converted to the currency the asset trades in: a coin's Coinbase USD prices to CAD.
@@ -159,10 +159,11 @@ export function holdingGuides(
   if (trailingStop !== null) {
     return { order, stop: planStop(instrument(price ?? trailingStop), { qty, stop: trailingStop, previousStop: toTrading(a.previousStop) }) }
   }
-  // Without a stop, the exit plan's sell-at price as a standing limit sell. Beside a stop it stays
-  // hidden until Wealthsimple is known to hold both orders on the same shares (exit plan spec §7);
-  // the price alert offered with the plan does that job instead.
-  const sellAt = a.exitPlan?.sellAt ?? null
+  // Without a stop, a Hold's or an Add's exit plan sell-at price as a standing limit sell (R18). Beside
+  // a stop it stays hidden until Wealthsimple is known to hold both orders on the same shares (exit
+  // plan spec §7); the price alert offered with the plan does that job instead. Never beside a Sell,
+  // which sells everything now, or a Trim, whose order may not fill (it isn't sized on the rest).
+  const sellAt = a.action === 'hold' || a.action === 'add' ? (a.exitPlan?.sellAt ?? null) : null
   const sellPlan = sellAt === null ? null : planSellAt(instrument(price ?? sellAt), { qty, sellAt })
   return { order, stop: sellPlan && sellPlan.steps.length > 0 ? sellPlan : null }
 }

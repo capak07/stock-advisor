@@ -325,7 +325,9 @@ test("a holding's exit plan shows in the table, the cards and the hold list, and
   await expect(shop.locator('.h-exit')).toContainText(`Range by ${by}: C$130.00 – 145.00 – 160.00 (0%)`)
   await expect(shop.locator('.h-exit')).toContainText('Not validated yet: the first benchmark run after this change checks these chances.')
   await expect(shop.locator('.h-exit')).toContainText('From volatility only — no view on direction')
+  // once, under the table: the cells leave out the closes line and a forecast plan's basis
   await expect(page.getByText('Chances count closes at or above the price.')).toHaveCount(1)
+  await expect(page.getByText("Chances count closes at or above the price. Plans are from the model's forecast unless marked “From volatility only”.", { exact: true })).toHaveCount(1)
 
   const card = page.locator('.action-card.sell')
   await expect(card).toContainText(`Range by ${by}: C$130.00 – 145.00 – 160.00 (0%)`)

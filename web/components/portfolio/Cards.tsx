@@ -23,7 +23,7 @@ import { NOT_RATED, type Slice } from '@/lib/portfolio/valuation'
 import type { HoldingRow } from '@/lib/portfolio/view'
 import type { Warning } from '@/lib/portfolio/warnings'
 import { alertHref, tickerHref } from '@/lib/ticker'
-import { CLOSES_LINE, ExitPlanCardLines, ExitPlanLines, planBenchmark, showsChance } from './ExitPlan'
+import { ExitPlanCardLines, ExitPlanLines, PlanFootnote, planBenchmark } from './ExitPlan'
 import { HoldList } from './HoldList'
 
 /** A holding with its latest run action. */
@@ -413,12 +413,7 @@ export function HoldingsCard({ holdings, accounts, guides }: { holdings: Holding
           </table>
         </div>
       )}
-      {/* the cells leave it out; the page says it once (R9) */}
-      {holdings.some((h) => showsChance(h.action?.exitPlan ?? null)) && (
-        <p className="sub" style={{ margin: '10px 0 0', fontSize: 12 }}>
-          {CLOSES_LINE}
-        </p>
-      )}
+      <PlanFootnote plans={holdings.map((h) => h.action?.exitPlan ?? null)} />
     </section>
   )
 }

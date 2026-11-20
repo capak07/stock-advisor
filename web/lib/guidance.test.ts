@@ -195,6 +195,51 @@ describe('holdingGuides', () => {
     expect(holdingGuides(action({ refPrice: 150, exitPlan: { ...exitPlan, sellAt: null } }), held, ctx).stop).toBeNull()
   })
 
+  it('offers the sell-at limit sell only on a held or added position with no stop, never beside a Sell or a Trim (R18)', () => {
+    const exitPlan = {
+      status: 'pass' as const,
+      basis: 'forecast' as const,
+      horizon: 21,
+      recheckBy: '2026-11-27',
+      low: 140,
+      mid: 152,
+      high: 165,
+      sellAt: 160,
+      pTouch: 0.33,
+      pStopFirst: null,
+      pUp: 0.55,
+      breakeven: null,
+      pBreakeven: null,
+      drift: 0.009,
+      costPrice: 120,
+    }
+    const qty = 12.4
+    const guide = (over: Partial<HoldingAction>) =>
+      holdingGuides(action({ refPrice: 150, riskLevel: 'medium', exitPlan, ...over }), { ...held, qty }, ctx)
+    const steps = (g: ReturnType<typeof holdingGuides>) => [...(g.order?.steps ?? []), ...(g.stop?.steps ?? [])]
+    const mentionsSellAt = (g: ReturnType<typeof holdingGuides>) => steps(g).filter((s) => s.text.includes('C$160.00'))
+    const sellAtStep = { kind: 'limit', side: 'sell', qty: 12, price: 160, expiry: '90 days', text: 'Limit sell 12 sh at C$160.00, expiry 90 days' }
+
+    // a Sell: no step in either slot names the sell-at price
+    expect(mentionsSellAt(guide({ action: 'sell' }))).toEqual([])
+    // a Trim: only the trim order, and its sells never exceed the holding
+    const trim = guide({ action: 'trim' })
+    expect(mentionsSellAt(trim)).toEqual([])
+    expect(trim.stop).toBeNull()
+    expect(steps(trim)).toMatchObject([{ kind: 'limit', side: 'sell', qty: 4 }])
+    expect(steps(trim).some((s) => s.expiry === '90 days')).toBe(false)
+    const sold = steps(trim).filter((s) => s.side === 'sell').reduce((sum, s) => sum + (s.qty ?? 0), 0)
+    expect(sold).toBeLessThanOrEqual(qty)
+    // a Hold (plain or asked to review) and an Add: the sell-at limit sell
+    for (const over of [{ action: 'hold' as const }, { action: 'hold' as const, review: true }, { action: 'add' as const }]) {
+      expect(guide(over).stop!.steps).toMatchObject([sellAtStep])
+    }
+    // with a stop, none of the four has it
+    for (const action of ['sell', 'trim', 'hold', 'add'] as const) {
+      expect(mentionsSellAt(guide({ action, trailingStop: 140 }))).toEqual([])
+    }
+  })
+
   it("converts a coin's USD prices to CAD, and gives USD holdings nothing without a rate", () => {
     const coin = action({ symbol: 'ETH', assetType: 'crypto', account: 'crypto', trailingStop: 1800, refPrice: 2000 })
     const { stop } = holdingGuides(coin, held, ctx)

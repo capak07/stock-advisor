@@ -2,7 +2,7 @@ import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ExitPlan } from '@/lib/portfolio/exit-plan'
-import { ExitPlanCardLines, ExitPlanLines } from './ExitPlan'
+import { ExitPlanCardLines, ExitPlanLines, PlanFootnote } from './ExitPlan'
 
 const plan = (over: Partial<ExitPlan> = {}): ExitPlan => ({
   status: 'pass',
@@ -150,5 +150,18 @@ describe('ExitPlanCardLines', () => {
 
   it('renders nothing without a plan', () => {
     expect(renderToStaticMarkup(<ExitPlanCardLines plan={null} currency="USD" price={4.85} />)).toBe('')
+  })
+})
+
+describe('PlanFootnote', () => {
+  it('says once under the table that chances count closes and which plans are from the forecast', () => {
+    expect(html(<PlanFootnote plans={[null, plan()]} />)).toContain(
+      "Chances count closes at or above the price. Plans are from the model's forecast unless marked “From volatility only”.",
+    )
+  })
+
+  it('is left out when no plan shows a chance', () => {
+    const rangeOnly = plan({ status: 'range_only', sellAt: null, pTouch: null, pStopFirst: null })
+    expect(renderToStaticMarkup(<PlanFootnote plans={[null, rangeOnly]} />)).toBe('')
   })
 })

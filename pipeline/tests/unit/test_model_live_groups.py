@@ -364,3 +364,15 @@ def test_a_monday_pre_open_run_reads_an_approval_at_the_oldest_edge_of_the_windo
     got = catalysts_features(live, days, ["ACME"])["fda_approvals_180d"]["ACME"].iloc[0]
     want = catalysts_features(training, days, ["ACME"])["fda_approvals_180d"]["ACME"].iloc[0]
     assert got == want == 1
+
+
+def test_an_fda_record_cached_before_the_event_dates_reads_missing_not_zero():
+    """A record cached before deploy has no `approval_days`/`recall_days`: its events are unknown, so the
+    catalysts group reads NaN for that run rather than 0 approvals and recalls."""
+    old = DrugEvents.model_validate({"symbol": "PFE", "as_of": "2026-10-12", "recalls_90d": 1})
+    assert history_from_records(_ok("openfda", [old])).fda_events is None
+    mixed = [old, DrugEvents(symbol="LLY", as_of=date(2026, 10, 12), approval_days=[], recall_days={})]
+    assert history_from_records(_ok("openfda", mixed)).fda_events is None
+    days = pd.DatetimeIndex(["2026-10-12"])
+    out = catalysts_features(history_from_records(_ok("openfda", [old])).fda_events, days, ["PFE"])
+    assert all(frame.isna().all().all() for frame in out.values())

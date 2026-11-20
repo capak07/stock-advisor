@@ -80,9 +80,9 @@ class DrugEvents(BaseModel):
     data_updated: date | None = None  # openFDA's last refresh of the approvals data
     # The model's rows over the whole WINDOW_DAYS: one date per counted approval (an original or a new
     # indication), and each recall event's earliest report date. A record cached before these fields
-    # existed has none, so the stock reads no events until the next fetch.
-    approval_days: list[date] = []
-    recall_days: dict[str, date] = {}
+    # existed has None (unknown, not "no events"): the run's catalysts read NaN (`live_groups`).
+    approval_days: list[date] | None = None
+    recall_days: dict[str, date] | None = None
 
 
 def fda_date(text: str | None) -> date | None:

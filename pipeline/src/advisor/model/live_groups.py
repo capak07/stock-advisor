@@ -149,9 +149,12 @@ def _estimates(records: list[EarningsReport]) -> pd.DataFrame:
     return frame.astype({"eps_estimate": "float64", "eps_actual": "float64"})
 
 
-def _fda_events(records: list[DrugEvents]) -> pd.DataFrame:
+def _fda_events(records: list[DrugEvents]) -> pd.DataFrame | None:
     """One approval row per counted approval date and one recall row per event, as `fda_history` has them.
-    An approval's id only has to tell the symbol's approvals apart."""
+    An approval's id only has to tell the symbol's approvals apart. None when any record lacks the dates
+    (cached before they existed): its events are unknown, so the group reads NaN this run, never 0."""
+    if any(r.approval_days is None or r.recall_days is None for r in records):
+        return None
     rows = [
         (r.symbol, "approval", day, f"live:{place}") for r in records for place, day in enumerate(r.approval_days)
     ] + [
@@ -161,7 +164,8 @@ def _fda_events(records: list[DrugEvents]) -> pd.DataFrame:
     return frame.astype({"kind": "string", "event_id": "string"})
 
 
-def _maybe[R: BaseModel](records: list[R] | None, build: Callable[[list[R]], pd.DataFrame]) -> pd.DataFrame | None:
+def _maybe[R: BaseModel](records: list[R] | None,
+                         build: Callable[[list[R]], pd.DataFrame | None]) -> pd.DataFrame | None:
     return None if records is None else build(records)
 
 

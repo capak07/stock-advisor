@@ -177,4 +177,4 @@ def test_openfda_matches_against_every_us_name_and_lists_dates():
 
 def test_a_drug_events_record_cached_before_the_dates_still_loads():
     old = DrugEvents.model_validate({"symbol": "PFE", "as_of": "2026-10-12", "recalls_90d": 1})
-    assert (old.approval_days, old.recall_days) == ([], {})
+    assert (old.approval_days, old.recall_days) == (None, None)  # unknown, not "no events"

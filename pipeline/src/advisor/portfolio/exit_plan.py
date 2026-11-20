@@ -32,6 +32,9 @@ class NoPlan(ValueError):
     """A plan that cannot be built; the message is the reason shown in the run summary."""
 
 
+TOO_LITTLE = "too little price history"
+
+
 def seed_of(symbol: str, day: date) -> int:
     """A seed that is the same on any machine: the first 8 bytes of sha256("symbol|day")."""
     digest = hashlib.sha256(f"{symbol}|{day.isoformat()}".encode()).digest()
@@ -41,8 +44,10 @@ def seed_of(symbol: str, day: date) -> int:
 def median_drift(bench_closes: Sequence[float], horizon: int) -> float:
     """The median simple return over every overlapping `horizon`-step window of the closes."""
     closes = np.asarray(bench_closes, dtype=float)
-    if horizon < 1 or len(closes) <= horizon:
-        raise NoPlan("too little price history")
+    if horizon < 1:
+        raise NoPlan("horizon is not usable")
+    if len(closes) <= horizon:
+        raise NoPlan(TOO_LITTLE)
     return float(np.median(closes[horizon:] / closes[:-horizon] - 1.0))
 
 
@@ -101,7 +106,7 @@ def simulate(
     quantiles is not reproduced: one scale and one shift match its median and 10-90 width."""
     moves = np.asarray(moves, dtype=float)
     if len(moves) < MIN_CLOSES - 1:
-        raise NoPlan("too little price history")
+        raise NoPlan(TOO_LITTLE)
 
     if forecast is None:
         if moves.ndim != 1:
@@ -246,7 +251,7 @@ def build_plan(
     bench_closes: Mapping[date, float] | None,
     stop: float | None,
     cost_cad: float,
-    value_cad: float,
+    value_cad: float | None,
     cost: float,
     recheck: Callable[[int], date] | None = None,
     atr_pct: float | None = None,
@@ -256,11 +261,16 @@ def build_plan(
     stage and the benchmark check share (R6).
 
     With a forecast, its horizon and the benchmark's closes, the paths follow the forecast;
-    otherwise they are volatility only, over NO_FORECAST_HORIZON steps. With the ATR fraction that
-    set `stop` and the policy's `trail_atr`, the stop trails along each path (R12). Only closes
-    dated on or before `day` are read. Raises NoPlan, and only NoPlan, when no plan can be built."""
+    otherwise, or when the paired benchmark history is too short for the forecast (spec §7.3), they
+    are volatility only, over NO_FORECAST_HORIZON steps. With the ATR fraction that set `stop` and
+    the policy's `trail_atr`, the stop trails along each path (R12). `value_cad` is None when the
+    holding's value was not measured this run (no rate to convert it): then there is no cost price
+    and no break-even. Only closes dated on or before `day` are read. Raises NoPlan, and only
+    NoPlan, when no plan can be built."""
     if not _usable(price):
         raise NoPlan("no price")
+    if not all(v is None or math.isfinite(v) for v in (stop, cost)):
+        raise NoPlan("plan is not finite")
     try:
         plan = _build_plan(
             symbol, day, closes, price, horizon, forecast, bench_closes, stop,
@@ -281,17 +291,24 @@ def _build_plan(
 ) -> dict:
     seed = seed_of(symbol, day)
     own = _up_to(closes, day)
+    paths = None
     if forecast is not None and horizon is not None and bench_closes is not None:
         basis = "forecast"
         bench = _up_to(bench_closes, day)
-        drift = float(median_drift(list(bench.values())[-LOOKBACK:], horizon))
-        paths = simulate(paired_moves(own, bench), horizon, seed, forecast=forecast, drift=drift)
-    else:
+        try:
+            drift = float(median_drift(list(bench.values())[-LOOKBACK:], horizon))
+            paths = simulate(paired_moves(own, bench), horizon, seed, forecast=forecast, drift=drift)
+        except NoPlan as exc:
+            if str(exc) != TOO_LITTLE:
+                raise
+            # too little paired history for the forecast: volatility only, if the asset's own closes allow
+    if paths is None:
         basis, horizon, drift = "volatility", NO_FORECAST_HORIZON, None
         last = np.array(list(own.values())[-LOOKBACK:], dtype=float)
         paths = simulate(np.diff(np.log(last)), horizon, seed)
 
-    cost_price = float(price * cost_cad / value_cad) if value_cad > 0 else None
+    measured = value_cad is not None and value_cad > 0
+    cost_price = float(price * cost_cad / value_cad) if measured else None
     breakeven = cost_price if cost_price is not None and value_cad < cost_cad else None
     return {
         **read_plan(

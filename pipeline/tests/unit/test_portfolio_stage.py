@@ -445,6 +445,27 @@ def test_a_holding_under_water_gets_its_break_even_price():
     assert row.exit_plan["cost_price"] == pytest.approx(5.0)
 
 
+def test_a_us_stock_without_a_usd_cad_rate_has_no_cost_price_or_break_even():
+    # without a rate its value is only its cost standing in, so "+N% on cost" would measure today's price
+    bars = {**_view().bars, "AAPL": _wave("AAPL", 120, 60.0)}
+    positions = [_position("AAPL", cost_cad=5000.0)]
+    (row,), reasons = _rows(_view(bars=bars, usd_cad=None), positions)
+    assert reasons == {} and row.exit_plan is not None
+    plan = row.exit_plan
+    assert (plan["cost_price"], plan["breakeven"], plan["p_breakeven"]) == (None, None, None)
+    assert plan["low"] is not None
+    # with a rate the value is measured: a cost price, and under water a break-even
+    (row,), _ = _rows(_view(bars=bars, usd_cad=1.4), positions)
+    assert row.exit_plan["cost_price"] == pytest.approx(bars["AAPL"][-1].close * 5000.0 / (bars["AAPL"][-1].close * 10 * 1.4))
+    assert row.exit_plan["breakeven"] == row.exit_plan["cost_price"]
+
+
+def test_a_coin_without_a_quote_or_a_rate_has_no_cost_price():
+    view = _view(candles={"BONK": _candles("BONK", n=120)}, usd_cad=None)
+    (row,), reasons = _rows(view, [_position("BONK", "crypto", qty=1000.0, asset_type=AssetType.CRYPTO)])
+    assert reasons == {} and row.exit_plan["cost_price"] is None and row.exit_plan["breakeven"] is None
+
+
 def _bare(symbol: str, asset_type: AssetType = AssetType.STOCK, cost: float = 0.0) -> Holding:
     return Holding(
         "tfsa", symbol, asset_type, None, 10.0, 100.0, 100.0, 1000.0, None, [], None, cost, False, "low", 5.0,
@@ -630,7 +651,7 @@ def _advise(monkeypatch, latest_exit_check, configs: dict) -> tuple[dict, list]:
 
 def test_the_stage_matches_the_check_on_the_live_models_name_without_its_policy(monkeypatch):
     stored = replace(BASELINE, policy=DEFAULT_POLICY).to_json()  # the live config carries a policy
-    summary, (row,) = _advise(monkeypatch, lambda conn: {"TSX": _check("baseline", forecast=_verdict())},
+    summary, (row,) = _advise(monkeypatch, lambda conn, now: {"TSX": _check("baseline", forecast=_verdict())},
                               {Market.TSX: stored})
     assert summary["written"] == 1
     assert row.exit_plan["status"] == "pass"
@@ -638,16 +659,27 @@ def test_the_stage_matches_the_check_on_the_live_models_name_without_its_policy(
 
 @pytest.mark.parametrize("config", [None, {"version": 999}, "odd"])
 def test_a_market_whose_stored_config_cannot_be_read_has_unvalidated_forecast_plans(monkeypatch, config):
-    summary, (row,) = _advise(monkeypatch, lambda conn: {"TSX": _check("baseline", forecast=_verdict())},
+    summary, (row,) = _advise(monkeypatch, lambda conn, now: {"TSX": _check("baseline", forecast=_verdict())},
                               {Market.TSX: config})
     assert summary["written"] == 1
     assert row.exit_plan["status"] == "unvalidated"
 
 
 def test_a_failed_read_of_the_check_leaves_every_plan_unvalidated_and_the_stage_succeeds(monkeypatch):
-    def broken(conn):
+    def broken(conn, now):
         raise psycopg.OperationalError("the check broke")
 
     summary, (row,) = _advise(monkeypatch, broken, {Market.TSX: BASELINE.to_json()})
     assert "failed" not in summary and summary["written"] == 1
     assert row.exit_plan is not None and row.exit_plan["status"] == "unvalidated"
+
+
+def test_the_stage_reads_the_check_as_of_the_runs_time(monkeypatch):
+    asked = []
+
+    def check(conn, now):
+        asked.append(now)
+        return {}
+
+    _advise(monkeypatch, check, {Market.TSX: BASELINE.to_json()})
+    assert asked == [datetime(2026, 10, 14, 12, 15, tzinfo=UTC)]

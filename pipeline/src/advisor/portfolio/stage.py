@@ -123,15 +123,22 @@ def _priced(p: Position, view: RunView) -> _Priced:
     return _Priced(market, history, price, day, same_day)
 
 
-def _value_cad(p: Position, seen: _Priced, view: RunView) -> float:
-    """The position's value in CAD, or its cost when this run has no price for it."""
+def _measured_cad(p: Position, seen: _Priced, view: RunView) -> float | None:
+    """The position's value in CAD as this run measured it; None without a price, or without the
+    USD/CAD rate for one priced in USD."""
     if p.asset_type is AssetType.CRYPTO and p.symbol in view.quotes:
         return view.quotes[p.symbol].price_cad * p.qty
     if seen.price is None:
-        return p.cost_cad
+        return None
     if seen.market is Market.TSX:
         return seen.price * p.qty
-    return seen.price * p.qty * view.usd_cad if view.usd_cad is not None else p.cost_cad
+    return seen.price * p.qty * view.usd_cad if view.usd_cad is not None else None
+
+
+def _value_cad(p: Position, seen: _Priced, view: RunView) -> float:
+    """The position's value in CAD, or its cost when this run did not measure it."""
+    value = _measured_cad(p, seen, view)
+    return p.cost_cad if value is None else value
 
 
 def _momentum(view: RunView) -> dict[Market, pd.Series]:
@@ -313,8 +320,10 @@ def _plan_cost(h: Holding, view: RunView) -> float:
     return float(round_trip_cost(market, np.array([volume]), view.fees[0])[0])
 
 
-def _exit_plan(h: Holding, seen: _Priced, view: RunView, action) -> dict:
-    """The holding's exit plan, or NoPlan with the reason. Any other failure inside is NoPlan too."""
+def _exit_plan(h: Holding, seen: _Priced, view: RunView, action, measured: bool = True) -> dict:
+    """The holding's exit plan, or NoPlan with the reason. Any other failure inside is NoPlan too.
+    `measured` is False when `h.value_cad` is only its cost standing in: then the plan has no cost
+    price and no break-even, rather than one that is today's price."""
     if seen.day is None:
         raise NoPlan("no price")
     # the stop trails along each path by the ATR `_stop` used and the policy's multiple (R12)
@@ -348,7 +357,7 @@ def _exit_plan(h: Holding, seen: _Priced, view: RunView, action) -> dict:
         bench_closes=bench_closes,
         stop=h.trailing_stop,
         cost_cad=h.cost_cad,
-        value_cad=h.value_cad,
+        value_cad=h.value_cad if measured else None,
         cost=_plan_cost(h, view),
         recheck=recheck,
         atr_pct=atr if math.isfinite(atr) else None,
@@ -380,11 +389,12 @@ def _model_names(models: Mapping[Market, MarketModel]) -> dict[Market, str]:
     return out
 
 
-def _exit_check(conn: psycopg.Connection) -> dict[str, dict]:
-    """The latest benchmark check per market, or {} when it cannot be read: never a failed stage."""
+def _exit_check(conn: psycopg.Connection, now: datetime) -> dict[str, dict]:
+    """The latest benchmark check per market no older than `repo.MAX_VERDICT_AGE_DAYS` before the
+    run's time, or {} when it cannot be read: never a failed stage."""
     try:
         with conn.transaction():
-            return repo.latest_exit_check(conn)
+            return repo.latest_exit_check(conn, now)
     except Exception:
         log.exception("the latest exit plan check could not be read")
         return {}
@@ -412,7 +422,7 @@ def action_rows(
             bench_ref = bench[-1].close if bench else None
         plan = None
         try:
-            plan = _exit_plan(h, seen, view, action)
+            plan = _exit_plan(h, seen, view, action, _measured_cad(p, seen, view) is not None)
         except NoPlan as exc:
             no_plan[f"{p.account}:{p.symbol}"] = str(exc)
         except Exception as exc:  # one holding's plan never fails the stage
@@ -504,7 +514,7 @@ def advise_stage(
             coin_why=coin_why or {},
             coin_policy=coin_policy or DEFAULT_POLICY,
             fees=repo.fee_settings(conn),
-            exit_check=_exit_check(conn),
+            exit_check=_exit_check(conn, now_utc),
             model_names=_model_names(models),
         )
         policies = {market: policy_of(model.metrics) for market, model in models.items()}

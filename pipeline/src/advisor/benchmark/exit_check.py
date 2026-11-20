@@ -200,7 +200,8 @@ def _judge(
     trail_atr: float,
 ) -> Judged | None:
     """The pair's plan built as live builds it, and what the closes after the sample day did to it; None
-    when it is skipped (no price or ATR on the day, a horizon past the panel's end, or NoPlan)."""
+    when it is skipped (no price or ATR on the day, a horizon past the panel's end, NoPlan, or a forecast
+    pair whose plan fell back to volatility only)."""
     price, atr = a.close[i, j], a.atr[i, j]
     if not (math.isfinite(price) and price > 0 and math.isfinite(atr)):
         return None
@@ -233,6 +234,8 @@ def _judge(
         )
     except NoPlan:
         return None
+    if forecast is not None and plan["basis"] != "forecast":
+        return None  # too little paired history: live shows a volatility plan; this class judges forecast ones
     if plan["horizon"] != horizon:  # never: build_plan's horizon is the one asked for
         raise ValueError(f"{symbol} {day}: a plan over {plan['horizon']} sessions, not {horizon}")
 

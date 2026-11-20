@@ -669,6 +669,51 @@ def test_a_rescale_multiplies_the_refs_recorded_before_it(db):
     assert [float(a["bench_ref_price"]) for a in held] == [50.0, 25.0, 50.0, 50.0, 25.0]
 
 
+PLAN = {
+    "version": 1, "basis": "forecast", "status": "pass", "low": 18.0, "mid": 20.4, "high": 23.0,
+    "sell_at": 22.0, "p_touch": 0.31, "p_stop_first": 0.2, "p_up": 0.55, "breakeven": 21.0,
+    "p_breakeven": 0.4, "cost_price": 21.0, "drift": 0.01, "horizon": 21, "recheck_by": "2026-11-13",
+}
+
+
+def test_a_rescale_scales_an_ungraded_actions_plan_prices_and_nothing_else(db):
+    run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    no_prices = {**PLAN, "status": "fail", **dict.fromkeys(
+        ("low", "mid", "high", "sell_at", "p_touch", "p_stop_first", "p_up", "breakeven", "p_breakeven"))}
+    repo.write_holding_actions(db, run_id, [
+        replace(_action("TD.TO"), exit_plan=PLAN),
+        replace(_action("TD.TO", "rrsp"), exit_plan=None),
+        replace(_action("TD.TO", "fhsa"), exit_plan=no_prices),
+        replace(_action("RY.TO"), exit_plan=PLAN),  # another stock: untouched
+    ])
+    graded_run = repo.create_run(db, RunKind.PRE_OPEN, DAY)
+    repo.write_holding_actions(db, graded_run, [replace(_action("TD.TO"), exit_plan=PLAN)])
+    db.execute(
+        "insert into holding_action_outcomes (run_id, account, symbol, asset_type, exit_price, ret,"
+        " ret_net_of_fx, bench_ret, excess, beat, hit_stop) values (%s, 'tfsa', 'TD.TO', 'stock', 21, 0.05,"
+        " 0.05, 0, 0.05, true, false)",
+        (graded_run,),
+    )
+
+    repo.rescale_refs(db, AssetRef("TD.TO", AssetType.STOCK), 0.25)  # a 4-for-1 split
+    plans = {
+        (r["run_id"], r["account"], r["symbol"]): r["exit_plan"]
+        for r in db.execute("select run_id, account, symbol, exit_plan from holding_actions").fetchall()
+    }
+    scaled = plans[(run_id, "tfsa", "TD.TO")]
+    prices = ("low", "mid", "high", "sell_at", "breakeven", "cost_price")
+    assert {k: scaled[k] for k in prices} == pytest.approx({k: PLAN[k] * 0.25 for k in prices})
+    assert {k: v for k, v in scaled.items() if k not in prices} == {
+        k: v for k, v in PLAN.items() if k not in prices}  # the chances, horizon, recheck_by, status
+    assert plans[(run_id, "rrsp", "TD.TO")] is None
+    assert plans[(run_id, "fhsa", "TD.TO")] == {**no_prices, "cost_price": pytest.approx(21.0 * 0.25)}
+    assert plans[(run_id, "tfsa", "RY.TO")] == PLAN
+    assert plans[(graded_run, "tfsa", "TD.TO")] == PLAN  # graded: its outcome stands
+    # the grader reads the rescaled levels
+    action = next(a for a in repo.actions_to_grade(db) if (a.run_id, a.account, a.symbol) == (run_id, "tfsa", "TD.TO"))
+    assert (action.sell_at, action.breakeven) == pytest.approx((5.5, 5.25))
+
+
 def test_a_picks_status_changes_only_while_it_is_open(db):
     run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
     pick = PickRow(
@@ -752,11 +797,11 @@ def _exit_block(model: str) -> dict:
 
 
 def test_there_is_no_exit_check_before_a_benchmark_has_one(db):
-    assert repo.latest_exit_check(db) == {}
+    assert repo.latest_exit_check(db, T0) == {}
     _benchmark(db, T0, "success", {"markets": {"US": {"exit_plan": {"error": "RuntimeError: broke"}}}})
     _benchmark(db, T0 + timedelta(days=1), "failed", {"markets": {"US": {"exit_plan": _exit_block("factors")}}})
     _benchmark(db, T0 + timedelta(days=2), "failed", {"error": "abandoned: no finish was recorded"})
-    assert repo.latest_exit_check(db) == {}
+    assert repo.latest_exit_check(db, T0 + timedelta(days=3)) == {}
 
 
 def test_each_markets_exit_check_is_its_newest_successful_block(db):
@@ -776,7 +821,15 @@ def test_each_markets_exit_check_is_its_newest_successful_block(db):
         "crypto": {"skipped": "no coin data"},
     }})
     repo.start_benchmark_run(db, T0 + 4 * day, None)  # still running
-    assert repo.latest_exit_check(db) == {"US": us_new, "TSX": tsx, "crypto": crypto}
+    assert repo.latest_exit_check(db, T0 + 5 * day) == {"US": us_new, "TSX": tsx, "crypto": crypto}
+
+
+def test_a_verdict_older_than_100_days_is_ignored(db):
+    assert repo.MAX_VERDICT_AGE_DAYS == 100
+    block = _exit_block("factors")
+    _benchmark(db, T0, "success", {"markets": {"US": {"exit_plan": block}}})
+    assert repo.latest_exit_check(db, T0 + timedelta(days=99)) == {"US": block}
+    assert repo.latest_exit_check(db, T0 + timedelta(days=101)) == {}
 
 
 def test_the_top_coins_are_the_largest_listed_ones_without_stablecoins(db):

@@ -893,12 +893,17 @@ def stored_closes(
     return dict(closes)
 
 
+PLAN_PRICES = ("low", "mid", "high", "sell_at", "breakeven", "cost_price")  # an exit plan's price keys
+
+
 def rescale_refs(conn: psycopg.Connection, ref: AssetRef, factor: float) -> None:
     """Multiply the prices recorded for a stock that grading hasn't used yet by `factor`, when its
     stored closes are rescaled: they were recorded in the same, older adjustment.
 
-    That is open picks' entry and stop, and ungraded holding actions' reference price and trailing
-    stop. A market's benchmark also moves its open picks' and ungraded actions' benchmark price.
+    That is open picks' entry and stop, and ungraded holding actions' reference price, trailing
+    stop and exit plan prices (`PLAN_PRICES`: the grader compares `sell_at` and `breakeven` with the
+    rescaled closes). A market's benchmark also moves its open picks' and ungraded actions'
+    benchmark price.
     """
     ungraded = (
         " and not exists (select 1 from holding_action_outcomes o where (o.run_id, o.account, o.symbol,"
@@ -909,8 +914,17 @@ def rescale_refs(conn: psycopg.Connection, ref: AssetRef, factor: float) -> None
         " where symbol = %(s)s and asset_type = %(t)s and status = 'open'",
         {"f": factor, "s": ref.symbol, "t": ref.asset_type.value},
     )
+    # each price key of an object plan that holds a number is multiplied; nulls and other keys stay
+    plan = "a.exit_plan"
+    for key in PLAN_PRICES:
+        value = f"a.exit_plan -> '{key}'"
+        plan = (
+            f"jsonb_set({plan}, '{{{key}}}', case when jsonb_typeof({value}) = 'number'"
+            f" then to_jsonb(({value})::numeric * %(f)s::numeric) else coalesce({value}, 'null') end, false)"
+        )
     conn.execute(
-        "update holding_actions a set ref_price = ref_price * %(f)s, trailing_stop = trailing_stop * %(f)s"
+        "update holding_actions a set ref_price = ref_price * %(f)s, trailing_stop = trailing_stop * %(f)s,"
+        f" exit_plan = case when jsonb_typeof(a.exit_plan) = 'object' then {plan} else a.exit_plan end"
         " where a.symbol = %(s)s and a.asset_type = %(t)s" + ungraded,
         {"f": factor, "s": ref.symbol, "t": ref.asset_type.value},
     )
@@ -1072,9 +1086,14 @@ def write_benchmark_results(
         )
 
 
-def latest_exit_check(conn: psycopg.Connection) -> dict[str, dict]:
+MAX_VERDICT_AGE_DAYS = 100  # an exit plan check from a benchmark run older than this validates nothing
+
+
+def latest_exit_check(conn: psycopg.Connection, now: datetime) -> dict[str, dict]:
     """Each market's `exit_plan` block from its own newest successful benchmark run that has one
-    without an "error" key: a market held for missing data has no block that run. {} when none has."""
+    without an "error" key: a market held for missing data has no block that run. A run that started
+    more than MAX_VERDICT_AGE_DAYS before `now` is not read, so a check that keeps failing stops
+    validating plans. {} when none has."""
     rows = conn.execute(
         "select distinct on (m.key) m.key as market, m.value -> 'exit_plan' as block"
         " from benchmark_runs r,"
@@ -1083,7 +1102,9 @@ def latest_exit_check(conn: psycopg.Connection) -> dict[str, dict]:
         " where r.status = 'success'"
         " and jsonb_typeof(m.value -> 'exit_plan') = 'object'"
         " and not jsonb_exists(m.value -> 'exit_plan', 'error')"
-        " order by m.key, r.started_at desc, r.id desc"
+        " and r.started_at >= %s"
+        " order by m.key, r.started_at desc, r.id desc",
+        (now - timedelta(days=MAX_VERDICT_AGE_DAYS),),
     ).fetchall()
     return {r["market"]: r["block"] for r in rows}
 

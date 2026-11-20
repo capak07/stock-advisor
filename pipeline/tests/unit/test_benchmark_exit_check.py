@@ -94,6 +94,19 @@ def test_a_pair_whose_horizon_runs_past_the_panel_is_skipped():
     assert neither == []
 
 
+def test_a_forecast_pair_whose_plan_fell_back_to_volatility_is_skipped():
+    # the benchmark has closes only from session 185: too little paired history at day 200, so
+    # build_plan gives a volatility plan; that is not a forecast plan to judge (it was skipped before)
+    panel = _panel(symbols=5)
+    close = panel.close.copy()
+    close.iloc[:185, close.columns.get_loc(BENCH)] = np.nan
+    late = DailyPanel(close, panel.atr_pct, BENCH)
+    judged = judge_pairs(_rows(late, [200], horizons=(5, 21), folds=[1]), late, Market.TSX, [5, 21], 0.0,
+                         DEFAULT_POLICY)
+    assert judged and {j.cls for j in judged} == {"volatility"}
+    assert all(j.plan["basis"] == "volatility" for j in judged)
+
+
 def test_only_usable_horizons_are_sampled():
     panel = _panel(symbols=10)
     rows = _rows(panel, [150, 160], horizons=(5, 10), folds=[1, 2])

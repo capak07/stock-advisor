@@ -231,6 +231,39 @@ def test_a_non_finite_cost_is_refused():
         _plan(cost_cad=math.nan)
 
 
+@pytest.mark.parametrize("kw", [
+    {"stop": math.nan}, {"stop": math.inf}, {"cost": math.nan}, {"cost": math.inf}, {"cost": -math.inf},
+])
+def test_a_non_finite_stop_or_round_trip_cost_is_refused(kw):
+    # a NaN stop would read "stop first: 0%", a NaN cost would let the sell-at rule through
+    with pytest.raises(NoPlan, match="plan is not finite"):
+        _plan(**kw)
+
+
+def test_without_a_measured_value_there_is_no_cost_price_and_no_break_even():
+    # the stage passes value_cad=None when the value is only the cost standing in for a price
+    plan = _plan(cost_cad=1000.0, value_cad=None)
+    assert plan["cost_price"] is None and plan["breakeven"] is None and plan["p_breakeven"] is None
+    assert plan["sell_at"] == _plan(cost_cad=1000.0, value_cad=800.0)["sell_at"]
+
+
+@pytest.mark.parametrize("bench_n", [5, 30])  # shorter than the horizon; too few paired moves
+def test_a_forecast_with_too_little_benchmark_history_falls_back_to_a_volatility_plan(bench_n):
+    plan = _plan(forecast=FORECAST, horizon=10, bench_closes=_bench(n=bench_n))
+    assert (plan["basis"], plan["drift"], plan["horizon"]) == ("volatility", None, NO_FORECAST_HORIZON)
+    assert plan == _plan()
+
+
+def test_a_forecast_with_too_little_history_of_its_own_still_has_no_plan():
+    with pytest.raises(NoPlan, match="too little price history"):
+        _plan(closes=_closes(n=59), forecast=FORECAST, horizon=10, bench_closes=_bench())
+
+
+def test_an_unusable_forecast_is_still_refused_not_replaced():
+    with pytest.raises(NoPlan, match="forecast is not usable"):
+        _plan(forecast=(0.1, 0.0, 0.2), horizon=10, bench_closes=_bench())
+
+
 def test_a_nan_drift_never_reaches_the_plan(monkeypatch):
     monkeypatch.setattr(exit_plan, "median_drift", lambda closes, horizon: math.nan)
     with pytest.raises(NoPlan, match="plan is not finite"):

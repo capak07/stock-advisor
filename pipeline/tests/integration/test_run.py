@@ -1935,6 +1935,44 @@ def test_a_partial_bar_is_never_final_even_without_its_markets_benchmark_bars(db
     assert grade_stage(db, run_id, bars, {}, RunKind.PRE_OPEN, NOW) == {"picks": 0, "exited_early": 0, "actions": 1}
 
 
+def wiggle(first, n, step):
+    """n daily closes from `first` around 10, moving up to 2% a day, so a plan's range has a width."""
+    return {first + timedelta(days=i): 10.0 * (1 + 0.01 * ((i * step) % 5 - 2) + 0.0005 * i) for i in range(n)}
+
+
+def test_a_plan_the_holdings_stage_wrote_is_graded_with_its_touches(db, tmp_path, tsx_model_files, monkeypatch):
+    activate_tsx(db, tsx_model_files)
+    monkeypatch.setattr("advisor.run.predict_rows", confident)
+    db.execute(  # under water: bought at 15, so the plan has a break-even
+        "insert into lots (account, symbol, asset_type, qty, price, currency, fx_rate_cad, bought_at)"
+        " values ('tfsa', 'RY.TO', 'stock', 10, 15, 'CAD', null, '2026-09-01')"
+    )
+    prices = moved_prices({"RY.TO": wiggle(FRESH_START, 70, 7), "XIU.TO": wiggle(FRESH_START, 70, 3)})
+    outcome = execute_run(make_deps(db, tmp_path, prices=prices), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    action = holding_actions(db, outcome.run_id)["RY.TO"]
+    plan = action["exit_plan"]
+    assert plan is not None and plan["basis"] == "forecast" and plan["sell_at"] is not None
+    assert plan["breakeven"] is not None and plan["sell_at"] < plan["breakeven"]
+    recheck_by = date.fromisoformat(plan["recheck_by"])
+    assert recheck_by == action["exit_by"]
+
+    # later closes: flat at the feature day's close, one close just over the sell-at price, under break-even
+    feature_day, ref = action["feature_day"], float(action["ref_price"])
+    peak = plan["sell_at"] * 1.001
+    days = [feature_day + timedelta(days=i) for i in range(1, (recheck_by - feature_day).days + 6)]
+    bars = {
+        "RY.TO": [bar("RY.TO", d, peak if i == 20 else ref) for i, d in enumerate(days)],
+        "XIU.TO": [bar("XIU.TO", d, 10.0) for d in days],
+    }
+    later = repo.create_run(db, RunKind.PRE_OPEN, days[-1])
+    graded_at = datetime.combine(days[-1], datetime.min.time(), tzinfo=UTC) + timedelta(hours=12)
+    assert grade_stage(db, later, bars, {}, RunKind.PRE_OPEN, graded_at)["actions"] == 1
+    row = db.execute("select * from holding_action_outcomes where run_id = %s", (outcome.run_id,)).fetchone()
+    assert float(row["max_close"]) == pytest.approx(peak)
+    assert (row["touched_sell_at"], row["touched_breakeven"]) == (True, False)
+
+
 def test_the_largest_coins_are_priced_for_the_invest_page_even_if_nobody_holds_them(db, tmp_path):
     repo.upsert_coins(db, [("BTC", "Bitcoin", 2e12), ("ETH", "Ethereum", 4e11), ("USDT", "Tether", 1.8e11)], NOW)
     extra = crypto_sources(quoted=("BTC",))  # ETH gets no quote this run

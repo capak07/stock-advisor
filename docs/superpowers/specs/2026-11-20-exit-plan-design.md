@@ -273,6 +273,7 @@ always wins that conflict.
   plan's price, note "exit plan sell-at"); the owner saves it, so the insert stays the owner's.
 - **Limit sell beside a stop:** hidden by default for a holding with a stop, until the Wealthsimple
   check says both orders can stand on the same shares.
+- **2026-11-20, controller rulings R5 and R3** *(calls)*: the re-check date is the feature day plus the plan's own horizon, also for a holding linked to an open pick (the pick's later exit-by stays only in `exit_by`), replacing §1's last sentence on the horizon; coin plans are volatility-only for now, and §2's coin-with-forecast path is deferred.
 
 ## Constraints
 

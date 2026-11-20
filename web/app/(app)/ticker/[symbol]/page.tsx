@@ -6,7 +6,7 @@ import { notFound } from 'next/navigation'
 import { ForecastCard, ForecastProvider } from '@/components/ticker/ForecastCard'
 import { NewsCard, type HeadlineView, type NewsKpi } from '@/components/ticker/NewsCard'
 import { AlertsCard } from '@/components/ticker/AlertsCard'
-import { ExitPlanLines, planBenchmark } from '@/components/portfolio/ExitPlan'
+import { ExitPlanWithAlert, planBenchmark } from '@/components/portfolio/ExitPlan'
 import { EarningsCard } from '@/components/ticker/EarningsCard'
 import { FilingsCard } from '@/components/ticker/FilingsCard'
 import { InsidersCard } from '@/components/ticker/InsidersCard'
@@ -26,7 +26,7 @@ import type { AssetType } from '@/lib/portfolio/types'
 import { runWhen } from '@/lib/runs'
 import { answered, covers, coverageName, type Coverage } from '@/lib/sources'
 import { isValidSymbol, normalizeSymbol } from '@/lib/symbols'
-import { alertHref, alertPrefill, fmtScore, lastMove, priceSeries, safeLink, tone } from '@/lib/ticker'
+import { alertPrefill, fmtScore, lastMove, priceSeries, safeLink, tone } from '@/lib/ticker'
 
 interface Props {
   params: Promise<{ symbol: string }>
@@ -181,28 +181,20 @@ export default async function TickerPage({ params, searchParams }: Props) {
                   <span className="sub">{planCurrency}</span>
                 </div>
                 <div className="grid gap-4">
-                  {plans.map((h) => {
-                    const sellAt = h.exitPlan?.status === 'pass' || h.exitPlan?.status === 'unvalidated' ? h.exitPlan.sellAt : null
-                    return (
-                      <div key={h.account}>
-                        {plans.length > 1 && <span className="label plan-card-account">{ACCOUNT_LABELS[h.account]}</span>}
-                        <ExitPlanLines
-                          plan={h.exitPlan}
-                          currency={planCurrency}
-                          price={h.refPrice}
-                          benchmark={data.forecast?.benchmark ?? planBenchmark(assetType, symbol)}
-                        />
-                        {sellAt !== null && (
-                          <Link
-                            className="text-link plan-alert"
-                            href={alertHref(symbol, assetType, { level: sellAt, direction: 'above', note: 'exit plan sell-at' })}
-                          >
-                            Alert me at {fmtPrice(sellAt, planCurrency)}
-                          </Link>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {plans.map((h) => (
+                    <div key={h.account}>
+                      {plans.length > 1 && <span className="label plan-card-account">{ACCOUNT_LABELS[h.account]}</span>}
+                      <ExitPlanWithAlert
+                        plan={h.exitPlan}
+                        action={h.action}
+                        symbol={symbol}
+                        assetType={assetType}
+                        currency={planCurrency}
+                        price={h.refPrice}
+                        benchmark={data.forecast?.benchmark ?? planBenchmark(assetType, symbol)}
+                      />
+                    </div>
+                  ))}
                 </div>
               </section>
             )}

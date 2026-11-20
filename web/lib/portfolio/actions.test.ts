@@ -84,6 +84,7 @@ describe('cardReason', () => {
 })
 
 const exitPlan = (over: Partial<ExitPlan> = {}): ExitPlan => ({
+  assetType: 'stock',
   status: 'pass',
   basis: 'volatility',
   horizon: 21,
@@ -110,15 +111,29 @@ describe('holdText', () => {
 
   it("gives the plan's range, sell-at and re-check date when it has a plan and a currency", () => {
     const a = action({ horizonDays: 40, exitBy: '2026-12-11', exitPlan: exitPlan() })
-    expect(holdText(a, 'USD')).toBe('hold ~21 days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19')
+    expect(holdText(a, 'USD')).toBe('hold ~21 trading days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19')
     expect(holdText(action({ exitPlan: exitPlan(), reasons: ['no rule fired'] }), 'CAD')).toBe(
-      'hold ~21 days · range C$4.20–6.10 · sell at C$5.60 · re-check Dec 19',
+      'hold ~21 trading days · range C$4.20–6.10 · sell at C$5.60 · re-check Dec 19',
     )
+    // a coin's plan runs in calendar days
+    expect(holdText(action({ exitPlan: exitPlan({ assetType: 'crypto' }) }), 'USD')).toBe(
+      'hold ~21 days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19',
+    )
+  })
+
+  it('never gives a sell-at price for a Sell or a Trim, or a plan that is not pass or unvalidated (R20a)', () => {
+    for (const kind of ['sell', 'trim'] as const) {
+      expect(holdText(action({ action: kind, exitPlan: exitPlan() }), 'USD')).toBe(
+        'hold ~21 trading days · range US$4.20–6.10 · re-check Dec 19',
+      )
+    }
+    expect(holdText(action({ action: 'add', exitPlan: exitPlan() }), 'USD')).toContain('sell at US$5.60')
+    expect(holdText(action({ exitPlan: exitPlan({ status: 'range_only' }) }), 'USD')).not.toContain('sell at')
   })
 
   it('drops the sell-at part without a sell-at price and the re-check part without a date', () => {
     const a = action({ exitPlan: exitPlan({ sellAt: null, recheckBy: null }) })
-    expect(holdText(a, 'USD')).toBe('hold ~21 days · range US$4.20–6.10')
+    expect(holdText(a, 'USD')).toBe('hold ~21 trading days · range US$4.20–6.10')
   })
 
   it("keeps today's text without a currency, without a plan, or when the plan has no range", () => {

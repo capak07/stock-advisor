@@ -5,7 +5,7 @@
  */
 
 import { holdText } from './advice'
-import { ACTION_LABELS, actionGroup, cardReason, type HoldingAction, holdText as holdingHoldText } from './portfolio/actions'
+import { ACTION_LABELS, actionGroup, cardReason, holdShowsPlan, type HoldingAction, holdText as holdingHoldText } from './portfolio/actions'
 import { assetCurrency } from './portfolio/exit-plan'
 import { assetKey } from './portfolio/types'
 
@@ -65,6 +65,12 @@ export interface HeldCall {
 
 const URGENCY: readonly HeldGroup[] = ['sell', 'trim', 'review', 'add', 'hold']
 
+/** A plain Hold's text; when it shows an unvalidated plan's numbers, it says so (R17). */
+function holdWhy(a: HeldActionLike): string {
+  const text = holdingHoldText(a, assetCurrency(a.assetType, a.symbol))
+  return holdShowsPlan(a.exitPlan) && a.exitPlan.status === 'unvalidated' ? `${text} · not validated yet` : text
+}
+
 /**
  * Each held symbol's call by asset key, so a watched symbol you hold says what My Portfolio says.
  * Held in several accounts, it takes the most urgent action (Sell, Trim, Review, Add, Hold) and says
@@ -77,7 +83,7 @@ export function heldCalls(actions: readonly HeldActionLike[]): Map<string, HeldC
     const call = {
       group,
       label: group === 'review' ? 'Review' : ACTION_LABELS[a.action],
-      why: group === 'hold' ? holdingHoldText(a, assetCurrency(a.assetType, a.symbol)) : cardReason(a),
+      why: group === 'hold' ? holdWhy(a) : cardReason(a),
     }
     const key = assetKey(a.assetType, a.symbol)
     const seen = found.get(key)

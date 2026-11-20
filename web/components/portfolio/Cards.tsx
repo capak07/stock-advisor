@@ -22,8 +22,8 @@ import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 import { NOT_RATED, type Slice } from '@/lib/portfolio/valuation'
 import type { HoldingRow } from '@/lib/portfolio/view'
 import type { Warning } from '@/lib/portfolio/warnings'
-import { alertHref, tickerHref } from '@/lib/ticker'
-import { ExitPlanCardLines, ExitPlanLines, PlanFootnote, planBenchmark } from './ExitPlan'
+import { tickerHref } from '@/lib/ticker'
+import { ExitPlanCardLines, ExitPlanWithAlert, PlanFootnote, planBenchmark } from './ExitPlan'
 import { HoldList } from './HoldList'
 
 /** A holding with its latest run action. */
@@ -163,24 +163,23 @@ const stopCurrency = (h: HoldingRow): 'CAD' | 'USD' => (h.market === 'TSX' ? 'CA
 const dash = <span className="sub">—</span>
 
 /**
- * The exit plan cell: the plan's compact lines and, with a sell-at price, a link that opens the
- * price-alert form prefilled. A row stored before plans existed shows its exit-by date, or the dash.
+ * The exit plan cell: the plan's compact lines and, with a sell-at price for the action, a link that
+ * opens the price-alert form prefilled. A row stored before plans existed shows its exit-by date, or the dash.
  */
 function ExitPlanCell({ a }: { a: HoldingAction }) {
   if (a.exitPlan === null) return <td className="num h-exit">{a.exitBy === null ? dash : shortDay(a.exitBy)}</td>
-  const currency = assetCurrency(a.assetType, a.symbol)
-  const sellAt = a.exitPlan.status === 'pass' || a.exitPlan.status === 'unvalidated' ? a.exitPlan.sellAt : null
   return (
     <td className="h-exit">
-      <ExitPlanLines plan={a.exitPlan} currency={currency} price={a.refPrice} benchmark={planBenchmark(a.assetType, a.symbol)} compact />
-      {sellAt !== null && (
-        <Link
-          className="text-link plan-alert"
-          href={alertHref(a.symbol, a.assetType, { level: sellAt, direction: 'above', note: 'exit plan sell-at' })}
-        >
-          Alert me at {fmtPrice(sellAt, currency)}
-        </Link>
-      )}
+      <ExitPlanWithAlert
+        plan={a.exitPlan}
+        action={a.action}
+        symbol={a.symbol}
+        assetType={a.assetType}
+        currency={assetCurrency(a.assetType, a.symbol)}
+        price={a.refPrice}
+        benchmark={planBenchmark(a.assetType, a.symbol)}
+        compact
+      />
     </td>
   )
 }
@@ -413,7 +412,7 @@ export function HoldingsCard({ holdings, accounts, guides }: { holdings: Holding
           </table>
         </div>
       )}
-      <PlanFootnote plans={holdings.map((h) => h.action?.exitPlan ?? null)} />
+      <PlanFootnote plans={holdings.map((h) => (h.action === null ? null : { plan: h.action.exitPlan, action: h.action.action }))} />
     </section>
   )
 }

@@ -1,9 +1,10 @@
 import { shortDay } from '../dates'
 import { fmtPrice } from '../format'
-import { barePrice, type Currency, type ExitPlan } from './exit-plan'
+import { barePrice, horizonText, shownSellAt, type Currency, type ExitPlan } from './exit-plan'
 import type { Account, AssetType } from './types'
 
 export type ActionKind = 'sell' | 'trim' | 'add' | 'hold'
+export const ACTION_KINDS: readonly ActionKind[] = ['sell', 'trim', 'add', 'hold']
 export type RiskLevel = 'low' | 'medium' | 'high' | 'very_high'
 
 export const ACTION_LABELS: Record<ActionKind, string> = { sell: 'Sell', trim: 'Trim', add: 'Add', hold: 'Hold' }
@@ -72,19 +73,24 @@ export function cardReason(a: Pick<HoldingAction, 'action' | 'review' | 'reasons
   return sentence(review || (a.reasons[0] ?? ''))
 }
 
+/** Whether `holdText`, given the asset's currency, shows the plan's numbers: a plan with a range. */
+export const holdShowsPlan = (plan: ExitPlan | null | undefined): plan is ExitPlan & { low: number; high: number } =>
+  !!plan && plan.low !== null && plan.high !== null
+
 /**
  * A plain Hold's line. With an exit plan that has a range, and the asset's currency: the plan's
- * horizon, range, sell-at and re-check date. Otherwise how long to hold and when to exit, or its
- * reason without a horizon (coins).
+ * horizon, range, sell-at (`shownSellAt`) and re-check date. Otherwise how long to hold and when to
+ * exit, or its reason without a horizon (coins).
  */
 export function holdText(
-  a: Pick<HoldingAction, 'horizonDays' | 'exitBy' | 'reasons'> & { exitPlan?: ExitPlan | null },
+  a: Pick<HoldingAction, 'action' | 'horizonDays' | 'exitBy' | 'reasons'> & { exitPlan?: ExitPlan | null },
   currency?: Currency,
 ): string {
   const plan = a.exitPlan
-  if (plan && currency && plan.low !== null && plan.high !== null) {
-    const parts = [`hold ~${plan.horizon} days`, `range ${fmtPrice(plan.low, currency)}–${barePrice(plan.high, currency)}`]
-    if (plan.sellAt !== null) parts.push(`sell at ${fmtPrice(plan.sellAt, currency)}`)
+  if (currency && holdShowsPlan(plan)) {
+    const parts = [`hold ~${horizonText(plan)}`, `range ${fmtPrice(plan.low, currency)}–${barePrice(plan.high, currency)}`]
+    const sellAt = shownSellAt(plan, a.action)
+    if (sellAt !== null) parts.push(`sell at ${fmtPrice(sellAt, currency)}`)
     if (plan.recheckBy !== null) parts.push(`re-check ${shortDay(plan.recheckBy)}`)
     return parts.join(' · ')
   }

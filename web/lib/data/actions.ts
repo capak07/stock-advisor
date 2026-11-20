@@ -60,7 +60,7 @@ const toAction = (r: ActionRow, extra: OrderData): HoldingAction => ({
   dollarVolume20: r.asset_type === 'stock' ? (extra.features.get(r.symbol)?.dollarVolume20 ?? null) : null,
   previousStop: extra.previousStops.get(keyOf(r)) ?? null,
   maxPositionPct: num(r.max_position_pct),
-  exitPlan: parseExitPlan(r.exit_plan),
+  exitPlan: parseExitPlan(r.exit_plan, r.asset_type),
 })
 
 /** The holding actions of the newest published run that has any, with that run's day; null before the first. */
@@ -152,7 +152,7 @@ export async function loadHeldCalls(supabase: Supabase, runId: number): Promise<
       reasons: r.reasons ?? [],
       horizonDays: r.horizon_days,
       exitBy: r.exit_by,
-      exitPlan: parseExitPlan(r.exit_plan),
+      exitPlan: parseExitPlan(r.exit_plan, r.asset_type),
     })),
   )
 }

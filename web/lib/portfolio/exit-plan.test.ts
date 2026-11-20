@@ -6,12 +6,14 @@ import {
   parseExitPlan,
   rangeLine,
   sellAtLine,
+  shownSellAt,
   statusNote,
   stopFirstLine,
   type ExitPlan,
 } from './exit-plan'
 
 const plan = (over: Partial<ExitPlan> = {}): ExitPlan => ({
+  assetType: 'stock',
   status: 'pass',
   basis: 'volatility',
   horizon: 21,
@@ -45,11 +47,11 @@ const nothing: Partial<ExitPlan> = {
 
 describe('parseExitPlan', () => {
   it('is null for null, a non-object and an empty object', () => {
-    expect(parseExitPlan(null)).toBeNull()
-    expect(parseExitPlan(undefined)).toBeNull()
-    expect(parseExitPlan('plan')).toBeNull()
-    expect(parseExitPlan([])).toBeNull()
-    expect(parseExitPlan({})).toBeNull()
+    expect(parseExitPlan(null, 'stock')).toBeNull()
+    expect(parseExitPlan(undefined, 'stock')).toBeNull()
+    expect(parseExitPlan('plan', 'stock')).toBeNull()
+    expect(parseExitPlan([], 'stock')).toBeNull()
+    expect(parseExitPlan({}, 'stock')).toBeNull()
   })
 
   it('reads the stored snake_case keys and converts numeric strings', () => {
@@ -70,8 +72,9 @@ describe('parseExitPlan', () => {
       p_breakeven: 0.06,
       cost_price: '4.75',
       drift: 0.009,
-    })
+    }, 'stock')
     expect(parsed).toEqual({
+      assetType: 'stock',
       status: 'unvalidated',
       basis: 'forecast',
       horizon: 21,
@@ -99,19 +102,19 @@ describe('parseExitPlan', () => {
       low: null,
       mid: 'abc',
       high: Infinity,
-    })
-    expect(parsed).toMatchObject({ recheckBy: null, low: null, mid: null, high: null, sellAt: null, costPrice: null, drift: null })
+    }, 'crypto')
+    expect(parsed).toMatchObject({ assetType: 'crypto', recheckBy: null, low: null, mid: null, high: null, sellAt: null, costPrice: null, drift: null })
   })
 
   it('is null for an unknown status or basis, or a horizon that is not a positive number', () => {
     const good = { basis: 'volatility', status: 'pass', horizon: 21 }
-    expect(parseExitPlan(good)).not.toBeNull()
-    expect(parseExitPlan({ ...good, status: 'bad' })).toBeNull()
-    expect(parseExitPlan({ ...good, basis: 'magic' })).toBeNull()
-    expect(parseExitPlan({ ...good, horizon: 0 })).toBeNull()
-    expect(parseExitPlan({ ...good, horizon: -3 })).toBeNull()
-    expect(parseExitPlan({ ...good, horizon: 'soon' })).toBeNull()
-    expect(parseExitPlan({ ...good, horizon: null })).toBeNull()
+    expect(parseExitPlan(good, 'stock')).not.toBeNull()
+    expect(parseExitPlan({ ...good, status: 'bad' }, 'stock')).toBeNull()
+    expect(parseExitPlan({ ...good, basis: 'magic' }, 'stock')).toBeNull()
+    expect(parseExitPlan({ ...good, horizon: 0 }, 'stock')).toBeNull()
+    expect(parseExitPlan({ ...good, horizon: -3 }, 'stock')).toBeNull()
+    expect(parseExitPlan({ ...good, horizon: 'soon' }, 'stock')).toBeNull()
+    expect(parseExitPlan({ ...good, horizon: null }, 'stock')).toBeNull()
   })
 })
 
@@ -130,7 +133,9 @@ describe('rangeLine', () => {
   })
 
   it('says the days when there is no re-check date, and drops the percent without a price', () => {
-    expect(rangeLine(plan({ recheckBy: null }), 'USD', 4.85)).toBe('Range in 21 days: US$4.20 – 5.05 – 6.10 (+4%)')
+    expect(rangeLine(plan({ recheckBy: null }), 'USD', 4.85)).toBe('Range in 21 trading days: US$4.20 – 5.05 – 6.10 (+4%)')
+    // a coin's horizon is in calendar days
+    expect(rangeLine(plan({ assetType: 'crypto', recheckBy: null }), 'USD', 4.85)).toBe('Range in 21 days: US$4.20 – 5.05 – 6.10 (+4%)')
     expect(rangeLine(plan(), 'CAD', null)).toBe('Range by Dec 19: C$4.20 – 5.05 – 6.10')
   })
 
@@ -202,6 +207,9 @@ describe('breakevenLine', () => {
 
   it('says the days without a re-check date', () => {
     expect(breakevenLine(plan({ recheckBy: null }), 'USD')?.text).toBe(
+      "Unlikely to get back to your cost in 21 trading days: reached in 6% of cases. Your cost doesn't change where it goes next.",
+    )
+    expect(breakevenLine(plan({ assetType: 'crypto', recheckBy: null }), 'USD')?.text).toBe(
       "Unlikely to get back to your cost in 21 days: reached in 6% of cases. Your cost doesn't change where it goes next.",
     )
   })
@@ -219,7 +227,7 @@ describe('basisLine', () => {
 
   it("names the forecast and the benchmark's drift", () => {
     expect(basisLine(plan({ basis: 'forecast', drift: 0.009 }), 'SPY')).toBe(
-      "From the model's forecast · assumes SPY drifts +0.9% over 21 days",
+      "From the model's forecast · assumes SPY drifts +0.9% over 21 trading days",
     )
   })
 
@@ -245,5 +253,23 @@ describe('statusNote', () => {
     expect(stopFirstLine(p)).not.toBeNull()
     expect(breakevenLine(p, 'USD')).not.toBeNull()
     expect(statusNote(p)).toMatch(/^Not validated yet/)
+  })
+})
+
+describe('shownSellAt', () => {
+  const statuses = ['pass', 'unvalidated', 'range_only', 'fail'] as const
+  const actions = ['hold', 'add', 'trim', 'sell'] as const
+  it.each(statuses.flatMap((status) => actions.map((action) => [status, action] as const)))(
+    'a %s plan on a %s',
+    (status, action) => {
+      const shown = (status === 'pass' || status === 'unvalidated') && (action === 'hold' || action === 'add')
+      expect(shownSellAt(plan({ status }), action)).toBe(shown ? 5.6 : null)
+    },
+  )
+
+  it('is null without a plan, a sell-at price or a known action', () => {
+    expect(shownSellAt(null, 'hold')).toBeNull()
+    expect(shownSellAt(plan({ sellAt: null }), 'hold')).toBeNull()
+    expect(shownSellAt(plan(), null)).toBeNull()
   })
 })

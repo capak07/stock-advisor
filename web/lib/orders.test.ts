@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isMarketHours, pickStop, stopRulesOf, planBracket, planBuy, planRecurring, planSell, planSellAt, planStop, planTrim, type Instrument } from './orders'
+import { isMarketHours, pickStop, stopRulesOf, planBracket, planBuy, planRecurring, planSell, planSellAt, planStop, planTrim, SELL_AT_NOTE, type Instrument } from './orders'
 
 // Tuesday Oct 27, 2026: 2 PM and 10 PM in Toronto (EDT, UTC−4)
 const OPEN = new Date('2026-10-27T18:00:00Z')
@@ -247,6 +247,11 @@ describe('planSellAt', () => {
     expect(plan.steps).toHaveLength(1)
     expect(plan.steps[0]).toMatchObject({ kind: 'limit', side: 'sell', qty: 12, price: 5.6, expiry: '90 days' })
     expect(plan.steps[0].text).toBe('Limit sell 12 sh at US$5.60, expiry 90 days')
+  })
+
+  it('says to replace an earlier sell-at order and to cancel it before selling, trimming or placing a stop (R20c)', () => {
+    expect(SELL_AT_NOTE).toBe('Replace any earlier sell-at order. Cancel it before you sell, trim or place a stop.')
+    expect(planSellAt(veea, { qty: 12.4, sellAt: 5.6 }).notes).toEqual([SELL_AT_NOTE])
   })
 
   it('has nothing for under one share or a coin', () => {

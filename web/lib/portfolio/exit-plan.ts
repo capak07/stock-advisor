@@ -8,6 +8,7 @@
 
 import { shortDay } from '../dates'
 import { fmtPct, fmtPrice } from '../format'
+import type { ActionKind } from './actions'
 import type { AssetType } from './types'
 
 export type Currency = 'CAD' | 'USD'
@@ -15,9 +16,11 @@ export type PlanStatus = 'pass' | 'range_only' | 'fail' | 'unvalidated'
 export type PlanBasis = 'forecast' | 'volatility'
 
 export interface ExitPlan {
+  /** The holding's asset type: it says what a day of the horizon is. */
+  assetType: AssetType
   status: PlanStatus
   basis: PlanBasis
-  /** Days (sessions for a stock, calendar days for a coin) the chances are simulated over. */
+  /** Days (trading sessions for a stock, calendar days for a coin) the chances are simulated over. */
   horizon: number
   /** ISO date of the plan's horizon, or null. */
   recheckBy: string | null
@@ -45,8 +48,8 @@ const num = (value: unknown): number | null => {
   return typeof n === 'number' && Number.isFinite(n) ? n : null
 }
 
-/** The stored plan (snake_case jsonb), or null when there is none or it cannot be read. */
-export function parseExitPlan(raw: unknown): ExitPlan | null {
+/** The stored plan (snake_case jsonb) of a holding of `assetType`, or null when there is none or it cannot be read. */
+export function parseExitPlan(raw: unknown, assetType: AssetType): ExitPlan | null {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
   const status = STATUSES.find((s) => s === r.status)
@@ -54,6 +57,7 @@ export function parseExitPlan(raw: unknown): ExitPlan | null {
   const horizon = num(r.horizon)
   if (!status || !basis || horizon === null || horizon <= 0) return null
   return {
+    assetType,
     status,
     basis,
     horizon,
@@ -82,9 +86,25 @@ export const barePrice = (value: number, currency: Currency): string =>
   fmtPrice(value, currency).slice(prefixOf(currency).length)
 const pct = (fraction: number): string => `${Math.round(fraction * 100)}%`
 const pctOf = (value: number, base: number): string => fmtPct((value / base - 1) * 100, 0)
-/** "by Dec 19", or "in 21 days" without a date. */
+/** The plan's horizon in words: "21 trading days" for a stock (sessions), "21 days" for a coin. */
+export const horizonText = (plan: Pick<ExitPlan, 'assetType' | 'horizon'>): string =>
+  `${plan.horizon} ${plan.assetType === 'crypto' ? 'days' : 'trading days'}`
+
+/** "by Dec 19", or "in 21 trading days" without a date. */
 const when = (plan: ExitPlan): string =>
-  plan.recheckBy !== null ? `by ${shortDay(plan.recheckBy)}` : `in ${plan.horizon} days`
+  plan.recheckBy !== null ? `by ${shortDay(plan.recheckBy)}` : `in ${horizonText(plan)}`
+
+/**
+ * The sell-at price the pages may show or use for a holding with this action (R20a): only for a Hold
+ * or an Add, and only when the plan's status is pass or unvalidated; null for a Sell or a Trim (they
+ * sell now), for a range-only or failed plan, and without a plan. Every sell-at line, stop-first
+ * line, alert link and limit sell goes through it.
+ */
+export function shownSellAt(plan: ExitPlan | null, action: ActionKind | null): number | null {
+  if (plan === null || plan.sellAt === null) return null
+  if (plan.status !== 'pass' && plan.status !== 'unvalidated') return null
+  return action === 'hold' || action === 'add' ? plan.sellAt : null
+}
 
 /** "Range by Dec 19: US$4.20 – 5.05 – 6.10 (+4%)"; the percent is the middle against `price`. */
 export function rangeLine(plan: ExitPlan, currency: Currency, price: number | null): string | null {
@@ -132,7 +152,7 @@ export function basisLine(plan: ExitPlan, benchmark: string): string {
   const base = "From the model's forecast"
   return plan.drift === null
     ? base
-    : `${base} · assumes ${benchmark} drifts ${fmtPct(plan.drift * 100, 1)} over ${plan.horizon} days`
+    : `${base} · assumes ${benchmark} drifts ${fmtPct(plan.drift * 100, 1)} over ${horizonText(plan)}`
 }
 
 /** What the plan's status hides or qualifies; null for a plan that passed. */

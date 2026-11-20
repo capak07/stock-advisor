@@ -1,5 +1,6 @@
 import 'server-only'
 import { addDays, todayInToronto } from '../dates'
+import { ACTION_KINDS, type ActionKind } from '../portfolio/actions'
 import { parseExitPlan, type ExitPlan } from '../portfolio/exit-plan'
 import { buildLedger } from '../portfolio/ledger'
 import type { FxRates } from '../portfolio/lookup'
@@ -206,6 +207,8 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
 /** One account's exit plan for a held asset, from the newest published run's actions. */
 export interface HeldPlan {
   account: Account
+  /** The run's action for it; null for one this page doesn't know (then no sell-at price is shown). */
+  action: ActionKind | null
   /** Null for a row stored before plans existed, or one that can't be read. */
   exitPlan: ExitPlan | null
   /** The close the plan was built on, in the asset's own currency. */
@@ -229,15 +232,20 @@ export async function loadHeldAction(supabase: Supabase, symbol: string, assetTy
   const rows = must(
     await supabase
       .from('holding_actions')
-      .select('account, exit_plan, ref_price')
+      .select('account, action, exit_plan, ref_price')
       .eq('run_id', newest[0].run_id)
       .eq('symbol', symbol)
       .eq('asset_type', assetType)
       .order('account'),
-  ) as { account: Account; exit_plan: unknown; ref_price: string | number | null }[]
+  ) as { account: Account; action: string; exit_plan: unknown; ref_price: string | number | null }[]
   return rows.map((r) => {
     const ref = r.ref_price === null ? null : Number(r.ref_price)
-    return { account: r.account, exitPlan: parseExitPlan(r.exit_plan), refPrice: ref !== null && Number.isFinite(ref) ? ref : null }
+    return {
+      account: r.account,
+      action: ACTION_KINDS.find((k) => k === r.action) ?? null,
+      exitPlan: parseExitPlan(r.exit_plan, assetType),
+      refPrice: ref !== null && Number.isFinite(ref) ? ref : null,
+    }
   })
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PickView } from './data/picks'
 import { btcGuide, holdingGuides, investGuide, joinPlans, pickGuide, verdictGuide } from './guidance'
+import { CANCEL_SELL_AT_NOTE, SELL_AT_NOTE } from './orders'
 import type { StockLine } from './invest/allocate'
 import type { HoldingAction } from './portfolio/actions'
 
@@ -64,6 +65,26 @@ const action = (over: Partial<HoldingAction>): HoldingAction => ({
 })
 
 const kinds = (plan: { steps: { kind: string }[] } | null) => plan?.steps.map((s) => s.kind)
+
+/** A passed exit plan with a sell-at price, for a TSX holding at C$150. */
+const PLAN: NonNullable<HoldingAction['exitPlan']> = {
+  assetType: 'stock',
+  status: 'pass',
+  basis: 'forecast',
+  horizon: 21,
+  recheckBy: '2026-11-27',
+  low: 140,
+  mid: 152,
+  high: 165,
+  sellAt: 160,
+  pTouch: 0.33,
+  pStopFirst: null,
+  pUp: 0.55,
+  breakeven: null,
+  pBreakeven: null,
+  drift: 0.009,
+  costPrice: 120,
+}
 
 describe('pickGuide', () => {
   it('buys the max size in whole shares, the rest at market, then the stop', () => {
@@ -168,6 +189,7 @@ describe('holdingGuides', () => {
 
   it('offers a limit sell at the exit plan\'s sell-at price only for a holding without a trailing stop', () => {
     const exitPlan = {
+      assetType: 'stock' as const,
       status: 'pass' as const,
       basis: 'forecast' as const,
       horizon: 21,
@@ -197,6 +219,7 @@ describe('holdingGuides', () => {
 
   it('offers the sell-at limit sell only on a held or added position with no stop, never beside a Sell or a Trim (R18)', () => {
     const exitPlan = {
+      assetType: 'stock' as const,
       status: 'pass' as const,
       basis: 'forecast' as const,
       horizon: 21,
@@ -238,6 +261,40 @@ describe('holdingGuides', () => {
     for (const action of ['sell', 'trim', 'hold', 'add'] as const) {
       expect(mentionsSellAt(guide({ action, trailingStop: 140 }))).toEqual([])
     }
+  })
+
+  it('offers the sell-at limit sell only for a plan that passed the check, not an unvalidated one (R20b)', () => {
+    const passed = holdingGuides(action({ refPrice: 150, exitPlan: PLAN }), { ...held, qty: 12 }, ctx)
+    expect(passed.stop!.steps).toMatchObject([{ kind: 'limit', side: 'sell', qty: 12, price: 160, expiry: '90 days' }])
+    for (const status of ['unvalidated', 'range_only', 'fail'] as const) {
+      const g = holdingGuides(action({ refPrice: 150, exitPlan: { ...PLAN, status } }), { ...held, qty: 12 }, ctx)
+      expect(g).toEqual({ order: null, stop: null })
+    }
+  })
+
+  it("carries the sell-at order's lifecycle note, and on a Sell, a Trim and a stop the note to cancel it first (R20c)", () => {
+    const qty = { ...held, qty: 12 }
+    const guide = (over: Partial<HoldingAction>) => holdingGuides(action({ refPrice: 150, exitPlan: PLAN, ...over }), qty, ctx)
+    expect(guide({}).stop!.notes).toEqual([SELL_AT_NOTE])
+    expect(CANCEL_SELL_AT_NOTE).toBe('Cancel any resting limit sell on these shares first.')
+    // any status: an earlier run may have offered the order
+    for (const status of ['pass', 'unvalidated', 'range_only', 'fail'] as const) {
+      const exitPlan = { ...PLAN, status }
+      expect(guide({ action: 'sell', exitPlan }).order!.notes).toContain(CANCEL_SELL_AT_NOTE)
+      expect(guide({ action: 'trim', exitPlan }).order!.notes).toContain(CANCEL_SELL_AT_NOTE)
+      expect(guide({ action: 'hold', exitPlan, trailingStop: 140 }).stop!.notes).toContain(CANCEL_SELL_AT_NOTE)
+      expect(guide({ action: 'trim', exitPlan, trailingStop: 140 }).stop!.notes).toContain(CANCEL_SELL_AT_NOTE)
+    }
+    // without a plan, no note on a Sell, a Trim or a stop
+    for (const g of [guide({ action: 'sell', exitPlan: null }), guide({ action: 'trim', exitPlan: null }), guide({ exitPlan: null, trailingStop: 140 })]) {
+      expect([...(g.order?.notes ?? []), ...(g.stop?.notes ?? [])]).not.toContain(CANCEL_SELL_AT_NOTE)
+    }
+    // the sell-at order itself does not say to cancel itself
+    expect(guide({}).stop!.notes).not.toContain(CANCEL_SELL_AT_NOTE)
+    // a coin is never offered a limit sell, so its orders never mention one
+    const coin = action({ symbol: 'ETH', assetType: 'crypto', account: 'crypto', action: 'sell', refPrice: 2000, trailingStop: 1800, exitPlan: { ...PLAN, assetType: 'crypto' } })
+    const g = holdingGuides(coin, held, ctx)
+    expect([...(g.order?.notes ?? []), ...(g.stop?.notes ?? [])]).not.toContain(CANCEL_SELL_AT_NOTE)
   })
 
   it("converts a coin's USD prices to CAD, and gives USD holdings nothing without a rate", () => {

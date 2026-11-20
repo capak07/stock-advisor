@@ -17,11 +17,13 @@ import {
   planSellAt,
   planStop,
   planTrim,
+  CANCEL_SELL_AT_NOTE,
   type Instrument,
   type OrderPlan,
   type StopRules,
 } from './orders'
 import type { HoldingAction, RiskLevel } from './portfolio/actions'
+import { shownSellAt } from './portfolio/exit-plan'
 import type { Close, Market } from './portfolio/types'
 import { tradeCurrency } from './symbols'
 
@@ -115,9 +117,15 @@ export function verdictGuide(symbol: string, v: StoredVerdict, portfolioCad: num
 
 const ADD_BRACKET_NOTE = 'A bracket covers only the shares this buy adds; the shares you hold keep their own stop-limit.'
 
+/** A plan with `note` added, or null for none. */
+const withNote = (plan: OrderPlan | null, note: string | null): OrderPlan | null =>
+  plan === null || note === null ? plan : { steps: plan.steps, notes: [...plan.notes, note] }
+
 /**
  * A holding's order for its action (Sell, Trim, Add; a Hold has none) and the stop to keep on it,
- * or for a Hold or an Add without a stop, the limit sell at its exit plan's sell-at price.
+ * or for a Hold or an Add without a stop, the limit sell at its exit plan's sell-at price when the
+ * plan passed the benchmark check (R20b). A stock holding with an exit plan (any status: an earlier
+ * run may have offered the limit sell) has its Sell, Trim and stop say to cancel that first (R20c).
  * An Add also gets the buy as one bracket order on the new shares, its take-profit at the top of
  * the holding's range and its stop loss the trailing stop.
  * Prices are converted to the currency the asset trades in: a coin's Coinbase USD prices to CAD.
@@ -138,9 +146,11 @@ export function holdingGuides(
   const trailingStop = toTrading(a.trailingStop)
   const instrument = (p: number): Instrument => ({ assetType: a.assetType, currency, price: p, atrPct: a.atrPct, dollarVolume20: a.dollarVolume20 })
 
+  // only a stock is ever offered the limit sell (planSellAt), so only its orders mention one
+  const cancel = a.exitPlan !== null && a.assetType === 'stock' ? CANCEL_SELL_AT_NOTE : null
   let order: OrderPlan | null = null
-  if (price !== null && a.action === 'sell') order = planSell(instrument(price), { qty, now })
-  if (price !== null && a.action === 'trim') order = planTrim(instrument(price), { qty, now })
+  if (price !== null && a.action === 'sell') order = withNote(planSell(instrument(price), { qty, now }), cancel)
+  if (price !== null && a.action === 'trim') order = withNote(planTrim(instrument(price), { qty, now }), cancel)
   const maxPct = a.maxPositionPct ?? (a.riskLevel === null ? null : MAX_POSITION_PCT[a.riskLevel])
   if (price !== null && a.action === 'add' && maxPct !== null) {
     const amountCad = (maxPct * portfolioCad) / 100 - valueCad
@@ -157,13 +167,16 @@ export function holdingGuides(
   }
   // planStop reads only the stop and the daily range, so a holding without a decision price still gets one
   if (trailingStop !== null) {
-    return { order, stop: planStop(instrument(price ?? trailingStop), { qty, stop: trailingStop, previousStop: toTrading(a.previousStop) }) }
+    const stop = planStop(instrument(price ?? trailingStop), { qty, stop: trailingStop, previousStop: toTrading(a.previousStop) })
+    return { order, stop: withNote(stop, cancel) }
   }
   // Without a stop, a Hold's or an Add's exit plan sell-at price as a standing limit sell (R18). Beside
   // a stop it stays hidden until Wealthsimple is known to hold both orders on the same shares (exit
   // plan spec §7); the price alert offered with the plan does that job instead. Never beside a Sell,
-  // which sells everything now, or a Trim, whose order may not fill (it isn't sized on the rest).
-  const sellAt = a.action === 'hold' || a.action === 'add' ? (a.exitPlan?.sellAt ?? null) : null
+  // which sells everything now, or a Trim, whose order may not fill (it isn't sized on the rest)
+  // (`shownSellAt`). Only for a plan that passed the check: an unvalidated plan's numbers are shown,
+  // never made an order (R20b).
+  const sellAt = a.exitPlan?.status === 'pass' ? shownSellAt(a.exitPlan, a.action) : null
   const sellPlan = sellAt === null ? null : planSellAt(instrument(price ?? sellAt), { qty, sellAt })
   return { order, stop: sellPlan && sellPlan.steps.length > 0 ? sellPlan : null }
 }

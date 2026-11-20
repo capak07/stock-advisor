@@ -1,16 +1,21 @@
 import { TriangleAlert } from 'lucide-react'
+import Link from 'next/link'
 import { shortDay } from '@/lib/dates'
+import { fmtPrice } from '@/lib/format'
+import type { ActionKind } from '@/lib/portfolio/actions'
 import {
   basisLine,
   breakevenLine,
   rangeLine,
   sellAtLine,
+  shownSellAt,
   statusNote,
   stopFirstLine,
   type Currency,
   type ExitPlan,
 } from '@/lib/portfolio/exit-plan'
 import type { AssetType } from '@/lib/portfolio/types'
+import { alertHref } from '@/lib/ticker'
 
 /** Chances are counted on daily closes (R9); stated once per plan that shows one. */
 export const CLOSES_LINE = 'Chances count closes at or above the price.'
@@ -55,10 +60,10 @@ function Lines({ lines }: { lines: (Line | null)[] }) {
   )
 }
 
-/** Whether the plan's lines show a chance: the sell-at's, stop-first or break-even's. */
-export function showsChance(plan: ExitPlan | null): boolean {
+/** Whether the plan's lines show a chance, for a holding with this action: the sell-at's, stop-first or break-even's. */
+export function showsChance(plan: ExitPlan | null, action: ActionKind | null): boolean {
   if (plan === null || plan.status === 'fail') return false
-  const sellSide = plan.status !== 'range_only' && ((plan.sellAt !== null && plan.pTouch !== null) || plan.pStopFirst !== null)
+  const sellSide = shownSellAt(plan, action) !== null && (plan.pTouch !== null || plan.pStopFirst !== null)
   return sellSide || (plan.breakeven !== null && plan.pBreakeven !== null)
 }
 
@@ -66,16 +71,20 @@ export function showsChance(plan: ExitPlan | null): boolean {
  * A holding's exit plan (exit plan spec §7): the range, sell-at, stop-first, break-even, basis and
  * status lines, in that order, and, when a chance is shown, that chances count closes. `price` is the
  * close the plan was built on. `compact` (the holdings table cell) leaves out a forecast plan's basis
- * and the closes line. A failed plan shows only its note and re-check date; a range-only plan no sell-at.
+ * and the closes line. A failed plan shows only its note and re-check date. The sell-at and stop-first
+ * lines show only when `shownSellAt` gives the holding's action a sell-at price (R20a): never on a
+ * Sell or a Trim, nor for a range-only plan.
  */
 export function ExitPlanLines({
   plan,
+  action,
   currency,
   price,
   benchmark,
   compact = false,
 }: {
   plan: ExitPlan | null
+  action: ActionKind | null
   currency: Currency
   price: number | null
   benchmark: string
@@ -85,8 +94,9 @@ export function ExitPlanLines({
   if (plan.status === 'fail') {
     return <Lines lines={[note(plan), plan.recheckBy === null ? null : { text: `Re-check by ${shortDay(plan.recheckBy)}` }]} />
   }
-  const sellAt = plan.status === 'range_only' ? null : sellAtLine(plan, currency)
-  const stopFirst = plan.status === 'range_only' ? null : stopFirstLine(plan)
+  const shown = shownSellAt(plan, action) !== null
+  const sellAt = shown ? sellAtLine(plan, currency) : null
+  const stopFirst = shown ? stopFirstLine(plan) : null
   const even = breakeven(plan, currency)
   const range = rangeLine(plan, currency, price)
   return (
@@ -98,9 +108,48 @@ export function ExitPlanLines({
         even,
         compact && plan.basis === 'forecast' ? null : { text: basisLine(plan, benchmark), tone: 'sub' },
         note(plan),
-        !compact && showsChance(plan) ? { text: CLOSES_LINE, tone: 'sub' } : null,
+        !compact && showsChance(plan, action) ? { text: CLOSES_LINE, tone: 'sub' } : null,
       ]}
     />
+  )
+}
+
+/**
+ * The plan's lines and, when `shownSellAt` gives a sell-at price, a link that opens the price-alert
+ * form prefilled with it: the holdings table's cell (`compact`) and the ticker page's plan card.
+ */
+export function ExitPlanWithAlert({
+  plan,
+  action,
+  symbol,
+  assetType,
+  currency,
+  price,
+  benchmark,
+  compact = false,
+}: {
+  plan: ExitPlan | null
+  action: ActionKind | null
+  symbol: string
+  assetType: AssetType
+  currency: Currency
+  price: number | null
+  benchmark: string
+  compact?: boolean
+}) {
+  const sellAt = shownSellAt(plan, action)
+  return (
+    <>
+      <ExitPlanLines plan={plan} action={action} currency={currency} price={price} benchmark={benchmark} compact={compact} />
+      {sellAt !== null && (
+        <Link
+          className="text-link plan-alert"
+          href={alertHref(symbol, assetType, { level: sellAt, direction: 'above', note: 'exit plan sell-at' })}
+        >
+          Alert me at {fmtPrice(sellAt, currency)}
+        </Link>
+      )}
+    </>
   )
 }
 
@@ -118,8 +167,8 @@ export const FORECAST_BASIS_NOTE = "Plans are from the model's forecast unless m
  * Under the holdings table, once: the cells leave out the closes line and a forecast plan's basis,
  * so the page says both here (R9, R19). Nothing when no plan there shows a chance.
  */
-export function PlanFootnote({ plans }: { plans: readonly (ExitPlan | null)[] }) {
-  if (!plans.some(showsChance)) return null
+export function PlanFootnote({ plans }: { plans: readonly ({ plan: ExitPlan | null; action: ActionKind } | null)[] }) {
+  if (!plans.some((p) => p !== null && showsChance(p.plan, p.action))) return null
   return (
     <p className="sub" style={{ margin: '10px 0 0', fontSize: 12 }}>
       {CLOSES_LINE} {FORECAST_BASIS_NOTE}

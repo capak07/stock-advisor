@@ -100,6 +100,7 @@ describe('heldCalls', () => {
 
   it("gives a Hold with an exit plan its range, sell-at and re-check date", () => {
     const exitPlan = {
+      assetType: 'stock' as const,
       status: 'pass' as const,
       basis: 'volatility' as const,
       horizon: 21,
@@ -118,10 +119,21 @@ describe('heldCalls', () => {
     }
     const calls = heldCalls([action({ symbol: 'VEEA', horizonDays: 21, exitBy: '2026-11-30', exitPlan })])
     expect(calls.get('stock:VEEA')?.why).toBe(
-      'You hold it · hold ~21 days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19',
+      'You hold it · hold ~21 trading days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19',
     )
     const tsx = heldCalls([action({ symbol: 'KEEL.TO', horizonDays: 21, exitBy: '2026-11-30', exitPlan })])
     expect(tsx.get('stock:KEEL.TO')?.why).toContain('range C$4.20–6.10')
+    // an unvalidated plan's numbers carry the cue (R17)
+    const unvalidated = heldCalls([action({ symbol: 'VEEA', exitPlan: { ...exitPlan, status: 'unvalidated' as const } })])
+    expect(unvalidated.get('stock:VEEA')?.why).toBe(
+      'You hold it · hold ~21 trading days · range US$4.20–6.10 · sell at US$5.60 · re-check Dec 19 · not validated yet',
+    )
+    // a passed plan has none
+    expect(calls.get('stock:VEEA')?.why).not.toContain('not validated')
+    // an unvalidated plan whose numbers are not shown (no range) has none either
+    const bare = { ...exitPlan, status: 'unvalidated' as const, low: null, mid: null, high: null }
+    const noRange = heldCalls([action({ symbol: 'VEEA', horizonDays: 21, exitBy: '2026-11-30', exitPlan: bare })])
+    expect(noRange.get('stock:VEEA')?.why).toBe('You hold it · hold ~21 days · exit by Nov 30')
   })
 
   it('keeps a coin and a stock with the same ticker apart', () => {

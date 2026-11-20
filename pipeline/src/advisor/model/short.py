@@ -4,7 +4,8 @@ Short interest is known `SHORT_KNOWN_SESSIONS` sessions after its settlement dat
 publication dates of old files cannot be recovered, so training and live share this fixed rule); a day
 reads the latest settlement known strictly before it and goes blind once that settlement is over
 `SHORT_STALE_DAYS` old. Share counts are compared on today's basis. Daily short volume is known from
-the session after its trade date: a day reads only file days strictly before it.
+the session after its trade date: a day reads only file days strictly before it, and goes blind once the
+oldest of the 20 file days it reads is over `VOLUME_STALE_DAYS` old (a history that stopped).
 """
 
 from collections.abc import Sequence
@@ -21,6 +22,7 @@ SHORT_KNOWN_SESSIONS = 12
 SHORT_STALE_DAYS = 45
 VOLUME_SESSIONS = 20
 VOLUME_MIN = 10
+VOLUME_STALE_DAYS = 35  # 20 sessions span about 28 days; older file days mean the files stopped coming
 
 
 def _known(settlement: pd.Series) -> pd.Series:
@@ -67,7 +69,8 @@ def _interest_features(interest: pd.DataFrame, shares: pd.DataFrame, splits: pd.
 
 
 def _volume_ratio(volume: pd.DataFrame, days: pd.DatetimeIndex, symbols: list[str]) -> pd.DataFrame:
-    """Mean short share of volume over the symbol's rows among the last VOLUME_SESSIONS file days before D."""
+    """Mean short share of volume over the symbol's rows among the last VOLUME_SESSIONS file days before D;
+    NaN when the oldest of those file days is more than VOLUME_STALE_DAYS before D."""
     out = pd.DataFrame(np.nan, index=days, columns=symbols)
     file_day = _ns(volume["day"]).dropna().to_numpy("datetime64[ns]")
     file_days = np.unique(file_day)  # the days FINRA published a file, whatever the symbol
@@ -86,11 +89,14 @@ def _volume_ratio(volume: pd.DataFrame, days: pd.DatetimeIndex, symbols: list[st
     np.add.at(seen, where, 1.0)
     total, seen = total.cumsum(axis=0), seen.cumsum(axis=0)
 
-    end = np.searchsorted(file_days, _ns(days).to_numpy("datetime64[ns]"), side="left")  # file days < D
+    day_ns = _ns(days).to_numpy("datetime64[ns]")
+    end = np.searchsorted(file_days, day_ns, side="left")  # file days < D
     begin = np.maximum(end - VOLUME_SESSIONS, 0)
     n = seen[end] - seen[begin]
     mean = (total[end] - total[begin]) / np.maximum(n, 1.0)
-    out[:] = np.where(n >= VOLUME_MIN, mean, np.nan)
+    oldest = file_days[np.minimum(begin, len(file_days) - 1)]
+    fresh = (end > begin) & (day_ns - oldest <= np.timedelta64(VOLUME_STALE_DAYS, "D"))
+    out[:] = np.where((n >= VOLUME_MIN) & fresh[:, None], mean, np.nan)
     return out
 
 

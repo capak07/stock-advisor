@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from advisor.model.short import SHORT_FEATURES, short_features
+from advisor.model.short import SHORT_FEATURES, VOLUME_STALE_DAYS, short_features
 
 
 def _interest(symbol: str, settlements: list[str], shorts: list[int], dtc: float = 2.0) -> pd.DataFrame:
@@ -132,3 +132,16 @@ def test_short_volume_of_the_row_day_is_not_read_and_empty_days_are_skipped():
     ])
     rows = rows.drop_duplicates(["symbol", "day"], keep="last")
     assert _ratio_on(rows, "2026-06-30") == pytest.approx(0.30)
+
+
+def test_short_volume_ratio_reads_missing_when_its_file_days_are_over_35_days_old():
+    """A history that stops (a FINRA outage during the build) must not serve its last ratio for months."""
+    sessions = _sessions_before("2026-06-30", 20)  # 2026-06-02 .. 2026-06-29
+    volume = _volume("A", sessions, short=40, total=100)
+    oldest = pd.Timestamp(sessions[0])
+    assert VOLUME_STALE_DAYS == 35
+    last_fresh = (oldest + pd.Timedelta(days=VOLUME_STALE_DAYS)).strftime("%Y-%m-%d")
+    first_stale = (oldest + pd.Timedelta(days=VOLUME_STALE_DAYS + 1)).strftime("%Y-%m-%d")
+    assert _ratio_on(volume, last_fresh) == pytest.approx(0.40)
+    assert np.isnan(_ratio_on(volume, first_stale))
+    assert np.isnan(_ratio_on(volume, "2026-09-30"))

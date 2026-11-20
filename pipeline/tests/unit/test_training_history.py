@@ -16,6 +16,8 @@ from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec import SUBMISSIONS_ZIP_URL
 from advisor.model.groups import GROUP_FILES
 from advisor.model.variants import ModelConfig
+from advisor.models import ET
+from advisor.schedule import previous_sessions
 from advisor.training import history as history_module
 from advisor.training.fda_history import DOWNLOAD_URL
 from advisor.training.finra_history import PARTITIONS_URL
@@ -68,8 +70,12 @@ def _zip_json(records: list[dict]) -> bytes:
     return buffer.getvalue()
 
 
-def web(asked: list[str]) -> httpx.Client:
-    """FINRA (two settlements, two short-volume days) and openFDA (one Pfizer approval); others 404."""
+VOLUME_PREFIX = FINRA_SHORT_VOLUME_URL.split("{")[0]
+
+
+def web(asked: list[str], missing: frozenset[str] = frozenset()) -> httpx.Client:
+    """FINRA (two settlements, a short-volume file for every session) and openFDA (one Pfizer approval);
+    the URLs in `missing` and all others 404."""
     partitions = {"availablePartitions": [{"partitions": [day]} for day in (RECENT, OLD, "2017-12-29")]}
     approval = {"application_number": "NDA000001", "sponsor_name": "PFIZER INC", "submissions": [
         {"submission_type": "ORIG", "submission_class_code": "TYPE 1", "submission_status": "AP",
@@ -84,12 +90,15 @@ def web(asked: list[str]) -> httpx.Client:
     }
     for day in (OLD, RECENT):
         bodies[FINRA_SHORT_INTEREST_URL.format(day=date.fromisoformat(day))] = _interest(day).encode()
-    for day in (OLD, "2026-11-02"):
-        bodies[FINRA_SHORT_VOLUME_URL.format(day=date.fromisoformat(day))] = _volume(day).encode()
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         asked.append(url)
+        if url in missing:
+            return httpx.Response(404)
+        if url.startswith(VOLUME_PREFIX):
+            stamp = url.removeprefix(VOLUME_PREFIX).removesuffix(".txt")
+            return httpx.Response(200, content=_volume(f"{stamp[:4]}-{stamp[4:6]}-{stamp[6:]}").encode())
         return httpx.Response(200, content=bodies[url]) if url in bodies else httpx.Response(404)
 
     return httpx.Client(transport=httpx.MockTransport(handler))
@@ -133,7 +142,9 @@ def test_each_wanted_group_writes_its_files_and_seconds(tmp_path):
     ]  # the 2017 settlement is before `since`: never asked for
     assert not any("20171229" in url for url in asked)
     volume = pd.read_parquet(cache.groups_dir / "short_volume.parquet")
-    assert sorted(set(volume["day"])) == [date(2026, 7, 15), date(2026, 11, 2)]
+    today = NOW.astimezone(ET).date()
+    sessions = [day for day in previous_sessions(today, 200) if day >= SINCE]
+    assert sorted(set(volume["day"])) == sessions  # every session from `since` through today
     fda = pd.read_parquet(cache.groups_dir / "fda_events.parquet")
     assert fda[["symbol", "kind"]].values.tolist() == [["PFE", "approval"]]
 
@@ -167,17 +178,65 @@ def test_a_group_without_rows_is_unavailable_and_keeps_nothing_new(tmp_path, mon
                         lambda *args: pd.DataFrame(columns=["symbol", "kind", "day", "event_id"]))
     with web([]) as client:
         manifest = run(cache, {"catalysts"}, deps_for(cache, client))
-    assert manifest["unavailable"] == {"catalysts": "EmptyHistory: catalysts: no rows"}
+    assert manifest["unavailable"] == {"catalysts": "EmptyHistory: catalysts: no rows in fda_events.parquet"}
     assert not (cache.groups_dir / "fda_events.parquet").exists()
+    assert not (cache.groups_dir / "written.json").exists()
+
+
+def _short_written_earlier(cache: HistoryCache) -> tuple[str, bytes]:
+    cache.groups_dir.mkdir(parents=True)
+    earlier = (NOW - timedelta(days=7)).isoformat()
+    for name in GROUP_FILES["short"]:
+        pd.DataFrame({"symbol": ["AAPL"]}).to_parquet(cache.groups_dir / name)
+    (cache.groups_dir / "written.json").write_text(json.dumps({"short": earlier}))
+    return earlier, (cache.groups_dir / "short_volume.parquet").read_bytes()
+
+
+@pytest.mark.parametrize("missing", [
+    FINRA_SHORT_INTEREST_URL.format(day=date.fromisoformat(RECENT)),  # a settlement the partitions API lists
+    FINRA_SHORT_VOLUME_URL.format(day=date(2026, 11, 2)),  # a session 18 days old
+])
+def test_a_finra_file_missing_in_an_outage_fails_the_short_group(tmp_path, missing):
+    cache = HistoryCache(tmp_path / "cache")
+    earlier, before = _short_written_earlier(cache)
+    with web([], missing=frozenset({missing})) as client:
+        manifest = run(cache, {"short"}, deps_for(cache, client))
+    assert manifest["unavailable"]["short"].startswith("FinraMissing: ")
+    assert written(cache) == {"short": earlier}  # the earlier files are kept
+    assert (cache.groups_dir / "short_volume.parquet").read_bytes() == before
+
+
+def test_a_session_not_yet_published_does_not_fail_the_short_group(tmp_path):
+    cache = HistoryCache(tmp_path / "cache")
+    today = NOW.astimezone(ET).date()  # Friday 2026-11-20: its file comes out that evening
+    with web([], missing=frozenset({FINRA_SHORT_VOLUME_URL.format(day=today)})) as client:
+        manifest = run(cache, {"short"}, deps_for(cache, client))
+    assert "unavailable" not in manifest
+    assert today not in set(pd.read_parquet(cache.groups_dir / "short_volume.parquet")["day"])
+
+
+def test_a_group_with_any_empty_file_is_unavailable(tmp_path, monkeypatch):
+    """An empty large_holders.parquet next to a full 8-K file is an outage or a changed source, not an answer."""
+    cache = HistoryCache(tmp_path / "cache")
+    monkeypatch.setitem(history_module.READERS, "events", lambda context: {
+        "material_events.parquet": pd.DataFrame({"symbol": ["AAPL"]}),
+        "large_holders.parquet": pd.DataFrame({"symbol": pd.Series([], dtype="string")}),
+    })
+    with web([]) as client:
+        manifest = run(cache, {"events"}, deps_for(cache, client))
+    assert manifest["unavailable"] == {"events": "EmptyHistory: events: no rows in large_holders.parquet"}
+    assert not (cache.groups_dir / "material_events.parquet").exists()
     assert not (cache.groups_dir / "written.json").exists()
 
 
 def _filings() -> pd.DataFrame:
     accepted = pd.Timestamp("2026-06-01 16:30", tz="UTC")
     frame = pd.DataFrame({
-        "cik": [320193, 320193], "accession": ["0000320193-26-000001", "0000320193-26-000002"],
-        "form": ["8-K", "4"], "filing_date": [date(2026, 6, 1), date(2026, 6, 2)],
-        "accepted_at": [accepted, accepted], "items": [["5.02"], []], "file_number": ["", ""],
+        "cik": [320193, 320193, 320193],
+        "accession": ["0000320193-26-000001", "0000320193-26-000002", "0000320193-26-000003"],
+        "form": ["8-K", "4", "SCHEDULE 13G"], "filing_date": [date(2026, 6, 1), date(2026, 6, 2), date(2026, 6, 3)],
+        "accepted_at": [accepted, accepted, accepted], "items": [["5.02"], [], []],
+        "file_number": ["", "", "005-12345"],
     })
     return frame.astype({"accession": "string", "form": "string", "file_number": "string"})
 
@@ -275,7 +334,9 @@ def test_a_submissions_page_missing_from_the_zip_is_fetched_from_sec(tmp_path):
     page = "CIK0000320193-submissions-001.json"
     company = {"cik": "320193", "filings": {
         "recent": _arrays([{"accessionNumber": "0000320193-26-000001", "form": "8-K", "filingDate": "2026-08-03",
-                            "items": "2.02"}]),
+                            "items": "2.02"},
+                           {"accessionNumber": "0000320193-26-000002", "form": "SCHEDULE 13G",
+                            "filingDate": "2026-08-04", "fileNumber": "005-12345"}]),
         "files": [{"name": page, "filingCount": 1, "filingFrom": "2026-01-01", "filingTo": "2026-07-31"}],
     }}
     buffer = io.BytesIO()

@@ -4,7 +4,13 @@ Short interest comes from one file per settlement (the dates are listed by FINRA
 short volume from one file per trading day. Every file is parsed whole, with FINRA's own symbols, and
 a file more than FINRA_CACHE_AFTER_DAYS old is cached that way: files are re-issued only soon after
 publication, and a symbol that joins the universe later still finds its old rows. Whole or fetched, the
-rows are mapped onto the universe on read. A day FINRA has not published (403 or 404) is skipped.
+rows are mapped onto the universe on read.
+
+FINRA answers 403 or 404 for a file it has not published. Only a short-volume session at most
+UNPUBLISHED_GRACE_DAYS old may be that (its file comes out that evening) and is skipped. Every settlement
+date comes from FINRA's partitions API, so its file is published, and an older session's file has been out
+for days: a 403 or 404 there is an outage or a removed file, and raises FinraMissing, so the short group
+fails (keeping its earlier files) instead of writing a history with a hole that reads as stale values.
 
 Columns: short interest `symbol`, `settlement`, `short_interest`, `avg_daily_volume`, `days_to_cover`
 (NaN for FINRA's 999.99 or without volume); short volume `symbol`, `day`, `short_volume`, `total_volume`.
@@ -12,7 +18,7 @@ Dates are `date` values.
 """
 
 from collections.abc import Callable, Mapping, Sequence
-from datetime import date
+from datetime import date, timedelta
 from typing import Protocol
 
 import httpx
@@ -29,12 +35,17 @@ from advisor.symbols import requested_by_key, symbol_key
 
 PARTITIONS_URL = "https://api.finra.org/partitions/group/otcMarket/name/consolidatedShortInterest"
 FINRA_CACHE_AFTER_DAYS = 90  # a file dated over this long before today never changes again
+UNPUBLISHED_GRACE_DAYS = 3  # a short-volume session this recent may not be published yet
 INTEREST_COLUMNS = ["symbol", "settlement", "short_interest", "avg_daily_volume", "days_to_cover"]
 VOLUME_COLUMNS = ["symbol", "day", "short_volume", "total_volume"]
 _DTYPES = {
     "short_interest": "int64", "avg_daily_volume": "float64", "days_to_cover": "float64",
     "short_volume": "float64", "total_volume": "float64",
 }
+
+
+class FinraMissing(Exception):
+    """FINRA did not serve a file that must be published: a listed settlement or an older session."""
 
 
 class HistoryCache(Protocol):
@@ -100,6 +111,7 @@ def _history(
     parse: Callable[[str], pd.DataFrame],
     columns: list[str],
     date_column: str,
+    may_be_unpublished: Callable[[date], bool],
 ) -> pd.DataFrame:
     wanted = requested_by_key(symbols)
     seen: dict[str, str | None] = {}
@@ -112,9 +124,11 @@ def _history(
             try:
                 response = get_with_retries(client, url.format(day=day), limiter=limiter)
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code in UNPUBLISHED:
+                if exc.response.status_code not in UNPUBLISHED:
+                    raise
+                if may_be_unpublished(day):
                     continue
-                raise
+                raise FinraMissing(f"FINRA answered {exc.response.status_code} for its {kind} file of {day}") from exc
             frame = parse(response.text)
             if cache is not None and (today - day).days > FINRA_CACHE_AFTER_DAYS:
                 cache.put(kind, key, frame)
@@ -135,10 +149,12 @@ def short_interest_history(
     limiter: RateLimiter | None,
     today: date,
 ) -> pd.DataFrame:
-    """One row per universe symbol per settlement file in `dates`."""
+    """One row per universe symbol per settlement file in `dates`, which FINRA's partitions API listed
+    (`settlement_dates`): a file it does not serve raises FinraMissing."""
     return _history(
         client, dates, symbols, cache, limiter, today, kind="finra_interest", url=FINRA_SHORT_INTEREST_URL,
         parse=_interest_frame, columns=INTEREST_COLUMNS, date_column="settlement",
+        may_be_unpublished=lambda day: False,
     )
 
 
@@ -150,8 +166,10 @@ def short_volume_history(
     limiter: RateLimiter | None,
     today: date,
 ) -> pd.DataFrame:
-    """One row per universe symbol per daily file in `days`."""
+    """One row per universe symbol per daily file in `days`. A session at most UNPUBLISHED_GRACE_DAYS before
+    `today` that FINRA does not serve is skipped; an older one raises FinraMissing."""
     return _history(
         client, days, symbols, cache, limiter, today, kind="finra_volume", url=FINRA_SHORT_VOLUME_URL,
         parse=_volume_frame, columns=VOLUME_COLUMNS, date_column="day",
+        may_be_unpublished=lambda day: today - day <= timedelta(days=UNPUBLISHED_GRACE_DAYS),
     )

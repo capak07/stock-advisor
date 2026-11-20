@@ -334,11 +334,13 @@ READERS: dict[str, Callable[[_Run], dict[str, pd.DataFrame]]] = {
 
 
 def _store(run: _Run, group: str, frames: Mapping[str, pd.DataFrame]) -> None:
-    """Write a group's files (each under a temporary name, then renamed), then set its time."""
+    """Write a group's files (each under a temporary name, then renamed), then set its time. A group with
+    any file empty is refused (EmptyHistory): an outage or a changed source, never a real answer."""
     if set(frames) != set(GROUP_FILES[group]):
         raise ValueError(f"{group} gave {sorted(frames)}, not {sorted(GROUP_FILES[group])}")
-    if all(frame.empty for frame in frames.values()):
-        raise EmptyHistory(f"{group}: no rows")
+    empty = [name for name, frame in frames.items() if frame.empty]
+    if empty:  # any empty file: every group's files hold rows for a real universe
+        raise EmptyHistory(f"{group}: no rows in {', '.join(sorted(empty))}")
     folder = run.cache.groups_dir
     folder.mkdir(parents=True, exist_ok=True)
     for name, frame in frames.items():

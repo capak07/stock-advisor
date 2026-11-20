@@ -9,6 +9,8 @@ from advisor.collectors.finra_short_volume import FINRA_SHORT_VOLUME_URL
 from advisor.training.finra_history import (
     FINRA_CACHE_AFTER_DAYS,
     PARTITIONS_URL,
+    UNPUBLISHED_GRACE_DAYS,
+    FinraMissing,
     settlement_dates,
     short_interest_history,
     short_volume_history,
@@ -99,15 +101,29 @@ def test_the_history_maps_finra_symbols_to_the_universe():
     assert list(interest.columns) == ["symbol", "settlement", "short_interest", "avg_daily_volume", "days_to_cover"]
 
 
-def test_an_unpublished_day_is_skipped():
+def test_a_recent_unpublished_day_is_skipped():
     seen: list[str] = []
-    client = client_serving({volume_url("2026-11-12"): volume_file("2026-11-12")}, seen)  # 11-13 answers 403
-    days = [date(2026, 11, 12), date(2026, 11, 13)]
+    client = client_serving({volume_url("2026-11-13"): volume_file("2026-11-13")}, seen)  # 11-16 answers 403
+    days = [date(2026, 11, 13), date(2026, 11, 16)]  # 11-16 is 3 days before TODAY: maybe not out yet
     volume = short_volume_history(client, days, ["AAPL"], None, None, TODAY)
-    assert volume["day"].tolist() == [date(2026, 11, 12)]
-    assert seen == [volume_url("2026-11-12"), volume_url("2026-11-13")]
-    gone = client_serving({}, [], status=404)
-    assert short_interest_history(gone, [date(2026, 10, 15)], ["AAPL"], None, None, TODAY).empty
+    assert volume["day"].tolist() == [date(2026, 11, 13)]
+    assert seen == [volume_url("2026-11-13"), volume_url("2026-11-16")]
+    assert UNPUBLISHED_GRACE_DAYS == 3
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_an_older_session_finra_does_not_serve_is_a_failure_not_unpublished(status):
+    client = client_serving({}, [], status=status)
+    with pytest.raises(FinraMissing, match="2026-11-13"):  # 6 days old: an outage or a removed file
+        short_volume_history(client, [date(2026, 11, 13)], ["AAPL"], None, None, TODAY)
+
+
+@pytest.mark.parametrize("status", [403, 404])
+def test_a_listed_settlement_finra_does_not_serve_is_a_failure(status):
+    """Every settlement date comes from FINRA's partitions API, so a file it lists is published."""
+    client = client_serving({}, [], status=status)
+    with pytest.raises(FinraMissing, match="2026-11-14"):
+        short_interest_history(client, [date(2026, 11, 14)], ["AAPL"], None, None, TODAY)
 
 
 def test_other_http_errors_are_not_skipped():

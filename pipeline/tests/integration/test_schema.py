@@ -658,3 +658,37 @@ def test_daytrade_skill_rank_is_1_to_3_and_unique_per_day(db):
     db.execute(DAYTRADE_SIGNAL.replace("'AAPL'", "'MSFT'"))
     with pytest.raises(psycopg.errors.UniqueViolation):
         db.execute("update daytrade_signals set skill_rank = 3 where symbol = 'MSFT'")
+
+
+def test_features_live_rows_are_kept_with_their_run(db):
+    """News and option features are stored for a later test: nothing the run prunes may delete them.
+
+    Ruling R5 (F9): every prune the run uses is called with arguments that would delete the oldest
+    rows, and the row dated 2020-01-01, before every retention window, must still be there.
+    """
+    from datetime import date, timedelta
+
+    from advisor.models import AssetRef, AssetType
+    from advisor.store import repo
+
+    old = datetime(2020, 1, 1, 12, tzinfo=UTC)
+    run_id = db.execute(
+        "insert into runs (kind, et_date, status, started_at)"
+        " values ('pre_open', '2020-01-01', 'running', %s) returning id",
+        (old,),
+    ).fetchone()["id"]
+    repo.merge_features_live(
+        db, run_id, [(AssetRef("AAPL", AssetType.STOCK), {"news_stories_48h": 3.0, "opt_atm_iv_near": 0.24})], old
+    )
+    now = datetime(2026, 11, 19, 12, tzinfo=UTC)
+    repo.prune_models(db, "stock_us", keep=0)
+    repo.prune_news_items(db, now, kept=timedelta(0))
+    repo.prune_holding_monitor(db, now)
+    repo.prune_daily_closes(db, date(2026, 11, 19), [])
+    repo.prune_daytrade(db, now)
+    repo.sweep_abandoned_runs(db, now, older_than=timedelta(0))
+    row = db.execute(
+        "select features from features_live where run_id = %s and symbol = 'AAPL'", (run_id,)
+    ).fetchone()
+    assert row is not None
+    assert row["features"] == {"news_stories_48h": 3.0, "opt_atm_iv_near": 0.24}

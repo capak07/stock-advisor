@@ -60,3 +60,57 @@ def test_forecast_market_passes_the_group_history_for_us_only(monkeypatch):
     assert seen[Market.US].large_holders is None  # the source failed this run
     assert seen[Market.US].short_interest is None  # not run at all
     assert seen[Market.TSX] is None
+
+
+def _option_run(monkeypatch, view_fields: dict, status=None):
+    """Runs forecast_market for AAPL with a fake yfinance_options result; returns the merged rows."""
+    import contextlib
+    from types import SimpleNamespace
+
+    from advisor import run
+    from advisor.collectors.base import CollectorResult, CollectorStatus
+    from advisor.collectors.yfinance_options import OptionsView
+
+    def features(market, model, symbols, bars, kind, now_utc, *, events=None, facts=None, history=None):
+        return pd.DataFrame({"eligible": [True]}, index=pd.Index(["AAPL"], name="symbol"))
+
+    merged: list = []
+    monkeypatch.setattr(run, "model_features", features)
+    monkeypatch.setattr(run, "predict_rows", lambda *args, **kwargs: [])
+    monkeypatch.setattr(run.repo, "write_predictions", lambda *args, **kwargs: None)
+    monkeypatch.setattr(run.repo, "merge_features_live", lambda conn, run_id, rows, as_of: merged.append(list(rows)))
+    deps = run.RunDeps(conn=SimpleNamespace(transaction=contextlib.nullcontext), cache=None, collectors={})
+    model = SimpleNamespace(active=SimpleNamespace(model=SimpleNamespace(features=[])))
+    view = OptionsView(symbol="AAPL", as_of=date(2026, 11, 19), expiries=12, **view_fields)
+    results = {
+        "yfinance_options": CollectorResult("yfinance_options", status or CollectorStatus.OK, [view], 1),
+    }
+    run.forecast_market(deps, 1, Market.US, model, ["AAPL"], {}, RunKind.PRE_OPEN, PRE_CLOSE_AT, results)
+    return [row for batch in merged for row in batch if any(k.startswith("opt_") for k in row[1])]
+
+
+def test_option_summaries_are_stored_with_the_run(monkeypatch):
+    rows = _option_run(
+        monkeypatch,
+        {"atm_iv_near": 0.24, "atm_iv_mid": 0.27, "skew_near": 0.05,
+         "put_call_volume": 0.8, "put_call_open_interest": 1.1},
+    )
+    assert len(rows) == 1
+    assert rows[0][1] == {
+        "opt_atm_iv_near": 0.24, "opt_atm_iv_mid": 0.27, "opt_skew_near": 0.05,
+        "opt_put_call_volume": 0.8, "opt_put_call_open_interest": 1.1,
+    }
+
+
+def test_a_missing_option_value_is_left_out(monkeypatch):
+    rows = _option_run(
+        monkeypatch,
+        {"atm_iv_near": 0.24, "atm_iv_mid": None, "skew_near": float("nan"), "put_call_volume": float("inf")},
+    )
+    assert rows[0][1] == {"opt_atm_iv_near": 0.24}
+
+
+def test_a_source_that_did_not_run_cleanly_stores_no_option_values(monkeypatch):
+    from advisor.collectors.base import CollectorStatus
+
+    assert _option_run(monkeypatch, {"atm_iv_near": 0.24}, status=CollectorStatus.FAILED) == []

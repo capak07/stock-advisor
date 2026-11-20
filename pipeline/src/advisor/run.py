@@ -32,6 +32,7 @@ from advisor.collectors.registry import build_registry
 from advisor.collectors.sec_xbrl import FinancialFact
 from advisor.collectors.tracker import SourceTracker
 from advisor.collectors.yfinance_bars import Downloader, yahoo_download
+from advisor.collectors.yfinance_options import OptionsView
 from advisor.company_names import CompanyNames
 from advisor.config import Settings
 from advisor.crypto_prices import BARS, CHECK, CRYPTO_STAGE, QUOTES, crypto_feature_rows
@@ -409,6 +410,33 @@ def model_feature_rows(features: pd.DataFrame, names: Sequence[str]) -> list[tup
     return rows
 
 
+OPTION_FEATURES = {
+    "opt_atm_iv_near": "atm_iv_near",
+    "opt_atm_iv_mid": "atm_iv_mid",
+    "opt_skew_near": "skew_near",
+    "opt_put_call_volume": "put_call_volume",
+    "opt_put_call_open_interest": "put_call_open_interest",
+}
+
+
+def option_feature_rows(records: Sequence[OptionsView]) -> list[tuple[AssetRef, dict]]:
+    """Each stock's option summary for features_live (a missing or non-finite value is left out).
+
+    The summaries exist only live (Yahoo shows no past chains), so they are stored on every run for
+    a later test as model inputs, once about 12 months have built up.
+    """
+    rows = []
+    for record in records:
+        kept = {
+            name: float(value)
+            for name, field in OPTION_FEATURES.items()
+            if (value := getattr(record, field)) is not None and math.isfinite(value)
+        }
+        if kept:
+            rows.append((AssetRef(record.symbol, AssetType.STOCK), kept))
+    return rows
+
+
 def forecast_market(
     deps: RunDeps,
     run_id: int,
@@ -455,6 +483,13 @@ def forecast_market(
         repo.merge_features_live(
             deps.conn, run_id, model_feature_rows(features, model.active.model.features), now_utc
         )
+        options = results.get("yfinance_options") if market is Market.US else None
+        if options is not None and options.status is CollectorStatus.OK:
+            forecast = set(features.index)  # a symbol with no forecast row gets no orphan row
+            stored = option_feature_rows([r for r in options.records if isinstance(r, OptionsView)])
+            repo.merge_features_live(
+                deps.conn, run_id, [row for row in stored if row[0].symbol in forecast], now_utc
+            )
     fields = {"predicted": len({r.symbol for r in rows}), "not_eligible": len(features) - len(eligible), **added}
     return fields, Forecast(features, list(rows))
 

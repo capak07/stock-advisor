@@ -238,3 +238,32 @@ def test_an_active_config_without_a_row_is_still_scored(db, tmp_path, monkeypatc
     assert "ranker+extras" in tsx["decisions"]
     assert tsx["chosen"] == "ranker+extras" and tsx["accepted"]["changed"] is False
     assert repo.active_config(db, "TSX").id == first
+
+
+def test_an_accepted_config_with_no_data_this_month_stays_accepted(db, tmp_path, monkeypatch):
+    # no short history in this build: a missing cache is not evidence against the accepted config (Ruling R15)
+    write_market(tmp_path, Market.US, stocks=40, days=1200)
+    base = ModelConfig(ranker=True, garch=True, forest=True)
+    short = replace(base, short=True)
+    rows = {"baseline": BASELINE, "garch+ranker+forest": base, "garch+ranker+forest+short": short, "full+policy": None}
+    monkeypatch.setattr(job, "ABLATIONS", rows)
+    monkeypatch.setattr(job, "BASE_ROWS", job.base_rows(rows))
+    run_id = repo.start_benchmark_run(db, NOW, None)
+    first = repo.accept_config(db, "US", short.to_json(), "test", run_id, NOW)
+    report = job.run(tmp_path, [Market.US], db, NOW + timedelta(days=28), None, FAST)
+    us = report["markets"]["US"]
+    assert "error" not in us, us.get("error")
+    reason = "unchanged: garch+ranker+forest+short has no data: short"
+    assert us["accepted"] == {"changed": False, "reason": reason, "config": short.to_json()}
+    assert us["chosen"] == "garch+ranker+forest+short"
+    assert repo.active_config(db, "US").id == first
+    assert db.execute("select count(*) as n from accepted_configs").fetchone()["n"] == 1
+    stored = db.execute("select report from benchmark_runs order by id desc").fetchone()["report"]
+    assert stored["markets"]["US"]["accepted"]["reason"] == reason
+    # every other row is still scored and reported
+    assert us["variants"]["garch+ranker+forest"]["status"] == "run" and "garch+ranker+forest" in us["decisions"]
+    assert us["variants"]["garch+ranker+forest+short"] == {"status": "no data", "groups": ["short"]}
+    text = render_markdown(report)
+    assert f"**Chosen:** garch+ranker+forest+short — {reason}" in text
+    assert "### Did the new data help?" in text and "| short | — | — | no data |" in text
+    assert "nan" not in text and "None" not in text

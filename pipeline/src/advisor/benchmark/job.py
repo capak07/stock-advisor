@@ -278,6 +278,26 @@ def _benchmark_market(
     others = {name: s for name, s in scores.items() if name != "baseline"}
     chosen, decisions = choose_model(scores["baseline"], others, incumbent, twins)
 
+    def outcome(chosen: str, accepted: dict) -> dict:
+        return {
+            "horizons": list(config.horizons),
+            "variants": variants,
+            "decisions": {n: {"accepted": d.accepted, "reasons": list(d.reasons)} for n, d in decisions.items()},
+            "chosen": chosen,
+            "accepted": accepted,
+            "combined": combined.name if combined is not None else None,
+        }
+
+    held = variants.get(active_name) if active_name is not None else None
+    if held is not None and held.get("status") == "no data":
+        # this build lacks the accepted config's data: missing evidence is not a measured loss, so the
+        # accepted config stays and no policy is tuned this run (Ruling R15); every other row is reported
+        groups = list(held["groups"])
+        variants[POLICY_ROW] = {"status": "no data", "groups": groups}
+        repo.write_benchmark_results(conn, run_id, results)
+        reason = f"unchanged: {active_name} has no data: {', '.join(groups)}"
+        return outcome(active_name, {"changed": False, "reason": reason, "config": active.config})
+
     began = time.monotonic()
     panel = daily_panel(data_dir, market)
     wf, usable = runs[chosen]
@@ -315,14 +335,7 @@ def _benchmark_market(
             reason = decisions[chosen].reasons[0]
         repo.accept_config(conn, str(market), stored, reason, run_id, now)
         accepted = {"changed": True, "reason": reason, "config": stored}
-    return {
-        "horizons": list(config.horizons),
-        "variants": variants,
-        "decisions": {n: {"accepted": d.accepted, "reasons": list(d.reasons)} for n, d in decisions.items()},
-        "chosen": chosen,
-        "accepted": accepted,
-        "combined": combined.name if combined is not None else None,
-    }
+    return outcome(chosen, accepted)
 
 
 def _constants(config: TrainConfig) -> dict:

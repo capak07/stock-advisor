@@ -62,7 +62,9 @@ def _choice_line(market: Mapping) -> str:
     accepted = market["accepted"]
     if accepted.get("changed"):
         return f"**Chosen:** {chosen} — {accepted['reason']}"
-    return f"**Chosen:** {chosen} — unchanged"
+    reason = accepted.get("reason")  # "unchanged", or why it stayed without a comparison (no data)
+    kept = reason if isinstance(reason, str) and reason.startswith("unchanged") else "unchanged"
+    return f"**Chosen:** {chosen} — {kept}"
 
 
 def _decision(name: str, market: Mapping) -> str:

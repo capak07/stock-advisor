@@ -309,3 +309,15 @@ def test_a_row_without_its_data_reads_no_data_and_its_groups():
     assert "| garch+ranker+forest+insider | no data: insider | — | — | — | no data |" in md
     assert "| garch+ranker+forest+data+s+i | no data: short, insider | — | — | — | no data |" in md
     assert not [line for line in md.splitlines() if "arrives with" in line]
+
+
+def test_an_accepted_config_without_its_data_reads_unchanged_and_why():
+    report = copy.deepcopy(REPORT)
+    report["markets"]["TSX"]["chosen"] = "garch+ranker+forest+short"
+    report["markets"]["TSX"]["accepted"] = {
+        "changed": False, "reason": "unchanged: garch+ranker+forest+short has no data: short", "config": {"version": 6},
+    }
+    md = render_markdown(report)
+    assert "**Chosen:** garch+ranker+forest+short — unchanged: garch+ranker+forest+short has no data: short" in md
+    report["markets"]["TSX"]["accepted"]["reason"] = "unchanged"  # a config kept on the evidence reads as before
+    assert "**Chosen:** garch+ranker+forest+short — unchanged\n" in render_markdown(report)

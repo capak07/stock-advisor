@@ -21,7 +21,7 @@ from advisor.model.pit import days_since, sec_known, window_count
 EVENT_ITEMS = ("5.02", "1.01", "2.01", "4.02", "3.01")
 EVENTS_FEATURES = ["ev_502_90d", "ev_101_90d", "ev_201_90d", "ev_402_90d", "ev_301_90d",
                    "days_since_8k", "activist_13d_180d", "passive_13g_90d"]
-DAYS_SINCE_8K_CAP = 120  # the live sec_events.LOOKBACK: live sees no 8-K older than this
+DAYS_SINCE_8K_CAP = 120  # live (`sec_events.LOOKBACK`) fetches this many days before the feature day
 ITEM_WINDOW_DAYS = 90
 ACTIVIST_WINDOW_DAYS = 180
 PASSIVE_WINDOW_DAYS = 90

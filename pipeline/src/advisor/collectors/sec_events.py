@@ -10,12 +10,20 @@ from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from advisor.collectors.base import Cadence, Category, Scope, collect_per_symbol
+from advisor.collectors.base import (
+    FEATURE_DAY_MARGIN_DAYS,
+    Cadence,
+    Category,
+    Scope,
+    collect_per_symbol,
+)
 from advisor.collectors.sec import Filing, SecEdgar, archive_url, public_by, sec_stop
+from advisor.model.events import DAYS_SINCE_8K_CAP
 from advisor.models import ET, AssetType, Market
 
 EVENT_FORMS = frozenset({"8-K", "8-K/A"})
-LOOKBACK = timedelta(days=120)
+# the model's `days_since_8k` cap counted from a pre-open run's earlier feature day (Ruling R13)
+LOOKBACK = timedelta(days=DAYS_SINCE_8K_CAP + FEATURE_DAY_MARGIN_DAYS)
 
 
 class MaterialEvent(BaseModel):

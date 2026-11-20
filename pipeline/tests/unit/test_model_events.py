@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 import numpy as np
 import pandas as pd
 
+from advisor.collectors.base import FEATURE_DAY_MARGIN_DAYS
 from advisor.collectors.sec_events import LOOKBACK
 from advisor.model.events import DAYS_SINCE_8K_CAP, EVENT_ITEMS, EVENTS_FEATURES, events_features
 
@@ -41,7 +44,9 @@ def test_the_feature_names_and_the_cap():
     assert EVENT_ITEMS == ("5.02", "1.01", "2.01", "4.02", "3.01")
     assert EVENTS_FEATURES == ["ev_502_90d", "ev_101_90d", "ev_201_90d", "ev_402_90d", "ev_301_90d",
                                "days_since_8k", "activist_13d_180d", "passive_13g_90d"]
-    assert DAYS_SINCE_8K_CAP == 120 == LOOKBACK.days  # live sees 120 days of 8-Ks
+    assert DAYS_SINCE_8K_CAP == 120 and FEATURE_DAY_MARGIN_DAYS == 7
+    # live sees the cap's 120 days of 8-Ks counted from a pre-open run's earlier feature day (Ruling R13)
+    assert LOOKBACK == timedelta(days=DAYS_SINCE_8K_CAP + FEATURE_DAY_MARGIN_DAYS)
 
 
 def test_item_counts_over_90_days_by_acceptance():

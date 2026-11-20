@@ -273,6 +273,34 @@ def _tuned_policy(policy: Mapping, market: Mapping) -> list[str]:
     return lines
 
 
+def _points(value: object) -> str:
+    return "—" if _missing(value) else f"{value * 100:.1f} pts"
+
+
+def _exit_plan_check(block: Mapping) -> list[str]:
+    """How each class's exit plans held up on history (`exit_check.verdicts`)."""
+    lines = ["### Exit plan check", ""]
+    if "error" in block:
+        return [*lines, f"Failed: {block['error']}"]
+    lines += [f"Model: {block.get('model') or '—'}, plan version {block.get('plan_version', '—')}", ""]
+    classes = block.get("classes") or {}
+    if not classes:
+        return [*lines, "No class had enough pairs for a verdict (not validated yet)."]
+    lines += [
+        "| Class | Pairs | Touch rate (stated 33%) | Coverage (stated 80%) | Worst break-even bin "
+        "| Worst stop-first bin | Order gain | Result |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for name, v in classes.items():
+        pairs = "—" if _missing(v.get("pairs")) else str(int(v["pairs"]))
+        lines.append(
+            f"| {name} | {pairs} | {_pct(v.get('touch_rate'))} | {_pct(v.get('coverage'))} "
+            f"| {_points(v.get('breakeven_worst_bin'))} | {_points(v.get('stop_first_worst_bin'))} "
+            f"| {_signed(v.get('order_gain'))} | {v.get('result') or '—'} |"
+        )
+    return lines
+
+
 def _how(constants: Mapping) -> list[str]:
     pinball_pct = constants["pinball_tolerance"] * 100
     n, folds = constants["min_folds_improved"], constants["outer_folds"]
@@ -375,6 +403,8 @@ def render_markdown(report: Mapping) -> str:
             if isinstance(variant.get("policy"), Mapping):
                 lines += _policy_table(variant)
                 lines.append("")
+        if isinstance(market.get("exit_plan"), Mapping):
+            lines += [*_exit_plan_check(market["exit_plan"]), ""]
     lines += _how(report["constants"])
     lines.append("")
     return "\n".join(lines)

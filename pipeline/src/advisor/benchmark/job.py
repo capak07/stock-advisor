@@ -8,6 +8,7 @@ and the rest carry on.
 """
 
 import argparse
+import logging
 import os
 import sys
 import time
@@ -29,6 +30,7 @@ from advisor.benchmark.accept import (
     accept_policy,
     choose_model,
 )
+from advisor.benchmark.exit_check import judge_pairs, verdicts
 from advisor.benchmark.folds import INNER_MIN_TRAIN_YEARS, INNER_SPLITS
 from advisor.benchmark.metrics import (
     calibrated_horizons,
@@ -58,8 +60,11 @@ from advisor.model.variants import (
 from advisor.model.weekly import crypto_skipped, json_safe
 from advisor.models import BenchmarkResult, Market
 from advisor.policy import DEFAULT_POLICY, Policy
+from advisor.portfolio.exit_plan import PLAN_VERSION
 from advisor.store import repo
 from advisor.store.db import connect
+
+log = logging.getLogger(__name__)
 
 # The base the US data group rows build on: each adds one group's features to it, and must beat it.
 GROUP_BASE = "garch+ranker+forest"
@@ -188,6 +193,31 @@ def _policy_row(
     return report, decision, final.policy, final.reason
 
 
+def _exit_plan_check(
+    model: ModelConfig,
+    wf: WalkForward,
+    usable: Sequence[int],
+    panel: DailyPanel,
+    market: Market | str,
+    fee: float,
+    policy: Policy,
+) -> dict:
+    """Whether the chosen model's exit plans held up on history (`exit_check`), keyed by the model's
+    config name (R2). A failure is logged and stored as {"error": ...}: it never fails the market."""
+    began = time.monotonic()
+    try:
+        classes = verdicts(judge_pairs(wf.predictions, panel, market, usable, fee, policy))
+    except Exception as exc:
+        log.exception("the exit plan check failed for %s", market)
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "plan_version": PLAN_VERSION,
+        "model": replace(model, policy=None).name,
+        "classes": classes,
+        "seconds": round(time.monotonic() - began, 1),
+    }
+
+
 def _benchmark_market(
     data_dir: Path, market: Market | str, conn: psycopg.Connection, run_id: int, now: datetime, config: TrainConfig
 ) -> dict:
@@ -305,10 +335,12 @@ def _benchmark_market(
     policy_report, policy_decision, policy, final_reason = _policy_row(
         data, model_config, wf, usable, panel, market, usd_fx_fee_pct, config
     )
-    del panel  # the daily panel is large; free it before the next market
     variants[POLICY_ROW] = {
         "status": "run", "model": chosen, "seconds": round(time.monotonic() - began, 1), "policy": policy_report,
     }
+    # the live policy's trailing stop (F18), or today's rules when no policy passed
+    exit_plan = _exit_plan_check(model_config, wf, usable, panel, market, usd_fx_fee_pct, policy or DEFAULT_POLICY)
+    del panel  # the daily panel is large; free it before the next market
     decisions[POLICY_ROW] = policy_decision
     candidate = policy_report["candidate"]
     for k, default in enumerate(policy_report["default"]["per_period"], start=1):
@@ -335,7 +367,7 @@ def _benchmark_market(
             reason = decisions[chosen].reasons[0]
         repo.accept_config(conn, str(market), stored, reason, run_id, now)
         accepted = {"changed": True, "reason": reason, "config": stored}
-    return outcome(chosen, accepted)
+    return {**outcome(chosen, accepted), "exit_plan": exit_plan}
 
 
 def _constants(config: TrainConfig) -> dict:

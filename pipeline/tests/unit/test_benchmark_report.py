@@ -321,3 +321,43 @@ def test_an_accepted_config_without_its_data_reads_unchanged_and_why():
     assert "**Chosen:** garch+ranker+forest+short — unchanged: garch+ranker+forest+short has no data: short" in md
     report["markets"]["TSX"]["accepted"]["reason"] = "unchanged"  # a config kept on the evidence reads as before
     assert "**Chosen:** garch+ranker+forest+short — unchanged\n" in render_markdown(report)
+
+
+def _exit_class(**over) -> dict:
+    checks = {"range": True, "touch": True, "value": True, "breakeven": True, "stop_first": True}
+    return {
+        "pairs": 1200, "touch_rate": 0.31, "touch_by_third": [0.30, 0.32, 0.31], "coverage": 0.78,
+        "breakeven_worst_bin": 0.042, "stop_first_worst_bin": 0.061, "order_gain": 0.0012,
+        "order_folds_not_worse": 2, "folds": 3, "checks": checks, "result": "pass", **over,
+    }
+
+
+def test_the_exit_plan_check_renders_a_row_per_class():
+    report = copy.deepcopy(REPORT)
+    report["markets"]["TSX"]["exit_plan"] = {
+        "plan_version": 1, "model": "garch+ranker", "classes": {
+            "forecast": _exit_class(),
+            "volatility": _exit_class(pairs=1150, order_gain=-0.0034, stop_first_worst_bin=None, result="range_only"),
+        },
+    }
+    md = render_markdown(report)
+    section = md.split("### Exit plan check", 1)[1].split("## US", 1)[0]
+    assert "garch+ranker" in section.splitlines()[2]
+    assert "| Class | Pairs | Touch rate (stated 33%) | Coverage (stated 80%) | Worst break-even bin " \
+           "| Worst stop-first bin | Order gain | Result |" in section
+    assert "| forecast | 1200 | 31% | 78% | 4.2 pts | 6.1 pts | +0.12% | pass |" in section
+    assert "| volatility | 1150 | 31% | 78% | 4.2 pts | — | -0.34% | range_only |" in section
+    assert "nan" not in md.lower() and "None" not in md
+
+
+def test_an_exit_plan_check_that_failed_or_judged_nothing_says_so():
+    report = copy.deepcopy(REPORT)
+    report["markets"]["TSX"]["exit_plan"] = {"error": "ValueError: no panel"}
+    assert "### Exit plan check\n\nFailed: ValueError: no panel" in render_markdown(report)
+    report["markets"]["TSX"]["exit_plan"] = {"plan_version": 1, "model": "baseline", "classes": {}}
+    md = render_markdown(report)
+    assert "No class had enough pairs for a verdict (not validated yet)." in md
+
+
+def test_a_report_without_the_exit_plan_check_renders_as_before():
+    assert "Exit plan check" not in render_markdown(REPORT)

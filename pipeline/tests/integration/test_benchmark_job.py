@@ -165,15 +165,24 @@ def test_the_factors_variant_runs_on_us_data_and_keeps_the_baseline_rows(db, tmp
     assert "| short | — | — | no data |" in text and "arrives with" not in text
 
 
-def test_the_benchmark_scores_crypto(db, tmp_path):
-    from advisor.model.crypto import CRYPTO
+def test_the_benchmark_scores_crypto(db, tmp_path, monkeypatch):
+    from advisor.model.crypto import CRYPTO, CRYPTO_HORIZONS
     from model_data import write_crypto
     write_crypto(tmp_path, coins=30, days=1300)
+    real = job.judge_pairs
+
+    def every_horizon(predictions, panel, market, usable, *args):
+        assert usable == ()  # no horizon of this synthetic coin model is calibrated: sample them all anyway
+        return real(predictions, panel, market, CRYPTO_HORIZONS, *args)
+
+    monkeypatch.setattr(job, "judge_pairs", every_horizon)
     report = job.run(tmp_path, [CRYPTO], db, NOW, None, FAST)
     assert report["markets"]["crypto"]["chosen"] == "baseline"
     folds = {r["fold"] for r in db.execute("select fold from benchmark_results where market = 'crypto' and variant = 'baseline'").fetchall()}
     assert folds == {"0", "1", "2", "3", "pooled"}
     assert repo.active_config(db, "crypto").reason == "first benchmark: today's model"
+    block = report["markets"]["crypto"]["exit_plan"]  # every coin plan is volatility only (R3)
+    assert block["model"] == "baseline" and set(block["classes"]) == {"coin"}
 
 
 def test_the_combined_row_runs_when_two_groups_pass(db, tmp_path, monkeypatch):
@@ -267,3 +276,43 @@ def test_an_accepted_config_with_no_data_this_month_stays_accepted(db, tmp_path,
     assert f"**Chosen:** garch+ranker+forest+short — {reason}" in text
     assert "### Did the new data help?" in text and "| short | — | — | no data |" in text
     assert "nan" not in text and "None" not in text
+
+
+def test_the_exit_plan_check_is_stored_with_the_chosen_model(db, tmp_path, monkeypatch):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    monkeypatch.setattr(job, "ABLATIONS", {"baseline": BASELINE, "ranker": ModelConfig(ranker=True), "full+policy": None})
+    monkeypatch.setattr(job, "BASE_ROWS", {})
+    monkeypatch.setattr(job, "choose_model", lambda base, rows, *a, **k: (
+        "ranker", {name: Decision(True, ("ranker passed",)) for name in rows}))
+    monkeypatch.setattr(job, "tune_for_outer", lambda *a, **k: Tuned(None, None, 0, "no stage-1 combination met the limits: x"))
+    report = job.run(tmp_path, [Market.TSX], db, NOW, None, FAST)
+    tsx = report["markets"]["TSX"]
+    assert "error" not in tsx, tsx.get("error")
+    block = tsx["exit_plan"]
+    assert block["plan_version"] == 1 and block["model"] == "ranker"  # R2: the config's name
+    assert set(block["classes"]) == {"forecast", "volatility"}
+    assert all(v["result"] in {"pass", "range_only", "fail"} for v in block["classes"].values())
+    assert block["seconds"] >= 0
+    stored = db.execute("select report from benchmark_runs").fetchone()["report"]
+    assert stored["markets"]["TSX"]["exit_plan"]["model"] == "ranker"
+    text = render_markdown(report)
+    assert "### Exit plan check" in text and "| forecast | " in text
+    assert "nan" not in text and "None" not in text
+
+
+def test_a_failed_exit_plan_check_does_not_fail_the_market(db, tmp_path, monkeypatch):
+    write_market(tmp_path, Market.TSX, stocks=40)
+    monkeypatch.setattr(job, "ABLATIONS", {"baseline": BASELINE, "full+policy": None})
+    monkeypatch.setattr(job, "BASE_ROWS", {})
+    monkeypatch.setattr(job, "tune_for_outer", lambda *a, **k: Tuned(None, None, 0, "no stage-1 combination met the limits: x"))
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(job, "judge_pairs", boom)
+    report = job.run(tmp_path, [Market.TSX], db, NOW, None, FAST)
+    tsx = report["markets"]["TSX"]
+    assert tsx["exit_plan"] == {"error": "RuntimeError: boom"}
+    assert tsx["chosen"] == "baseline" and tsx["accepted"]["changed"] is True
+    assert report["status"] == "success" and repo.active_config(db, "TSX") is not None
+    assert "### Exit plan check\n\nFailed: RuntimeError: boom" in render_markdown(report)

@@ -132,3 +132,26 @@ def test_load_history_reads_the_files_that_exist_and_builds_analyst_coverage(tmp
     assert history.analyst_events is not None and history.analyst_coverage["symbol"].tolist() == ["A"]
     assert history.insider_trades is None
     assert present(history) == {"analyst", "earnings"}
+
+
+def test_load_history_passes_the_insider_coverage_end_through_and_rows_after_it_read_missing(tmp_path):
+    trades = pd.DataFrame({
+        "symbol": ["A"], "accession": ["0000000001-26-000001"], "filing_date": [pd.Timestamp("2026-09-01").date()],
+        "accepted_at": pd.to_datetime(["2026-09-01 15:00"], utc=True), "trade_date": [pd.Timestamp("2026-08-30").date()],
+        "code": ["P"], "shares": [100.0], "price": [10.0], "owners": [["DOE JANE"]], "officer": [True],
+        "director": [False], "ten_percent_owner": [False], "filed_ticker": ["A"],
+        "coverage_end": [pd.Timestamp("2026-09-30").date()],
+    })
+    trades.to_parquet(tmp_path / "insider_trades.parquet", index=False)
+    history = load_history(tmp_path)
+    assert history.insider_coverage_end == pd.Timestamp("2026-09-30")
+    assert "coverage_end" not in history.insider_trades.columns  # a stored value, not a trade field
+    days = pd.DatetimeIndex(["2026-10-01", "2026-10-02"])
+    close = pd.DataFrame(10.0, index=days, columns=["A"])
+    facts = pd.DataFrame({"cik": [1], "metric": ["shares"], "concept": ["x"], "unit": ["shares"],
+                          "start": [None], "end": [pd.Timestamp("2026-06-30")], "value": [1e6],
+                          "filed": [pd.Timestamp("2026-07-30")], "form": ["10-Q"], "accession": ["a"]})
+    tickers = pd.DataFrame({"symbol": ["A"], "cik": [1]})
+    out = group_features(history, facts, tickers, close, pd.DataFrame(), days, ["A"])
+    assert out["insider_buyers_90d"]["A"].tolist()[0] == 1
+    assert np.isnan(out["insider_buyers_90d"]["A"].iloc[1])

@@ -34,7 +34,7 @@ import pyarrow.parquet as pq
 from advisor.collectors.base import RateLimiter
 from advisor.collectors.openfigi import FigiBook
 from advisor.collectors.sec import SUBMISSIONS_ZIP_URL, SecEdgar
-from advisor.model.groups import GROUP_FILES
+from advisor.model.groups import COVERAGE_END, GROUP_FILES
 from advisor.model.variants import ModelConfig, data_groups
 from advisor.models import ET
 from advisor.schedule import previous_sessions
@@ -301,7 +301,11 @@ def _insider(run: _Run) -> dict[str, pd.DataFrame]:
         # rows per quarter, so a TRANS_DATE format that drops rows silently shows as a short quarter
         run.record("insider_rows", len(frame), name)
         sets.append(frame)
-    return {"insider_trades.parquet": insider_history(sets, filings, run.tickers)}
+    # SEC's data sets go by filing quarter, so the trades end at the newest one's quarter end: stored with
+    # them, so a training row after it reads NaN rather than counting the unpublished months as none
+    coverage_end = max(_quarter_end(name) for name, _ in data_sets)
+    trades = insider_history(sets, filings, run.tickers)
+    return {"insider_trades.parquet": trades.assign(**{COVERAGE_END: coverage_end})}
 
 
 def _holders(run: _Run) -> dict[str, pd.DataFrame]:

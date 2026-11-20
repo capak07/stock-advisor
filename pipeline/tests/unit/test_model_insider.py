@@ -122,3 +122,19 @@ def test_a_missing_source_reads_missing_not_zero():
     out = insider_features(None, _value(D, ["A"], 1e9), {"A"}, pd.DatetimeIndex([D]), ["A"])
     for name in INSIDER_FEATURES:
         assert np.isnan(out[name].loc[D, "A"])
+
+
+def test_a_training_row_after_the_data_sets_coverage_end_reads_missing():
+    """SEC's quarterly data sets end at their newest quarter: a row after it would count empty windows as 0."""
+    end = pd.Timestamp("2026-09-30")
+    trades = _trades([("A", "P", 1_000, 10.0, end - 5 * DAY, ["BOSS BETTY"], True)])
+    days = _days(end, end + DAY, end + 2 * DAY, end + 44 * DAY)
+    value = pd.DataFrame(1e6, index=days, columns=["A", "B"])
+    out = insider_features(trades, value, {"A", "B"}, days, ["A", "B"], coverage_end=end.date())
+    # 10-01 still reads every filing known before it (all through 09-30); from 10-02 the window has a hole
+    assert out["insider_buyers_90d"]["A"].tolist()[:2] == [1, 1]
+    assert out["insider_buyers_90d"]["B"].tolist()[:2] == [0, 0]
+    for name in INSIDER_FEATURES:
+        assert out[name].iloc[2:].isna().all().all(), name
+    live = insider_features(trades, value, {"A", "B"}, days, ["A", "B"])  # live: no coverage end
+    assert live["insider_buyers_90d"]["A"].tolist() == [1, 1, 1, 1]

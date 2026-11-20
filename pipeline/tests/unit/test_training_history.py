@@ -231,6 +231,8 @@ def test_submissions_are_reduced_once_for_events_and_insider(tmp_path, monkeypat
     trades = pd.read_parquet(cache.groups_dir / "insider_trades.parquet")
     assert trades[["symbol", "accession"]].values.tolist() == [["AAPL", "0000320193-26-000002"]]
     assert trades["accepted_at"].iloc[0] == pd.Timestamp("2026-06-01 16:30", tz="UTC")
+    # the newest data set (2026q3) ends the coverage: a training row after 2026-10-01 reads NaN
+    assert trades["coverage_end"].tolist() == [date(2026, 9, 30)]
     assert (cache.groups_dir / "large_holders.parquet").exists()
     asked = [str(r.url) for r in seen]
     assert f"{SET_BASE}2025q4_form345.zip" not in asked  # ended before `since`

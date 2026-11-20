@@ -75,8 +75,12 @@ class GroupHistory:
     holders: pd.DataFrame | None = None
     estimates: pd.DataFrame | None = None
     fda_events: pd.DataFrame | None = None
+    # the last filing day SEC's insider data sets cover (training only; `insider.insider_features`)
+    insider_coverage_end: pd.Timestamp | None = None
 
 
+# insider_trades.parquet's stored coverage end (`training.history`), read into `insider_coverage_end`
+COVERAGE_END = "coverage_end"
 # each file of GROUP_FILES -> the GroupHistory field it loads into: the file stem, but `estimates`
 FILE_FIELDS: dict[str, str] = {
     name: "estimates" if name == "earnings_estimates.parquet" else name.removesuffix(".parquet")
@@ -85,11 +89,16 @@ FILE_FIELDS: dict[str, str] = {
 
 
 def load_history(data_dir: Path) -> GroupHistory:
-    """The history files of `GROUP_FILES` that exist in `data_dir`; a missing file is None."""
-    loaded = {
+    """The history files of `GROUP_FILES` that exist in `data_dir`; a missing file is None. The insider
+    trades' stored coverage end (a column, the same on every row) becomes `insider_coverage_end`."""
+    loaded: dict = {
         field: pd.read_parquet(data_dir / name)
         for name, field in FILE_FIELDS.items() if (data_dir / name).exists()
     }
+    if (trades := loaded.get("insider_trades")) is not None and COVERAGE_END in trades.columns:
+        end = trades[COVERAGE_END].dropna()
+        loaded["insider_coverage_end"] = pd.Timestamp(end.max()) if not end.empty else None
+        loaded["insider_trades"] = trades.drop(columns=COVERAGE_END)
     if (events := loaded.get("analyst_events")) is not None:
         loaded["analyst_coverage"] = analyst_coverage(events)
     return GroupHistory(**loaded)
@@ -120,7 +129,8 @@ def group_features(history: GroupHistory, facts: pd.DataFrame, tickers: pd.DataF
     covered = covered_symbols(facts, tickers)
     out = short_features(history.short_interest, history.short_volume, shares, splits, days, symbols)
     out |= analyst_features(history.analyst_events, history.analyst_coverage, days, symbols)
-    out |= insider_features(history.insider_trades, market_value, covered, days, symbols)
+    out |= insider_features(history.insider_trades, market_value, covered, days, symbols,
+                            coverage_end=history.insider_coverage_end)
     out |= events_features(history.material_events, history.large_holders, covered, days, symbols)
     out |= holders_features(history.holders, shares, splits, days, symbols)
     out |= estimates_features(history.estimates, days, symbols)

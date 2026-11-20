@@ -1300,6 +1300,34 @@ def test_failed_split_events_leave_a_note_and_the_us_forecasts_still_run(db, tmp
     assert run_row(db, outcome.run_id)["model_version"] == "stock_us-1"
 
 
+def test_a_failed_group_history_conversion_leaves_a_note_and_the_us_forecasts_still_run(
+        db, tmp_path, tsx_model_files, monkeypatch):
+    repo.save_model(db, "stock_us-1", "stock_us", NOW, {"usable_horizons": [63]}, 3.0, tsx_model_files)
+    repo.activate_model(db, "stock_us", "stock_us-1")
+    seen = []
+
+    def broken(results):
+        raise ValueError("a record the frames can't hold")
+
+    def model_features(*args, history=None, **kwargs):
+        seen.append(history)
+        return real(*args, history=history, **kwargs)
+
+    import advisor.run as run_module
+
+    real = run_module.model_features
+    monkeypatch.setattr(run_module, "history_from_records", broken)
+    monkeypatch.setattr(run_module, "model_features", model_features)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.status is RunStatus.SUCCESS
+    us = outcome.summary["model"]["US"]
+    assert us["group_history"] == "failed: ValueError: a record the frames can't hold"
+    assert (us["version"], us["predicted"]) == ("stock_us-1", 3)
+    us_history = [h for h in seen if h is not None]
+    assert len(us_history) == 1 and all(  # every group read missing (NaN), never zero
+        getattr(us_history[0], f.name) is None for f in dataclasses.fields(us_history[0]))
+
+
 def test_the_chart_history_keeps_only_the_last_100_days_of_the_longer_window(db, tmp_path):
     prices = FakeCollector(  # 200 daily bars ending 2026-10-13, like the 400-day window's
         "yfinance_bars",

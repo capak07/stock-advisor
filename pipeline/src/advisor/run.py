@@ -454,14 +454,19 @@ def forecast_market(
     no forecast. Returns the market's summary fields, and its features and forecasts for stage 8.
 
     US fundamentals come from the run's SEC facts, and the US data groups from the run's collector
-    records (a source that did not run cleanly leaves its features NaN). Split events are best-effort:
+    records (a source that did not run cleanly leaves its features NaN; a conversion that fails leaves every
+    group NaN and is noted as `group_history`). Split events are best-effort:
     without them a stock that split since its last filing gets off fundamentals, which beats no
     forecast at all.
     """
     added: dict = {}
     events, facts, history = None, None, None
     if market is Market.US:
-        history = history_from_records(results)
+        try:
+            history = history_from_records(results)
+        except Exception as exc:  # a record the frames can't hold: every group reads NaN, the forecast goes on
+            history = GroupHistory()
+            added["group_history"] = f"failed: {type(exc).__name__}: {exc}"[:200]
         sec = results.get("sec_xbrl")
         filed = [f for f in (sec.records if sec is not None else []) if isinstance(f, FinancialFact)]
         facts = facts_frame(filed)

@@ -15,6 +15,19 @@ scripts/in-docker.sh uv run python -m advisor.model.weekly --data DIR [--market 
 
 `DIR/model-report.json` is what it decided, per market: the stored version, whether it was promoted and why, `picks_enabled` and `picks_reason`, the worst horizon's calibration, the mean rank IC and the seconds spent. The job uploads it with `manifest.json` as the `training-report` artifact.
 
+### Group history
+
+`history.yml` runs every Saturday at 02:00 UTC (and by hand) and downloads the US data groups' history into an actions cache: FINRA short interest and volume, Yahoo analyst events and earnings, SEC material events, 13D/G, insider trades, 13F holders and openFDA events. `train.yml` and `benchmark.yml` only restore that cache and never download group history; a group whose cache is missing or older than 21 days is unavailable for that run. The workflow uploads its `manifest.json` as the `history-report` artifact.
+
+`advisor.training.build` takes these options for the groups:
+
+- `--groups all|none|accepted|a,b,c`: which groups' history to build (default `all`; `accepted` reads the US config's groups from the database; a comma list such as `short,holders` picks some);
+- `--history-cache DIR`: the group-history cache (default `<out>/history-cache`);
+- `--history-only`: download only the group history into the cache (what `history.yml` runs; needs `--history-cache`);
+- `--no-history-download`: copy the fresh groups from the cache and download nothing (what `train.yml` and `benchmark.yml` run; needs `--history-cache`).
+
+The files, written to `--out` next to the price files: `short_interest.parquet`, `short_volume.parquet`, `analyst_events.parquet`, `insider_trades.parquet`, `material_events.parquet`, `large_holders.parquet`, `holders.parquet`, `earnings_estimates.parquet` and `fda_events.parquet`. A group that failed or was empty is listed under `unavailable` or `empty` in `manifest.json`, and its model rows fail closed.
+
 The model's integration test is `tests/integration/test_model_weekly_job.py`. The test image (`scripts/test-image.Dockerfile`) is built the first time `scripts/in-docker.sh` runs.
 
 ## Forecasts

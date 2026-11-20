@@ -271,3 +271,35 @@ Plans 4a (picks and watchlist verdicts), 4b (the suggestions dashboard: Today's 
 - **Seed averaging was left out.** A bagged `garch+ranker+forest` row would add about 43 minutes to the US benchmark, and about 90 more if it were chosen (the policy row's inner runs triple), which passes 80% of the 360-minute limit. The earlier three-seed test showed no gain. Run it as a one-off if the number is wanted.
 - **The raw score is not stored.** `PredictionRow.score` lives only in the run; the `predictions` table has no column for it. Add one if a page or a diagnostic needs to show why a stock ranked where it did.
 - **Live and backtest still rank different populations** (the forecast shortlist against every eligible stock); see "Plan 4a known limits".
+
+## Plans 7b–7d: every US data group
+
+Plan 7b added eight US data groups (short interest and volume, analyst ratings, insider trades, material events and 13D/G, 13F holders, earnings, estimates and openFDA catalysts) as model features, built the same way in training and live. What it left for later:
+
+- **Short interest:** `short_chg` compares a report with the symbol's previous report, so a FINRA file missing in between is not detected: the change then spans two periods.
+- **Form 4/A:** an amendment that repeats a Form 4's trades is counted twice, in training and live alike.
+- **Insider trades are not filtered to common stock** on either side (live Form 4 records do not carry the security title), although the spec says "of common stock". Trades under a 10b5-1 plan cannot be told apart before 2023.
+- **13D/13G** are counted from each company's filing list without opening the document, in training and live alike. A listed asset manager or bank that files 13D/Gs about other companies has them counted as its own: a little noise, accepted. Live still drops a malformed structured 13D/G document (rare).
+- **13F holders:**
+  - A stock absent from the newest data set reads NaN live, where training may still pair the two older quarters.
+  - The CUSIP map comes from the newest data set with FIGIs and is used for every older quarter. In a sampled set of symbols, 81% mapped.
+  - FIGI is empty before 2023q1, so older quarters cannot be mapped.
+  - `sec_13f.aggregate` now tolerates a missing AMENDMENTTYPE or FIGI column for the live collector too.
+- **openFDA:** a recall listed again more than 194 days after its first listing is dated later live than in training. Name matching is noisy (sponsor names are matched against the whole US directory, not only the shortlist).
+- **Earnings:** a config with `earnings=True` is now refused on TSX and crypto (it used to train on NaN columns). No stored config is affected.
+- **Live run time:** the collector fetch time the new groups add was not measured, only the feature step (about 2.9 s per US pass). The Yahoo analyst cap went from 200 to 600 symbols a run, which may add 3–5 minutes on a cold cache.
+- **Insider lookback:** it is now 187 days, so the holding monitor also receives older Form 4 trades. That means more history on the ticker page and nothing else.
+- **News features and option summaries** are stored per run in `features_live` for the forecast shortlist (not every stock; options are capped at 40 a run), so a test must read them with care. News becomes testable after about 12 months of stored runs, option summaries 12 months after Task 13 merges. Option values are intraday snapshots.
+- **Group history is downloaded weekly** by `history.yml` (Saturday 02:00 UTC) into an actions cache. The benchmark and train read histories up to a week old; a group whose cache is missing or older than 21 days is unavailable for that run.
+- **Benchmark with a missing group:** if the accepted config's group history is missing in a month, the accepted config is held unchanged and the report says so. An accepted config whose row is "not built" still gets no hold (pre-existing).
+- **FINRA** re-issues files, so the short-interest history holds revised values: a small look-ahead that cannot be removed. A ticker change (FB to META) reads NaN before the change: missing, not wrong.
+- **Yahoo** shows the final consensus before each report.
+
+### Owner steps
+
+Nothing is pushed or merged. This work sits on branch `all-data`, which is built on `rank-by-score`. In order:
+
+1. Push the branch or branches and merge as you choose.
+2. Run the new `history.yml` workflow once by hand (Actions, history, Run workflow). Its `history-report` artifact (`manifest.json`) lists seconds per group, `unavailable`, `empty`, the OpenFIGI mapped and failed counts, and insider rows per quarter. Check that no group is unavailable and that insider rows per quarter look sane: a wrong date format would show as near-zero rows.
+3. Then run `benchmark.yml` by hand. Read the per-variant seconds and the job's total. If the job passes 288 minutes (80% of 360), or the history job passes 144 (80% of 180), stop and decide what to drop, `catalysts` first.
+4. Read the "Did the new data help?" table at the top of each market in the benchmark report.

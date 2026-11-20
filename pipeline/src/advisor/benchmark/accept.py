@@ -115,6 +115,10 @@ def choose_model(
     row (and the combined row of the groups that passed) must beat garch+ranker+forest, and
     ranker+earnings must beat ranker, so a group earns its place over the model it adds to, not just
     over the baseline. A twin that wasn't scored fails the candidate closed.
+
+    The incumbent is re-judged against the baseline only, never against its twin: kept, it stays unless
+    the best passing row beats it outright (every rule of `accept_model`, with the incumbent as the
+    reference). That includes its own base row, which must beat it outright to replace it.
     """
     decisions = {name: accept_model(scores, baseline) for name, scores in candidates.items()}
     for name, twin in (twins or {}).items():

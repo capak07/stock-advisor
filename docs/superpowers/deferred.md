@@ -294,6 +294,9 @@ Plan 7b added eight US data groups (short interest and volume, analyst ratings, 
 - **Benchmark with a missing group:** if the accepted config's group history is missing in a month, the accepted config is held unchanged and the report says so. An accepted config whose row is "not built" still gets no hold (pre-existing).
 - **FINRA** re-issues files, so the short-interest history holds revised values: a small look-ahead that cannot be removed. A ticker change (FB to META) reads NaN before the change: missing, not wrong.
 - **Yahoo** shows the final consensus before each report.
+- **Live per-symbol collectors end PARTIAL** when one symbol fails or a document cap runs out, and a source that is not OK blanks its group (NaN) for every symbol that run. The insider collector's 1,000-document cap was not re-measured against the 187-day lookback. Before accepting any insider, events or holders config, count the PARTIAL runs per source over the first week, and raise the cap or move to per-symbol availability.
+- **Analyst and estimates caps:** analyst symbols past the 600 cap are served from a cache up to 3 days old, and a symbol's event count can cross the 1,000-row cap between the history build and a live run.
+- **Benchmark memory:** the peak memory of a benchmark with all group columns is unmeasured. Watch the first run.
 
 ### Owner steps
 
@@ -301,5 +304,5 @@ Nothing is pushed or merged. This work sits on branch `all-data`, which is built
 
 1. Push the branch or branches and merge as you choose.
 2. Run the new `history.yml` workflow once by hand (Actions, history, Run workflow). Its `history-report` artifact (`manifest.json`) lists seconds per group, `unavailable`, `empty`, the OpenFIGI mapped and failed counts, and insider rows per quarter. Check that no group is unavailable and that insider rows per quarter look sane: a wrong date format would show as near-zero rows.
-3. Then run `benchmark.yml` by hand. Read the per-variant seconds and the job's total. If the job passes 288 minutes (80% of 360), or the history job passes 144 (80% of 180), stop and decide what to drop, `catalysts` first.
+3. Then run `benchmark.yml` by hand. Read the per-variant seconds in its `benchmark-report.json` (each market's `variants` → row → `seconds`) and the job's total, which is the Actions run's duration. If the job passes 288 minutes (80% of 360), or the history job passes 144 (80% of 180), stop and decide what to drop, `catalysts` first.
 4. Read the "Did the new data help?" table at the top of each market in the benchmark report.

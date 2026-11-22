@@ -11,6 +11,7 @@ import {
   seedPrediction,
   seedRun,
   seedSources,
+  seedVerdict,
   sql,
   weekdays,
 } from './db'
@@ -45,10 +46,22 @@ test("a held stock's page shows its price, the position, the last two days of ne
   await page.locator('#holdings').getByRole('link', { name: 'RY.TO' }).click()
   await expect(page).toHaveURL(/\/ticker\/RY\.TO$/)
   await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
-  await expect(page.getByText('Royal Bank of Canada · TSX', { exact: true })).toBeVisible() // the exchange only when it differs
+  await expect(page.getByText('Royal Bank of Canada', { exact: true })).toBeVisible()
+  await expect(page.getByText('TSX · CAD', { exact: true })).toBeVisible() // the exchange and the currency
   const days = weekdays(daysAgo(60))
-  await expect(page.locator('#last-price')).toHaveText(`C$${(170 + 0.25 * (days.length - 1)).toFixed(2)}`)
-  await expect(page.getByText('You hold 10 · TFSA')).toBeVisible()
+  const last = 170 + 0.25 * (days.length - 1)
+  await expect(page.locator('#last-price')).toHaveText(`C$${last.toFixed(2)}`)
+  await expect(page.locator('#last-price')).toHaveAttribute('data-price', 'up')
+  // Your position: the shares and account, then value, average cost and P/L in CAD at the last close
+  const position = page.getByRole('region', { name: 'Your position' }).getByTestId('position')
+  await expect(position).toHaveCount(1)
+  await expect(position).toContainText('You own 10TFSA')
+  const gain = last * 10 - 1700
+  await expect(position.locator('.stat')).toHaveText([
+    `ValueC$${Math.round(last * 10).toLocaleString('en-CA')}`,
+    'Avg costC$170.00',
+    `P/L+C$${Math.round(gain).toLocaleString('en-CA')}+${((gain / 1700) * 100).toFixed(1)}%`,
+  ])
   await expect(page.getByRole('img', { name: 'RY.TO closes over 6M' })).toBeVisible()
   await page.getByRole('tab', { name: '1D' }).click()
   await expect(page.getByRole('img', { name: 'RY.TO closes over 1D' })).toBeVisible()
@@ -64,8 +77,11 @@ test("a held stock's page shows its price, the position, the last two days of ne
   await expect(news.getByText('RBC names a new CFO')).toBeVisible()
   await expect(news.getByRole('link', { name: 'RBC names a new CFO' })).toHaveCount(0) // a script link is shown as text
 
-  const sources = page.getByRole('region', { name: 'Sources' })
+  // the Sources button opens the list under the Watch / Alerts / Sources row
+  const sources = page.locator('#sources')
   await expect(sources.getByText(/^1 of the 2 sources that cover TSX stocks answered/)).toBeVisible()
+  await expect(sources.getByText('Not available for TSX stocks: sec_8k, sec_form4.')).toBeHidden()
+  await page.getByRole('button', { name: 'Sources' }).click()
   await expect(sources.locator('#ticker-sources > span')).toHaveText(['google_newsstale', 'yfinance_bars'])
   await expect(sources.getByText('Not available for TSX stocks: sec_8k, sec_form4.')).toBeVisible()
 })
@@ -112,19 +128,30 @@ async function seedForecast() {
   return runId
 }
 
-test('a forecast stock shows its cone, odds, factors and catalysts', async ({ page }) => {
+test('a forecast stock shows its cone, outlook, factors and catalysts', async ({ page }) => {
   await seedForecast()
   await page.goto('/ticker/RY.TO')
   await expect(page.getByRole('heading', { name: 'Price and forecast' })).toBeVisible()
-  const horizons = page.getByRole('tablist', { name: 'Forecast horizon in trading days' })
+  const outlook = page.getByRole('region', { name: 'Outlook' })
+  const horizons = outlook.getByRole('tablist', { name: 'Forecast horizon in trading days' })
   await expect(horizons.getByRole('tab')).toHaveText(['21d', '63d'])
-  await expect(horizons.getByRole('tab', { name: '63d' })).toHaveAttribute('aria-selected', 'true')
+  // no verdict: the horizon closest to 21 days, as on the Watchlist
+  await expect(horizons.getByRole('tab', { name: '21d' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.locator('.forecast-cone')).toHaveCount(1)
+  await expect(page.locator('g[aria-label="Forecast: +21 trading days · if XIU.TO is flat"]')).toHaveCount(1)
+  await expect(outlook.getByTestId('edge')).toHaveText('No clear edge')
+  await expect(outlook.getByTestId('chance')).toHaveText('55%chance to beat the market over 21 trading days')
+  await expect(outlook).toContainText('A coin flip is 50%. Picks need 58%.')
+  await expect(outlook.getByRole('img', { name: 'Likely range relative to XIU.TO: q10 −3.1%, median +0.6%, q90 +4.1%' })).toBeVisible()
+  await expect(page.locator('.phone-outlook')).toBeHidden() // the one-line outlook is for phones
+  // the outlook and the chart's cone follow the horizon control
+  await horizons.getByRole('tab', { name: '63d' }).click()
+  await expect(outlook.getByTestId('chance')).toHaveText('61%chance to beat the market over 63 trading days')
+  await expect(outlook.getByRole('img', { name: 'Likely range relative to XIU.TO: q10 −7.5%, median +2.1%, q90 +10.8%' })).toBeVisible()
+  const last = 170 + 0.25 * (weekdays(daysAgo(60)).length - 1)
+  const at = (q: number) => `C$${(last * (1 + q)).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  await expect(outlook.locator('.scale > div')).toHaveText([`Low (q10)${at(-0.075)}−7.5%`, `Median${at(0.021)}+2.1%`, `High (q90)${at(0.108)}+10.8%`])
   await expect(page.locator('g[aria-label="Forecast: +63 trading days · if XIU.TO is flat"]')).toHaveCount(1)
-  const kpis = page.locator('#forecast-kpis')
-  await expect(kpis).toContainText('Beats XIU.TO61%over 63 trading days')
-  await expect(kpis).toContainText('Median+2.1%relative to XIU.TO')
-  await expect(kpis).toContainText('Likely range−7.5% to +10.8%')
 
   const factors = page.getByRole('region', { name: 'Top factors' })
   await expect(factors.locator('.factor')).toHaveText([
@@ -136,10 +163,35 @@ test('a forecast stock shows its cone, odds, factors and catalysts', async ({ pa
   await expect(factors).toContainText('Est. cost 0.3% round trip · spread')
   await expect(page.getByRole('region', { name: 'Catalysts' })).toContainText('Earnings Dec 3, inside the hold')
   await expect(page.getByText(/appear here once the model runs/)).toHaveCount(0)
-  // the cone and odds follow the horizon tab
+  // back to 21 days: the chance and the cone follow again
   await horizons.getByRole('tab', { name: '21d' }).click()
-  await expect(kpis).toContainText('Beats XIU.TO55%over 21 trading days')
+  await expect(outlook.getByTestId('chance')).toHaveText('55%chance to beat the market over 21 trading days')
   await expect(page.locator('g[aria-label="Forecast: +21 trading days · if XIU.TO is flat"]')).toHaveCount(1)
+})
+
+test("the outlook's headline is the run's verdict, at the horizon it was judged at", async ({ page }) => {
+  const runId = await seedForecast()
+  await seedVerdict(runId, {
+    symbol: 'RY.TO',
+    assetType: 'stock',
+    verdict: 'avoid',
+    reasons: ['P(beat XIU.TO) 0.38 over 63 trading days'],
+  })
+  await page.goto('/ticker/RY.TO')
+  const outlook = page.getByRole('region', { name: 'Outlook' })
+  await expect(outlook.getByTestId('edge')).toHaveText('Avoid')
+  await expect(outlook.getByRole('tab', { name: '63d' })).toHaveAttribute('aria-selected', 'true')
+  await expect(outlook.getByTestId('chance')).toHaveText('61%chance to beat the market over 63 trading days')
+  await expect(outlook.getByText('The verdict is for 63 trading days.')).toHaveCount(0)
+  await outlook.getByRole('tab', { name: '21d' }).click()
+  await expect(outlook.getByText('The verdict is for 63 trading days.')).toBeVisible()
+
+  // a stock the run picked, not watched, reads Buy at the pick's horizon
+  await sql`delete from watchlist_verdicts`
+  await seedPick(runId, ryPick(21))
+  await page.reload()
+  await expect(outlook.getByTestId('edge')).toHaveText('Buy')
+  await expect(outlook.getByRole('tab', { name: '21d' })).toHaveAttribute('aria-selected', 'true')
 })
 
 test('horizon tabs list only the usable horizons', async ({ page }) => {
@@ -149,9 +201,9 @@ test('horizon tabs list only the usable horizons', async ({ page }) => {
   await page.goto('/ticker/AAPL')
   const horizons = page.getByRole('tablist', { name: 'Forecast horizon in trading days' })
   await expect(horizons.getByRole('tab')).toHaveText(['5d', '126d'])
-  // no advice: the first usable horizon is selected, and there are no factors to explain
+  // no verdict: the horizon closest to 21 days is selected, and there are no factors to explain
   await expect(horizons.getByRole('tab', { name: '5d' })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.locator('#forecast-kpis')).toContainText('Beats SPY52%')
+  await expect(page.getByRole('region', { name: 'Outlook' }).getByTestId('chance')).toHaveText('52%chance to beat the market over 5 trading days')
   await expect(page.getByRole('region', { name: 'Top factors' })).toHaveCount(0)
 })
 
@@ -189,7 +241,7 @@ test("past picks list the stock's earlier picks", async ({ page }) => {
   await seedPick(earlier, ryPick(10))
   await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: hoursAgo(1) })
   await page.goto('/ticker/RY.TO')
-  await expect(page.getByText('No forecast this run. Its earlier picks are below.')).toBeVisible()
+  await expect(page.getByText('No forecast this run. Its earlier picks are under Past picks.')).toBeVisible()
   const rows = page.locator('#past-picks tbody tr')
   await expect(rows).toHaveCount(1)
   await expect(rows.locator('td')).toHaveText([/^[A-Z][a-z]{2} \d{1,2}$/, 'Swing', '10d', '61%', 'Oct 20', 'open'])
@@ -222,7 +274,10 @@ test("a coin's page is in CAD, and the coin can be watched and unwatched from it
   await expect(page.getByText('Crypto · priced in CAD')).toBeVisible()
   const [{ close }] = await sql`select close::float from daily_closes where symbol = 'ETH' order by day desc limit 1`
   await expect(page.locator('#last-price')).toHaveText(`C$${(close * 1.4).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
-  await expect(page.getByText('You hold 1 · Crypto')).toBeVisible()
+  const position = page.getByRole('region', { name: 'Your position' }).getByTestId('position')
+  await expect(position).toContainText('You own 1Crypto')
+  await expect(position.locator('.stat').nth(0)).toHaveText(`ValueC$${Math.round(close * 1.4).toLocaleString('en-CA')}`)
+  await expect(position.locator('.stat').nth(1)).toHaveText('Avg costC$4,200.00') // one of two sold at average cost
   await expect(page.getByText('A forecast for ETH appears here when you hold or watch it and a run has scored it.')).toBeVisible()
   await page.getByRole('tab', { name: '1D' }).click()
   await expect(page.getByRole('img', { name: 'ETH closes over 1D' })).toBeVisible()
@@ -244,17 +299,21 @@ test('a held coin shows its forecast against Bitcoin', async ({ page }) => {
   await seedPrediction(runId, 'ETH', 30, { q10: -0.2, q50: -0.06, q90: 0.08, p: 0.27 }, 'crypto')
   await page.goto('/ticker/ETH?asset=crypto')
   await expect(page.getByRole('heading', { name: 'Price and forecast' })).toBeVisible()
-  const horizons = page.getByRole('tablist', { name: 'Forecast horizon in days' })
+  const outlook = page.getByRole('region', { name: 'Outlook' })
+  const horizons = outlook.getByRole('tablist', { name: 'Forecast horizon in days' })
   await expect(horizons.getByRole('tab')).toHaveText(['14d', '30d'])
   await expect(horizons.getByRole('tab', { name: '14d' })).toHaveAttribute('aria-selected', 'true')
-  const kpis = page.locator('#forecast-kpis')
-  await expect(kpis).toContainText('Beats BTC36%over 14 days')
-  await expect(kpis).toContainText('Median−2.0%relative to BTC')
+  // a coin is weighed against Bitcoin, in calendar days, and picks never include coins
+  await expect(outlook.getByTestId('edge')).toHaveText('No clear edge')
+  await expect(outlook.getByTestId('chance')).toHaveText('36%chance to beat BTC over 14 days')
+  await expect(outlook.getByRole('img', { name: 'Likely range relative to BTC: q10 −9.0%, median −2.0%, q90 +4.0%' })).toBeVisible()
+  await expect(outlook).toContainText('A coin flip is 50%.')
+  await expect(outlook).not.toContainText('Picks need')
   await expect(page.locator('g[aria-label="Forecast: +14 days · if BTC is flat"]')).toHaveCount(1)
   await expect(page.getByText(/once the model runs/)).toHaveCount(0)
   await expect(page.getByRole('tablist', { name: 'Range' })).toBeVisible()
   await horizons.getByRole('tab', { name: '30d' }).click()
-  await expect(kpis).toContainText('Beats BTC27%over 30 days')
+  await expect(outlook.getByTestId('chance')).toHaveText('27%chance to beat BTC over 30 days')
 })
 
 test('any symbol has a page, with no data until a run collects it', async ({ page }) => {
@@ -269,14 +328,20 @@ test('any symbol has a page, with no data until a run collects it', async ({ pag
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/ticker\/SHOP\.TO$/)
   await expect(page.getByRole('heading', { name: 'SHOP.TO', level: 1 })).toBeVisible()
-  await expect(page.getByText('Not in the stock lists · TSX')).toBeVisible()
+  await expect(page.getByText('Not in the stock lists', { exact: true })).toBeVisible()
+  await expect(page.getByText('TSX · CAD', { exact: true })).toBeVisible()
   await expect(page.getByText(/^No prices yet/)).toBeVisible()
   await expect(page.getByText('No headlines in the last 48 hours.')).toBeVisible()
   await expect(page.getByText('No sources are listed yet; the next run lists them.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Watch', exact: true })).toHaveCount(0) // only listed stocks and coins
 
   await page.goto('/ticker/AAPL')
-  await expect(page.getByText('Apple Inc. · US · NYSE', { exact: true })).toBeVisible()
+  await expect(page.getByText('Apple Inc.', { exact: true })).toBeVisible()
+  await expect(page.getByText('NYSE · USD', { exact: true })).toBeVisible() // a US stock names its exchange
+  await expect(page.getByRole('region', { name: 'Your position' })).toContainText('You own 5TFSA')
+
+  await page.goto('/ticker/SHOP.TO')
+  await expect(page.getByRole('region', { name: 'Your position' })).toHaveCount(0) // only when held
 
   await page.goto('/ticker/not-valid')
   await expect(page.getByText('This page could not be found.')).toBeVisible()

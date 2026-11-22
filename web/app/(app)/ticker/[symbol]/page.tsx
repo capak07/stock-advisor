@@ -1,17 +1,19 @@
-import { LowRankChip } from '@/components/LowRankChip'
-import { ArrowLeft, Info } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ForecastCard, ForecastProvider } from '@/components/ticker/ForecastCard'
 import { NewsCard, type HeadlineView, type NewsKpi } from '@/components/ticker/NewsCard'
 import { AlertsCard } from '@/components/ticker/AlertsCard'
-import { ExitPlanWithAlert, planBenchmark } from '@/components/portfolio/ExitPlan'
+import { planBenchmark } from '@/components/portfolio/ExitPlan'
 import { EarningsCard } from '@/components/ticker/EarningsCard'
 import { FilingsCard } from '@/components/ticker/FilingsCard'
 import { InsidersCard } from '@/components/ticker/InsidersCard'
-import { PriceCard } from '@/components/ticker/PriceCard'
+import { OutlookCard, PhoneOutlook } from '@/components/ticker/OutlookCard'
+import { PositionCard } from '@/components/ticker/PositionCard'
+import { PriceChart } from '@/components/ticker/PriceCard'
 import { RememberVisit } from '@/components/ticker/RememberVisit'
+import { TickerActions } from '@/components/ticker/TickerActions'
 import { WatchToggle } from '@/components/ticker/WatchToggle'
 import { ownerClient } from '@/lib/auth'
 import { loadAlerts, loadHoldingData } from '@/lib/data/monitor'
@@ -20,9 +22,9 @@ import { loadSourceHealth } from '@/lib/data/sources'
 import { loadLowRanks } from '@/lib/data/low-rank'
 import { loadHeldAction, loadTicker, resolveAssetType } from '@/lib/data/ticker'
 import { shortDay, timeOrDate } from '@/lib/dates'
-import { fmtMoney, fmtPct, fmtPrice, fmtQty } from '@/lib/format'
+import { fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
+import { outlookFor } from '@/lib/outlook'
 import { assetCurrency } from '@/lib/portfolio/exit-plan'
-import { ACCOUNT_LABELS } from '@/lib/portfolio/types'
 import type { AssetType } from '@/lib/portfolio/types'
 import { runWhen } from '@/lib/runs'
 import { answered, covers, coverageName, type Coverage } from '@/lib/sources'
@@ -50,9 +52,10 @@ const signedScore = (value: number | null): NewsKpi['value'] => (value === null 
 const scoreTone = (value: number | null): NewsKpi['tone'] => (value === null || value === 0 ? '' : value > 0 ? 'gain' : 'loss')
 
 /**
- * Ticker detail (spec §9): the price history with the latest run's forecast cone, the owner's
- * position, the forecast's factors, catalysts and past picks, the last two days of news, and which
- * sources cover the asset.
+ * The stock page (spec §7.7, ticker_2.html). Desktop: on the left the header card (symbol, name, price, today's
+ * move, the price chart with the forecast range ahead), then the news, filings and the forecast's explanation;
+ * on the right the Outlook, Your position (only when held), Earnings, and Watch / Alerts / Sources. A phone
+ * stacks them header, Outlook, Your position, news, Earnings, actions; Alerts open in a sheet.
  */
 export default async function TickerPage({ params, searchParams }: Props) {
   const supabase = await ownerClient()
@@ -79,15 +82,16 @@ export default async function TickerPage({ params, searchParams }: Props) {
     loadAlerts(supabase, symbol, assetType),
     data.positions.length > 0 ? loadHeldAction(supabase, symbol, assetType) : [],
   ])
-  // an exit plan's "Alert me at" link prefills the alert form; each bad value is ignored
+  // an exit plan's "Alert me at" link prefills the alert form and opens its sheet; each bad value is ignored
   const prefill = alertPrefill(symbol, assetType, query)
-  const plans = held.filter((h) => h.exitPlan !== null)
-  const planCurrency = assetCurrency(assetType, symbol)
   const series = priceSeries(data.closes, assetType, data.fx)
   const move = lastMove(series)
-  // A TSX stock trades on the TSX; a US stock names its exchange (NYSE, Nasdaq…).
-  const exchange = data.exchange === data.market ? null : data.exchange
-  const about = coin ? ['Crypto', 'priced in CAD'] : [data.name ?? 'Not in the stock lists', data.market, exchange]
+  // A coin is crypto priced in CAD; a stock names its exchange (NYSE, Nasdaq, TSX) and its currency.
+  const name = coin ? null : (data.name ?? 'Not in the stock lists')
+  const place = coin ? 'Crypto · priced in CAD' : `${data.exchange ?? data.market} · ${assetCurrency(assetType, symbol)}`
+  // The Outlook opens at the horizon the verdict was judged at, else the one closest to 21 days (as on the Watchlist).
+  const verdict = data.verdict
+  const startAt = data.forecast ? (outlookFor(data.forecast.horizons, verdict?.horizon ?? null)?.horizon ?? null) : null
 
   const coverage: Coverage = { assetType, market: data.market }
   const covering = health.rows.filter((r) => covers(r, coverage))
@@ -117,99 +121,74 @@ export default async function TickerPage({ params, searchParams }: Props) {
     <main className="page">
       {/* First in the phone Search sheet's recent list from now on (spec §6). */}
       <RememberVisit symbol={symbol} />
-      <div className="enter">
-        <Link href="/portfolio" className="sub inline-flex items-center gap-1">
-          <ArrowLeft style={{ width: 14, height: 14 }} />
-          My Portfolio
-        </Link>
-        <div className="flex flex-wrap items-end justify-between gap-4" style={{ marginTop: 10 }}>
-          <div>
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h1 className="num ticker-symbol">{symbol}</h1>
-              <span className="sub">{about.filter(Boolean).join(' · ')}</span>
-            </div>
-            {move && (
-              <div className="flex flex-wrap items-baseline gap-3" style={{ marginTop: 8 }}>
-                <span className="price-big" id="last-price">
-                  {fmtPrice(move.price, series.currency)}
-                </span>
-                {move.change !== null && move.pct !== null && (
-                  <span className={`num ${move.change < 0 ? 'loss' : 'gain'}`}>
-                    {fmtMoney(move.change, { prefix: '', digits: 2, signed: true })} · {fmtPct(move.pct)}
-                  </span>
-                )}
-                <span className="sub">at the {shortDay(move.day)} close</span>
-              </div>
-            )}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {data.positions.map((p) => (
-              <span key={p.account} className="badge">
-                You hold {fmtQty(p.qty)} · {ACCOUNT_LABELS[p.account]}
-              </span>
-            ))}
-            {lowRank !== undefined && <LowRankChip scored={lowRank} />}
-            {/* Only listed stocks and coins can be watched; one watched before stays removable. */}
-            {(data.watchable || data.watched) && <WatchToggle symbol={symbol} assetType={assetType} watched={data.watched} />}
-          </div>
-        </div>
-      </div>
-
-      <ForecastProvider forecast={data.forecast}>
-        <PriceCard symbol={symbol} series={series} coin={coin} />
-
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]" style={{ alignItems: 'start' }}>
-          <div className="grid gap-4">
-            {data.forecast && data.market ? (
-              <ForecastCard usdFxFeePct={settings.usd_fx_fee_pct} market={data.market} />
-            ) : data.forecast ? null : (
-              <section className="card card-pad enter" aria-labelledby="forecast-h">
-                <h2 id="forecast-h" style={{ marginBottom: 10 }}>
-                  Forecast
-                </h2>
-                <div className="banner info">
-                  <Info />
-                  <div>
-                    {coin
-                      ? `A forecast for ${symbol} appears here when you hold or watch it and a run has scored it.`
-                      : `The forecast cone, its top factors, catalysts and past picks for ${symbol} appear here once the model runs.`}
+      <ForecastProvider forecast={data.forecast} initialHorizon={startAt}>
+        <div className="ticker-grid">
+          <div className="ticker-col t-left">
+            <section className="card hero card-pad enter t-head" aria-label={`${symbol} price and forecast`}>
+              <div className="t-top">
+                <div className="t-id">
+                  <Link href="/portfolio" className="t-back" aria-label="Back to My Portfolio">
+                    <ChevronLeft />
+                  </Link>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="t-name">
+                      <h1 className="num ticker-symbol">{symbol}</h1>
+                      {name && <span className="sub">{name}</span>}
+                    </div>
+                    <div className="label" style={{ marginTop: 7 }}>
+                      {place}
+                    </div>
                   </div>
                 </div>
-              </section>
-            )}
-            {plans.length > 0 && (
-              <section className="card card-pad enter" aria-labelledby="exit-plan-h" id="exit-plan">
-                <div className="section-head" style={{ marginBottom: 10 }}>
-                  <h2 id="exit-plan-h">Your exit plan</h2>
-                  <span className="sub">{planCurrency}</span>
-                </div>
-                <div className="grid gap-4">
-                  {plans.map((h) => (
-                    <div key={h.account}>
-                      {plans.length > 1 && <span className="label plan-card-account">{ACCOUNT_LABELS[h.account]}</span>}
-                      <ExitPlanWithAlert
-                        plan={h.exitPlan}
-                        action={h.action}
-                        symbol={symbol}
-                        assetType={assetType}
-                        currency={planCurrency}
-                        price={h.refPrice}
-                        benchmark={data.forecast?.benchmark ?? planBenchmark(assetType, symbol)}
-                      />
+                {move && (
+                  <div className="t-quote">
+                    <div className="price-big" id="last-price" data-price={move.change !== null && move.change < 0 ? 'down' : 'up'}>
+                      {fmtPrice(move.price, series.currency)}
                     </div>
-                  ))}
-                </div>
-              </section>
-            )}
-            <AlertsCard
-              key={`${prefill.level}|${prefill.direction}|${prefill.note}`}
-              symbol={symbol}
-              assetType={assetType}
-              alerts={alerts}
-              initialLevel={prefill.level}
-              initialDirection={prefill.direction}
-              initialNote={prefill.note}
+                    {move.change !== null && move.pct !== null && (
+                      <span className={`num t-move ${move.change < 0 ? 'loss' : 'gain'}`}>
+                        {fmtMoney(move.change, { prefix: '', digits: 2, signed: true })} · {fmtPct(move.pct)}
+                      </span>
+                    )}
+                    <span className="sub t-when">at the {shortDay(move.day)} close</span>
+                  </div>
+                )}
+              </div>
+              <PhoneOutlook verdict={verdict?.verdict ?? null} coin={coin} />
+              <PriceChart symbol={symbol} series={series} coin={coin} />
+            </section>
+            <NewsCard headlines={headlines} kpis={kpis} source={data.news ? runWhen(data.news.run) : null} />
+            {holding && us && <FilingsCard filings={holding.filings} />}
+            {holding && us && <InsidersCard trades={holding.insiders} />}
+            {data.forecast && data.market && <ForecastCard usdFxFeePct={settings.usd_fx_fee_pct} market={data.market} />}
+          </div>
+
+          <div className="ticker-col t-right">
+            <OutlookCard
+              verdict={verdict?.verdict ?? null}
+              judgedAt={verdict?.horizon ?? null}
+              price={move?.price ?? null}
+              currency={series.currency}
+              coin={coin}
+              lowRank={lowRank}
+              emptyText={
+                coin
+                  ? `A forecast for ${symbol} appears here when you hold or watch it and a run has scored it.`
+                  : `The forecast cone, its top factors, catalysts and past picks for ${symbol} appear here once the model runs.`
+              }
             />
+            {data.positions.length > 0 && (
+              <PositionCard
+                symbol={symbol}
+                assetType={assetType}
+                positions={data.positions}
+                held={held}
+                price={move?.price ?? null}
+                currency={series.currency}
+                usdCad={data.fx.latest()?.usdCad ?? null}
+                benchmark={data.forecast?.benchmark ?? planBenchmark(assetType, symbol)}
+              />
+            )}
             {holding && (
               <EarningsCard
                 quarters={holding.quarters}
@@ -219,19 +198,28 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 now={new Date().toISOString()}
               />
             )}
-            {holding && us && <FilingsCard filings={holding.filings} />}
-            {holding && us && <InsidersCard trades={holding.insiders} />}
-            <section className="card card-pad enter" aria-labelledby="sources-h">
-              <div className="section-head" style={{ marginBottom: 10 }}>
-                <h2 id="sources-h">Sources</h2>
-                <span className="sub">
-                  {covering.length === 0
-                    ? 'No sources are listed yet; the next run lists them.'
-                    : health.run
-                      ? `${answeredCount} of the ${covering.length} sources that cover ${coverageName(coverage)} answered in the ${runWhen(health.run)} run`
-                      : 'No run has finished yet'}
-                </span>
-              </div>
+            <TickerActions
+              // Only listed stocks and coins can be watched; one watched before stays removable.
+              watch={(data.watchable || data.watched) && <WatchToggle symbol={symbol} assetType={assetType} watched={data.watched} />}
+              alerts={
+                <AlertsCard
+                  key={`${prefill.level}|${prefill.direction}|${prefill.note}`}
+                  symbol={symbol}
+                  assetType={assetType}
+                  alerts={alerts}
+                  initialLevel={prefill.level}
+                  initialDirection={prefill.direction}
+                  initialNote={prefill.note}
+                />
+              }
+              summary={
+                covering.length === 0
+                  ? 'No sources are listed yet; the next run lists them.'
+                  : health.run
+                    ? `${answeredCount} of the ${covering.length} sources that cover ${coverageName(coverage)} answered in the ${runWhen(health.run)} run`
+                    : 'No run has finished yet'
+              }
+            >
               <div className="source-grid" id="ticker-sources">
                 {covering.map((r) => (
                   <span key={r.name}>
@@ -249,12 +237,12 @@ export default async function TickerPage({ params, searchParams }: Props) {
               <p className="sub" style={{ margin: '10px 0 0' }}>
                 <Link className="text-link" href="/sources">
                   Source health
-                </Link> has every source&apos;s errors and daily checks.
+                </Link>{' '}
+                has every source&apos;s errors and daily checks.
               </p>
-            </section>
+            </TickerActions>
           </div>
-          <NewsCard headlines={headlines} kpis={kpis} source={data.news ? runWhen(data.news.run) : null} />
-        </section>
+        </div>
       </ForecastProvider>
     </main>
   )

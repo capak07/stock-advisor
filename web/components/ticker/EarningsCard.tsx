@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react'
 import { changes, margins, ttm, yearAgo, type Quarter } from '@/lib/earnings'
 import type { EarningsReport } from '@/lib/data/monitor'
 import { longDay, shortDay, todayInToronto } from '@/lib/dates'
@@ -27,8 +28,42 @@ const COLUMNS: Column[] = [
   { label: 'Diluted EPS', of: (q) => eps(q.epsDiluted) },
 ]
 
-/** The last six quarters beside the same quarter a year earlier, the trailing twelve months, what
- * changed, and the earnings dates (the quarters table is US only: `quarters` is empty for a TSX stock). */
+/** The latest quarter's revenue, operating margin and EPS beside a year earlier (ticker_2.html). */
+function LatestQuarter({ q, before }: { q: Quarter; before: Quarter | null }) {
+  const growth = before && q.revenue !== null && before.revenue ? q.revenue / before.revenue - 1 : null
+  const was = (text: string) => <span className="num sub">{before ? `${text} before` : 'no year-ago quarter'}</span>
+  return (
+    <>
+      <p className="sub" style={{ margin: '0 0 10px' }}>
+        Last quarter ({shortDay(q.periodEnd)}), each against a year ago:
+      </p>
+      <div className="stats earn-stats">
+        <div className="stat">
+          <span className="label">Revenue</span>
+          <b className="num">{compact(q.revenue)}</b>
+          {growth === null ? (
+            was(before ? compact(before.revenue) : '')
+          ) : (
+            <span className={`num ${growth < 0 ? 'loss' : 'gain'}`}>{fmtPct(growth * 100)}</span>
+          )}
+        </div>
+        <div className="stat">
+          <span className="label">Op. margin</span>
+          <b className="num">{pct(margins(q).operating)}</b>
+          {was(before ? pct(margins(before).operating) : '')}
+        </div>
+        <div className="stat">
+          <span className="label">EPS</span>
+          <b className="num">{eps(q.epsDiluted)}</b>
+          {was(before ? eps(before.epsDiluted) : '')}
+        </div>
+      </div>
+    </>
+  )
+}
+
+/** The latest quarter beside a year earlier, the trailing twelve months, what changed, the last six quarters
+ * (folded), and the earnings dates (the quarters are US only: `quarters` is empty for a TSX stock). */
 export function EarningsCard({
   quarters,
   derived,
@@ -48,10 +83,10 @@ export function EarningsCard({
   const next = earnings.find((e) => e.reportAt >= now)
   const past = earnings.filter((e) => e.reportAt < now).slice(0, 4)
   return (
-    <section className="card card-pad enter" aria-labelledby="earnings-h" id="earnings">
+    <section className="card card-pad enter t-earnings" aria-labelledby="earnings-h" id="earnings">
       <div className="section-head" style={{ marginBottom: 4 }}>
         <h2 id="earnings-h">Earnings</h2>
-        {shown.length > 0 && <span className="sub">each beside the same quarter a year earlier</span>}
+        {next && <span className="label">next {shortDay(next.reportDate)}</span>}
       </div>
 
       {next ? (
@@ -65,58 +100,13 @@ export function EarningsCard({
         </p>
       )}
 
-      {shown.length > 0 && (
-        <div className="table-scroll">
-          <table className="data-table" id="quarters">
-            <thead>
-              <tr>
-                <th>Quarter ended</th>
-                {COLUMNS.map((c) => (
-                  <th key={c.label} className="r">
-                    {c.label}
-                    <span className="sub"> · year ago</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((q) => {
-                const before = yearAgo(q, quarters)
-                return (
-                  <tr key={q.periodEnd} data-testid="quarter-row">
-                    <td className="num">
-                      {q.fiscalPeriod ? `${q.fiscalPeriod} · ` : ''}
-                      {shortDay(q.periodEnd)}
-                      {derived.includes(q.periodEnd) && <span className="sub"> derived</span>}
-                    </td>
-                    {COLUMNS.map((c) => (
-                      <td key={c.label} className="r num">
-                        {c.of(q)}
-                        <span className="sub" data-testid="year-ago">
-                          {' · '}
-                          {before ? c.of(before) : '—'}
-                        </span>
-                      </td>
-                    ))}
-                  </tr>
-                )
-              })}
-              {trailing && (
-                <tr data-testid="ttm-row">
-                  <td className="num">
-                    <b>Trailing 12 months</b>
-                  </td>
-                  <td className="r num">{compact(trailing.revenue)}</td>
-                  <td className="r num">{pct(share(trailing.grossProfit, trailing.revenue))}</td>
-                  <td className="r num">{pct(share(trailing.operatingIncome, trailing.revenue))}</td>
-                  <td className="r num">{pct(share(trailing.netIncome, trailing.revenue))}</td>
-                  <td className="r num">{compact(trailing.netIncome)}</td>
-                  <td className="r num">{eps(trailing.epsDiluted)}</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      {shown.length > 0 && <LatestQuarter q={shown[0]} before={yearAgo(shown[0], quarters)} />}
+      {trailing && (
+        <p className="sub" style={{ margin: '10px 0 0' }} data-testid="ttm-line">
+          Trailing 12 months: revenue <span className="num">{compact(trailing.revenue)}</span> · operating margin{' '}
+          <span className="num">{pct(share(trailing.operatingIncome, trailing.revenue))}</span> · EPS{' '}
+          <span className="num">{eps(trailing.epsDiluted)}</span>.
+        </p>
       )}
       {sentences.length > 0 && (
         <ul style={{ margin: '10px 0 0', paddingLeft: 18 }} data-testid="changes">
@@ -157,10 +147,71 @@ export function EarningsCard({
           </table>
         </div>
       )}
-      {shown.some((q) => derived.includes(q.periodEnd)) && (
-        <p className="sub" style={{ margin: '8px 0 0' }}>
-          Derived: a fourth quarter worked out as the full year minus the first nine months.
-        </p>
+      {shown.length > 0 && (
+        <details className="order-guide og-fold earn-fold">
+          <summary>
+            <span>Last {shown.length} quarters, each beside the same quarter a year earlier</span>
+            <ChevronDown aria-hidden="true" />
+          </summary>
+          <div className="og-body">
+            <div className="table-scroll">
+              <table className="data-table" id="quarters">
+                <thead>
+                  <tr>
+                    <th>Quarter ended</th>
+                    {COLUMNS.map((c) => (
+                      <th key={c.label} className="r">
+                        {c.label}
+                        <span className="sub"> · year ago</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((q) => {
+                    const before = yearAgo(q, quarters)
+                    return (
+                      <tr key={q.periodEnd} data-testid="quarter-row">
+                        <td className="num">
+                          {q.fiscalPeriod ? `${q.fiscalPeriod} · ` : ''}
+                          {shortDay(q.periodEnd)}
+                          {derived.includes(q.periodEnd) && <span className="sub"> derived</span>}
+                        </td>
+                        {COLUMNS.map((c) => (
+                          <td key={c.label} className="r num">
+                            {c.of(q)}
+                            <span className="sub" data-testid="year-ago">
+                              {' · '}
+                              {before ? c.of(before) : '—'}
+                            </span>
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                  {trailing && (
+                    <tr data-testid="ttm-row">
+                      <td className="num">
+                        <b>Trailing 12 months</b>
+                      </td>
+                      <td className="r num">{compact(trailing.revenue)}</td>
+                      <td className="r num">{pct(share(trailing.grossProfit, trailing.revenue))}</td>
+                      <td className="r num">{pct(share(trailing.operatingIncome, trailing.revenue))}</td>
+                      <td className="r num">{pct(share(trailing.netIncome, trailing.revenue))}</td>
+                      <td className="r num">{compact(trailing.netIncome)}</td>
+                      <td className="r num">{eps(trailing.epsDiluted)}</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {shown.some((q) => derived.includes(q.periodEnd)) && (
+              <p className="sub" style={{ margin: 0 }}>
+                Derived: a fourth quarter worked out as the full year minus the first nine months.
+              </p>
+            )}
+          </div>
+        </details>
       )}
     </section>
   )

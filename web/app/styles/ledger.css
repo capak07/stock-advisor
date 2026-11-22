@@ -258,7 +258,6 @@ a.row:hover .sym { text-decoration: underline; text-underline-offset: 3px; }
 .seg button[aria-pressed="true"] { background: var(--glass-bg-strong); color: var(--foreground); box-shadow: var(--glass-highlight), var(--shadow-xs); }
 .tabs { position: relative; display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--muted); border: 1px solid var(--border); }
 .tabs.compact .tab { padding: 7px 10px; }
-.chart-ranges { margin: 2px 0 12px; }
 .tab { position: relative; z-index: 1; font: 500 13px/1 var(--font-sans) !important; padding: 7px 14px; border: 0; background: none; border-radius: 999px; color: var(--muted-foreground); cursor: pointer; transition: color 150ms; }
 .tab[aria-selected="true"] { color: var(--foreground); }
 .tab-indicator { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 0; border-radius: 999px; background: var(--glass-bg-strong); box-shadow: var(--glass-highlight), var(--shadow-xs); transition: transform 200ms ease-out, width 200ms ease-out; }

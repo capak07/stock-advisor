@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays } from './dates'
 import { FxRates } from './portfolio/lookup'
 import type { Close } from './portfolio/types'
-import { alertHref, alertPrefill, fmtScore, headlineSince, inRange, lastMove, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
+import { alertHref, alertPrefill, fmtScore, headlineSince, inRange, lastMove, positionFigures, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
 
 const FX = new FxRates([
   { day: '2026-10-01', usdCad: 1.4 },
@@ -130,5 +130,24 @@ describe('headlineSince', () => {
 
   it('starts 48 hours before now when there is no run yet', () => {
     expect(headlineSince(null, now)).toBe('2026-10-30T22:00:00.000Z')
+  })
+})
+
+describe('positionFigures', () => {
+  it('values a CAD position at the last close, with average cost and P/L', () => {
+    expect(positionFigures(10, 1700, 185, 'CAD', null)).toEqual({ valueCad: 1850, avgCostCad: 170, gainCad: 150, gainPct: (150 / 1700) * 100 })
+  })
+
+  it('turns a USD price into CAD at the latest rate', () => {
+    const f = positionFigures(5, 2000, 300, 'USD', 1.4)
+    expect(f.valueCad).toBeCloseTo(2100)
+    expect(f.gainCad).toBeCloseTo(100)
+    expect(f.avgCostCad).toBe(400)
+  })
+
+  it('has no value or P/L without a price or, for USD, a rate', () => {
+    expect(positionFigures(5, 2000, null, 'CAD', 1.4)).toEqual({ valueCad: null, avgCostCad: 400, gainCad: null, gainPct: null })
+    expect(positionFigures(5, 2000, 300, 'USD', null).valueCad).toBeNull()
+    expect(positionFigures(0, 0, 300, 'CAD', null)).toEqual({ valueCad: 0, avgCostCad: null, gainCad: 0, gainPct: null })
   })
 })

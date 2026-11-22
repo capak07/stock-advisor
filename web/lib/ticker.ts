@@ -74,6 +74,39 @@ export function lastMove(series: PriceSeries): LastMove | null {
   }
 }
 
+/** A held position's figures in CAD at the last close, as My Portfolio values it. */
+export interface PositionFigures {
+  /** Null without a CAD price (a US stock before the first exchange rate). */
+  valueCad: number | null
+  /** Average cost (adjusted cost base) per unit; null for a zero quantity. */
+  avgCostCad: number | null
+  gainCad: number | null
+  /** Percent of cost; null without a value or a cost. */
+  gainPct: number | null
+}
+
+/**
+ * Value, average cost and P/L of `qty` units that cost `costCad` in all, at `price` in `currency`
+ * (`usdCad` turns a USD price into CAD; a coin's series is already in CAD).
+ */
+export function positionFigures(
+  qty: number,
+  costCad: number,
+  price: number | null,
+  currency: Currency,
+  usdCad: number | null,
+): PositionFigures {
+  const priceCad = price === null ? null : currency === 'CAD' ? price : usdCad === null ? null : price * usdCad
+  const valueCad = priceCad === null ? null : qty * priceCad
+  const gainCad = valueCad === null ? null : valueCad - costCad
+  return {
+    valueCad,
+    avgCostCad: qty > 0 ? costCad / qty : null,
+    gainCad,
+    gainPct: gainCad === null || costCad <= 0 ? null : (gainCad / costCad) * 100,
+  }
+}
+
 /** The Ticker page of an asset: a coin says so, since a coin and a stock can share a symbol. */
 export const tickerHref = (symbol: string, assetType: AssetType): string =>
   `/ticker/${encodeURIComponent(symbol)}${assetType === 'crypto' ? '?asset=crypto' : ''}`

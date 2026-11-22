@@ -6,7 +6,7 @@ import { addWatch, removeWatch } from '@/app/(app)/watchlist/actions'
 import { useToast } from '@/components/Toast'
 import type { AssetType } from '@/lib/portfolio/types'
 
-/** Watch or stop watching the asset on its own page, through the watchlist's actions. */
+/** Watch or stop watching the asset on its own page (its actions row), through the watchlist's actions. */
 export function WatchToggle({ symbol, assetType, watched }: { symbol: string; assetType: AssetType; watched: boolean }) {
   const toast = useToast()
   const [pending, startTransition] = useTransition()
@@ -26,7 +26,7 @@ export function WatchToggle({ symbol, assetType, watched }: { symbol: string; as
   return (
     <button
       type="button"
-      className={`btn btn-sm ${watched ? 'btn-secondary' : 'btn-primary'}`}
+      className="btn btn-secondary"
       aria-pressed={watched}
       disabled={pending}
       onClick={toggle}

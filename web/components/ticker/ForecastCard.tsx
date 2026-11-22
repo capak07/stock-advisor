@@ -3,7 +3,6 @@
 import { Calendar, FileText } from 'lucide-react'
 import { createContext, useContext, useMemo, useState } from 'react'
 import type { Cone } from '@/components/LineChart'
-import { Tabs } from '@/components/Tabs'
 import { catalystText, costText, describeFactor, factorBars } from '@/lib/advice'
 import type { ForecastHorizon, PastPick, TickerForecast } from '@/lib/data/ticker'
 import { shortDay } from '@/lib/dates'
@@ -21,12 +20,22 @@ interface Selected {
 
 const ForecastContext = createContext<Selected | null>(null)
 
-/** The forecast's selected horizon, shared by the price chart's cone and its odds. */
-export function ForecastProvider({ forecast, children }: { forecast: TickerForecast | null; children: React.ReactNode }) {
+/**
+ * The forecast's selected horizon, shared by the price chart's cone and the Outlook card. It starts at
+ * `initialHorizon` (the verdict's, else the one closest to 21 days, as on the Watchlist) when the run forecast it.
+ */
+export function ForecastProvider({
+  forecast,
+  initialHorizon = null,
+  children,
+}: {
+  forecast: TickerForecast | null
+  initialHorizon?: number | null
+  children: React.ReactNode
+}) {
   const horizons = forecast?.horizons ?? []
-  const preferred = forecast?.advice?.horizon
   const [horizon, setHorizon] = useState<number | null>(
-    horizons.find((h) => h.horizon === preferred)?.horizon ?? horizons[0]?.horizon ?? null,
+    horizons.find((h) => h.horizon === initialHorizon)?.horizon ?? horizons[0]?.horizon ?? null,
   )
   const row = horizons.find((h) => h.horizon === horizon) ?? null
   const benchmark = forecast?.benchmark
@@ -44,46 +53,6 @@ export function ForecastProvider({ forecast, children }: { forecast: TickerForec
 }
 
 export const useForecast = () => useContext(ForecastContext)
-
-/** The horizon tabs: only the horizons this run forecast. */
-export function HorizonTabs() {
-  const f = useForecast()
-  if (!f || !f.row) return null
-  const items = f.forecast.horizons.map((h) => ({ value: String(h.horizon), label: `${h.horizon}d` }))
-  return (
-    <Tabs items={items} value={String(f.row.horizon)} onChange={(v) => f.setHorizon(Number(v))} label={`Forecast horizon in ${f.forecast.span}`} />
-  )
-}
-
-/** Under the chart: the odds of beating the benchmark, the median and the likely range at the selected horizon. */
-export function ForecastKpis() {
-  const f = useForecast()
-  if (!f || !f.row) return null
-  const { row } = f
-  const bench = f.forecast.benchmark
-  return (
-    <div className="kpis" id="forecast-kpis" style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-      <div className="kpi">
-        <span className="label">Beats {bench}</span>
-        <b>{Math.round(row.pBeat * 100)}%</b>
-        <span className="sub">over {row.horizon} {f.forecast.span}</span>
-        {f.forecast.advice?.basis && <span className="sub">{f.forecast.advice.basis}</span>}
-      </div>
-      <div className="kpi">
-        <span className="label">Median</span>
-        <b className={row.q50 < 0 ? 'loss' : 'gain'}>{pct(row.q50)}</b>
-        <span className="sub">relative to {bench}</span>
-      </div>
-      <div className="kpi">
-        <span className="label">Likely range</span>
-        <b>
-          {pct(row.q10)} to {pct(row.q90)}
-        </b>
-        <span className="sub">q10 to q90, relative to {bench}</span>
-      </div>
-    </div>
-  )
-}
 
 function Result({ pick, benchmark }: { pick: PastPick; benchmark: string }) {
   const o = pick.outcome
@@ -110,8 +79,9 @@ function Result({ pick, benchmark }: { pick: PastPick; benchmark: string }) {
 }
 
 /**
- * The forecast's explanation (spec §9, ticker_1.html): top factors and catalysts at the stock's
- * representative horizon, and its earlier picks. A stock the latest run didn't forecast keeps its past picks.
+ * The forecast's explanation (spec §9): top factors and catalysts at the stock's representative horizon,
+ * and its earlier picks. A stock the latest run didn't forecast keeps its past picks. The chance and the
+ * likely range are the Outlook card's.
  */
 export function ForecastCard({ usdFxFeePct, market }: { usdFxFeePct: number; market: 'US' | 'TSX' }) {
   const f = useForecast()
@@ -124,16 +94,6 @@ export function ForecastCard({ usdFxFeePct, market }: { usdFxFeePct: number; mar
   const beat = graded.filter((p) => p.outcome!.beat).length
   return (
     <>
-      {forecast.horizons.length === 0 && (
-        <section className="card card-pad enter" aria-labelledby="forecast-h">
-          <h2 id="forecast-h" style={{ marginBottom: 6 }}>
-            Forecast
-          </h2>
-          <p className="sub" style={{ margin: 0 }}>
-            No forecast this run. Its earlier picks are below.
-          </p>
-        </section>
-      )}
       {advice && advice.topFactors.length > 0 && (
         <section className="card card-pad enter" aria-labelledby="factors-h">
           <div className="section-head" style={{ marginBottom: 4 }}>

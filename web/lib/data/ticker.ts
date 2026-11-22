@@ -10,6 +10,7 @@ import { isValidSymbol, marketOf } from '../symbols'
 import type { Supabase } from '../supabase/server'
 import { withLiveClose } from '../quotes'
 import { headlineSince } from '../ticker'
+import { verdictHorizon, type Verdict } from '../verdicts'
 import { fetchAll, must } from './fetch'
 import { liveQuotes } from './quotes'
 import type { Catalyst, Factor, Style } from './picks'
@@ -72,6 +73,13 @@ export interface TickerForecast {
   pastPicks: PastPick[]
 }
 
+/** The latest published run's call on this asset, the stock page's Outlook headline (spec §7.7). */
+export interface OutlookVerdict {
+  verdict: Verdict
+  /** The horizon it was judged at (`verdictHorizon`); null when it names none. */
+  horizon: number | null
+}
+
 export interface TickerData {
   name: string | null
   /** Null for a coin. */
@@ -88,6 +96,8 @@ export interface TickerData {
   positions: Position[]
   /** Null when this asset has neither a forecast nor, for a stock, past picks. */
   forecast: TickerForecast | null
+  /** From the run the forecast comes from; null when that run gave none. */
+  verdict: OutlookVerdict | null
 }
 
 /**
@@ -152,7 +162,10 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
       ) as { features: Record<string, unknown> }[])
     : []
   const f = features[0]?.features
-  const forecast = await loadForecast(supabase, ref.symbol, ref.assetType, run, f)
+  const [forecast, verdict] = await Promise.all([
+    loadForecast(supabase, ref.symbol, ref.assetType, run, f),
+    run ? loadVerdict(supabase, ref, run.id) : null,
+  ])
   const stories = toNumber(f?.news_stories_48h)
   const listed = (must(info) as { name: string; market: Market | null; exchange: string; active: boolean }[])[0]
   // A coin's row only says it's in the coin list; its name and exchange aren't shown.
@@ -201,7 +214,31 @@ export async function loadTicker(supabase: Supabase, ref: AssetRef): Promise<Tic
     watchable: listed?.active === true,
     positions: buildLedger(trades, fx).positions,
     forecast,
+    verdict,
   }
+}
+
+/**
+ * A run's call on one asset: its watchlist verdict (a watched symbol), else, for a stock that run
+ * picked, a Buy at the pick's horizon, so the Outlook never calls a pick "No clear edge". Null otherwise.
+ */
+async function loadVerdict(supabase: Supabase, ref: AssetRef, runId: number): Promise<OutlookVerdict | null> {
+  const [said, picked] = await Promise.all([
+    supabase
+      .from('watchlist_verdicts')
+      .select('verdict, reasons, details')
+      .eq('run_id', runId)
+      .eq('asset_type', ref.assetType)
+      .eq('symbol', ref.symbol)
+      .limit(1),
+    ref.assetType === 'stock'
+      ? supabase.from('picks').select('horizon_days').eq('run_id', runId).eq('asset_type', 'stock').eq('symbol', ref.symbol).limit(1)
+      : null,
+  ])
+  const v = (must(said) as { verdict: Verdict; reasons: string[] | null; details: Record<string, unknown> | null }[])[0]
+  if (v) return { verdict: v.verdict, horizon: verdictHorizon({ reasons: v.reasons ?? [], details: v.details ?? {} }) }
+  const pick = picked ? (must(picked) as { horizon_days: number }[])[0] : undefined
+  return pick ? { verdict: 'buy', horizon: pick.horizon_days } : null
 }
 
 /** One account's exit plan for a held asset, from the newest published run's actions. */

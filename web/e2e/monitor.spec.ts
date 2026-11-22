@@ -80,6 +80,11 @@ test('a US stock page shows the Earnings table with year-ago values, Filings and
 
   await page.goto('/ticker/AAPL')
   const earnings = page.getByRole('region', { name: 'Earnings' })
+  // the latest quarter beside a year earlier and the trailing twelve months show; the six quarters fold under them
+  await expect(earnings.locator('.earn-stats .stat')).toHaveText(['Revenue$100.00B+4.2%', 'Op. margin30.0%31.3% before', 'EPS$1.50$1.46 before'])
+  await expect(earnings.getByTestId('ttm-line')).toBeVisible()
+  await expect(earnings.getByTestId('quarter-row').first()).toBeHidden()
+  await earnings.getByText('Last 6 quarters, each beside the same quarter a year earlier').click()
   await expect(earnings.getByTestId('quarter-row')).toHaveCount(6)
   await expect(earnings.getByRole('columnheader', { name: /Revenue/ })).toContainText('year ago')
   await expect(earnings.getByTestId('year-ago').first()).toBeVisible()

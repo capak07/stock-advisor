@@ -225,8 +225,6 @@
 .factor .bar span { position: absolute; top: 0; height: 100%; border-radius: 3px; transform-origin: left; animation: band-grow 300ms ease-out both; }
 .factor .bar::after { content: ""; position: absolute; left: 50%; top: -3px; width: 1px; height: 12px; background: var(--muted-foreground); opacity: 0.6; }
 @media (max-width: 639px) { .factor { grid-template-columns: minmax(0, 1fr) 80px; } }
-.ticker-symbol { font-size: 26px !important; } /* inline in the mockup, which React can't mark !important */
-.price-big { font: 600 30px/1 var(--font-mono) !important; letter-spacing: -0.02em; }
 .news-item { display: grid; grid-template-columns: 52px 1fr; gap: 3px 12px; padding: 11px 0; border-bottom: 1px solid var(--border); }
 .news-item:last-child { border-bottom: 0; }
 .news-item a { overflow-wrap: anywhere; }
@@ -456,3 +454,91 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
   #holdings td.h-shares { display: none; }
   .holdings-scroll { overflow: visible; margin: 0; padding: 0; }
 }
+
+/* ---------- ticker_2.html (the stock page) ---------- */
+/* A phone shows one column in the spec's order (the two columns dissolve into it); from 1024 px, two columns. */
+.ticker-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.ticker-col { display: contents; }
+.t-left > * { order: 4; }
+.t-left > .t-head { order: 1; }
+.t-right > .t-outlook { order: 2; }
+.t-right > .t-position { order: 3; }
+.t-right > .t-earnings { order: 5; }
+.t-right > .t-actions { order: 6; }
+@media (min-width: 1024px) {
+  .ticker-grid { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 18px; }
+  .ticker-col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
+}
+
+/* The header card: symbol, name and exchange left, the price and today's move right, then the chart. */
+.t-head { padding: 20px !important; }
+.t-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.t-id { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.t-back { width: 36px; height: 36px; margin: -2px 0 0 -6px; display: inline-grid; place-items: center; flex: none; border-radius: 999px; color: var(--muted-foreground) !important; }
+.t-back:hover { background: var(--accent); }
+.t-back svg { width: 22px; height: 22px; }
+@media (min-width: 1024px) { .t-back { display: none; } }
+.t-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; min-width: 0; }
+.t-name .sub { font-size: 14px; overflow-wrap: anywhere; }
+.ticker-symbol { font: 650 24px/1.1 var(--font-mono) !important; letter-spacing: -0.02em; }
+.t-quote { display: grid; justify-items: end; gap: 4px; flex: none; text-align: right; }
+.price-big { font: 600 28px/1.05 var(--font-mono) !important; letter-spacing: -0.03em; }
+@media (min-width: 1024px) { .price-big { font-size: 32px !important; } }
+.t-move { font-size: 13px; margin-top: 1px; }
+.t-when { font-size: 12px; }
+.phone-outlook { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 13px; line-height: 1.4; }
+.phone-outlook svg { width: 16px; height: 16px; flex: none; color: var(--muted-foreground); }
+.phone-outlook b { font-weight: 600; }
+@media (min-width: 1024px) { .phone-outlook { display: none; } }
+.t-chart { margin-top: 16px; }
+.t-head .t-chart > .sub { margin-top: 4px !important; }
+.chart-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.chart-foot .seg { max-width: 100%; overflow-x: auto; }
+
+/* Outlook: the verdict in words, the chance as a number, the likely range at the chosen horizon. */
+.t-outlook .section-head { margin-bottom: 2px; }
+.t-outlook h2 svg { width: 16px; height: 16px; color: var(--muted-foreground); }
+.edge-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 6px 0 2px; }
+.headline-edge { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
+.chance { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.chance .num { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; }
+.chance .sub { font-size: 13.5px; }
+.outlook-range { margin-top: 14px; }
+.outlook-range .range { margin-top: 8px !important; }
+.scale { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.scale > div { display: grid; gap: 3px; min-width: 0; }
+.scale > div:nth-child(2) { justify-items: center; text-align: center; }
+.scale > div:last-child { justify-items: end; text-align: right; }
+.scale b { font: 600 14px/1.3 var(--font-mono); }
+.scale .sub { font-size: 11.5px; }
+
+/* Your position: per account, the shares, the three figures, the action and the exit plan's lines. */
+.own { display: grid; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
+.section-head + .own { border-top: 0; padding-top: 2px; }
+.own:last-of-type { padding-bottom: 0; }
+.own-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.own-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
+.own-title b { font-size: 15px; font-weight: 600; }
+.own-stats, .earn-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.own-stats .stat, .earn-stats .stat { min-width: 0; overflow-wrap: anywhere; }
+.own-stats .stat > span:last-child:not(.label), .earn-stats .stat > span:last-child:not(.label) { display: block; margin-top: 2px; font-size: 11.5px; }
+.exit-plan { display: grid; gap: 6px; }
+.exit-plan .plan-lines { gap: 0; font-size: 13px; }
+.exit-plan .plan-line { padding: 7px 0; border-top: 1px solid var(--border); }
+.exit-plan .plan-line.sub { font-size: 12px; }
+.own-link { margin-top: 14px; }
+@media (max-width: 480px) { .own-stats .stat, .earn-stats .stat { padding: 8px 9px; } .own-stats b, .earn-stats b { font-size: 13px; } }
+
+/* Earnings: the six quarters fold under the latest one. */
+.earn-fold { margin-top: 12px; }
+
+/* Watch / Alerts / Sources, side by side; Sources opens the list under them. */
+.ticker-actions { display: flex; gap: 8px; }
+.ticker-actions > .btn { flex: 1 1 0; min-width: 0; padding: 0 8px; }
+.count.attention { color: var(--attention); background: var(--attention-soft); }
+.src { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.src summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; font-size: 13px; font-weight: 500; }
+.src summary::-webkit-details-marker { display: none; }
+.src summary svg { width: 16px; height: 16px; flex: none; color: var(--muted-foreground); transition: transform 200ms; }
+.src[open] summary svg { transform: rotate(180deg); }
+.src .source-grid { margin-top: 12px; }

@@ -58,7 +58,8 @@ export function RunsPill({ runs }: { runs: RunView[] }) {
         <span className="muted hide-sm">{latest.status}</span>
         <ChevronDown style={{ width: 14, height: 14 }} />
       </button>
-      <div className={`popover ${open ? 'open' : ''}`} id="runs-pop" role="menu" style={{ left: 0, top: 'calc(100% + 6px)' }}>
+      {/* Right-aligned under the pill, so it opens inside the screen and, while closed, never widens the page. */}
+      <div className={`popover runs-pop ${open ? 'open' : ''}`} id="runs-pop" role="menu">
         <div className="label" style={{ padding: '8px 10px 4px' }}>
           Last runs
         </div>

@@ -208,3 +208,25 @@ test.describe('on a phone', () => {
     }
   })
 })
+
+test.describe('on a desktop', () => {
+  test.use({ viewport: { width: 1440, height: 900 } })
+
+  test('no page is wider than the screen, with the runs menu closed or open', async ({ page }) => {
+    await seedPortfolio()
+    await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })
+    for (const path of ['/', '/portfolio']) {
+      await page.goto(path)
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth), path).toBeLessThanOrEqual(1440)
+    }
+    // the runs menu opens under its pill, inside the screen
+    await page.getByRole('button', { name: /Pre-open/ }).click()
+    const menu = page.getByRole('menu')
+    await expect(menu).toHaveClass(/open/)
+    const box = (await menu.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(1440)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440)
+  })
+})

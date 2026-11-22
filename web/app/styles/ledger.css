@@ -147,6 +147,9 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
   opacity: 0; transform: translateY(-6px) scale(.98); transform-origin: top; pointer-events: none; transition: opacity 180ms, transform 180ms;
 }
 .popover.open { opacity: 1; transform: none; pointer-events: auto; }
+/* The runs menu hangs from the pill's right edge (the pill sits near the screen's right edge): it opens leftwards
+   inside the screen and cannot widen the page while closed. */
+.runs-pop { right: 0; top: calc(100% + 6px); max-width: calc(100vw - 32px); transform-origin: top right; }
 .popover-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 9px 10px; border-radius: var(--radius-md); font-size: 13px; }
 .popover-row:hover { background: var(--accent); }
 

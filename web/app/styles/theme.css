@@ -1,142 +1,187 @@
-/* Ledger: the stock-advisor dashboard theme (superdesign step 2, theme_1.css).
+/* Glass: the stock-advisor liquid-glass theme (superdesign step 2, theme_2.css). Replaces Ledger (theme_1.css).
  *
- * Ink on warm paper in light mode, graphite in dark mode (class "dark").
- * The interface itself is monochrome. Colour is kept for meaning:
- * gains and losses, the five holding actions, the four risk levels and source status.
- * Numbers use Geist Mono so prices, P/L and percentages line up in columns.
- * No blue or indigo anywhere.
+ * Cold and quiet (owner, 2026-11-21: the warm aurora was "way too colourful"; dark mode should be cold and dark).
+ * Light mode is frost: cool white and silver with the faintest ice tint. Dark mode (class "dark") is cold night:
+ * near-black steel with a barely-there glow. The aurora behind the glass is low in colour and carries no meaning.
+ * The interface itself stays ink-and-white. Colour on top of the glass is kept for meaning: gains and losses,
+ * the five holding actions, the four risk levels, source status. One accent, ice (steel in daylight),
+ * marks where you are (active tab, focus ring) and is never a gain or a loss.
+ * Cool steel and ice tints are used because the owner asked for cold; still no saturated blue or indigo.
+ * Numbers stay in Geist Mono so prices and percentages line up.
+ *
+ * Token names match Ledger's one for one, so the components pick the theme up unchanged;
+ * the glass and aurora tokens at the end of each block are new. The recipes that use them are in glass.css.
  */
 :root {
-  --background: oklch(0.9850 0.0030 85);
-  --foreground: oklch(0.2100 0.0060 60);
-  --card: oklch(1.0000 0 0);
-  --card-foreground: oklch(0.2100 0.0060 60);
-  --popover: oklch(1.0000 0 0);
-  --popover-foreground: oklch(0.2100 0.0060 60);
-  --primary: oklch(0.2100 0.0060 60);
-  --primary-foreground: oklch(0.9850 0.0030 85);
-  --secondary: oklch(0.9550 0.0050 85);
-  --secondary-foreground: oklch(0.2100 0.0060 60);
-  --muted: oklch(0.9550 0.0050 85);
-  --muted-foreground: oklch(0.5000 0.0110 70);
-  --accent: oklch(0.9400 0.0070 85);
-  --accent-foreground: oklch(0.2100 0.0060 60);
-  --destructive: oklch(0.5500 0.1900 27);
-  --destructive-foreground: oklch(0.9850 0.0030 85);
-  --border: oklch(0.9050 0.0060 85);
-  --input: oklch(0.8700 0.0070 85);
-  --ring: oklch(0.5000 0.0110 70);
+  --background: oklch(0.9650 0.0040 240);          /* frost */
+  --foreground: oklch(0.2000 0.0120 250);
+  --card: oklch(1 0 0 / 0.52);                    /* glass */
+  --card-foreground: oklch(0.2000 0.0120 250);
+  --popover: oklch(0.9900 0.0030 240 / 0.88);
+  --popover-foreground: oklch(0.2000 0.0120 250);
+  --primary: oklch(0.2200 0.0120 250);            /* ink: the prominent button */
+  --primary-foreground: oklch(0.9900 0.0020 240);
+  --secondary: oklch(1 0 0 / 0.62);
+  --secondary-foreground: oklch(0.2000 0.0120 250);
+  --muted: oklch(0.2500 0.0150 250 / 0.06);
+  --muted-foreground: oklch(0.4600 0.0140 250);
+  --accent: oklch(1 0 0 / 0.72);                  /* hover */
+  --accent-foreground: oklch(0.2000 0.0120 250);
+  --destructive: oklch(0.5300 0.1800 25);
+  --destructive-foreground: oklch(0.9900 0.0020 240);
+  --border: oklch(0.2500 0.0150 250 / 0.10);
+  --input: oklch(0.2500 0.0150 250 / 0.16);
+  --ring: oklch(0.5000 0.0700 225);               /* steel */
 
-  /* Meaning. Each colour has a strong tone (text, dots, bars) and a soft tone (badge fill). */
-  --gain: oklch(0.4950 0.1300 155);
-  --gain-soft: oklch(0.9500 0.0400 155);
-  --loss: oklch(0.5250 0.1850 27);
-  --loss-soft: oklch(0.9500 0.0300 27);
-  --attention: oklch(0.5150 0.1100 75);          /* Review, warnings, Paper */
-  --attention-soft: oklch(0.9600 0.0500 85);
-  --trim: oklch(0.5200 0.1500 48);
-  --trim-soft: oklch(0.9500 0.0400 55);
-  --hold: oklch(0.5000 0.0110 70);
-  --hold-soft: oklch(0.9400 0.0060 85);
-  --risk-low: oklch(0.5050 0.1000 165);
+  --brand: oklch(0.5000 0.0700 225);
+  --brand-soft: oklch(0.5000 0.0700 225 / 0.12);
 
-  --chart-1: oklch(0.2100 0.0060 60);            /* the portfolio, the price */
-  --chart-2: oklch(0.6000 0.1400 50);            /* XIU.TO */
-  --chart-3: oklch(0.5500 0.0200 250);           /* SPY */
-  --chart-4: oklch(0.5300 0.1400 155);           /* forecast median */
-  --chart-5: oklch(0.5300 0.1400 155 / 0.14);    /* forecast cone */
+  /* Meaning. Strong tone for text, dots and bars; soft tone (translucent, so it tints the glass) for badges. */
+  --gain: oklch(0.5000 0.1250 158);
+  --gain-soft: oklch(0.6000 0.1250 158 / 0.14);
+  --loss: oklch(0.5300 0.1800 25);
+  --loss-soft: oklch(0.6000 0.1800 25 / 0.12);
+  --attention: oklch(0.5100 0.1050 75);           /* Review, warnings, Paper */
+  --attention-soft: oklch(0.7800 0.1200 85 / 0.20);
+  --trim: oklch(0.5300 0.1350 50);
+  --trim-soft: oklch(0.7000 0.1350 50 / 0.14);
+  --hold: oklch(0.4800 0.0120 250);
+  --hold-soft: oklch(0.2500 0.0150 250 / 0.07);
+  --risk-low: oklch(0.5000 0.0900 170);
 
-  --sidebar: oklch(0.9700 0.0040 85);
-  --sidebar-foreground: oklch(0.2100 0.0060 60);
-  --sidebar-primary: oklch(0.2100 0.0060 60);
-  --sidebar-primary-foreground: oklch(0.9850 0.0030 85);
-  --sidebar-accent: oklch(0.9300 0.0070 85);
-  --sidebar-accent-foreground: oklch(0.2100 0.0060 60);
-  --sidebar-border: oklch(0.9050 0.0060 85);
-  --sidebar-ring: oklch(0.5000 0.0110 70);
+  --chart-1: oklch(0.2200 0.0120 250);            /* the portfolio, the price */
+  --chart-2: oklch(0.6000 0.1100 65);             /* XIU.TO: amber */
+  --chart-3: oklch(0.5200 0.0700 225);            /* SPY: steel */
+  --chart-4: oklch(0.5300 0.1250 158);            /* forecast median */
+  --chart-5: oklch(0.5300 0.1250 158 / 0.13);     /* forecast range */
+
+  --sidebar: oklch(1 0 0 / 0.42);
+  --sidebar-foreground: oklch(0.2000 0.0120 250);
+  --sidebar-primary: oklch(0.2200 0.0120 250);
+  --sidebar-primary-foreground: oklch(0.9900 0.0020 240);
+  --sidebar-accent: oklch(1 0 0 / 0.72);
+  --sidebar-accent-foreground: oklch(0.2000 0.0120 250);
+  --sidebar-border: oklch(1 0 0 / 0.60);
+  --sidebar-ring: oklch(0.5000 0.0700 225);
 
   --font-sans: var(--font-geist), 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', serif;
   --font-mono: var(--font-geist-mono), 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --radius: 0.5rem;
-  --shadow-2xs: 0 1px 1px 0 hsl(30 10% 15% / 0.04);
-  --shadow-xs: 0 1px 2px 0 hsl(30 10% 15% / 0.05);
-  --shadow-sm: 0 1px 2px 0 hsl(30 10% 15% / 0.06), 0 1px 3px -1px hsl(30 10% 15% / 0.06);
-  --shadow: 0 1px 3px 0 hsl(30 10% 15% / 0.07), 0 2px 4px -2px hsl(30 10% 15% / 0.06);
-  --shadow-md: 0 2px 6px -1px hsl(30 10% 15% / 0.08), 0 4px 8px -4px hsl(30 10% 15% / 0.06);
-  --shadow-lg: 0 6px 16px -4px hsl(30 10% 15% / 0.10), 0 4px 6px -4px hsl(30 10% 15% / 0.06);
-  --shadow-xl: 0 12px 28px -8px hsl(30 10% 15% / 0.14);
-  --shadow-2xl: 0 24px 48px -12px hsl(30 10% 15% / 0.20);
+
+  --radius: 1.25rem;                              /* 20px cards; controls get their own steps below */
+  --radius-sm: 0.625rem;                          /* 10px: chips' inner parts, focus outline */
+  --radius-md: 0.875rem;                          /* 14px: inputs, buttons, nav links */
+  --radius-lg: var(--radius);                     /* 20px: cards, sheets */
+  --radius-xl: 1.75rem;                           /* 28px: hero card, floating tab bar */
+
+  --shadow-2xs: 0 1px 1px 0 hsl(220 25% 20% / 0.04);
+  --shadow-xs: 0 1px 2px 0 hsl(220 25% 20% / 0.05), 0 10px 30px -14px hsl(220 30% 25% / 0.18);
+  --shadow-sm: 0 1px 2px 0 hsl(220 25% 20% / 0.06), 0 12px 32px -14px hsl(220 30% 25% / 0.20);
+  --shadow: 0 2px 4px 0 hsl(220 25% 20% / 0.06), 0 16px 36px -16px hsl(220 30% 25% / 0.22);
+  --shadow-md: 0 2px 6px -1px hsl(220 25% 20% / 0.07), 0 20px 40px -18px hsl(220 30% 25% / 0.24);
+  --shadow-lg: 0 6px 16px -4px hsl(220 25% 20% / 0.10), 0 28px 56px -24px hsl(220 30% 25% / 0.28);
+  --shadow-xl: 0 12px 28px -8px hsl(220 25% 20% / 0.14), 0 36px 72px -28px hsl(220 30% 25% / 0.30);
+  --shadow-2xl: 0 24px 48px -12px hsl(220 25% 20% / 0.20);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Glass. One recipe, two strengths: cards use the regular glass, bars and sheets the strong one. */
+  --glass-bg: oklch(1 0 0 / 0.50);
+  --glass-bg-strong: oklch(1 0 0 / 0.70);
+  --glass-border: oklch(1 0 0 / 0.75);            /* the bright rim */
+  --glass-edge: oklch(0.2500 0.0150 250 / 0.09);  /* a hairline outside the rim, so glass reads on pale frost */
+  --glass-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.95), inset 0 -1px 0 0 oklch(1 0 0 / 0.30);
+  --glass-sheen: linear-gradient(160deg, oklch(1 0 0 / 0.55) 0%, oklch(1 0 0 / 0.08) 38%, oklch(1 0 0 / 0) 60%);
+  --glass-blur: 22px;
+  --glass-saturate: 130%;
+
+  /* The aurora behind everything: pale ice and mist, just enough for the glass to show depth. */
+  --aurora-1: oklch(0.8900 0.0300 220);           /* ice */
+  --aurora-2: oklch(0.9100 0.0200 250);           /* mist */
+  --aurora-3: oklch(0.9000 0.0200 195);           /* glacier */
+  --aurora-4: oklch(0.9400 0.0100 260);           /* silver */
+  --aurora-base: oklch(0.9650 0.0040 240);
 }
 
 .dark {
-  --background: oklch(0.1650 0.0040 60);
-  --foreground: oklch(0.9400 0.0040 85);
-  --card: oklch(0.2000 0.0050 60);
-  --card-foreground: oklch(0.9400 0.0040 85);
-  --popover: oklch(0.2150 0.0050 60);
-  --popover-foreground: oklch(0.9400 0.0040 85);
-  --primary: oklch(0.9400 0.0040 85);
-  --primary-foreground: oklch(0.1650 0.0040 60);
-  --secondary: oklch(0.2500 0.0060 60);
-  --secondary-foreground: oklch(0.9400 0.0040 85);
-  --muted: oklch(0.2400 0.0060 60);
-  --muted-foreground: oklch(0.6900 0.0100 70);
-  --accent: oklch(0.2700 0.0070 60);
-  --accent-foreground: oklch(0.9400 0.0040 85);
-  --destructive: oklch(0.6900 0.1800 25);
-  --destructive-foreground: oklch(0.1650 0.0040 60);
-  --border: oklch(0.2900 0.0060 60);
-  --input: oklch(0.3300 0.0070 60);
-  --ring: oklch(0.6900 0.0100 70);
+  --background: oklch(0.0950 0.0060 250);          /* cold night: almost black, a trace of steel */
+  --foreground: oklch(0.9500 0.0050 240);
+  --card: oklch(1 0 0 / 0.035);
+  --card-foreground: oklch(0.9500 0.0050 240);
+  --popover: oklch(0.1250 0.0070 250 / 0.94);
+  --popover-foreground: oklch(0.9500 0.0050 240);
+  --primary: oklch(0.9500 0.0050 240);            /* the prominent button is white at night */
+  --primary-foreground: oklch(0.1000 0.0060 250);
+  --secondary: oklch(1 0 0 / 0.07);
+  --secondary-foreground: oklch(0.9500 0.0050 240);
+  --muted: oklch(1 0 0 / 0.05);
+  --muted-foreground: oklch(0.7000 0.0120 240);
+  --accent: oklch(1 0 0 / 0.09);
+  --accent-foreground: oklch(0.9500 0.0050 240);
+  --destructive: oklch(0.7000 0.1600 22);
+  --destructive-foreground: oklch(0.0950 0.0060 250);
+  --border: oklch(1 0 0 / 0.08);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: oklch(0.8200 0.0600 215);               /* ice */
 
-  --gain: oklch(0.7600 0.1500 155);
-  --gain-soft: oklch(0.3000 0.0600 155);
-  --loss: oklch(0.6900 0.1800 25);
-  --loss-soft: oklch(0.3000 0.0700 25);
-  --attention: oklch(0.8000 0.1300 80);
-  --attention-soft: oklch(0.3200 0.0600 80);
-  --trim: oklch(0.7400 0.1500 55);
-  --trim-soft: oklch(0.3100 0.0600 55);
-  --hold: oklch(0.7400 0.0100 70);
-  --hold-soft: oklch(0.2700 0.0060 60);
-  --risk-low: oklch(0.7300 0.1100 165);
+  --brand: oklch(0.8200 0.0600 215);
+  --brand-soft: oklch(0.8200 0.0600 215 / 0.12);
 
-  --chart-1: oklch(0.9400 0.0040 85);
-  --chart-2: oklch(0.7400 0.1400 55);
-  --chart-3: oklch(0.6800 0.0300 250);
-  --chart-4: oklch(0.7600 0.1500 155);
-  --chart-5: oklch(0.7600 0.1500 155 / 0.16);
+  --gain: oklch(0.7600 0.1300 160);
+  --gain-soft: oklch(0.7600 0.1300 160 / 0.14);
+  --loss: oklch(0.7000 0.1600 22);
+  --loss-soft: oklch(0.7000 0.1600 22 / 0.14);
+  --attention: oklch(0.8000 0.1100 85);
+  --attention-soft: oklch(0.8000 0.1100 85 / 0.13);
+  --trim: oklch(0.7400 0.1300 55);
+  --trim-soft: oklch(0.7400 0.1300 55 / 0.13);
+  --hold: oklch(0.7200 0.0100 240);
+  --hold-soft: oklch(1 0 0 / 0.07);
+  --risk-low: oklch(0.7400 0.0900 170);
 
-  --sidebar: oklch(0.1850 0.0050 60);
-  --sidebar-foreground: oklch(0.9400 0.0040 85);
-  --sidebar-primary: oklch(0.9400 0.0040 85);
-  --sidebar-primary-foreground: oklch(0.1650 0.0040 60);
-  --sidebar-accent: oklch(0.2600 0.0070 60);
-  --sidebar-accent-foreground: oklch(0.9400 0.0040 85);
-  --sidebar-border: oklch(0.2900 0.0060 60);
-  --sidebar-ring: oklch(0.6900 0.0100 70);
+  --chart-1: oklch(0.9500 0.0050 240);
+  --chart-2: oklch(0.7400 0.1000 70);
+  --chart-3: oklch(0.7800 0.0700 215);
+  --chart-4: oklch(0.7600 0.1300 160);
+  --chart-5: oklch(0.7600 0.1300 160 / 0.14);
 
-  /* Dark mode draws edges with borders, not shadows. */
+  --sidebar: oklch(1 0 0 / 0.035);
+  --sidebar-foreground: oklch(0.9500 0.0050 240);
+  --sidebar-primary: oklch(0.9500 0.0050 240);
+  --sidebar-primary-foreground: oklch(0.1000 0.0060 250);
+  --sidebar-accent: oklch(1 0 0 / 0.08);
+  --sidebar-accent-foreground: oklch(0.9500 0.0050 240);
+  --sidebar-border: oklch(1 0 0 / 0.10);
+  --sidebar-ring: oklch(0.8200 0.0600 215);
+
+  /* Night glass draws its edges with the rim; shadows only lift floating things. */
   --shadow-2xs: 0 0 #0000;
-  --shadow-xs: 0 0 #0000;
-  --shadow-sm: 0 0 #0000;
-  --shadow: 0 0 #0000;
-  --shadow-md: 0 0 #0000;
-  --shadow-lg: 0 8px 24px -8px hsl(0 0% 0% / 0.5);
-  --shadow-xl: 0 12px 32px -8px hsl(0 0% 0% / 0.55);
-  --shadow-2xl: 0 24px 48px -12px hsl(0 0% 0% / 0.6);
+  --shadow-xs: 0 10px 30px -14px hsl(230 40% 2% / 0.7);
+  --shadow-sm: 0 12px 32px -14px hsl(230 40% 2% / 0.7);
+  --shadow: 0 16px 36px -16px hsl(230 40% 2% / 0.75);
+  --shadow-md: 0 20px 40px -18px hsl(230 40% 2% / 0.75);
+  --shadow-lg: 0 28px 56px -24px hsl(230 40% 2% / 0.8);
+  --shadow-xl: 0 36px 72px -28px hsl(230 40% 2% / 0.85);
+  --shadow-2xl: 0 24px 48px -12px hsl(230 40% 2% / 0.9);
+
+  --glass-bg: oklch(1 0 0 / 0.035);
+  --glass-bg-strong: oklch(0.1150 0.0070 250 / 0.80);
+  --glass-border: oklch(1 0 0 / 0.10);
+  --glass-edge: oklch(0 0 0 / 0.40);
+  --glass-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.12), inset 0 -1px 0 0 oklch(1 0 0 / 0.03);
+  --glass-sheen: linear-gradient(160deg, oklch(1 0 0 / 0.07) 0%, oklch(1 0 0 / 0.015) 40%, oklch(1 0 0 / 0) 60%);
+  --glass-blur: 26px;
+  --glass-saturate: 120%;
+
+  /* A barely-there glow of cold steel in the dark; most of the page stays near black. */
+  --aurora-1: oklch(0.1650 0.0260 230);           /* steel */
+  --aurora-2: oklch(0.1450 0.0200 200);           /* deep glacier */
+  --aurora-3: oklch(0.1300 0.0140 260);           /* slate */
+  --aurora-4: oklch(0.1150 0.0090 220);           /* ink */
+  --aurora-base: oklch(0.0950 0.0060 250);
 }
 
-/* Aliases, declared for both modes so each one resolves against its own mode's colours
-   (a var() in a custom property is resolved where it is declared, then inherited). */
+/* Aliases, declared for both modes so each resolves against its own mode's colours. Unchanged from Ledger. */
 :root,
 .dark {
   --action-sell: var(--loss);

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
+import { GlassBackdrop } from '@/components/GlassBackdrop'
 import { NativeShell } from '@/components/NativeShell'
 import { THEME_SCRIPT } from '@/lib/theme'
 import './globals.css'
@@ -23,6 +24,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body>
+        <GlassBackdrop />
         <NativeShell />
         {children}
       </body>

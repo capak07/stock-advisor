@@ -1,0 +1,50 @@
+/* The two recipes the Glass theme rests on: the aurora and the glass (superdesign step 2, theme_2.css).
+ * Colours come from theme.css. GlassBackdrop renders the aurora and the #liquid filter and sets html.liquid. */
+
+/* The aurora: fixed behind the page, four soft blobs over the base colour. Its drift is with the motion rules. */
+.aurora {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--aurora-base);
+}
+.aurora::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(38% 42% at 18% 22%, var(--aurora-1), transparent 70%),
+    radial-gradient(34% 40% at 82% 18%, var(--aurora-2), transparent 70%),
+    radial-gradient(40% 44% at 70% 82%, var(--aurora-3), transparent 70%),
+    radial-gradient(30% 34% at 22% 86%, var(--aurora-4), transparent 70%);
+  filter: blur(40px) saturate(115%);
+}
+
+/* Glass: blur and lift what is behind, a bright rim, a top highlight and a soft sheen. */
+.glass {
+  position: relative; isolation: isolate;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), 0 0 0 1px var(--glass-edge), var(--shadow-xs);
+  border-radius: var(--radius-lg);
+}
+.glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: var(--glass-sheen);
+}
+.glass-strong { background: var(--glass-bg-strong); }
+
+/* Liquid refraction, Chrome-based browsers only (the Android app, Chrome, Edge): the bars bend what is
+ * behind them through an SVG displacement filter. GlassBackdrop sets html.liquid from script, not
+ * @supports (backdrop-filter: url(#liquid)): a browser can parse the url() and still not draw it, and
+ * would then lose the blur too. Safari and Firefox keep the plain frosted glass above. */
+html.liquid .glass-liquid {
+  -webkit-backdrop-filter: url(#liquid) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: url(#liquid) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+}
+
+/* No blur where it cannot be drawn or is not wanted: solid enough to read. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--glass-bg-strong); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  /* html.liquid .glass-liquid is named too: its higher specificity would otherwise keep the filter. */
+  .glass, html.liquid .glass-liquid { background: var(--popover); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

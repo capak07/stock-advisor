@@ -72,19 +72,33 @@ main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0;
 .nav-link[aria-current="page"] svg { color: var(--brand); }
 .nav-link svg { width: 18px; height: 18px; }
 .nav-sep { height: 1px; background: var(--border); margin: 10px 10px; }
-.sidebar-search { margin-top: 14px; position: relative; }
-.sidebar-search input { width: 100%; padding-left: 32px !important; }
-.sidebar-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted-foreground); }
 .sidebar-foot { margin-top: auto; padding: 10px 12px; font-size: 12px; color: var(--muted-foreground); display: grid; gap: 6px; }
 .sidebar-note { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground) !important; }
 a.sidebar-note:hover { color: var(--foreground) !important; }
 
-/* The top bar is transparent; its search field is a 44 px glass pill (glass.css: strong glass, liquid). */
+/* The top bar has no edge of its own; its search field is a 44 px glass pill (glass.css: strong glass, liquid). */
 .statusbar {
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 10px 16px; padding-top: calc(10px + var(--safe-area-inset-top, 0px));
   padding-left: calc(16px + var(--safe-area-inset-left, 0px));
   padding-right: calc(16px + var(--safe-area-inset-right, 0px));
+}
+/* What scrolls under the bar is frosted away rather than read through (chart labels behind the pill): a blurred,
+ * strong-glass fill over the whole bar that fades out in 14 px just below it. On a layer of its own, so the bar is
+ * no backdrop root and the pill's own glass still reaches the page. Static: nothing here animates. */
+.statusbar::before {
+  content: ""; position: absolute; inset: 0 0 -14px; z-index: -1; pointer-events: none;
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .statusbar::before { background: var(--background); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .statusbar::before { background: var(--background); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 @media (min-width: 1024px) {
   .statusbar {
@@ -103,6 +117,7 @@ a.sidebar-note:hover { color: var(--foreground) !important; }
 .statusbar-search .find .input {
   height: 100%; padding: 0 14px 0 38px !important; border: 0 !important; border-radius: inherit; background: transparent !important;
   box-shadow: none; outline: none !important; font-size: 14.5px !important;
+  font-family: var(--font-sans) !important; /* words, not figures: over SymbolSearch's .num-input */
 }
 .statusbar-search .find .input::placeholder { color: var(--muted-foreground); }
 .statusbar-search .find:focus-within { box-shadow: var(--glass-highlight), 0 0 0 2px var(--ring), var(--shadow-md); }
@@ -123,8 +138,6 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
 .icon-btn svg { width: 16px; height: 16px; }
 .hide-sm { display: none !important; }
 @media (min-width: 640px) { .hide-sm { display: inline-flex !important; } }
-.only-sm { display: inline-flex; }
-@media (min-width: 1024px) { .only-sm { display: none !important; } }
 .only-lg { display: none !important; }
 @media (min-width: 1024px) { .only-lg { display: inline-flex !important; } }
 

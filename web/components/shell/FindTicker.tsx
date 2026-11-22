@@ -29,7 +29,8 @@ export function FindTicker({ onGo, autoFocus = false }: { onGo?: () => void; aut
   useEffect(() => {
     if (!autoFocus) return
     // A frame later, so a sheet opening around the box first notes what had the focus, to give it back on close.
-    const frame = requestAnimationFrame(() => box.current?.querySelector('input')?.focus())
+    // Without scrolling: the sheet is still sliding in, and the browser would jump to bring the box into view.
+    const frame = requestAnimationFrame(() => box.current?.querySelector('input')?.focus({ preventScroll: true }))
     return () => cancelAnimationFrame(frame)
   }, [autoFocus])
 

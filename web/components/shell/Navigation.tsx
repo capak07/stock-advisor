@@ -85,9 +85,11 @@ export function BottomTabs() {
   }
   return (
     <>
+      {/* Out of the tab order while it is scrolled away. */}
       <nav
         className={`bottom-tabs ${hidden ? 'hidden' : ''}`}
         aria-label="Main"
+        inert={hidden}
         style={{ gridTemplateColumns: `repeat(${TABS.length + 2}, 1fr)` }}
       >
         <TabPill target={target} />
@@ -147,11 +149,13 @@ export function BottomTabs() {
       <Drawer id="more-sheet" title="More" open={more} onClose={closeMore}>
         <div className="drawer-body">
           <div style={{ display: 'grid', gap: 2 }}>
-            {MORE.map(({ href, label, icon: Icon }) => (
+            {MORE.map(({ href, label, icon: Icon }, i) => (
               <Link
                 key={href}
                 className="nav-link"
                 href={href}
+                // The sheet opens on its first page, not on the theme switch below the links (Drawer).
+                data-autofocus={i === 0 ? true : undefined}
                 aria-current={isCurrent(href, pathname) ? 'page' : undefined}
                 onClick={closeMore}
               >

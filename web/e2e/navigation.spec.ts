@@ -135,6 +135,31 @@ test.describe('on a phone', () => {
     expect(errors).toEqual([])
   })
 
+  test('More opens on its first page link, not on the theme switch', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('navigation', { name: 'Main' }).last().getByRole('button', { name: 'More' }).click()
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Picks' })).toBeFocused()
+  })
+
+  test('the tab bar, scrolled away, leaves the tab order', async ({ page }) => {
+    await page.goto('/')
+    // By CSS, not by role: an inert bar is out of the accessibility tree.
+    const tabs = page.locator('nav.bottom-tabs')
+    await expect(tabs).not.toHaveAttribute('inert')
+    await page.evaluate(() => {
+      document.body.style.minHeight = '4000px'
+      window.scrollTo(0, 800)
+    })
+    await expect(tabs).toHaveClass(/hidden/)
+    await expect(tabs).toHaveAttribute('inert')
+    const today = tabs.locator('a', { hasText: 'Today' })
+    await today.evaluate((link: HTMLElement) => link.focus())
+    await expect(today).not.toBeFocused()
+    await page.evaluate(() => window.scrollTo(0, 0)) // back up: the bar returns and takes the focus again
+    await expect(tabs).not.toHaveClass(/hidden/)
+    await expect(tabs).not.toHaveAttribute('inert')
+  })
+
   test('no page is wider than the screen', async ({ page }) => {
     // Pages with content: holdings with long names, notes, the chart, warnings, watchlist rows.
     await seedPortfolio()

@@ -8,7 +8,8 @@ const noop = () => () => {}
 
 /**
  * A sheet from the bottom on phones and a panel from the right on wider screens (ledger.css).
- * Escape and the backdrop close it; focus moves to its first field and back to the opener.
+ * Escape and the backdrop close it; focus moves to its first field (or its [data-autofocus] element) and back to
+ * the opener.
  * It renders into <body>, as in the mockups: inside the page, an animated ancestor's stacking
  * context would put it under the sticky status bar.
  */
@@ -34,8 +35,11 @@ export function Drawer({
     opener.current = document.activeElement
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
     const timer = setTimeout(() => {
-      const first = panel.current?.querySelector<HTMLElement>('input, select, textarea, button:not([data-close])')
-      ;(first ?? panel.current)?.focus()
+      // An element marked data-autofocus wins (the More sheet's first page link); otherwise the first field or button.
+      const first =
+        panel.current?.querySelector<HTMLElement>('[data-autofocus]') ??
+        panel.current?.querySelector<HTMLElement>('input, select, textarea, button:not([data-close])')
+      ;(first ?? panel.current)?.focus({ preventScroll: true }) // the panel may still be sliding in
     }, reduce ? 0 : 260)
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()

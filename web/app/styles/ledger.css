@@ -336,6 +336,10 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 .drawer-body { padding: 18px; overflow-y: auto; display: grid; gap: 14px; align-content: start; }
 /* The phone's Search sheet is (nearly) full-screen, so the results have room under the box. */
 #search-sheet .drawer-body { flex: 1; }
+/* The stocks opened lately on this device, under the search box (lib/recent.ts). */
+.recent { display: grid; gap: 6px; }
+.recent ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.recent .label { padding: 0 12px; }
 @media (max-width: 767px) { #search-sheet { height: 92dvh; } }
 /* The More sheet's last row: the light/dark switch, the paper-period note, Sign out. */
 .more-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted-foreground); }

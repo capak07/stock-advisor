@@ -1,10 +1,12 @@
 'use client'
 
-import { Ellipsis, LogOut, Search } from 'lucide-react'
+import { Ellipsis, History, LogOut, Search } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Fragment, useCallback, useState, type MouseEvent } from 'react'
 import { signOut } from '@/app/(app)/actions'
+import { deviceStorage, readRecent } from '@/lib/recent'
+import { tickerHref } from '@/lib/ticker'
 import { Drawer } from '../Drawer'
 import { ThemeToggle } from '../ThemeToggle'
 import { FindTicker } from './FindTicker'
@@ -72,10 +74,13 @@ export function BottomTabs() {
   const [search, setSearch] = useState(false)
   // Each opening gets a fresh, empty search box that takes the focus (and so the keyboard) straight away.
   const [searchKey, setSearchKey] = useState(0)
+  // The stocks opened lately on this device, read as the sheet opens (lib/recent.ts); empty without storage.
+  const [recent, setRecent] = useState<string[]>([])
   const closeMore = useCallback(() => setMore(false), [])
   const closeSearch = useCallback(() => setSearch(false), [])
   const openSearch = () => {
     setSearchKey((k) => k + 1)
+    setRecent(readRecent(deviceStorage()))
     setSearch(true)
   }
   return (
@@ -119,6 +124,24 @@ export function BottomTabs() {
           <div className="statusbar-search">
             {searchKey > 0 && <FindTicker key={searchKey} onGo={closeSearch} autoFocus />}
           </div>
+          {recent.length > 0 && (
+            <section className="recent" aria-labelledby="recent-label">
+              <h3 id="recent-label" className="label">
+                Recent
+              </h3>
+              <ul>
+                {recent.map((symbol) => (
+                  <li key={symbol}>
+                    {/* A symbol only: the Ticker page works out whether it's a stock or a coin. */}
+                    <Link className="nav-link" href={tickerHref(symbol, 'stock')} onClick={closeSearch}>
+                      <History aria-hidden="true" />
+                      <span className="sym">{symbol}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </Drawer>
       <Drawer id="more-sheet" title="More" open={more} onClose={closeMore}>

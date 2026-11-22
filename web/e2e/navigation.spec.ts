@@ -80,6 +80,61 @@ test.describe('on a phone', () => {
     await expect(sheet).toBeHidden()
   })
 
+  test('the Search sheet lists the stocks opened lately, newest first', async ({ page }) => {
+    await seedSymbols([
+      { symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' },
+      { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
+    ])
+    const tabs = page.getByRole('navigation', { name: 'Main' }).last()
+    const sheet = page.getByRole('dialog', { name: 'Search' })
+    await page.goto('/')
+    await tabs.getByRole('button', { name: 'Search' }).click()
+    await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0) // nothing opened yet: no list at all
+    await page.keyboard.press('Escape')
+
+    await page.goto('/ticker/AAPL')
+    await expect(page.getByRole('heading', { name: 'AAPL', level: 1 })).toBeVisible()
+    await page.goto('/ticker/RY.TO')
+    await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
+    await tabs.getByRole('button', { name: 'Search' }).click()
+    await expect(sheet.getByText('Recent', { exact: true })).toBeVisible()
+    await expect(sheet.getByRole('listitem').getByRole('link')).toHaveText(['RY.TO', 'AAPL'])
+    await sheet.getByRole('link', { name: 'AAPL' }).click()
+    await expect(page).toHaveURL(/\/ticker\/AAPL$/)
+    await expect(sheet).toBeHidden()
+  })
+
+  test('a corrupt or blocked recent list leaves the Search sheet empty, without errors (Review Focus 4)', async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await seedSymbols([{ symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' }])
+    // A hand-edited value, then storage that refuses every read and write (a blocked WebView).
+    await page.addInitScript(() => {
+      localStorage.setItem('advisor.recent-symbols', '[1, "<script>", {"a": 2}')
+    })
+    const tabs = page.getByRole('navigation', { name: 'Main' }).last()
+    const sheet = page.getByRole('dialog', { name: 'Search' })
+    await page.goto('/')
+    await tabs.getByRole('button', { name: 'Search' }).click()
+    await expect(sheet.getByRole('combobox', { name: 'Find a symbol' })).toBeFocused()
+    await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+
+    await page.addInitScript(() => {
+      Object.defineProperty(window, 'localStorage', {
+        get() {
+          throw new DOMException('The operation is insecure.', 'SecurityError')
+        },
+      })
+    })
+    await page.goto('/ticker/RY.TO')
+    await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
+    await tabs.getByRole('button', { name: 'Search' }).click()
+    await expect(sheet.getByRole('combobox', { name: 'Find a symbol' })).toBeFocused()
+    await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0)
+    expect(errors).toEqual([])
+  })
+
   test('no page is wider than the screen', async ({ page }) => {
     // Pages with content: holdings with long names, notes, the chart, warnings, watchlist rows.
     await seedPortfolio()

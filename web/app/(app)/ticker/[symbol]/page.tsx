@@ -11,6 +11,7 @@ import { EarningsCard } from '@/components/ticker/EarningsCard'
 import { FilingsCard } from '@/components/ticker/FilingsCard'
 import { InsidersCard } from '@/components/ticker/InsidersCard'
 import { PriceCard } from '@/components/ticker/PriceCard'
+import { RememberVisit } from '@/components/ticker/RememberVisit'
 import { WatchToggle } from '@/components/ticker/WatchToggle'
 import { ownerClient } from '@/lib/auth'
 import { loadAlerts, loadHoldingData } from '@/lib/data/monitor'
@@ -114,6 +115,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
 
   return (
     <main className="page">
+      {/* First in the phone Search sheet's recent list from now on (spec §6). */}
+      <RememberVisit symbol={symbol} />
       <div className="enter">
         <Link href="/portfolio" className="sub inline-flex items-center gap-1">
           <ArrowLeft style={{ width: 14, height: 14 }} />

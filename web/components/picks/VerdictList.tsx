@@ -3,7 +3,8 @@ import type { ExitView, VerdictView } from '@/lib/data/picks'
 import { fmtPct, fmtPrice } from '@/lib/format'
 import type { Market } from '@/lib/portfolio/types'
 import { tickerHref } from '@/lib/ticker'
-import { VERDICT_LABEL, verdictWhy } from '@/lib/verdicts'
+import { edgeWords, verdictChip } from '@/lib/outlook'
+import { verdictWhy } from '@/lib/verdicts'
 
 /** The run's verdict for every watched symbol: market, chip and a short why. */
 export function VerdictList({ verdicts }: { verdicts: VerdictView[] }) {
@@ -32,7 +33,7 @@ export function VerdictList({ verdicts }: { verdicts: VerdictView[] }) {
               {v.held ? (
                 <span className={`chip ${v.held.group}`}>{v.held.label}</span>
               ) : (
-                <span className={`chip ${v.verdict}`}>{VERDICT_LABEL[v.verdict]}</span>
+                <span className={`chip ${verdictChip(v.verdict)}`}>{edgeWords(v.verdict)}</span>
               )}
               <span className="sub">{v.held ? v.held.why : verdictWhy(v, 'short')}</span>
             </div>

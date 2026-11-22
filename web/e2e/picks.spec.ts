@@ -202,7 +202,7 @@ test('a disabled market shows its gate reason and still lists verdicts', async (
   await expect(tsx.locator('article.pick')).toHaveCount(0)
   // the run's verdicts sit once, under both markets
   const row = page.locator('.verdict', { hasText: 'TD.TO' })
-  await expect(row.locator('.chip')).toHaveText('Hold')
+  await expect(row.locator('.chip.neutral')).toHaveText('No clear edge') // one name per verdict, as on the Watchlist
   await expect(row).toContainText('picks off for TSX this run')
 })
 

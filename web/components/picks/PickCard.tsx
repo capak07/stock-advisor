@@ -9,6 +9,7 @@ import type { Guide } from '@/lib/guidance'
 import { fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
 import { RISK_LABELS, type RiskLevel } from '@/lib/portfolio/actions'
 import { tickerHref } from '@/lib/ticker'
+import { PICK_P_FLOOR } from '@/lib/today'
 
 const pct = (fraction: number) => fmtPct(fraction * 100)
 
@@ -81,7 +82,7 @@ export function PickCard({
         // owner decision 2026-11-07: a pick shows how it was chosen and its backtest, never a P promise
         <div className="pick-chosen">
           <span className="label">Chosen by</span>
-          <b>The model&apos;s rule: P(beat) at least 0.58 and an expected return above costs</b>
+          <b>The model&apos;s rule: P(beat) at least {PICK_P_FLOOR} and an expected return above costs</b>
           <span className="fine" data-rule>
             No chance of beating {p.benchmark} is shown: the backtest below says how its picks did.
           </span>

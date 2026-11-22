@@ -11,11 +11,11 @@ import { SymbolSearch } from '@/components/SymbolSearch'
 import { useToast } from '@/components/Toast'
 import { fmtPct } from '@/lib/format'
 import type { Guide } from '@/lib/guidance'
-import { edgeWords } from '@/lib/outlook'
+import { edgeWords, forecastSpan, verdictChip } from '@/lib/outlook'
 import { assetKey, type AssetType } from '@/lib/portfolio/types'
 import type { SearchItem } from '@/lib/symbol-search'
 import { tickerHref } from '@/lib/ticker'
-import { type HeldGroup, VERDICT_LABEL, type Verdict } from '@/lib/verdicts'
+import type { HeldGroup, Verdict } from '@/lib/verdicts'
 import { PICK_FROM_LIST } from '@/lib/watch-form'
 
 export interface WatchRow {
@@ -74,23 +74,26 @@ export function AddWatch({ watched }: { watched: string[] }) {
   )
 }
 
-/** The verdict in words with its chance, horizon and likely range (spec §7.6). */
+/** The verdict in words with its chance, horizon and likely range (spec §7.6), in the stock page's units. */
 function Outlook({ row, outlook }: { row: WatchRow; outlook: NonNullable<WatchRow['outlook']> }) {
   const n = outlook.horizon
+  const span = forecastSpan(row.assetType)
   return (
     <>
       <div className="w-line">
-        <span className={`chip ${row.verdict === 'buy' || row.verdict === 'avoid' ? row.verdict : 'neutral'}`}>{edgeWords(row.verdict)}</span>
+        <span className={`chip ${verdictChip(row.verdict)}`}>{edgeWords(row.verdict)}</span>
         {row.lowRank !== null && <LowRankChip scored={row.lowRank} />}
         <span className="w-odds">
-          <b>{Math.round(outlook.pBeat * 100)}%</b> to beat {outlook.benchmark} over {n} days
+          <b>{Math.round(outlook.pBeat * 100)}%</b> to beat {outlook.benchmark} over {n} {span}
         </span>
       </div>
       <div className="w-range">
         <RangeBar q10={outlook.q10} q50={outlook.q50} q90={outlook.q90} benchmark={outlook.benchmark} />
         <div className="range-lab num">
           <span>{fmtPct(outlook.q10 * 100)}</span>
-          <span>likely {n}-day range</span>
+          <span>
+            likely range at {n} {span}
+          </span>
           <span>{fmtPct(outlook.q90 * 100)}</span>
         </div>
       </div>
@@ -105,7 +108,7 @@ function Call({ row }: { row: WatchRow }) {
       {row.held ? (
         <span className={`chip ${row.held.group}`}>{row.held.label}</span>
       ) : row.verdict ? (
-        <span className={`chip ${row.verdict}`}>{VERDICT_LABEL[row.verdict]}</span>
+        <span className={`chip ${verdictChip(row.verdict)}`}>{edgeWords(row.verdict)}</span>
       ) : (
         <span className="chip hold">New</span>
       )}

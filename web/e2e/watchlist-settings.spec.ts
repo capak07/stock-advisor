@@ -131,8 +131,8 @@ test.describe('watchlist', () => {
     await expect(aapl.locator('.w-odds')).toHaveCount(0)
     const td = page.locator('.watch-row', { hasText: 'TD.TO' })
     await expect(td.locator('.chip')).toHaveText('Avoid')
-    await expect(td.locator('.w-odds')).toHaveText('38% to beat XIU.TO over 5 days')
-    await expect(td.locator('.range-lab')).toHaveText('−6.4%likely 5-day range+7.1%')
+    await expect(td.locator('.w-odds')).toHaveText('38% to beat XIU.TO over 5 trading days')
+    await expect(td.locator('.range-lab')).toHaveText('−6.4%likely range at 5 trading days+7.1%')
     await expect(td.getByRole('img', { name: /^Likely range relative to XIU\.TO/ })).toBeVisible()
     await expect(td.locator('.w-price')).toHaveText('C$80.40')
     await expect(td.locator('.w-move')).toHaveText('+0.5%')
@@ -164,7 +164,7 @@ test.describe('watchlist', () => {
               values (${runId}, 'AAPL', 'US', 0.04, true, 3712), (${runId}, 'MSFT', 'US', 0.80, false, 3712)`
     await page.goto('/watchlist')
     const aapl = page.locator('.watch-row', { hasText: 'AAPL' })
-    await expect(aapl.locator('.chip.hold')).toHaveText('Hold')
+    await expect(aapl.locator('.chip.neutral')).toHaveText('No clear edge') // a Hold without a forecast, one name per verdict
     const flag = aapl.locator('.chip.low-rank')
     await expect(flag).toHaveText('Low model rank')
     await expect(flag).toHaveAttribute('title', /Bottom 10% of the model’s ranking of 3,712 US stocks/)
@@ -201,7 +201,7 @@ test.describe('watchlist', () => {
     await expect(xrpn.locator('.range')).toHaveCount(0)
     const veea = page.locator('.watch-row', { hasText: 'VEEA' })
     await expect(veea.locator('.chip')).toHaveText('No clear edge') // a Hold with a forecast, in words
-    await expect(veea.locator('.w-odds')).toHaveText('48% to beat SPY over 21 days')
+    await expect(veea.locator('.w-odds')).toHaveText('48% to beat SPY over 21 trading days')
     await expect(veea.locator('.w-detail')).toContainText("doesn't qualify as a buy")
 
     // Picks lists the run's verdicts under its picks (a run without picks links to the Watchlist instead)
@@ -212,7 +212,7 @@ test.describe('watchlist', () => {
     const verdicts = page.locator('.card', { has: page.getByRole('heading', { name: 'Watchlist verdicts' }) })
     await expect(verdicts.locator('.verdict', { hasText: 'XRPN' }).locator('.chip')).toHaveText('Sell')
     await expect(verdicts.locator('.verdict', { hasText: 'XRPN' })).toContainText('You hold it · Closed at 14.71, under its trailing stop 31.35')
-    await expect(verdicts.locator('.verdict', { hasText: 'VEEA' }).locator('.chip')).toHaveText('Hold')
+    await expect(verdicts.locator('.verdict', { hasText: 'VEEA' }).locator('.chip.neutral')).toHaveText('No clear edge') // the same name as on the Watchlist
   })
 
   test('a watched Buy says how to place it, sized at C$1,000 with nothing held', async ({ page }) => {
@@ -234,8 +234,8 @@ test.describe('watchlist', () => {
     await expect(row.locator('.w-detail')).toHaveText("Swing · hold ~10 trading days · exit by Nov 10 · 62% to beat XIU.TO · also today's #1 TSX pick")
     // the outlook at the Buy's horizon, not the 21 days a Hold would get
     await expect(row.locator('.chip.buy')).toHaveText('Buy')
-    await expect(row.locator('.w-odds')).toHaveText('62% to beat XIU.TO over 10 days')
-    await expect(row.locator('.range-lab')).toHaveText('−3.0%likely 10-day range+6.0%')
+    await expect(row.locator('.w-odds')).toHaveText('62% to beat XIU.TO over 10 trading days')
+    await expect(row.locator('.range-lab')).toHaveText('−3.0%likely range at 10 trading days+6.0%')
     const guide = row.locator('.order-guide')
     await expect(guide.locator('summary')).toContainText('How to place it · for C$1,000')
     await guide.locator('summary').click()

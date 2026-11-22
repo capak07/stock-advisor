@@ -27,9 +27,20 @@ export function outlookFor(rows: readonly ForecastHorizon[], horizon: number | n
   return rows.find((r) => r.horizon === nearest) ?? null
 }
 
-/** A verdict in words: Buy, Avoid, or "No clear edge" for a Hold or no verdict at all. */
+/**
+ * A verdict in words: Buy, Avoid, or "No clear edge" for a Hold or no verdict at all. One name per
+ * verdict on a stock the owner doesn't hold; "Hold" stays the name of a holding's action.
+ */
 export function edgeWords(verdict: 'buy' | 'hold' | 'avoid' | null): string {
   if (verdict === 'buy') return 'Buy'
   if (verdict === 'avoid') return 'Avoid'
   return 'No clear edge'
 }
+
+/** The chip class beside `edgeWords`: a Buy or Avoid keeps its colour, no clear edge is neutral. */
+export const verdictChip = (verdict: 'buy' | 'hold' | 'avoid' | null): string =>
+  verdict === 'buy' || verdict === 'avoid' ? verdict : 'neutral'
+
+/** A forecast's unit, as the stock page words it: trading days for a stock, days for a coin (it trades every day). */
+export const forecastSpan = (assetType: 'stock' | 'crypto'): 'trading days' | 'days' =>
+  assetType === 'crypto' ? 'days' : 'trading days'

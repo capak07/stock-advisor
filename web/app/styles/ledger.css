@@ -1,5 +1,7 @@
-/* Ledger components and motion (superdesign steps 3 and 4, dashboard_1.css). Colours and fonts come from
- * theme.css. Unlayered, these rules already beat Tailwind's layered preflight; the mockups' !important marks are kept so the port stays line for line. */
+/* Components and motion (superdesign steps 3 and 4: glass_ui.css, on the app's existing class names). Colours and
+ * fonts come from theme.css; the glass itself (fill, blur, rim, highlight, sheen) is glass.css, which names the
+ * surfaces it covers (.card, .popover, the bars, the drawer). This file only gives those surfaces their geometry.
+ * Unlayered, these rules already beat Tailwind's layered preflight; the mockups' !important marks are kept so the port stays line for line. */
 
 /* Capacitor writes these on the root as inline px. A browser uses the env() fallback. */
 :root {
@@ -20,7 +22,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 h1, h2, h3, h4 { margin: 0; /* not !important, unlike the mockup: headings' inline margins apply */ color: var(--foreground) !important; font-family: var(--font-sans) !important; letter-spacing: -0.01em; }
-h1 { font-size: 22px !important; font-weight: 600 !important; line-height: 1.2 !important; }
+h1 { font-size: 28px !important; font-weight: 650 !important; letter-spacing: -0.025em; line-height: 1.15 !important; }
 h2 { font-size: 15px !important; font-weight: 600 !important; line-height: 1.3 !important; }
 h3 { font-size: 13px !important; font-weight: 600 !important; }
 a { color: inherit !important; text-decoration: none !important; }
@@ -30,6 +32,7 @@ button, input, select, textarea { font-family: inherit !important; color: inheri
 .num { font-family: var(--font-mono) !important; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .label { font: 500 11px/1.2 var(--font-mono) !important; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground) !important; }
 .muted { color: var(--muted-foreground) !important; }
+.small { font-size: 12.5px; }
 .gain { color: var(--gain) !important; }
 .loss { color: var(--loss) !important; }
 .attention-text { color: var(--attention) !important; }
@@ -38,55 +41,81 @@ button, input, select, textarea { font-family: inherit !important; color: inheri
 .shell { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); }
 .sidebar { display: none; }
 .content { min-width: 0; display: flex; flex-direction: column; }
-main.page { flex: 1; width: 100%; max-width: 1520px; margin: 0 auto; padding: 16px 16px calc(112px + var(--safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+main.page { flex: 1; width: 100%; max-width: 1520px; margin: 0 auto; padding: 12px 16px calc(112px + var(--safe-area-inset-bottom, 0px)); display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; }
 main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0; }
+/* Grids size their columns to fit the screen, never to their longest unbroken line. */
+.col, .stack-grid { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 @media (min-width: 1024px) {
-  .shell { grid-template-columns: 232px minmax(0, 1fr); }
+  .shell { grid-template-columns: 248px minmax(0, 1fr); }
+  /* The floating glass sidebar (glass.css gives it the strong glass and the liquid refraction). */
   .sidebar {
-    display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100dvh;
-    padding: 18px 12px; background: var(--sidebar); border-right: 1px solid var(--sidebar-border);
+    display: flex; flex-direction: column; gap: 4px; position: sticky; top: 12px; height: calc(100dvh - 24px);
+    margin: 12px 0 12px 12px; padding: 18px 12px; border-radius: var(--radius-xl);
   }
-  main.page { padding: 24px 28px 40px; gap: 20px; }
+  main.page { padding: 8px 28px 40px; gap: 18px; }
 }
-.brand { display: flex; align-items: center; gap: 8px; padding: 2px 10px 16px; font: 600 13px/1 var(--font-mono); letter-spacing: 0.14em; }
-.brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--primary); color: var(--primary-foreground); display: grid; place-items: center; font-size: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 10px 18px; font: 600 13px/1 var(--font-mono); letter-spacing: 0.16em; }
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; color: #fff; font-size: 13px;
+  background: linear-gradient(140deg, var(--aurora-1), var(--brand) 70%); box-shadow: inset 0 1px 0 oklch(1 0 0 / .45), var(--shadow-sm);
+}
+.nav { position: relative; display: grid; gap: 2px; }
+.nav-pill { position: absolute; left: 0; right: 0; top: 0; height: 40px; border-radius: var(--radius-md); background: var(--brand-soft);
+  box-shadow: inset 0 0 0 1px var(--glass-border); transition: transform 300ms cubic-bezier(.3,1.3,.5,1), height 300ms; pointer-events: none; }
 .nav-link {
-  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-md);
-  color: var(--muted-foreground) !important; font-size: 14px; transition: background 150ms, color 150ms;
+  position: relative; display: flex; align-items: center; gap: 11px; height: 40px; padding: 0 12px; border-radius: var(--radius-md);
+  color: var(--muted-foreground) !important; font-size: 14px; font-weight: 500; transition: color 150ms, background 150ms;
 }
-.nav-link:hover { background: var(--sidebar-accent); color: var(--foreground) !important; }
-.nav-link[aria-current="page"] { background: var(--sidebar-accent); color: var(--foreground) !important; font-weight: 500; }
-.nav-link svg { width: 17px; height: 17px; }
+.nav-link:hover { color: var(--foreground) !important; background: var(--accent); }
+/* Until the sliding .nav-pill is rendered, the current link wears the pill's look itself. */
+.nav-link[aria-current="page"] { color: var(--foreground) !important; background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--glass-border); }
+.nav-link[aria-current="page"] svg { color: var(--brand); }
+.nav-link svg { width: 18px; height: 18px; }
+.nav-sep { height: 1px; background: var(--border); margin: 10px 10px; }
 .sidebar-search { margin-top: 14px; position: relative; }
-.statusbar-search { flex-basis: 100%; min-width: 0; }
-.statusbar-search .error:empty { display: none; }
 .sidebar-search input { width: 100%; padding-left: 32px !important; }
 .sidebar-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted-foreground); }
-.sidebar-foot { margin-top: auto; padding: 10px; font-size: 12px; color: var(--muted-foreground); display: grid; gap: 6px; }
+.sidebar-foot { margin-top: auto; padding: 10px 12px; font-size: 12px; color: var(--muted-foreground); display: grid; gap: 6px; }
 
+/* The top bar is transparent; its search field is a 44 px glass pill (glass.css: strong glass, liquid). */
 .statusbar {
   position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 10px 16px; padding-top: calc(10px + var(--safe-area-inset-top, 0px));
   padding-left: calc(16px + var(--safe-area-inset-left, 0px));
   padding-right: calc(16px + var(--safe-area-inset-right, 0px));
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in oklch, var(--background) 88%, transparent); backdrop-filter: blur(10px);
 }
 @media (min-width: 1024px) {
-  .statusbar { padding-left: calc(28px + var(--safe-area-inset-left, 0px)); padding-right: calc(28px + var(--safe-area-inset-right, 0px)); }
+  .statusbar {
+    padding-top: calc(12px + var(--safe-area-inset-top, 0px)); padding-bottom: 8px;
+    padding-left: calc(28px + var(--safe-area-inset-left, 0px)); padding-right: calc(28px + var(--safe-area-inset-right, 0px));
+  }
 }
-.statusbar .brand { padding: 0 8px 0 0; }
+.statusbar .brand { padding: 0 6px 0 0; }
 @media (min-width: 1024px) { .statusbar .brand { display: none; } }
 .status-spacer { flex: 1; }
+.statusbar-search { flex-basis: 100%; min-width: 0; }
+.statusbar-search > .field { flex: 1; min-width: 0; }
+.statusbar-search .error:empty { display: none; }
+.statusbar-search .find { height: 44px; border-radius: 999px; color: var(--muted-foreground); transition: box-shadow 220ms; }
+.statusbar-search .find svg { left: 14px; width: 16px; height: 16px; }
+.statusbar-search .find .input {
+  height: 100%; padding: 0 14px 0 38px !important; border: 0 !important; border-radius: inherit; background: transparent !important;
+  box-shadow: none; outline: none !important; font-size: 14.5px !important;
+}
+.statusbar-search .find .input::placeholder { color: var(--muted-foreground); }
+.statusbar-search .find:focus-within { box-shadow: var(--glass-highlight), 0 0 0 2px var(--ring), var(--shadow-md); }
+.statusbar-search .field.invalid .find { border-color: var(--loss); }
+.kbd { font: 500 11px/1 var(--font-mono); padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted-foreground); }
 .pill {
-  display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; font-size: 12.5px; font-weight: 500;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--card); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px; height: 40px; padding: 0 14px; border-radius: 999px; white-space: nowrap;
+  font-size: 12.5px; font-weight: 500; background: var(--glass-bg-strong); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight);
 }
 button.pill { cursor: pointer; }
 button.pill:hover, a.pill:hover { background: var(--accent); }
 .icon-btn {
-  display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: var(--radius-md);
-  border: 1px solid var(--border); background: var(--card); cursor: pointer;
+  display: inline-grid; place-items: center; width: 40px; height: 40px; flex: none; border-radius: 999px; cursor: pointer;
+  background: var(--glass-bg-strong); border: 1px solid var(--glass-border); box-shadow: var(--glass-highlight), var(--shadow-2xs); color: var(--foreground);
+  transition: transform 240ms cubic-bezier(.3,1.4,.5,1), background 150ms;
 }
 .icon-btn:hover { background: var(--accent); }
 .icon-btn svg { width: 16px; height: 16px; }
@@ -94,39 +123,65 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
 @media (min-width: 640px) { .hide-sm { display: inline-flex !important; } }
 .only-sm { display: inline-flex; }
 @media (min-width: 1024px) { .only-sm { display: none !important; } }
+.only-lg { display: none !important; }
+@media (min-width: 1024px) { .only-lg { display: inline-flex !important; } }
 
+/* Menus drop in (glass.css: glass, strong fill). */
 .popover {
-  position: absolute; z-index: 60; min-width: 300px; padding: 6px; border-radius: var(--radius-lg);
-  background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
-  opacity: 0; transform: translateY(-4px); pointer-events: none; transition: opacity 150ms, transform 150ms;
+  position: absolute; z-index: 60; min-width: 300px; padding: 6px; border-radius: var(--radius-lg); color: var(--popover-foreground);
+  opacity: 0; transform: translateY(-6px) scale(.98); transform-origin: top; pointer-events: none; transition: opacity 180ms, transform 180ms;
 }
 .popover.open { opacity: 1; transform: none; pointer-events: auto; }
-.popover-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: var(--radius-md); font-size: 13px; }
+.popover-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 9px 10px; border-radius: var(--radius-md); font-size: 13px; }
 .popover-row:hover { background: var(--accent); }
 
 .disclaimer { padding: 14px 16px calc(92px + var(--safe-area-inset-bottom, 0px)); text-align: center; font-size: 12px; color: var(--muted-foreground); border-top: 1px solid var(--border); }
 @media (min-width: 1024px) { .disclaimer { padding: 14px 28px; } }
 
+/* Floating tab bar (phone; glass.css: strong glass, liquid). The grid columns are set inline from the tab count. */
 .bottom-tabs {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: grid; grid-template-columns: repeat(4, 1fr);
-  border-top: 1px solid var(--border); background: color-mix(in oklch, var(--background) 92%, transparent);
-  backdrop-filter: blur(12px); padding-bottom: var(--safe-area-inset-bottom, 0px);
+  position: fixed; z-index: 40; left: 50%; bottom: calc(14px + var(--safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px)); display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px;
+  border-radius: var(--radius-xl); transition: transform 250ms cubic-bezier(.2,.8,.2,1);
 }
+.bottom-tabs.hidden { transform: translate(-50%, 120%); }
 @media (min-width: 1024px) { .bottom-tabs { display: none; } }
+.tab-pill { position: absolute; top: 6px; bottom: 6px; left: 6px; border-radius: 20px; background: var(--brand-soft);
+  box-shadow: inset 0 0 0 1px var(--glass-border); transition: transform 300ms cubic-bezier(.3,1.3,.5,1); pointer-events: none; }
+.tab-pill.stretch { animation: stretch 300ms ease-in-out; }
+@keyframes stretch { 50% { scale: 1.15 0.92; } }
 .bottom-tab {
-  display: grid; justify-items: center; gap: 3px; padding: 9px 4px 10px; font-size: 11px; font-weight: 500;
-  color: var(--muted-foreground) !important; background: none; border: 0; cursor: pointer;
+  position: relative; display: grid; justify-items: center; gap: 3px; padding: 7px 2px; font-size: 10.5px; font-weight: 500;
+  color: var(--muted-foreground) !important; border: 0; border-radius: 20px; background: none; cursor: pointer;
+  transition: transform 240ms cubic-bezier(.3,1.4,.5,1), background 150ms;
 }
-.bottom-tab svg { width: 20px; height: 20px; transition: transform 150ms; }
-.bottom-tab[aria-current="page"] { color: var(--foreground) !important; }
-.bottom-tab[aria-current="page"] svg { animation: tab-bump 150ms ease-out; }
-@keyframes tab-bump { 50% { transform: scale(1.08); } }
+.bottom-tab svg { width: 21px; height: 21px; }
+/* Until the sliding .tab-pill is rendered, the current tab wears the pill's look itself. */
+.bottom-tab[aria-current="page"] { color: var(--foreground) !important; background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--glass-border); }
+.bottom-tab[aria-current="page"] svg { color: var(--brand); animation: bump 180ms ease-out; }
+@keyframes bump { 50% { transform: scale(1.12); } }
 
 /* ---------- Surfaces and controls ---------- */
-.card { background: var(--card); color: var(--card-foreground); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs); }
+/* .card is glass (glass.css); here only its shape and the hover transition. */
+.card { color: var(--card-foreground); border-radius: var(--radius-lg); transition: transform 200ms, box-shadow 200ms; }
 .card-pad { padding: 16px; }
 @media (min-width: 1024px) { .card-pad { padding: 18px 20px; } }
-.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.hero { border-radius: var(--radius-xl); }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.section-head h2 { display: flex; align-items: center; gap: 8px; }
+.count { font: 600 11px/1 var(--font-mono); padding: 4px 7px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground); }
+.link { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; color: var(--muted-foreground) !important; }
+.link:hover { color: var(--foreground) !important; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 6px 2px 2px; }
+.page-head .sub { margin-top: 6px; color: var(--muted-foreground); font-size: 13px; }
+
+/* Rows and lists */
+.row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 11px 0; border-top: 1px solid var(--border); }
+.row:first-child { border-top: 0; }
+a.row:hover .sym { text-decoration: underline; text-underline-offset: 3px; }
+.name { font-size: 12.5px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.right { text-align: right; }
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 .chip { display: inline-flex; align-items: center; gap: 6px; font: 600 11px/1 var(--font-mono) !important; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 9px; border-radius: 999px; white-space: nowrap; }
 .chip.sell { color: var(--action-sell); background: var(--loss-soft); }
@@ -137,6 +192,11 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
 .chip.buy { color: var(--gain); background: var(--gain-soft); }
 .chip.avoid { color: var(--loss); background: var(--loss-soft); }
 .chip.low-rank { color: var(--loss); background: var(--attention-soft); cursor: help; }
+.chip.waiting { color: var(--attention); background: var(--attention-soft); }
+.chip.triggered { color: var(--gain); background: var(--gain-soft); }
+.chip.stopped { color: var(--loss); background: var(--loss-soft); }
+.chip.target { color: var(--gain); background: var(--gain-soft); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--gain) 40%, transparent); }
+.chip.neutral { color: var(--muted-foreground); background: var(--muted); }
 
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--card); white-space: nowrap; }
 .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; flex: none; }
@@ -145,27 +205,27 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
 .dot.low { background: var(--risk-low); } .dot.medium { background: var(--risk-medium); } .dot.high { background: var(--risk-high); } .dot.very-high { background: var(--risk-very-high); }
 .dot.paper { background: var(--attention); } .dot.validated { background: var(--gain); }
 
+/* Buttons: the main one is solid ink, the secondary one glass, the ghost bare. Pill-shaped. */
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: 500 13px/1 var(--font-sans) !important;
-  padding: 9px 14px; border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; white-space: nowrap;
-  transition: background 150ms, transform 100ms, opacity 150ms;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 999px;
+  font: 500 14px/1 var(--font-sans) !important; border: 1px solid transparent; cursor: pointer; white-space: nowrap;
+  transition: transform 240ms cubic-bezier(.3,1.4,.5,1), background 150ms, opacity 150ms;
 }
-.btn:active { transform: scale(0.98); }
 .btn svg { width: 15px; height: 15px; }
-.btn-primary { background: var(--primary) !important; color: var(--primary-foreground) !important; }
+.btn-primary { background: var(--primary) !important; color: var(--primary-foreground) !important; box-shadow: inset 0 1px 0 oklch(1 0 0 / .22), var(--shadow-sm); }
 .btn-primary:hover { opacity: 0.9; }
-.btn-secondary { background: var(--secondary) !important; color: var(--secondary-foreground) !important; border-color: var(--border) !important; }
+.btn-secondary { background: var(--glass-bg-strong) !important; border-color: var(--glass-border) !important; box-shadow: var(--glass-highlight), var(--shadow-2xs); color: var(--foreground) !important; }
 .btn-secondary:hover { background: var(--accent) !important; }
-.btn-ghost { background: transparent !important; color: var(--foreground) !important; }
-.btn-ghost:hover { background: var(--accent) !important; }
-.btn-sm { padding: 7px 10px; font-size: 12.5px !important; }
+.btn-ghost { background: transparent !important; color: var(--muted-foreground) !important; }
+.btn-ghost:hover { background: var(--accent) !important; color: var(--foreground) !important; }
+.btn-sm { height: 34px; padding: 0 12px; font-size: 13px !important; }
 
 .input, .select {
-  font: 400 13px/1.2 var(--font-sans) !important; padding: 9px 11px; border-radius: var(--radius-md);
-  border: 1px solid var(--input) !important; background: var(--card) !important; color: var(--foreground) !important;
-  width: 100%; transition: box-shadow 120ms, border-color 120ms;
+  height: 42px; width: 100%; padding: 0 12px; border-radius: var(--radius-md);
+  border: 1px solid var(--input) !important; background: var(--secondary) !important; color: var(--foreground) !important;
+  font: 400 14px/1.2 var(--font-sans) !important; box-shadow: inset 0 1px 2px oklch(0 0 0 / .04); transition: box-shadow 120ms, border-color 120ms;
 }
-.input:focus, .select:focus { outline: none !important; border-color: var(--ring) !important; box-shadow: 0 0 0 2px color-mix(in oklch, var(--ring) 35%, transparent); }
+.input:focus, .select:focus { outline: 2px solid var(--ring) !important; outline-offset: 1px !important; }
 .input.num-input { font-family: var(--font-mono) !important; }
 .field { display: grid; gap: 6px; }
 .field > span:first-child { font-size: 12.5px; font-weight: 500; }
@@ -174,36 +234,55 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
 .field.invalid .input, .field.invalid .select { border-color: var(--loss) !important; }
 .field.invalid .error { display: block; animation: fade 150ms ease-out; }
 
-.tabs { position: relative; display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--radius-md); background: var(--muted); }
+/* Segmented control (the mockups' .seg); the Tabs component's .tabs/.tab-indicator share its look. */
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--muted); border: 1px solid var(--border); }
+.seg button { height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; font-size: 12.5px; font-weight: 500; color: var(--muted-foreground); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--glass-bg-strong); color: var(--foreground); box-shadow: var(--glass-highlight), var(--shadow-xs); }
+.tabs { position: relative; display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--muted); border: 1px solid var(--border); }
 .tabs.compact .tab { padding: 7px 10px; }
 .chart-ranges { margin: 2px 0 12px; }
-.tab { position: relative; z-index: 1; font: 500 13px/1 var(--font-sans) !important; padding: 7px 14px; border: 0; background: none; border-radius: var(--radius-sm); color: var(--muted-foreground); cursor: pointer; transition: color 150ms; }
+.tab { position: relative; z-index: 1; font: 500 13px/1 var(--font-sans) !important; padding: 7px 14px; border: 0; background: none; border-radius: 999px; color: var(--muted-foreground); cursor: pointer; transition: color 150ms; }
 .tab[aria-selected="true"] { color: var(--foreground); }
-.tab-indicator { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 0; border-radius: var(--radius-sm); background: var(--card); box-shadow: var(--shadow-xs); transition: transform 200ms ease-out, width 200ms ease-out; }
-html.dark .tab-indicator { background: var(--accent); }
+.tab-indicator { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 0; border-radius: 999px; background: var(--glass-bg-strong); box-shadow: var(--glass-highlight), var(--shadow-xs); transition: transform 200ms ease-out, width 200ms ease-out; }
 [data-panel][hidden] { display: none !important; }
 [data-panel] { animation: fade 150ms ease-out; }
 
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.data-table th { text-align: left; font: 500 11px/1.2 var(--font-mono) !important; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); padding: 0 10px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.data-table td { padding: 11px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
-.data-table tbody tr { transition: background 150ms; }
-.data-table tbody tr:hover { background: var(--accent); }
-.data-table tr:last-child td { border-bottom: 0; }
+/* Tables (the mockups' .table): rows divided by hairlines, the outer cells flush with the card's padding. */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.data-table th { text-align: left; font: 500 11px/1.2 var(--font-mono) !important; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-foreground); padding: 0 10px 8px; white-space: nowrap; }
+.data-table td { padding: 11px 10px; border-top: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+.data-table th:first-child, .data-table td:first-child { padding-left: 0; }
+.data-table th:last-child, .data-table td:last-child { padding-right: 0; }
+.data-table tbody tr td { transition: background 150ms; }
+.data-table tbody tr:hover td { background: oklch(1 0 0 / .18); }
+html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 .data-table .r { text-align: right; }
 .table-scroll { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
 @media (min-width: 1024px) { .table-scroll { margin: 0 -20px; padding: 0 20px; } }
 .sym { font: 600 13px/1.2 var(--font-mono) !important; }
 .sub { font-size: 12px; color: var(--muted-foreground); }
 
-/* Forecast range bar: q10..q90 band, q50 dot, zero line */
+/* Stat tiles and big numbers */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.stat { padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); }
+.stat b { display: block; margin-top: 4px; font: 600 15px/1.2 var(--font-mono); }
+.big { font: 600 40px/1.05 var(--font-mono) !important; letter-spacing: -0.035em; }
+@media (max-width: 480px) { .big { font-size: 34px !important; } }
+
+/* Range bar: the q10..q90 band on an 8 px track, a tick at the median, a ring at the price now (0%).
+ * The app's bars mark the price with .zero; the mockups' .now is the same ring. */
 .range { position: relative; height: 16px; width: 132px; flex: none; }
-.range .track { position: absolute; top: 7px; left: 0; right: 0; height: 2px; border-radius: 2px; background: var(--border); }
-.range .zero { position: absolute; top: 1px; width: 1px; height: 14px; background: var(--muted-foreground); opacity: 0.7; }
-.range .band { position: absolute; top: 4px; height: 8px; border-radius: 4px; background: var(--chart-5); border: 1px solid var(--chart-4); transform-origin: var(--origin, 50%) center; animation: band-grow 300ms ease-out both; }
-.range .mid { position: absolute; top: 2px; width: 12px; height: 12px; margin-left: -6px; border-radius: 999px; background: var(--chart-4); border: 2px solid var(--card); animation: pop 200ms ease-out 150ms both; }
+.range .track { position: absolute; top: 4px; left: 0; right: 0; height: 8px; border-radius: 999px; background: var(--muted); }
+.range .band { position: absolute; top: 4px; height: 8px; border-radius: 999px; background: var(--chart-5); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--chart-4) 30%, transparent); transform-origin: var(--origin, 50%) center; animation: band-grow 300ms ease-out both; }
+.range .mid { position: absolute; top: 1px; width: 2px; height: 14px; margin-left: -1px; border-radius: 2px; background: var(--chart-4); animation: pop 200ms ease-out 150ms both; }
+.range .zero, .range .now { position: absolute; z-index: 1; top: 0; width: 16px; height: 16px; margin-left: -8px; border-radius: 999px; background: var(--glass-bg-strong); border: 2px solid var(--foreground); }
 .range.wide { width: 100%; height: 22px; }
-.range.wide .track { top: 10px; } .range.wide .zero { top: 2px; height: 18px; } .range.wide .band { top: 6px; height: 10px; } .range.wide .mid { top: 4px; width: 14px; height: 14px; margin-left: -7px; }
+.range.wide .track, .range.wide .band { top: 7px; } .range.wide .mid { top: 4px; } .range.wide .zero, .range.wide .now { top: 3px; }
+
+/* The honest verdict line */
+.verdict { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted-foreground); }
+.verdict svg.lucide { width: 15px; height: 15px; }
+.edge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; padding: 5px 10px; border-radius: 999px; background: var(--muted); }
 
 .banner { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-radius: var(--radius-lg); font-size: 13px; border: 1px solid; animation: banner-in 250ms ease-out both; }
 .banner svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
@@ -214,11 +293,16 @@ html.dark .tab-indicator { background: var(--accent); }
 .banners:not(:empty) { padding-top: 12px; }
 @media (min-width: 1024px) { .banners { padding: 0 28px; } }
 
-.empty { display: grid; justify-items: center; gap: 8px; padding: 36px 16px; text-align: center; color: var(--muted-foreground); animation: fade 200ms ease-out; }
+/* Empty state: an icon in a soft halo, a line, a reason */
+.empty { display: grid; justify-items: center; gap: 8px; padding: 28px 16px; text-align: center; color: var(--muted-foreground); animation: fade 200ms ease-out; }
 .empty svg { width: 26px; height: 26px; }
 .empty strong { color: var(--foreground); font-size: 14px; }
+.empty .halo { width: 52px; height: 52px; border-radius: 18px; display: grid; place-items: center; color: var(--brand);
+  background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--glass-border); }
+.empty .halo svg { width: 24px; height: 24px; }
 
-.skeleton { display: block; border-radius: var(--radius-sm); background: var(--muted); animation: skeleton 1500ms ease-in-out infinite; }
+/* Loading: a sheen sweeps across (motion below) */
+.skeleton { display: block; position: relative; overflow: hidden; border-radius: var(--radius-sm); background: var(--muted); }
 
 /* Action cards */
 .action-card { position: relative; display: grid; gap: 6px; padding: 14px; border-radius: var(--radius-lg); background: var(--card); border: 1px solid var(--border); border-top: 3px solid var(--tone); box-shadow: var(--shadow-xs); transition: transform 150ms, box-shadow 150ms; cursor: pointer; }
@@ -233,22 +317,23 @@ html.dark .tab-indicator { background: var(--accent); }
   .action-grid > * { flex: 0 0 76%; scroll-snap-align: start; }
 }
 
-/* Drawers and sheets */
-.backdrop { position: fixed; inset: 0; z-index: 70; background: hsl(0 0% 0% / 0.5); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity 200ms; }
-.backdrop.open { opacity: 1; pointer-events: auto; }
+/* Sheets: the page behind dims and blurs (the one animated blur); the sheet slides up (glass.css: strong glass). */
+.backdrop { position: fixed; inset: 0; z-index: 70; background: oklch(0.2 0.02 320 / .18); opacity: 0; pointer-events: none; transition: opacity 240ms, backdrop-filter 240ms; }
+.backdrop.open { opacity: 1; pointer-events: auto; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .drawer {
-  position: fixed; z-index: 80; background: var(--background); border: 1px solid var(--border); box-shadow: var(--shadow-2xl);
-  display: flex; flex-direction: column; inset: auto 0 0 0; max-height: 92dvh; border-radius: 16px 16px 0 0;
-  transform: translateY(105%); transition: transform 300ms ease-out; visibility: hidden;
+  position: fixed; z-index: 80; display: flex; flex-direction: column; inset: auto 0 0 0; max-height: 92dvh;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  transform: translateY(105%); visibility: hidden; transition: transform 340ms cubic-bezier(.2,.8,.2,1), visibility 0s 340ms;
 }
-.drawer.open { transform: none; visibility: visible; }
+.drawer.open { transform: none; visibility: visible; transition: transform 340ms cubic-bezier(.2,.8,.2,1); }
 @media (min-width: 768px) {
-  .drawer { inset: 0 0 0 auto; width: 440px; max-height: none; border-radius: 0; transform: translateX(105%); transition-duration: 250ms; }
+  .drawer { inset: 0 0 0 auto; width: 440px; max-height: none; border-radius: var(--radius-xl) 0 0 var(--radius-xl); transform: translateX(105%); }
+  .drawer.open { transform: none; }
 }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
 .drawer-body { padding: 18px; overflow-y: auto; display: grid; gap: 14px; align-content: start; }
 .drawer-foot { margin-top: auto; padding: 14px 18px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
-.grab { width: 36px; height: 4px; border-radius: 4px; background: var(--border); margin: 8px auto 0; }
+.grab { width: 40px; height: 5px; border-radius: 999px; background: var(--border); margin: 10px auto 0; flex: none; }
 @media (min-width: 768px) { .grab { display: none; } }
 
 .toast {
@@ -271,9 +356,12 @@ html.dark .tab-indicator { background: var(--accent); }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted-foreground); }
 .legend i { display: inline-block; width: 14px; height: 2px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 
-/* ---------- Motion (signed off in step 3) ---------- */
+/* ---------- Motion (glass_ui.css "Motion"; transform and opacity only, except the row flash) ---------- */
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-only { from { opacity: 0; } to { opacity: 1; } }
+@keyframes drop-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes banner-in { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: none; } }
 @keyframes draw { to { stroke-dashoffset: 0; } }
 @keyframes cone-in { from { opacity: 0; transform: scaleX(0); } to { opacity: 1; transform: scaleX(1); } }
@@ -281,25 +369,82 @@ html.dark .tab-indicator { background: var(--accent); }
 @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
 @keyframes attention { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--tone) 50%, transparent), var(--shadow-xs); } 100% { box-shadow: 0 0 0 6px color-mix(in oklch, var(--tone) 0%, transparent), var(--shadow-xs); } }
 @keyframes running { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@keyframes live { from { transform: scale(1); opacity: .6; } to { transform: scale(2.6); opacity: 0; } }
+@keyframes flip { 0% { transform: scale(.9); } 60% { transform: scale(1.05); } 100% { transform: none; } }
+@keyframes tick-up { 30% { background: var(--gain-soft); } }
+@keyframes tick-down { 30% { background: var(--loss-soft); } }
+@keyframes sweep { to { transform: translateX(100%); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shake { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes highlight { from { background: var(--attention-soft); } to { background: transparent; } }
-@keyframes skeleton { 0%, 100% { background: var(--muted); } 50% { background: var(--accent); } }
+@keyframes drift {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50% { transform: translate3d(4%, -3%, 0) rotate(4deg); }
+  100% { transform: translate3d(-3%, 3%, 0) rotate(-6deg); }
+}
 
-.enter { animation: fade-up 200ms ease-out both; }
+/* The aurora drifts over 60 s and rests while the page is hidden (GlassBackdrop sets .paused). */
+.aurora::before { animation: drift 60s ease-in-out infinite alternate; will-change: transform; }
+.aurora.paused::before { animation-play-state: paused; }
+
+/* Cards rise and fade in, the first six 40 ms apart. Filled backwards only, so that once in, a card's own
+ * transform (the hover lift) applies again. */
+.enter { animation: enter 320ms cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(var(--i, 0) * 40ms); }
+.page > .enter:nth-child(1) { --i: 0; }
+.page > .enter:nth-child(2) { --i: 1; }
+.page > .enter:nth-child(3) { --i: 2; }
+.page > .enter:nth-child(4) { --i: 3; }
+.page > .enter:nth-child(5) { --i: 4; }
+.page > .enter:nth-child(6) { --i: 5; }
 .stagger > * { animation: fade-up 240ms ease-out both; animation-delay: calc(min(var(--i, 0), 7) * 40ms); }
+
+/* Live market dot, a status chip that pops when it changes, prices that flash once after Refresh */
+.dot.live { position: relative; }
+.dot.live::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: inherit; animation: live 2s ease-out infinite; }
+.chip.flip { animation: flip 400ms cubic-bezier(.3,1.3,.5,1); }
+.tick-up { animation: tick-up 900ms ease-out; }
+.tick-down { animation: tick-down 900ms ease-out; }
+
+/* Chart lines draw left to right; the forecast range fades in after. .draw is on the svg (the mockups);
+ * the app's LineChart marks the path itself with .draw inside .chart. */
+.draw path.line { stroke-dasharray: var(--len, 1200); stroke-dashoffset: var(--len, 1200); animation: draw 700ms cubic-bezier(.4,0,.2,1) forwards; }
+.draw .cone { opacity: 0; animation: fade 400ms 200ms forwards; }
 .chart .draw { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw 600ms ease-out forwards; }
 .chart .cone { transform-box: view-box; animation: cone-in 400ms ease-out 500ms both; }
 .chart .late { animation: fade 300ms ease-out 300ms both; }
+
+.skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); animation: sweep 1.6s infinite;
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / .45), transparent); }
+
+/* Press scales down, release springs back past 1 (the transitions on .btn, .icon-btn and .bottom-tab). */
+.btn:active, .icon-btn:active, .bottom-tab:active { transform: scale(.97); transition-duration: 120ms; }
+
+/* Desktop: clickable cards lift 2px; a highlight follows the pointer along the rim (--mx/--my set from script). */
+@media (hover: hover) and (min-width: 1024px) {
+  .card.rim:hover, .card.lift:hover { transform: translateY(-2px); box-shadow: var(--glass-highlight), 0 0 0 1px var(--glass-edge), var(--shadow-lg); }
+}
+.card.rim::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 200ms;
+  background: radial-gradient(180px circle at var(--mx, 50%) var(--my, 0%), oklch(1 0 0 / .55), transparent 60%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 1px;
+}
+.card.rim:hover::after { opacity: 1; }
+
 .dot.running { animation: running 1600ms ease-in-out infinite; }
 .shake { animation: shake 150ms ease-in-out 2; }
 .row-added td { animation: highlight 400ms ease-out; }
 .icon-btn.spinning svg { animation: spin 900ms linear infinite; }
 
+/* Reduced motion: every animation and transition becomes a 120 ms fade, the aurora stands still, chart lines
+ * appear without drawing, and nothing lifts or presses. */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
-  .enter, .stagger > *, [data-panel], .empty { animation: fade 150ms ease-out both !important; animation-delay: 0ms !important; }
-  .dot.running, .action-card.attention, .skeleton, .shake, .icon-btn.spinning svg { animation: none !important; }
+  *, *::before, *::after { animation-duration: 120ms !important; animation-iteration-count: 1 !important; transition-duration: 120ms !important; scroll-behavior: auto !important; }
+  .aurora::before { animation: none !important; }
+  .enter { animation-name: fade-only !important; }
+  .stagger > *, [data-panel], .empty { animation: fade 120ms ease-out both !important; animation-delay: 0ms !important; }
+  .dot.running, .dot.live::after, .action-card.attention, .skeleton::after, .shake, .icon-btn.spinning svg { animation: none !important; }
+  .draw path.line { stroke-dasharray: none; stroke-dashoffset: 0; animation: none !important; }
   .chart .draw { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; animation: none !important; }
   .chart .cone, .chart .late { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .card.lift:hover, .card.rim:hover, .btn:active, .icon-btn:active, .bottom-tab:active { transform: none !important; }
 }

@@ -1,4 +1,14 @@
-import { COSTS_TITLE, SKILL_TITLE, TRACK_LABEL, fmtR, recordEmptyLine, type RecordSummary, type TrackRecordData } from '@/lib/daytrade'
+import { TriangleAlert } from 'lucide-react'
+import {
+  COSTS_TITLE,
+  SKILL_TITLE,
+  TRACK_LABEL,
+  fmtR,
+  recordEmptyLine,
+  shortRecordLine,
+  type RecordSummary,
+  type TrackRecordData,
+} from '@/lib/daytrade'
 
 const DASH = '—'
 const r = (value: number | null) => (value === null ? DASH : fmtR(value))
@@ -49,11 +59,15 @@ function Window({ span, record }: { span: 20 | 60; record: TrackRecordData }) {
   )
 }
 
-/** Both lists' finished signals over the last 20 and 60 finished trading days, before and after costs. */
+/**
+ * Both lists' finished signals over the last 20 and 60 finished trading days, before and after costs,
+ * saying plainly when the record is too short to judge (spec §7.3).
+ */
 export function TrackRecord({ record }: { record: TrackRecordData }) {
   const empty = recordEmptyLine(record.costs.last60)
+  const short = shortRecordLine(record)
   return (
-    <section className="card card-pad enter" aria-labelledby="dt-record-h">
+    <section className="card card-pad" aria-labelledby="dt-record-h">
       <div className="section-head" style={{ marginBottom: 4 }}>
         <h2 id="dt-record-h">Track record</h2>
       </div>
@@ -65,9 +79,15 @@ export function TrackRecord({ record }: { record: TrackRecordData }) {
           {empty}
         </p>
       ) : (
-        <div style={{ display: 'grid', gap: 16 }}>
+        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'minmax(0, 1fr)' }}>
           <Window span={20} record={record} />
           <Window span={60} record={record} />
+        </div>
+      )}
+      {short !== null && (
+        <div className="banner warn" style={{ marginTop: 12 }}>
+          <TriangleAlert />
+          <div>{short}</div>
         </div>
       )}
     </section>

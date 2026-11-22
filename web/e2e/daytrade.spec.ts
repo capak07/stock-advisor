@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { nyTime } from '../lib/daytrade'
 import { daysAgo, nyAt, resetData, seedDaytradeDay, seedDaytradeSignal, seedFx, sql, today } from './db'
 
@@ -9,6 +9,16 @@ const costSection = (page: Page) => page.getByRole('region', { name: 'Top 3 afte
 /** The after-costs top 3's cards. */
 const cards = (page: Page) => costSection(page).getByTestId('daytrade-card')
 const skillCards = (page: Page) => skillSection(page).getByTestId('daytrade-card')
+/** The All signals table: opens its collapsed block first. */
+async function allSignals(page: Page) {
+  await page.locator('summary', { hasText: 'All signals' }).click()
+  return page.getByRole('table', { name: 'All signals' })
+}
+/** A card's place in its top 3 and its symbol. */
+async function expectPlace(card: Locator, place: number, symbol: string) {
+  await expect(card.locator('.rank')).toHaveText(String(place))
+  await expect(card.locator('.sym')).toHaveText(symbol)
+}
 const SKILL_SUB = 'The strongest volume-confirmed US breakouts at 10:00 AM ET, by how far the price is above the range high. Before your costs.'
 
 /** The status line without a row for today, at New York's time now. */
@@ -59,7 +69,9 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(first.getByText('Fresh', { exact: true })).toBeVisible()
   await expect(first).toContainText('StopUS$66.05')
   await expect(first).toContainText('TargetUS$70.85')
-  await expect(first).toContainText('Flat by12:55 PM')
+  await expect(first).toContainText('Opening range US$64.45–US$67.55 · flat by 12:55 PM')
+  await expect(first).toContainText('Cost1.31R')
+  await expect(first).toContainText('History, net+0.29R')
   await expect(first).toContainText('10,000 replays: target first 34% · stop first 52% · neither 14% · green at close 48%')
   await expect(first).toContainText("This rule on TGTX's last 55 sessions: fired 37 times, 5 target, 20 stop; average +1.60R before costs")
   await expect(first).toContainText('Cost 3.10% round trip = 1.31R')
@@ -73,10 +85,12 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(second).toContainText('TSX')
   await expect(second).toContainText('StopC$149.50')
   await expect(second).toContainText('≈ 100 shares (risking ≈ C$50 at the stop)')
-  await expect(second).toContainText('Flat by3:55 PM')
+  await expect(second).toContainText('flat by 3:55 PM')
   await expect(cards(page).nth(2)).toContainText('Even one share risks more than your C$50 limit.')
 
-  const table = page.getByRole('table', { name: 'Other signals today' })
+  // every signal, in a collapsed table
+  await expect(page.getByRole('table', { name: 'All signals' })).toBeHidden()
+  const table = await allSignals(page)
   await expect(table.getByRole('row')).toHaveCount(5) // header + 4
   await expect(table.getByRole('row', { name: /AMD/ })).toContainText('History is −0.20R after costs')
   await expect(table.getByRole('row', { name: /TGTX/ })).toContainText('Top 3 (#1)')
@@ -86,7 +100,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(page.getByRole('button', { name: /buy|order|place/i })).toHaveCount(0)
 })
 
-test("the skill's top 3 come first, with their strength and round-trip cost, then the top 3 after costs", async ({ page }) => {
+test("the top 3 after costs come first, then the skill's top 3 in compact cards with their strength, result and cost", async ({ page }) => {
   await seedFx([daysAgo(1)], 1.4)
   await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
   // the skill's three, seeded out of rank order: none of them is eligible after costs
@@ -112,40 +126,51 @@ test("the skill's top 3 come first, with their strength and round-trip cost, the
   await seedDaytradeSignal({ symbol: 'OGC.TO', market: 'TSX', name: 'OceanaGold', triggerAt: ago(35), entry: 5.5, stop: 5.4, costPct: 0.1, rank: 1, netHistoryR: 0.4 })
 
   await page.goto('/daytrade')
-  // the page's order: status line, the skill's top 3, the top 3 after costs, other signals, track record
+  // the page's order (spec §7.3): status line, the top 3 after costs, the skill's top 3, all signals, track record and notes
   const status = await page.getByTestId('daytrade-status').boundingBox()
+  const costTop = await costSection(page).boundingBox()
   const skillTop = await skillSection(page).boundingBox()
-  expect(status!.y).toBeLessThan(skillTop!.y)
+  expect(status!.y).toBeLessThan(costTop!.y)
+  expect(costTop!.y).toBeLessThan(skillTop!.y)
   const headings = await page.getByRole('heading', { level: 2 }).allInnerTexts()
-  expect(headings.map((h) => h.trim())).toEqual(["The skill's top 3", 'Top 3 after your costs', 'Other signals today', 'Track record'])
+  expect(headings.map((h) => h.replace(/\s+/g, ' ').trim())).toEqual([
+    'Top 3 after your costs',
+    "The skill's top 3",
+    'All signals 4',
+    'Track record',
+    'Notes: costs, rules, limits',
+  ])
   await expect(skillSection(page).getByText(SKILL_SUB, { exact: true })).toBeVisible()
 
   await expect(skillCards(page)).toHaveCount(3)
-  await expect(skillCards(page).nth(0)).toContainText('#1 FIS')
-  await expect(skillCards(page).nth(1)).toContainText('#2 ERAS')
-  await expect(skillCards(page).nth(2)).toContainText('#3 AFRM')
+  await expectPlace(skillCards(page).nth(0), 1, 'FIS')
+  await expectPlace(skillCards(page).nth(1), 2, 'ERAS')
+  await expectPlace(skillCards(page).nth(2), 3, 'AFRM')
 
   const fis = skillCards(page).nth(0)
   await expect(fis).toContainText('Fidelity National Information Services')
-  await expect(fis).toContainText(/Entry signal \d{1,2}:\d{2} [AP]M at US\$68\.12/)
+  // compact: entry → target / stop, the strength, the result after costs, the verdict and the cost; no tiles
+  await expect(fis).toContainText('Entry US$68.12 → US$70.36 / US$67.00')
   await expect(fis.getByText('+0.92% above the range high', { exact: true })).toBeVisible()
-  await expect(fis.getByText('Your round-trip cost (currency conversion both ways plus the spread) is 1.36R: the trade must gain more than that to pay.', { exact: true })).toBeVisible()
-  await expect(fis).toContainText(/Target hit at \d{1,2}:\d{2} [AP]M \(US\$70\.36\) · \+2\.00R before costs, \+0\.64R after/)
+  await expect(fis.getByText('+0.64R after costs', { exact: true })).toBeVisible()
+  await expect(fis).toContainText('10,000 replays: target first 34%')
   await expect(fis).toContainText('Cost 3.10% round trip = 1.36R')
   await expect(fis.getByText('Target hit', { exact: true })).toBeVisible() // the outcome chip
+  await expect(fis.locator('.stat')).toHaveCount(0)
+  await expect(fis).not.toContainText('shares')
   await expect(skillCards(page).nth(1).getByText('+1.67% above the range high', { exact: true })).toBeVisible()
-  await expect(skillCards(page).nth(2)).toContainText('Your round-trip cost (currency conversion both ways plus the spread) is 2.26R: the trade must gain more than that to pay.')
+  await expect(skillCards(page).nth(1).getByText('Open', { exact: true })).toBeVisible()
+  await expect(skillCards(page).nth(2)).toContainText('Cost 3.10% round trip = 2.26R')
 
-  // the after-costs top 3 is as it was: no strength or conversion line
+  // the after-costs top 3 is a full card, without the strength line
   await expect(cards(page)).toHaveCount(1)
   const ogc = cards(page).first()
-  await expect(ogc).toContainText('#1 OGC.TO')
+  await expectPlace(ogc, 1, 'OGC.TO')
   await expect(ogc).toContainText('StopC$5.40')
   await expect(ogc).not.toContainText('above the range high')
-  await expect(ogc).not.toContainText('Your round-trip cost')
 
   // every signal is still listed; the skill's ones are marked
-  const table = page.getByRole('table', { name: 'Other signals today' })
+  const table = await allSignals(page)
   await expect(table.getByRole('row')).toHaveCount(5)
   await expect(table.getByRole('row', { name: /FIS/ })).toContainText('skill #1')
   await expect(table.getByRole('row', { name: /AFRM/ })).toContainText('skill #3')
@@ -158,9 +183,9 @@ test('a signal in both lists is shown in both', async ({ page }) => {
   await seedDaytradeSignal({ symbol: 'TGTX', triggerAt: ago(2), entry: 67.65, stop: 66.05, rank: 1, skillRank: 1 })
   await page.goto('/daytrade')
   await expect(skillCards(page)).toHaveCount(1)
-  await expect(skillCards(page).first()).toContainText('#1 TGTX')
+  await expectPlace(skillCards(page).first(), 1, 'TGTX')
   await expect(cards(page)).toHaveCount(1)
-  await expect(cards(page).first()).toContainText('#1 TGTX')
+  await expectPlace(cards(page).first(), 1, 'TGTX')
 })
 
 test("a day with the skill's signals but none eligible shows the skill's list and the no-trade line", async ({ page }) => {
@@ -170,8 +195,8 @@ test("a day with the skill's signals but none eligible shows the skill's list an
 
   await page.goto('/daytrade')
   await expect(skillCards(page)).toHaveCount(2)
-  await expect(skillCards(page).nth(0)).toContainText('#1 FIS')
-  await expect(skillCards(page).nth(1)).toContainText('#2 ERAS')
+  await expectPlace(skillCards(page).nth(0), 1, 'FIS')
+  await expectPlace(skillCards(page).nth(1), 2, 'ERAS')
   await expect(skillSection(page).getByText('No signals yet today.')).toHaveCount(0)
   await expect(cards(page)).toHaveCount(0)
   await expect(costSection(page).getByText('No signal today has a positive record after costs (2 signals checked).')).toBeVisible()
@@ -197,7 +222,7 @@ test('a day with no eligible signal says no trade and still lists the signals', 
   // signals but none in the skill's list (as when a cycle failed to rank them)
   await expect(skillSection(page).getByText("The skill's ranking is set at 10:00 AM ET.")).toBeVisible()
   await expect(skillSection(page).getByText('No signals yet today.')).toHaveCount(0)
-  const table = page.getByRole('table', { name: 'Other signals today' })
+  const table = await allSignals(page)
   await expect(table.getByRole('row', { name: /AMD/ })).toContainText('History is −0.20R after costs')
   await expect(table.getByRole('row', { name: /SOFI/ })).toContainText('Not enough history: only 4 full past session(s); need at least 20')
 })
@@ -311,9 +336,31 @@ test('the page refreshes itself while the day is scanning', async ({ page }) => 
   await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
   await page.goto('/daytrade')
   await expect(page.getByTestId('daytrade-status')).toHaveText(/^Scanning/)
+  await expect(page.getByTestId('daytrade-live')).toHaveText('Live · updates every minute')
   await sql`update daytrade_days set status = 'failed', error = 'the scan failed: test' where day = ${today()}`
   await page.clock.runFor(61_000)
   await expect(page.getByTestId('daytrade-status')).toHaveText(/^Today's scan failed: the scan failed: test/)
+})
+
+test('a status chip flips when its status changes on a refresh, not on the first render', async ({ page }) => {
+  await page.clock.install()
+  await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
+  await seedDaytradeSignal({ symbol: 'TGTX', triggerAt: ago(2), entry: 67.65, stop: 66.05, rank: 1 })
+  await page.goto('/daytrade')
+  const chip = cards(page).first().locator('.dt-head > .chip')
+  await expect(chip).toHaveText('Fresh')
+  await expect(chip).not.toHaveClass(/flip/)
+  await sql`update daytrade_signals set status = 'target', exit_at = now(), exit_price = 70.85, gross_r = 2, net_r = 0.69 where symbol = 'TGTX'`
+  await page.clock.runFor(61_000)
+  await expect(chip).toHaveText('Target hit')
+  await expect(chip).toHaveClass('chip target flip')
+})
+
+test('a done day shows no live pill', async ({ page }) => {
+  await seedDaytradeDay({ status: 'done', lastUpdate: ago(30) })
+  await page.goto('/daytrade')
+  await expect(page.getByTestId('daytrade-status')).toHaveText(/^Done for today/)
+  await expect(page.getByTestId('daytrade-live')).toHaveCount(0)
 })
 
 test('the sidebar reaches Day trade right after Portfolio', async ({ page }) => {
@@ -340,13 +387,20 @@ test.describe('on a phone', () => {
       headlines: [{ title: `TGTX ${'quarterly-results-'.repeat(8)}beat`, url: 'https://finance.yahoo.com/x', published_at: ago(60).toISOString(), outlet: 'Reuters' }],
     })
     await seedDaytradeSignal({ symbol: 'AMD', triggerAt: ago(5), entry: 50, stop: 49, eligible: false, netHistoryR: -0.2 })
+    await seedDaytradeSignal({ symbol: 'PLTR', triggerAt: ago(20), entry: 148.3, stop: 146.55, skillRank: 1, eligible: false })
+    // a finished day, so the track record shows its tables
+    await seedDaytradeDay({ day: daysAgo(1), status: 'done', lastUpdate: ago(1440) })
+    await seedDaytradeSignal({ day: daysAgo(1), symbol: 'AAA', triggerAt: ago(1440), entry: 20, stop: 19, rank: 1, status: 'target', netR: 1.9 })
     // Day trade is a phone tab, after Today and Portfolio (spec §6)
     await page.goto('/')
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
     await tabs.getByRole('link', { name: 'Day trade' }).click()
     await expect(page.getByRole('heading', { name: 'Day trade', level: 1 })).toBeVisible()
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
-    expect(overflow).toBeLessThanOrEqual(0)
+    await expect(page.getByTestId('track-20')).toBeVisible()
+    const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    expect(await overflow()).toBeLessThanOrEqual(0)
+    await allSignals(page) // the opened table scrolls inside its card
+    expect(await overflow()).toBeLessThanOrEqual(0)
   })
 })
 

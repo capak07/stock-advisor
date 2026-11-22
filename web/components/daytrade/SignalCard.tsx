@@ -1,18 +1,23 @@
-import { TriangleAlert } from 'lucide-react'
+import { Newspaper, Scale, TriangleAlert } from 'lucide-react'
 import { LowRankChip } from '@/components/LowRankChip'
+import { StatusChip } from '@/components/daytrade/StatusChip'
 import { shortDay } from '@/lib/dates'
 import {
   LATE_LINE,
   LATE_SHARES,
-  costHurdleLine,
   costLine,
   etClock,
+  fmtR,
   historyLine,
+  netResult,
   nyTime,
   oddsLine,
   outcomeLine,
   priceOf,
+  rTone,
+  rangeLine,
   sharesLine,
+  statusChip,
   strengthLine,
   type Signal,
 } from '@/lib/daytrade'
@@ -24,21 +29,57 @@ const headlineTime = (iso: string, day: string) => {
   return d === day ? etClock(iso) : `${shortDay(d)}, ${etClock(iso)}`
 }
 
-const OUTCOME_CHIP: Record<Exclude<Signal['status'], 'open'>, { label: string; tone: string }> = {
-  target: { label: 'Target hit', tone: 'buy' },
-  stop: { label: 'Stopped out', tone: 'avoid' },
-  flat: { label: 'Flat at close', tone: 'hold' },
+const DASH = '—'
+const rOf = (r: number | null) => (r === null ? DASH : fmtR(r))
+const toneClass = (r: number | null) => rTone(r) ?? ''
+
+/** Place, symbol, market, the low-rank flag, the name and the status chip. */
+function Head({ s, place, chip, lowRank }: { s: Signal; place: number | null; chip: ReturnType<typeof statusChip>; lowRank: number | null }) {
+  return (
+    <div className="dt-head">
+      <span className="dt-who">
+        <span className="rank">{place}</span>
+        <span className="dt-who-t">
+          <span>
+            <span className="sym">{s.symbol}</span>{' '}
+            <span className="chip" data-market={s.market}>
+              {s.market}
+            </span>
+            {lowRank !== null && (
+              <>
+                {' '}
+                <LowRankChip scored={lowRank} />
+              </>
+            )}
+          </span>
+          {s.name && <span className="name">{s.name}</span>}
+        </span>
+      </span>
+      <StatusChip label={chip.label} tone={chip.tone} />
+    </div>
+  )
 }
 
+/** The verdict line: the replays line (the app has no worded day-trade verdict). */
+const Verdict = ({ s }: { s: Signal }) => (
+  <div className="dt-verdict">
+    <Scale aria-hidden />
+    <span>{oddsLine(s.replay)}</span>
+  </div>
+)
+
 /**
- * One of today's top 3 (the skill's, or the after-costs one): the signal, the plan (stop, target,
- * flat by), the replays, the rule's history, the cost in R, shares sized to the max loss, headlines
- * and where it stands now. A skill card also shows the breakout's strength and, for a US stock, the
- * round-trip cost (conversion both ways plus the spread) the trade must beat. Display only: nothing here places an order.
+ * One of today's top 3 (the skill's, or the after-costs one). The full card: the signal, the late
+ * warning, entry / target / stop tiles, the cost in R and the net history and replay R, the verdict
+ * line (the replays), the opening range and flat-by time, shares sized to the max loss, the rule's
+ * history, where it stands now and the top headline; a skill card also shows the breakout's strength.
+ * `compact` (the skill's top 3): entry → target / stop, the strength, its result, the verdict and the
+ * cost, without tiles. Display only: nothing here places an order.
  */
 export function SignalCard({
   signal: s,
   list = 'costs',
+  compact = false,
   fresh,
   maxLossCad,
   usdCad,
@@ -47,6 +88,8 @@ export function SignalCard({
   signal: Signal
   /** Which top 3 the card is in: its place and extra lines follow it. */
   list?: 'skill' | 'costs'
+  /** The smaller card of the skill's top 3. */
+  compact?: boolean
   fresh: boolean
   maxLossCad: number
   usdCad: number | null
@@ -54,29 +97,36 @@ export function SignalCard({
   lowRank?: number | null
 }) {
   const skill = list === 'skill'
-  const hurdle = skill ? costHurdleLine(s) : null
-  const open = s.status === 'open'
-  const late = open && !fresh
+  const place = skill ? s.skillRank : s.rank
+  const chip = statusChip(s, fresh)
+  const head = <Head s={s} place={place} chip={chip} lowRank={lowRank} />
+
+  if (compact) {
+    const result = netResult(s)
+    return (
+      <article className="card pick dt-card dt-sm" data-testid="daytrade-card" aria-label={`${s.symbol} signal`}>
+        {head}
+        <div className="dt-sm-line num">
+          Entry {priceOf(s.entry, s.market)} <span className="sub">→</span> <span className="gain">{priceOf(s.target, s.market)}</span>{' '}
+          <span className="sub">/</span> <span className="loss">{priceOf(s.stop, s.market)}</span>
+        </div>
+        <div className="dt-sm-meta">
+          <span className="num">{strengthLine(s)}</span>
+          <span className={`num ${result.tone ?? 'sub'}`}>{result.text}</span>
+        </div>
+        <Verdict s={s} />
+        <div className="dt-fine num">{costLine(s.costPct, s.costR)}</div>
+      </article>
+    )
+  }
+
+  const late = s.status === 'open' && !fresh
   const risk = Number((s.entry - s.stop).toFixed(4))
-  const chip = s.status === 'open' ? (fresh ? { label: 'Fresh', tone: 'buy' } : { label: 'Late', tone: 'review' }) : OUTCOME_CHIP[s.status]
+  const top = s.headlines[0]
+  const link = top ? safeLink(top.url) : null
   return (
     <article className="card pick dt-card" data-testid="daytrade-card" aria-label={`${s.symbol} signal`}>
-      <div className="pick-head">
-        <div style={{ minWidth: 0 }}>
-          <span className="pick-rank">#{skill ? s.skillRank : s.rank}</span> <span className="sym" style={{ fontSize: 15 }}>{s.symbol}</span>{' '}
-          <span className="chip" data-market={s.market}>
-            {s.market}
-          </span>
-          {lowRank !== null && (
-            <>
-              {' '}
-              <LowRankChip scored={lowRank} />
-            </>
-          )}
-          {s.name && <div className="sub dt-name">{s.name}</div>}
-        </div>
-        <span className={`chip ${chip.tone}`}>{chip.label}</span>
-      </div>
+      {head}
       <p className="dt-line">
         Entry signal {etClock(s.triggerAt)} at <b className="num">{priceOf(s.entry, s.market)}</b>{' '}
         <span className="sub">· volume {s.volumeX.toFixed(1)}× the opening range</span>
@@ -94,53 +144,62 @@ export function SignalCard({
           </div>
         </div>
       )}
-      <dl className="pick-facts">
+      <div className="dt-levels">
+        <div className="stat">
+          <span className="label">Entry</span>
+          <b>{priceOf(s.entry, s.market)}</b>
+        </div>
+        <div className="stat">
+          <span className="label">Target</span>
+          <b className="gain">{priceOf(s.target, s.market)}</b>
+        </div>
+        <div className="stat">
+          <span className="label">Stop</span>
+          <b className="loss">{priceOf(s.stop, s.market)}</b>
+        </div>
+      </div>
+      <div className="dt-facts">
         <div>
-          <dt>Stop</dt>
-          <dd className="num">{priceOf(s.stop, s.market)}</dd>
+          <span className="label">Cost</span>
+          <b className="num">{s.costR.toFixed(2)}R</b>
         </div>
         <div>
-          <dt>Target</dt>
-          <dd className="num">{priceOf(s.target, s.market)}</dd>
+          <span className="label">History, net</span>
+          <b className={`num ${toneClass(s.netHistoryR)}`}>{rOf(s.netHistoryR)}</b>
         </div>
         <div>
-          <dt>Flat by</dt>
-          <dd className="num">{etClock(s.flatBy)}</dd>
+          <span className="label">Replays, net</span>
+          <b className={`num ${toneClass(s.netReplayR)}`}>{rOf(s.netReplayR)}</b>
         </div>
-        <div>
-          <dt>Shares</dt>
-          <dd>{sharesLine(maxLossCad, risk, s.market, usdCad)}</dd>
-          {late && <dd className="sub">{LATE_SHARES}</dd>}
-        </div>
-      </dl>
+      </div>
+      <Verdict s={s} />
+      <div className="dt-fine num">{rangeLine(s)}</div>
       <ul className="dt-lines">
         {skill && <li>{strengthLine(s)}</li>}
-        <li>{oddsLine(s.replay)}</li>
+        <li>
+          {sharesLine(maxLossCad, risk, s.market, usdCad)}
+          {late && <> {LATE_SHARES}</>}
+        </li>
         <li>{historyLine(s.symbol, s.history)}</li>
         <li>{costLine(s.costPct, s.costR)}</li>
-        {hurdle !== null && <li>{hurdle}</li>}
         {!late && <li className="dt-outcome">{outcomeLine(s)}</li>}
       </ul>
-      {s.headlines.length > 0 && (
-        <ul className="dt-news">
-          {s.headlines.slice(0, 3).map((h) => {
-            const link = safeLink(h.url)
-            return (
-              <li key={`${h.url}-${h.title}`}>
-                {link ? (
-                  <a href={link} target="_blank" rel="noopener noreferrer">
-                    {h.title}
-                  </a>
-                ) : (
-                  h.title
-                )}{' '}
-                <span className="sub">
-                  {h.outlet} · {headlineTime(h.published_at, s.day)}
-                </span>
-              </li>
-            )
-          })}
-        </ul>
+      {top && (
+        <div className="dt-news">
+          <Newspaper aria-hidden />
+          <span>
+            {link ? (
+              <a href={link} target="_blank" rel="noopener noreferrer">
+                {top.title}
+              </a>
+            ) : (
+              top.title
+            )}{' '}
+            <span className="sub">
+              · {top.outlet} {headlineTime(top.published_at, s.day)}
+            </span>
+          </span>
+        </div>
       )}
     </article>
   )

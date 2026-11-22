@@ -102,6 +102,17 @@ export const TRACK_LABEL = "Paper: what each list's trades would have done."
 export const NO_RECORD = 'No finished day-trade signals yet.'
 export const NO_SIGNALS = 'No signals yet today.'
 export const LATE_SHARES = "Shares are sized from the signal's entry and stop."
+/** The Notes card: what the costs are, the rule, and its limits (`NOTES`). The rule is the pipeline's (advisor/daytrade/rule.py). */
+export const NOTE_COSTS = [
+  'US stocks: your USD conversion fee both ways plus the spread, as set in Settings. TSX stocks: the spread.',
+  'Each signal shows its cost in R: the round-trip cost divided by the distance from entry to stop. The trade must gain more than that to pay.',
+] as const
+export const NOTE_RULES = [
+  'Long only. The opening range is the first 15 minutes; the entry is the first 5-minute bar that closes above its high on at least 1.5× its average volume.',
+  'The stop is the middle of the opening range; the target is 2R above the entry.',
+  'No new entries in the last 30 minutes; flat 5 minutes before the close (3:55 PM, or 12:55 PM on a 1:00 PM close).',
+  'Shares are sized so the loss at the stop fits your max loss per trade, set in Settings.',
+] as const
 export const NOTES = [
   'Not financial advice. Nothing is ordered: you place trades yourself.',
   'Frequent day trading in a TFSA can be treated as a business, which makes the gains taxable (not tax advice).',
@@ -289,14 +300,44 @@ export function strengthLine(s: Signal): string {
   return Number(text) > 0 ? `+${text}% above the range high` : 'Just above the range high'
 }
 
+/** "Opening range US$64.60–US$67.50 · flat by 3:55 PM" */
+export const rangeLine = (s: Signal): string =>
+  `Opening range ${priceOf(s.orLow, s.market)}–${priceOf(s.orHigh, s.market)} · flat by ${etClock(s.flatBy)}`
+
+export type ChipTone = 'triggered' | 'waiting' | 'target' | 'stopped' | 'neutral'
+
+const ENDED: Record<Exclude<SignalStatus, 'open'>, { label: string; tone: ChipTone }> = {
+  target: { label: 'Target hit', tone: 'target' },
+  stop: { label: 'Stopped out', tone: 'stopped' },
+  flat: { label: 'Flat at close', tone: 'neutral' },
+}
+
 /**
- * For a US stock, the whole round-trip cost in R (`cost_r`: the CAD-USD conversion both ways plus the
- * spread) that the trade must beat; null on the TSX.
+ * A signal's status chip, the same words and glass chip on the Day trade page and Today: an open one
+ * is Fresh (10 minutes after its trigger bar) or Late, then how it ended.
  */
-export const costHurdleLine = (s: Signal): string | null =>
-  s.market === 'US'
-    ? `Your round-trip cost (currency conversion both ways plus the spread) is ${s.costR.toFixed(2)}R: the trade must gain more than that to pay.`
-    : null
+export function statusChip(s: Pick<Signal, 'status'>, fresh: boolean): { label: string; tone: ChipTone } {
+  if (s.status !== 'open') return ENDED[s.status]
+  return fresh ? { label: 'Fresh', tone: 'triggered' } : { label: 'Late', tone: 'waiting' }
+}
+
+/** A day that has run a cycle (scanning, done, or failed after an update): it says so when nothing made a top 3. */
+export const hasRun = (day: DayRow | null): boolean =>
+  day !== null && (day.status === 'scanning' || day.status === 'done' || (day.status === 'failed' && day.lastUpdate !== null))
+
+/** An R value's colour as shown to two decimals: gain, loss, or none at 0.00R. */
+export const rTone = (r: number | null): 'gain' | 'loss' | null => {
+  const shown = r === null ? 0 : Number(r.toFixed(2))
+  return shown > 0 ? 'gain' : shown < 0 ? 'loss' : null
+}
+
+/** A compact card's result: "Open", its R after costs (before costs when that is all there is), or how it ended. */
+export function netResult(s: Signal): { text: string; tone: 'gain' | 'loss' | null } {
+  if (s.status === 'open') return { text: 'Open', tone: null }
+  if (s.netR !== null) return { text: `${fmtR(s.netR)} after costs`, tone: rTone(s.netR) }
+  if (s.grossR !== null) return { text: `${fmtR(s.grossR)} before costs`, tone: rTone(s.grossR) }
+  return { text: ENDED[s.status].label, tone: null }
+}
 
 /** The skill's top 3 in rank order (any eligibility, any after-costs place); a missing rank (before migration 0014) is no rank. */
 export const skillSignals = (list: readonly Signal[]): Signal[] =>
@@ -380,6 +421,19 @@ function summarize(rows: readonly RecordRow[], days: readonly string[]): RecordS
     avgNetR: average(nets),
     sumNetR: nets.reduce((a, b) => a + b, 0),
   }
+}
+
+/** Finished days the record needs before it stops calling itself short: the longer window full. */
+const FULL_RECORD = 60
+
+/**
+ * Says plainly that the record is too short to judge while the 60-day window is not full; null before
+ * the first finished day (recordEmptyLine shows) and once it is.
+ */
+export function shortRecordLine(record: TrackRecordData): string | null {
+  const days = record.costs.last60.days
+  if (days === 0 || days >= FULL_RECORD) return null
+  return `A short record: ${days} finished trading ${days === 1 ? 'day' : 'days'}. That is too few to say either list works, so treat it as a trial.`
 }
 
 /** The line in place of the track record before the first finished day; null once there is one (a list with no finished trade shows a dash row). */

@@ -4,10 +4,10 @@ import {
   MARKET_CLOSED,
   NO_SIGNALS,
   TRACK_LABEL,
-  costHurdleLine,
   costLine,
   etClock,
   fmtR,
+  hasRun,
   historyLine,
   isFresh,
   isLive,
@@ -15,11 +15,15 @@ import {
   oddsLine,
   orderSignals,
   outcomeLine,
+  netResult,
+  rangeLine,
   recordEmptyLine,
   shares,
+  shortRecordLine,
   sharesLine,
   skillEmptyLine,
   skillSignals,
+  statusChip,
   statusLine,
   strengthLine,
   strengthPct,
@@ -211,11 +215,18 @@ describe('formatters', () => {
     expect(strengthLine(signal({ entry: 50.005, orHigh: 50 }))).toBe('+0.01% above the range high')
   })
 
-  it('the round-trip cost the trade must beat, for a US stock only', () => {
-    expect(costHurdleLine(signal({ costR: 1.314 }))).toBe(
-      'Your round-trip cost (currency conversion both ways plus the spread) is 1.31R: the trade must gain more than that to pay.',
-    )
-    expect(costHurdleLine(signal({ market: 'TSX', costR: 0.05 }))).toBeNull()
+  it("the opening range and the flat-by time, in the stock's currency", () => {
+    expect(rangeLine(signal())).toBe('Opening range US$64.60–US$67.50 · flat by 3:55 PM')
+    expect(rangeLine(signal({ market: 'TSX', orLow: 5.2, orHigh: 5.45, flatBy: at('12:55') }))).toBe('Opening range C$5.20–C$5.45 · flat by 12:55 PM')
+  })
+
+  it("a signal's result for its compact card: open, or R after costs (before costs when that is all there is)", () => {
+    expect(netResult(signal())).toEqual({ text: 'Open', tone: null })
+    expect(netResult(signal({ status: 'target', grossR: 2, netR: 0.64 }))).toEqual({ text: '+0.64R after costs', tone: 'gain' })
+    expect(netResult(signal({ status: 'stop', grossR: -1, netR: -1.36 }))).toEqual({ text: '−1.36R after costs', tone: 'loss' })
+    expect(netResult(signal({ status: 'flat', grossR: 0.1, netR: null }))).toEqual({ text: '+0.10R before costs', tone: 'gain' })
+    expect(netResult(signal({ status: 'flat', netR: 0 }))).toEqual({ text: '0.00R after costs', tone: null })
+    expect(netResult(signal({ status: 'flat' }))).toEqual({ text: 'Flat at close', tone: null })
   })
 
   it('history, cost and odds lines', () => {
@@ -397,5 +408,45 @@ describe('trackRecord', () => {
 
   it('labels the record as paper, for each list', () => {
     expect(TRACK_LABEL).toBe("Paper: what each list's trades would have done.")
+  })
+})
+
+describe('shared by the Day trade page and Today', () => {
+  it('the status chip: Fresh or Late while open, then how it ended, each on its glass chip', () => {
+    expect(statusChip(signal(), true)).toEqual({ label: 'Fresh', tone: 'triggered' })
+    expect(statusChip(signal(), false)).toEqual({ label: 'Late', tone: 'waiting' })
+    // freshness only matters while the signal is open
+    expect(statusChip(signal({ status: 'target' }), true)).toEqual({ label: 'Target hit', tone: 'target' })
+    expect(statusChip(signal({ status: 'stop' }), false)).toEqual({ label: 'Stopped out', tone: 'stopped' })
+    expect(statusChip(signal({ status: 'flat' }), true)).toEqual({ label: 'Flat at close', tone: 'neutral' })
+  })
+
+  it('a day has run once a cycle has: scanning, done, or failed after an update', () => {
+    expect(hasRun(null)).toBe(false)
+    expect(hasRun(dayRow({ status: 'waiting', lastUpdate: null }))).toBe(false)
+    expect(hasRun(dayRow({ status: 'closed', lastUpdate: null }))).toBe(false)
+    expect(hasRun(dayRow({ status: 'scanning' }))).toBe(true)
+    expect(hasRun(dayRow({ status: 'done' }))).toBe(true)
+    expect(hasRun(dayRow({ status: 'failed', lastUpdate: at('10:35') }))).toBe(true)
+    expect(hasRun(dayRow({ status: 'failed', lastUpdate: null }))).toBe(false)
+  })
+})
+
+describe('shortRecordLine', () => {
+  const days = Array.from({ length: 60 }, (_, i) => `2026-${String(9 + Math.floor(i / 28)).padStart(2, '0')}-${String(28 - (i % 28)).padStart(2, '0')}`)
+
+  it('says plainly that the record is too short until the 60-day window is full', () => {
+    expect(shortRecordLine(trackRecord([], days.slice(0, 1)))).toBe(
+      'A short record: 1 finished trading day. That is too few to say either list works, so treat it as a trial.',
+    )
+    expect(shortRecordLine(trackRecord([], days.slice(0, 15)))).toBe(
+      'A short record: 15 finished trading days. That is too few to say either list works, so treat it as a trial.',
+    )
+    expect(shortRecordLine(trackRecord([], days.slice(0, 59)))).toContain('59 finished trading days')
+  })
+
+  it('is null before the first finished day (the empty line shows) and once 60 days are in', () => {
+    expect(shortRecordLine(trackRecord([], []))).toBeNull()
+    expect(shortRecordLine(trackRecord([], days))).toBeNull()
   })
 })

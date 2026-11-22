@@ -227,18 +227,60 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .plan-card-account { display: block; margin-bottom: 4px; }
 .hold-note { grid-column: 1 / -1; text-align: right; font-size: 12px; }
 
-/* ---------- Day trade (2026-11-10 day trade design; Ledger classes, no mockup file) ---------- */
-.dt-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+/* ---------- daytrade_1.html ---------- */
+.dt-status { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.dt-stack { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+.dt-stack > .section-head { margin-bottom: 0; }
+.dt-skill-sub { margin: -4px 0 0; font-size: 13px; }
+/* The three cards side by side on a desktop, stacked on a phone. */
+.dt-cards { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1024px) { .dt-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; } }
+/* Track record and Notes side by side on a desktop. */
+.dt-two { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1024px) { .dt-two { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; } }
 .dt-card { overflow-wrap: anywhere; }
-.dt-name { overflow: hidden; text-overflow: ellipsis; }
+.dt-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dt-head > .chip { flex: none; }
+.dt-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dt-who-t { display: grid; gap: 3px; min-width: 0; }
+.dt-who-t .sym { font-size: 15px; }
 .dt-line { margin: 0; font-size: 13px; }
-.dt-lines, .dt-news, .dt-notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; font-size: 12.5px; }
+.dt-levels, .dt-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.dt-levels b { overflow-wrap: anywhere; }
+@media (max-width: 480px) { .dt-levels .stat { padding: 8px 9px; } .dt-levels b { font-size: 13px; } }
+.dt-facts > div { display: grid; gap: 4px; align-content: start; }
+.dt-facts b { font-size: 13.5px; font-weight: 600; }
+.dt-verdict { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--muted-foreground); }
+.dt-verdict svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.dt-fine { font-size: 12px; color: var(--muted-foreground); }
+.dt-lines, .dt-notes { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; font-size: 12.5px; }
 .dt-lines { color: var(--muted-foreground); }
 .dt-lines .dt-outcome { color: var(--foreground); font-weight: 500; }
-.dt-news { padding-top: 10px; border-top: 1px solid var(--border); }
+.dt-news { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; line-height: 1.4; padding-top: 10px; border-top: 1px solid var(--border); }
+.dt-news svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--muted-foreground); }
+.dt-news > span { min-width: 0; }
 .dt-news a { text-decoration: underline !important; text-underline-offset: 2px; }
+/* The skill's compact cards. */
+.dt-sm { gap: 10px; }
+.dt-sm-line { font-size: 13px; }
+.dt-sm-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
+/* All signals: a collapsed table. */
+.dt-all summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+.dt-all summary::-webkit-details-marker { display: none; }
+.dt-all summary h2 { display: flex; align-items: center; gap: 8px; }
+.dt-all summary .chev { width: 18px; height: 18px; flex: none; margin-left: auto; color: var(--muted-foreground); transition: transform 240ms cubic-bezier(.2,.8,.2,1); }
+.dt-all[open] summary .chev { transform: rotate(180deg); }
+.dt-all .dt-scroll { margin-top: 10px; }
+.dt-all-hint { font-size: 12.5px; }
+@media (max-width: 639px) { .dt-all-hint { display: none; } }
 .dt-scroll { overflow-x: auto; }
 .dt-table td.dt-wrap { white-space: normal; min-width: 160px; }
+/* The track record's long headers wrap, so its six columns fit the half-width card. */
+.dt-record .data-table th { white-space: normal; vertical-align: bottom; }
+/* Notes: costs, rules, limits. */
+.dt-note-block { padding: 10px 0; border-top: 1px solid var(--border); }
+.section-head + .dt-note-block { border-top: 0; }
+.dt-notes { margin-top: 8px; gap: 6px; font-size: 13px; color: var(--muted-foreground); }
 
 /* ---------- today_1.html ---------- */
 .today-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
@@ -261,7 +303,7 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-today .trade-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dt-today .trade-name { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; }
 .dt-today .trade-top .chip { flex: none; }
-.dt-today .rank { width: 24px; height: 24px; flex: none; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
+.dt-today .rank, .dt-card .rank { width: 24px; height: 24px; flex: none; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
 .dt-today .levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .dt-today .levels b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 480px) { .dt-today .levels .stat { padding: 8px 9px; } .dt-today .levels b { font-size: 13px; } }

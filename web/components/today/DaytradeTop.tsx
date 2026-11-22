@@ -1,40 +1,26 @@
 import { ChevronRight, Scale } from 'lucide-react'
 import Link from 'next/link'
+import { StatusChip } from '@/components/daytrade/StatusChip'
 import {
   MARKET_CLOSED,
-  etClock,
   fmtR,
+  hasRun,
   isFresh,
   noTradeLine,
   oddsLine,
   priceOf,
+  statusChip,
   statusLine,
   type DayRow,
   type Signal,
 } from '@/lib/daytrade'
 
-/** The status chip: the same words as the Day trade page's cards, open ones with their signal time. */
-function chipOf(s: Signal, now: string): { label: string; tone: string } {
-  switch (s.status) {
-    case 'open':
-      return isFresh(s.triggerAt, now)
-        ? { label: `Fresh · ${etClock(s.triggerAt)}`, tone: 'triggered' }
-        : { label: `Late · ${etClock(s.triggerAt)}`, tone: 'waiting' }
-    case 'target':
-      return { label: 'Target hit', tone: 'target' }
-    case 'stop':
-      return { label: 'Stopped out', tone: 'stopped' }
-    case 'flat':
-      return { label: 'Flat at close', tone: 'neutral' }
-  }
-}
-
 /**
  * Day trade · top 3 after costs (spec §7.1): the Day trade page's day and its after-costs top 3, each
- * with its status chip, the replays line its card shows and its net history R; the first one also
- * shows entry, target and stop. With no top 3 it says what the Day trade page says (`statusLine`, and
- * why nothing made the list once the day has run), except "No session today" where that page says the
- * market is closed (a weekend, or a stored closed row).
+ * with the status chip and the replays line its card shows (`statusChip`, `oddsLine`) and its net
+ * history R; the first one also shows entry, target and stop. With no top 3 it says what the Day trade
+ * page says (`statusLine`, and why nothing made the list once the day has run, `hasRun`), except
+ * "No session today" where that page says the market is closed (a weekend, or a stored closed row).
  */
 export function DaytradeTop({
   day,
@@ -51,7 +37,7 @@ export function DaytradeTop({
   now: string
 }) {
   const status = statusLine(day, now)
-  const ran = day !== null && (day.status === 'scanning' || day.status === 'done' || (day.status === 'failed' && day.lastUpdate !== null))
+  const ran = hasRun(day)
   return (
     <section className="card card-pad dt-today enter" aria-labelledby="dt-today-h">
       <div className="section-head">
@@ -77,7 +63,7 @@ export function DaytradeTop({
         </>
       ) : (
         top.map((s, i) => {
-          const chip = chipOf(s, now)
+          const chip = statusChip(s, isFresh(s.triggerAt, now))
           return (
             <div className="trade" key={s.id} data-testid="today-trade">
               <div className="trade-top">
@@ -86,7 +72,7 @@ export function DaytradeTop({
                   <span className="sym">{s.symbol}</span>
                   {s.name && <span className="name">{s.name}</span>}
                 </span>
-                <span className={`chip ${chip.tone}`}>{chip.label}</span>
+                <StatusChip label={chip.label} tone={chip.tone} />
               </div>
               {i === 0 && (
                 <div className="levels">

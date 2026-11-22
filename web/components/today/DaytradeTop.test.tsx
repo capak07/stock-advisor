@@ -93,4 +93,14 @@ describe('DaytradeTop', () => {
     expect(html).toContain('10,000 replays: target first 34%')
     expect(html).toContain('history +0.12R after costs')
   })
+
+  it("uses the Day trade page's status chips: Fresh or Late while open, then how it ended", () => {
+    const fresh = { ...signal('TSLA', 1), status: 'open' as const, triggerAt: '2026-11-23T15:58:00Z' } // 2 minutes before 11:00
+    const late = { ...signal('AMD', 2), status: 'open' as const, triggerAt: '2026-11-23T15:15:00Z' }
+    const stopped = { ...signal('SOFI', 3), status: 'stop' as const }
+    const html = render(row('scanning', MON_11AM), MON_11AM, [fresh, late, stopped], 3)
+    expect(html).toContain('<span class="chip triggered">Fresh</span>')
+    expect(html).toContain('<span class="chip waiting">Late</span>')
+    expect(html).toContain('<span class="chip stopped">Stopped out</span>')
+  })
 })

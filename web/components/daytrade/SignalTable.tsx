@@ -1,17 +1,24 @@
-import { etClock, fmtR, outcomeLine, priceOf, whyNotTop3, type Signal } from '@/lib/daytrade'
+import { ChevronDown } from 'lucide-react'
+import { etClock, fmtR, outcomeLine, priceOf, rTone, whyNotTop3, type Signal } from '@/lib/daytrade'
 
 const r = (value: number | null) => (value === null ? '—' : fmtR(value))
 
-/** Every signal of the day with its net R values and why it is (or isn't) in the after-costs top 3; the skill's top 3 are marked. */
+/**
+ * Every signal of the day with its net R values and why it is (or isn't) in the after-costs top 3; the
+ * skill's top 3 are marked. Collapsed under "All signals" with the count (spec §7.3).
+ */
 export function SignalTable({ signals }: { signals: Signal[] }) {
   return (
-    <section className="card card-pad enter" aria-labelledby="dt-other-h">
-      <div className="section-head" style={{ marginBottom: 6 }}>
-        <h2 id="dt-other-h">Other signals today</h2>
-        <span className="sub">every signal the scan found · New York time</span>
-      </div>
+    <details className="card card-pad enter dt-all">
+      <summary>
+        <h2 id="dt-all-h">
+          All signals <span className="count">{signals.length}</span>
+        </h2>
+        <span className="sub dt-all-hint">every signal the scan found · New York time</span>
+        <ChevronDown className="chev" aria-hidden />
+      </summary>
       <div className="dt-scroll">
-        <table className="data-table dt-table" aria-labelledby="dt-other-h">
+        <table className="data-table dt-table" aria-label="All signals">
           <thead>
             <tr>
               <th>Stock</th>
@@ -38,8 +45,8 @@ export function SignalTable({ signals }: { signals: Signal[] }) {
                 <td className="num">
                   {etClock(s.triggerAt)} at {priceOf(s.entry, s.market)}
                 </td>
-                <td className="r num">{r(s.netHistoryR)}</td>
-                <td className="r num">{r(s.netReplayR)}</td>
+                <td className={`r num ${rTone(s.netHistoryR) ?? ''}`}>{r(s.netHistoryR)}</td>
+                <td className={`r num ${rTone(s.netReplayR) ?? ''}`}>{r(s.netReplayR)}</td>
                 <td className="num">
                   {s.costPct.toFixed(2)}% = {s.costR.toFixed(2)}R
                 </td>
@@ -50,6 +57,6 @@ export function SignalTable({ signals }: { signals: Signal[] }) {
           </tbody>
         </table>
       </div>
-    </section>
+    </details>
   )
 }

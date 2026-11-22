@@ -267,3 +267,34 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-news a { text-decoration: underline !important; text-underline-offset: 2px; }
 .dt-scroll { overflow-x: auto; }
 .dt-table td.dt-wrap { white-space: normal; min-width: 160px; }
+
+/* ---------- today_1.html ---------- */
+.today-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.today-col { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1024px) {
+  .today-grid { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; }
+  .today-col { gap: 18px; }
+}
+.today-hero { display: block; padding: 22px; color: inherit !important; }
+.today-hero .hero-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: end; }
+@media (min-width: 760px) { .today-hero .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); } }
+.today-hero .spark { width: 100%; height: 84px; display: block; }
+.today-hero .hero-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+.today-warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-top: 6px; border-radius: var(--radius-md); background: var(--attention-soft); color: var(--foreground); font-size: 13px; }
+.today-warn svg { width: 16px; height: 16px; flex: none; color: var(--attention); margin-top: 2px; }
+.today-warn strong { font-weight: 600; }
+.today-warn p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted-foreground); }
+.dt-today .trade { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
+.dt-today .trade:first-of-type { border-top: 0; padding-top: 4px; }
+.dt-today .trade-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dt-today .trade-name { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; }
+.dt-today .trade-top .chip { flex: none; }
+.dt-today .rank { width: 24px; height: 24px; flex: none; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
+.dt-today .levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.dt-today .levels b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px) { .dt-today .levels .stat { padding: 8px 9px; } .dt-today .levels b { font-size: 13px; } }
+.dt-today .trade-verdict { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.dt-today .trade-verdict svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.show-all { margin-top: 6px; }
+.show-all svg { transition: transform 200ms; }
+.show-all[aria-expanded="true"] svg { transform: rotate(180deg); }

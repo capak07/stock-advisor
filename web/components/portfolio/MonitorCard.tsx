@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { ShowAll } from '@/components/ShowAll'
 import { DismissAlert } from '@/components/portfolio/DismissAlert'
 import { timeOrDate } from '@/lib/dates'
 import type { FeedItem } from '@/lib/monitor'
@@ -12,8 +13,11 @@ const KIND_LABELS: Record<FeedItem['kind'], string> = {
   alert: 'Alert',
 }
 
-/** What arrived on held and watched stocks since the previous published run, newest first (Goal 1). */
-export function MonitorCard({ items }: { items: FeedItem[] }) {
+/**
+ * What arrived on held and watched stocks since the previous published run, newest first (Goal 1).
+ * With a `limit`, the newest few and a "Show all" that expands the list in place.
+ */
+export function MonitorCard({ items, limit }: { items: FeedItem[]; limit?: number }) {
   return (
     <section className="card card-pad enter" aria-labelledby="monitor-h" id="monitor">
       <div className="section-head" style={{ marginBottom: 4 }}>
@@ -25,7 +29,7 @@ export function MonitorCard({ items }: { items: FeedItem[] }) {
           Nothing new since the last run.
         </p>
       ) : (
-        <div className="stagger">
+        <ShowAll className="stagger" limit={limit}>
           {items.map((item, i) => {
             const link = item.url ? safeLink(item.url) : null
             return (
@@ -59,7 +63,7 @@ export function MonitorCard({ items }: { items: FeedItem[] }) {
               </div>
             )
           })}
-        </div>
+        </ShowAll>
       )}
     </section>
   )

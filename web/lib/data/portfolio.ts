@@ -1,8 +1,10 @@
 import 'server-only'
 import { addDays } from '../dates'
+import type { HoldingAction } from '../portfolio/actions'
 import { FxRates, PriceBook } from '../portfolio/lookup'
 import { assetKey } from '../portfolio/types'
 import type { Account, AssetType, Close, Currency, RecordedTrade, Trade } from '../portfolio/types'
+import { portfolioView, type PortfolioView } from '../portfolio/view'
 import type { Supabase } from '../supabase/server'
 import { withQuotes } from '../quotes'
 import { fetchAll } from './fetch'
@@ -127,3 +129,21 @@ export async function loadPortfolio(supabase: Supabase): Promise<PortfolioData> 
   // a Refresh's live prices value the holdings until the next run (lib/quotes.ts)
   return { trades, prices: withQuotes(stored, live), fx, names, sectors, settings }
 }
+
+/** The portfolio view of loaded data with the latest run's actions, as My Portfolio and Today show it. */
+export const portfolioViewOf = (data: PortfolioData, actions: HoldingAction[], today: string): PortfolioView =>
+  portfolioView(
+    {
+      trades: data.trades,
+      prices: data.prices,
+      fx: data.fx,
+      names: data.names,
+      sectors: data.sectors,
+      actions,
+      guideline: {
+        roundTrips: data.settings.tfsa_round_trips_warn,
+        shortHoldShare: data.settings.tfsa_short_hold_share_warn,
+      },
+    },
+    today,
+  )

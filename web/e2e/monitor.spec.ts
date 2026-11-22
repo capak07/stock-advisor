@@ -18,6 +18,7 @@ test('Today lists a headline, an important 8-K, an insider buy and an upcoming r
 
   await page.goto('/')
   const card = page.getByRole('region', { name: FEED })
+  await card.getByRole('button', { name: 'Show all 4' }).click() // Today shows the latest 3
   await expect(card.getByRole('link', { name: 'Apple unveils a new chip' })).toBeVisible()
   await expect(card.getByText('8-K: director or officer change')).toBeVisible()
   await expect(card.getByText('Important', { exact: true })).toBeVisible()

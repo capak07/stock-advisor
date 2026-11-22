@@ -7,12 +7,11 @@ import { ValueCard } from '@/components/portfolio/ValueCard'
 import { ownerClient } from '@/lib/auth'
 import { loadHoldingActions } from '@/lib/data/actions'
 import { loadLowRanks } from '@/lib/data/low-rank'
-import { loadPortfolio } from '@/lib/data/portfolio'
+import { loadPortfolio, portfolioViewOf } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
 import { holdingGuides } from '@/lib/guidance'
 import { assetKey } from '@/lib/portfolio/types'
 import { tradeList } from '@/lib/portfolio/trade-list'
-import { portfolioView } from '@/lib/portfolio/view'
 
 export const metadata: Metadata = { title: 'My Portfolio' }
 
@@ -22,21 +21,7 @@ export default async function PortfolioPage() {
   if (!supabase) return null // the layout is showing the not-the-owner notice
   const [data, latest] = await Promise.all([loadPortfolio(supabase), loadHoldingActions(supabase)])
   const today = todayInToronto()
-  const view = portfolioView(
-    {
-      trades: data.trades,
-      prices: data.prices,
-      fx: data.fx,
-      names: data.names,
-      sectors: data.sectors,
-      actions: latest?.actions ?? [],
-      guideline: {
-        roundTrips: data.settings.tfsa_round_trips_warn,
-        shortHoldShare: data.settings.tfsa_short_hold_share_warn,
-      },
-    },
-    today,
-  )
+  const view = portfolioViewOf(data, latest?.actions ?? [], today)
   const orders = { now: new Date(), usdCad: view.fx?.usdCad ?? null }
   const qtyOf = new Map(view.sellable.map((s) => [s.key, s.qty]))
   const guides: HoldingGuides = new Map(

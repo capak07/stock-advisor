@@ -1,10 +1,10 @@
-import { ChevronLeft } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ForecastCard, ForecastProvider } from '@/components/ticker/ForecastCard'
 import { NewsCard, type HeadlineView, type NewsKpi } from '@/components/ticker/NewsCard'
 import { AlertsCard } from '@/components/ticker/AlertsCard'
+import { BackButton } from '@/components/ticker/BackButton'
 import { planBenchmark } from '@/components/portfolio/ExitPlan'
 import { EarningsCard } from '@/components/ticker/EarningsCard'
 import { FilingsCard } from '@/components/ticker/FilingsCard'
@@ -127,9 +127,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
             <section className="card hero card-pad enter t-head" aria-label={`${symbol} price and forecast`}>
               <div className="t-top">
                 <div className="t-id">
-                  <Link href="/portfolio" className="t-back" aria-label="Back to My Portfolio">
-                    <ChevronLeft />
-                  </Link>
+                  <BackButton />
                   <div style={{ minWidth: 0 }}>
                     <div className="t-name">
                       <h1 className="num ticker-symbol">{symbol}</h1>

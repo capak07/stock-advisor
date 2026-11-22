@@ -358,3 +358,19 @@ test('the Find box lists stocks by name, best match first, and picking one opens
   await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Watch', exact: true })).toBeVisible()
 })
+
+test("the back chevron returns to the app page you came from, else to My Portfolio", async ({ page, context }) => {
+  // the chevron is the phone's (the desktop has the sidebar)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/daytrade')
+  await page.goto('/ticker/RY.TO')
+  await page.getByRole('link', { name: 'Back', exact: true }).click()
+  await expect(page).toHaveURL(/\/daytrade$/)
+  // opened straight from outside the app (a new tab, a shared link): nothing of the app's behind it
+  const fresh = await context.newPage()
+  await fresh.setViewportSize({ width: 390, height: 844 })
+  await fresh.goto('/ticker/RY.TO')
+  await fresh.getByRole('link', { name: 'Back', exact: true }).click()
+  await expect(fresh).toHaveURL(/\/portfolio$/)
+  await fresh.close()
+})

@@ -15,7 +15,10 @@ import { tradeList } from '@/lib/portfolio/trade-list'
 
 export const metadata: Metadata = { title: 'My Portfolio' }
 
-/** My Portfolio (spec §9): values, returns, the latest run's actions, warnings. The news is on Today. */
+/**
+ * My Portfolio (spec §7.2): the value hero, then the holdings, the latest run's actions and the trades beside the
+ * breakdown and warnings. The news is on Today.
+ */
 export default async function PortfolioPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
@@ -41,28 +44,30 @@ export default async function PortfolioPage() {
 
   return (
     <main className="page">
-      <div className="section-head enter" style={{ marginBottom: 0 }}>
+      <div className="page-head enter">
         <div>
-          <h1>My Portfolio</h1>
-          <p className="sub">
+          <div className="label">
             {accounts} · values in CAD at the latest Bank of Canada rate{rate}
-          </p>
+          </div>
+          <h1 style={{ marginTop: 6 }}>My Portfolio</h1>
         </div>
         <TradeButtons sellable={view.sellable} rates={[...data.fx.rates]} today={today} existing={data.trades} />
       </div>
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_330px]" style={{ alignItems: 'start' }}>
-        <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} lowRanks={lowRanks} />
-        <aside className="grid gap-4">
-          <WarningsCard warnings={view.warnings} />
+      <section className="portfolio-grid">
+        <div className="portfolio-col">
+          <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} guides={guides} qtys={qtyOf} asOf={latest?.day ?? null} />
+          <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} lowRanks={lowRanks} />
+          {[...guides.values()].some((g) => (g.order?.steps.length ?? 0) + (g.stop?.steps.length ?? 0) > 0) && <OrderDisclaimer />}
+          {data.trades.length > 0 && (
+            <TradeList lines={tradeList(data.trades, data.fx)} rates={[...data.fx.rates]} today={today} />
+          )}
+        </div>
+        <aside className="portfolio-col">
           <BreakdownCard byRisk={view.byRisk} byMarket={view.byMarket} byAccount={view.byAccount} />
+          <WarningsCard warnings={view.warnings} />
         </aside>
       </section>
-      <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} guides={guides} />
-      {[...guides.values()].some((g) => (g.order?.steps.length ?? 0) + (g.stop?.steps.length ?? 0) > 0) && <OrderDisclaimer />}
-      {data.trades.length > 0 && (
-        <TradeList lines={tradeList(data.trades, data.fx)} rates={[...data.fx.rates]} today={today} />
-      )}
     </main>
   )
 }

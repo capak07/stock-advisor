@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Sparkline } from '@/components/Sparkline'
 import { fmtMoney, fmtPct } from '@/lib/format'
-import type { Period, PeriodReturns } from '@/lib/portfolio/returns'
+import { dayMove, type Period, type PeriodReturns } from '@/lib/portfolio/returns'
 import type { Totals } from '@/lib/portfolio/valuation'
 
 const last = (values: readonly number[] | null | undefined): number | null =>
@@ -33,10 +33,7 @@ export function PortfolioSummary({
   /** How many holdings are open. */
   holdings: number
 }) {
-  const day = periods?.['1d'] ?? null
-  const todayPct = last(day?.portfolio)
-  // the day's time-weighted return applied to today's value: what the holdings moved, not what was added
-  const todayCad = todayPct === null ? null : totals.valueCad - totals.valueCad / (1 + todayPct / 100)
+  const move = dayMove(totals.valueCad, periods)
   const allPct = last(periods?.all.portfolio) ?? (totals.costCad > 0 ? (totals.gainCad / totals.costCad) * 100 : null)
   const year = periods?.['12m'] ?? null
   const yearPortfolio = last(year?.portfolio)
@@ -58,9 +55,9 @@ export function PortfolioSummary({
             </p>
           ) : (
             <>
-              {todayPct !== null && todayCad !== null && (
-                <div className={`num ${tone(todayPct)}`} style={{ fontSize: 14 }}>
-                  {fmtMoney(todayCad, { digits: 2, signed: true })} ({fmtPct(todayPct)}) today
+              {move && (
+                <div className={`num ${tone(move.pct)}`} style={{ fontSize: 14 }}>
+                  {fmtMoney(move.cad, { digits: 2, signed: true })} ({fmtPct(move.pct)}) today
                 </div>
               )}
               <div className="hero-meta">

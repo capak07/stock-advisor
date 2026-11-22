@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react'
 import { shortDay } from '@/lib/dates'
 import { LowRankChip } from '@/components/LowRankChip'
 import { OrderGuide } from '@/components/OrderGuide'
-import { fmtAmount, fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
+import { fmtMoney, fmtPct, fmtPrice, fmtQty } from '@/lib/format'
 import { joinPlans } from '@/lib/guidance'
 import type { OrderPlan } from '@/lib/orders'
 import {
@@ -162,14 +162,52 @@ const stopCurrency = (h: HoldingRow): 'CAD' | 'USD' => (h.market === 'TSX' ? 'CA
 
 const dash = <span className="sub">—</span>
 
+const hasRange = (a: HoldingAction) => a.q10 !== null && a.q50 !== null && a.q90 !== null
+/** A row stored before exit plans existed shows its exit-by date instead. */
+const exitByOf = (a: HoldingAction) => (a.exitPlan === null ? a.exitBy : null)
+const hasFacts = (a: HoldingAction) => hasRange(a) || a.trailingStop !== null || a.riskLevel !== null || exitByOf(a) !== null
+
 /**
- * The exit plan cell: the plan's compact lines and, with a sell-at price for the action, a link that
- * opens the price-alert form prefilled. A row stored before plans existed shows its exit-by date, or the dash.
+ * The model's facts under a holding's name: the likely range, the trailing stop, the risk level and the exit-by
+ * date of a row without a plan. Each only when the run gave it.
  */
-function ExitPlanCell({ a }: { a: HoldingAction }) {
-  if (a.exitPlan === null) return <td className="num h-exit">{a.exitBy === null ? dash : shortDay(a.exitBy)}</td>
+function ModelFacts({ h, a }: { h: HoldingRow; a: HoldingAction }) {
+  if (!hasFacts(a)) return null
+  const range = hasRange(a)
+  const exitBy = exitByOf(a)
   return (
-    <td className="h-exit">
+    <div className="h-facts">
+      {range && (
+        <span className="h-range">
+          <RangeBar q10={a.q10 as number} q50={a.q50 as number} q90={a.q90 as number} />
+          {a.horizonDays !== null && <span className="num">{a.horizonDays}d</span>}
+        </span>
+      )}
+      {a.trailingStop !== null && (
+        <span className="h-stop">
+          Trailing stop <span className="num">{fmtPrice(a.trailingStop, stopCurrency(h))}</span>
+        </span>
+      )}
+      {a.riskLevel !== null && (
+        <span className="h-risk">
+          <span className={`dot ${a.riskLevel.replace('_', '-')}`} />
+          {RISK_LABELS[a.riskLevel]} risk
+        </span>
+      )}
+      {exitBy !== null && (
+        <span className="h-exit-by">
+          Exit by <span className="num">{shortDay(exitBy)}</span>
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** The exit plan's compact lines and, with a sell-at price for the action, a link that opens the price-alert form prefilled. */
+function ExitPlanLines({ a }: { a: HoldingAction }) {
+  if (a.exitPlan === null) return null
+  return (
+    <div className="h-exit">
       <ExitPlanWithAlert
         plan={a.exitPlan}
         action={a.action}
@@ -180,58 +218,7 @@ function ExitPlanCell({ a }: { a: HoldingAction }) {
         benchmark={planBenchmark(a.assetType, a.symbol)}
         compact
       />
-    </td>
-  )
-}
-
-/** Action, likely range, trailing stop, exit plan and risk; dashes for a holding the run didn't cover. */
-function ModelCells({ h }: { h: HoldingRow }) {
-  const a = h.action
-  if (a === null) {
-    return (
-      <>
-        <td className="h-action">{dash}</td>
-        <td className="h-range">{dash}</td>
-        <td className="r h-stop">{dash}</td>
-        <td className="h-exit">{dash}</td>
-        <td className="h-risk">{dash}</td>
-      </>
-    )
-  }
-  return (
-    <>
-      <td className="h-action">
-        <span className={`chip ${a.action}`}>{ACTION_LABELS[a.action]}</span>
-        {a.review && (
-          <>
-            {' '}
-            <span className="chip review">Review</span>
-          </>
-        )}
-      </td>
-      <td className="h-range">
-        {a.q10 !== null && a.q50 !== null && a.q90 !== null ? (
-          <div className="flex items-center gap-2">
-            <RangeBar q10={a.q10} q50={a.q50} q90={a.q90} />
-            {a.horizonDays !== null && <span className="sub num">{a.horizonDays}d</span>}
-          </div>
-        ) : (
-          dash
-        )}
-      </td>
-      <td className="r num h-stop">{a.trailingStop === null ? dash : fmtPrice(a.trailingStop, stopCurrency(h))}</td>
-      <ExitPlanCell a={a} />
-      <td className="h-risk">
-        {a.riskLevel === null ? (
-          dash
-        ) : (
-          <span className="badge">
-            <span className={`dot ${a.riskLevel.replace('_', '-')}`} />
-            {RISK_LABELS[a.riskLevel]}
-          </span>
-        )}
-      </td>
-    </>
+    </div>
   )
 }
 
@@ -317,15 +304,42 @@ export function BreakdownCard({ byRisk, byMarket, byAccount }: { byRisk: Slice[]
   )
 }
 
-export function HoldingsCard({ holdings, accounts, guides }: { holdings: HoldingRow[]; accounts: number; guides: HoldingGuides }) {
+/** Weight bars are drawn on a scale that 20% of the portfolio fills, or the largest holding when it is bigger. */
+const WEIGHT_SCALE = 20
+
+/**
+ * Every holding (spec §7.2): account, action chip, shares, value in CAD, P/L and weight, with the model's facts,
+ * the exit plan, the stop order to keep and the notes under its name. A table on a wide screen, compact rows on a
+ * phone (pages.css, same markup). The weight bar is orange on a Trim: the run says the holding is too big.
+ */
+export function HoldingsCard({
+  holdings,
+  accounts,
+  guides,
+  qtys,
+  asOf,
+}: {
+  holdings: HoldingRow[]
+  accounts: number
+  guides: HoldingGuides
+  /** Each open position's quantity, by position key. */
+  qtys: Map<string, number>
+  /** The day of the run the actions come from. */
+  asOf: string | null
+}) {
   const modelled = holdings.some((h) => h.action !== null)
+  const total = holdings.reduce((sum, h) => sum + h.valueCad, 0)
+  const weightOf = (h: HoldingRow) => (total > 0 ? (h.valueCad / total) * 100 : 0)
+  const scale = Math.max(WEIGHT_SCALE, ...holdings.map(weightOf))
   return (
     <section className="card card-pad enter" aria-labelledby="hold-h">
       <div className="section-head">
-        <h2 id="hold-h">Holdings</h2>
+        <h2 id="hold-h">
+          Holdings <span className="count">{holdings.length}</span>
+        </h2>
         <span className="sub">
-          {holdings.length} {holdings.length === 1 ? 'position' : 'positions'} · {accounts}{' '}
-          {accounts === 1 ? 'account' : 'accounts'}
+          {accounts} {accounts === 1 ? 'account' : 'accounts'}
+          {modelled && asOf && ` · actions as of ${shortDay(asOf)}`}
         </span>
       </div>
       {!modelled && (
@@ -339,71 +353,85 @@ export function HoldingsCard({ holdings, accounts, guides }: { holdings: Holding
           No holdings yet.
         </p>
       ) : (
-        <div className="table-scroll">
+        <div className="table-scroll holdings-scroll">
           <table className="data-table" id="holdings">
             <thead>
               <tr>
+                <th>Stock</th>
                 <th>Account</th>
-                <th>Symbol</th>
-                <th>Market</th>
-                <th className="r">Value C$</th>
-                <th className="r">P/L C$</th>
-                {modelled && (
-                  <>
-                    <th>Action</th>
-                    <th>Likely range</th>
-                    <th className="r">Trailing stop</th>
-                    <th>Exit plan</th>
-                    <th>Risk</th>
-                  </>
-                )}
-                <th>Notes</th>
+                {modelled && <th>Action</th>}
+                <th className="r h-shares">Shares</th>
+                <th className="r">Value</th>
+                <th className="r">P/L</th>
+                <th className="r">Weight</th>
               </tr>
             </thead>
             <tbody>
               {holdings.map((h) => {
+                const a = h.action
                 const tone = h.gainCad < 0 ? 'loss' : 'gain'
                 const stop = guides.get(h.key)?.stop?.steps.map((s) => s.text).join(' · ') || null
+                const qty = qtys.get(h.key)
+                const weight = weightOf(h)
+                const about = [h.name, h.market].filter(Boolean).join(' · ')
+                const noted = stop !== null || h.notes.length > 0
+                const detailed = noted || (a !== null && (a.exitPlan !== null || hasFacts(a)))
                 return (
                   <tr key={h.key}>
-                    <td className="sub h-acct">{ACCOUNT_LABELS[h.account]}</td>
                     <td className="h-sym">
-                      <Link className="sym" href={tickerHref(h.symbol, h.market === null ? 'crypto' : 'stock')}>
-                        {h.symbol}
-                      </Link>
-                      {h.name && (
-                        <>
-                          <br />
-                          <span className="sub">{h.name}</span>
-                        </>
+                      <div className="h-name">
+                        <Link className="sym" href={tickerHref(h.symbol, h.market === null ? 'crypto' : 'stock')}>
+                          {h.symbol}
+                        </Link>
+                        {about && <span className="sub">{about}</span>}
+                      </div>
+                      {detailed && (
+                        <div className="h-detail">
+                          {a && <ModelFacts h={h} a={a} />}
+                          {a && <ExitPlanLines a={a} />}
+                          {noted && (
+                            <div className="h-note">
+                              {stop && <span className="sub order-note">{stop}</span>}
+                              {h.notes.map((n) =>
+                                n.warn ? (
+                                  <span key={n.text} className="warn-cell">
+                                    <TriangleAlert />
+                                    {n.text}
+                                  </span>
+                                ) : (
+                                  <span key={n.text} className="sub">
+                                    {n.text}
+                                  </span>
+                                ),
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </td>
-                    <td className={h.market ? 'h-mkt' : 'sub h-mkt'}>{h.market ?? '—'}</td>
-                    <td className="r num h-value">{fmtAmount(h.valueCad)}</td>
+                    <td className="sub h-acct">{ACCOUNT_LABELS[h.account]}</td>
+                    {modelled && (
+                      <td className="h-action">
+                        {a === null ? (
+                          dash
+                        ) : (
+                          <span className="h-chips">
+                            <span className={`chip ${a.action}`}>{ACTION_LABELS[a.action]}</span>
+                            {a.review && <span className="chip review">Review</span>}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    <td className="r num h-shares">{qty === undefined ? dash : fmtQty(qty)}</td>
+                    <td className="r num h-value">{fmtMoney(h.valueCad)}</td>
                     <td className={`r num h-pl ${tone}`}>
-                      {fmtAmount(h.gainCad, { signed: true })}
-                      <br />
-                      <span className={`sub ${tone}`}>{fmtPct(h.gainPct)}</span>
+                      <span>{fmtMoney(h.gainCad, { signed: true })}</span> <span className={`sub ${tone}`}>{fmtPct(h.gainPct)}</span>
                     </td>
-                    {modelled && <ModelCells h={h} />}
-                    <td className="h-note">
-                      {stop && <span className="sub order-note">{stop}</span>}
-                      {h.notes.length === 0 ? (
-                        !stop && <span className="sub">—</span>
-                      ) : (
-                        h.notes.map((n) =>
-                          n.warn ? (
-                            <span key={n.text} className="warn-cell">
-                              <TriangleAlert />
-                              {n.text}
-                            </span>
-                          ) : (
-                            <span key={n.text} className="sub" style={{ display: 'block' }}>
-                              {n.text}
-                            </span>
-                          ),
-                        )
-                      )}
+                    <td className="r num h-weight">
+                      {weight.toFixed(1)}%
+                      <span className={a?.action === 'trim' ? 'weight trim' : 'weight'} aria-hidden="true">
+                        <i style={{ width: `${(weight / scale) * 100}%` }} />
+                      </span>
                     </td>
                   </tr>
                 )

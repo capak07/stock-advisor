@@ -56,6 +56,24 @@ test('holdings are valued in CAD, charted against both benchmarks, and warned ab
   await expect(breakdown).toContainText('TFSA')
 })
 
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test('the holdings become compact rows that never widen the page', async ({ page }) => {
+    await seedPortfolio()
+    await page.goto('/portfolio')
+    await expect(holdings(page)).toHaveCount(3)
+    await expect(page.locator('#holdings thead')).toBeHidden()
+    const widths = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth,
+      screen: window.innerWidth,
+      table: document.querySelector('#holdings')!.getBoundingClientRect().right,
+    }))
+    expect(widths.page, 'page scrolls sideways').toBeLessThanOrEqual(widths.screen)
+    expect(widths.table, 'holdings run past the screen').toBeLessThanOrEqual(widths.screen)
+  })
+})
+
 test('the actions of the latest run fill the Actions card and the holdings table', async ({ page }) => {
   const days = weekdays(daysAgo(30))
   await seedSymbols([
@@ -315,7 +333,8 @@ test("a holding's exit plan shows in the table, the cards and the hold list, and
   await page.goto('/portfolio')
 
   const by = shortDay(recheck)
-  await expect(page.locator('#holdings thead')).toContainText('Exit plan')
+  // the plan sits under the holding's name, one block per planned holding
+  await expect(page.locator('#holdings .h-exit')).toHaveCount(2)
   const msft = holdings(page).filter({ hasText: 'MSFT' })
   await expect(msft.locator('.h-exit')).toContainText(`Range by ${by}: US$400.00 – 425.00 – 455.00 (+1%)`)
   await expect(msft.locator('.h-exit')).toContainText('Sell at US$440.12 · about 1 in 3 · +10% on cost')

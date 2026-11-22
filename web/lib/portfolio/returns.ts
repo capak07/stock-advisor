@@ -118,3 +118,14 @@ export function periodReturns(g: Growth, period: Period): PeriodReturns {
     spy: g.spy && pct(g.spy, g.spy[start]),
   }
 }
+
+/**
+ * Today's move: the last day's time-weighted return, and that return applied to today's value in C$, so what the
+ * holdings moved counts and money added today doesn't. Null without a one-day line.
+ */
+export function dayMove(valueCad: number, periods: Record<Period, PeriodReturns> | null): { pct: number; cad: number } | null {
+  const line = periods?.['1d'].portfolio
+  if (!line || line.length === 0) return null
+  const pct = line[line.length - 1]
+  return { pct, cad: valueCad - valueCad / (1 + pct / 100) }
+}

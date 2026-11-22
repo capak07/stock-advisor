@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FxRates, PriceBook } from './lookup'
-import { growth, periodReturns } from './returns'
+import { dayMove, growth, periodReturns } from './returns'
 import type { Close, Trade } from './types'
 
 const FX = new FxRates([
@@ -147,5 +147,23 @@ describe('periodReturns', () => {
     expect(week.days).toEqual(['d24', 'd25', 'd26', 'd27', 'd28', 'd29'])
     expect(week.portfolio[0]).toBe(0)
     expect(week.xiu![0]).toBe(0)
+  })
+})
+
+describe('dayMove', () => {
+  const periods = (oneDay: number[]) => {
+    const r = { days: [], portfolio: oneDay, xiu: null, spy: null }
+    return { '1d': r, '1w': r, '1m': r, '3m': r, '12m': r, all: r }
+  }
+
+  it("applies the last day's return to today's value", () => {
+    const move = dayMove(1100, periods([0, 10]))
+    expect(move?.pct).toBe(10)
+    expect(move?.cad).toBeCloseTo(100, 9) // 1100 is 10% over yesterday's 1000
+  })
+
+  it('is null without a one-day line', () => {
+    expect(dayMove(1100, null)).toBeNull()
+    expect(dayMove(1100, periods([]))).toBeNull()
   })
 })

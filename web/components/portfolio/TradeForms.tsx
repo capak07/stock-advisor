@@ -583,9 +583,9 @@ export function TradeButtons({
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn btn-secondary" onClick={() => show('import')}>
-          <FileUp />
-          Import file
+        <button type="button" className="btn btn-primary" onClick={() => show('buy')}>
+          <Plus />
+          Buy
         </button>
         {sellable.length > 0 && (
           <button type="button" className="btn btn-secondary" onClick={() => show('sell')}>
@@ -593,9 +593,9 @@ export function TradeButtons({
             Sell
           </button>
         )}
-        <button type="button" className="btn btn-primary" onClick={() => show('buy')}>
-          <Plus />
-          Buy
+        <button type="button" className="btn btn-secondary" onClick={() => show('import')}>
+          <FileUp />
+          Import file
         </button>
       </div>
       <Drawer id="buy-drawer" title="Add a buy" open={open === 'buy'} onClose={close}>

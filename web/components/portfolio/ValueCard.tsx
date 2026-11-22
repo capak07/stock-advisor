@@ -6,7 +6,7 @@ import { Tabs } from '@/components/Tabs'
 import { TweenNumber } from '@/components/TweenNumber'
 import { longDay, shortDay } from '@/lib/dates'
 import { fmtMoney, fmtPct } from '@/lib/format'
-import type { Period, PeriodReturns } from '@/lib/portfolio/returns'
+import { dayMove, type Period, type PeriodReturns } from '@/lib/portfolio/returns'
 import type { Totals } from '@/lib/portfolio/valuation'
 
 const PERIOD_TABS = [
@@ -18,9 +18,14 @@ const PERIOD_TABS = [
   { value: 'all', label: 'All' },
 ] as const
 
-const last = (values: number[] | null) => (values ? values[values.length - 1] : null)
+const last = (values: number[] | null) => (values && values.length > 0 ? values[values.length - 1] : null)
 
-/** Value and returns (spec §7.4): total value in CAD, and the return against XIU.TO and SPY in CAD. */
+const tone = (value: number) => (value < 0 ? 'loss' : 'gain')
+
+/**
+ * The value hero (spec §7.2): total value in CAD, the unrealized gain, today's move, the return since the first buy,
+ * and the chosen period's return against SPY and XIU.TO in CAD. No cash line: the app keeps no cash balance.
+ */
 export function ValueCard({
   totals,
   periods,
@@ -50,78 +55,89 @@ export function ValueCard({
   const portfolio = last(r?.portfolio ?? null)
   const xiu = last(r?.xiu ?? null)
   const spy = last(r?.spy ?? null)
+  const move = dayMove(totals.valueCad, periods)
+  const allTime = last(periods?.all.portfolio ?? null)
 
   return (
-    <section className="card card-pad enter" aria-labelledby="value-h">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <section className="card hero card-pad value-hero enter" aria-labelledby="value-h">
+      <div className="hero-top">
         <div>
           <span className="label" id="value-h">
-            Portfolio value
+            Total value
           </span>
-          <div className="value-big" style={{ marginTop: 8 }}>
-            {fmtMoney(totals.valueCad)}
+          <div className="big num" style={{ margin: '8px 0 6px' }}>
+            {fmtMoney(totals.valueCad, { digits: 2 })}
           </div>
-          <div className="num" style={{ marginTop: 6, fontSize: 13 }}>
-            <span className={totals.gainCad < 0 ? 'loss' : 'gain'}>
-              {fmtMoney(totals.gainCad, { signed: true })} unrealized
-            </span>{' '}
-            <span className="muted">· cost {fmtMoney(totals.costCad)}</span>
-          </div>
+          {totals.costCad > 0 && (
+            <div className={`num ${tone(totals.gainCad)}`} style={{ fontSize: 14 }}>
+              {fmtMoney(totals.gainCad, { signed: true })} ({fmtPct((totals.gainCad / totals.costCad) * 100)}) unrealized
+            </div>
+          )}
         </div>
+        {totals.costCad > 0 && (
+          <div className="hero-meta">
+            {move && (
+              <div>
+                <div className="label">Today</div>
+                <div className={`num ${tone(move.pct)}`}>
+                  {fmtMoney(move.cad, { digits: 2, signed: true })} ({fmtPct(move.pct)})
+                </div>
+              </div>
+            )}
+            {allTime !== null && (
+              <div>
+                <div className="label">All time</div>
+                <div className={`num ${tone(allTime)}`}>{fmtPct(allTime)}</div>
+              </div>
+            )}
+            <div>
+              <div className="label">Cost</div>
+              <div className="num">{fmtMoney(totals.costCad)}</div>
+            </div>
+          </div>
+        )}
       </div>
       {r && portfolio !== null ? (
         <>
-          <div className="chart-ranges">
-            <Tabs className="compact" items={PERIOD_TABS} value={period} onChange={setPeriod} label="Period" />
-          </div>
-          <div className="num" style={{ fontSize: 13 }}>
-            <span className="muted">{label}</span>
-            {' · '}
-            Portfolio{' '}
-            <b>
-              <TweenNumber value={portfolio} format={fmtPct} className={portfolio < 0 ? 'loss' : 'gain'} />
-            </b>
-            {xiu !== null && (
-              <>
-                {' '}
-                <span className="muted">· XIU.TO</span> <TweenNumber value={xiu} format={fmtPct} />
-              </>
-            )}
-            {spy !== null && (
-              <>
-                {' '}
-                <span className="muted">· SPY in CAD</span> <TweenNumber value={spy} format={fmtPct} />
-              </>
-            )}
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <LineChart
-              series={r.portfolio}
-              dates={dates}
-              benchmarks={benchmarks}
-              height={230}
-              format={(v) => fmtPct(v)}
-              label="Portfolio return against XIU.TO and SPY in CAD"
-            />
-          </div>
-          <div className="legend" style={{ marginTop: 6 }}>
-            <span>
-              <i style={{ background: 'var(--chart-1)' }} />
-              Portfolio
-            </span>
-            {r.xiu && (
+          <div className="chart-bar">
+            <Tabs className="seg" items={PERIOD_TABS} value={period} onChange={setPeriod} label="Period" />
+            <div className="legend">
               <span>
-                <i style={{ background: 'var(--chart-2)' }} />
-                XIU.TO
+                <i style={{ background: 'var(--chart-1)' }} />
+                You{' '}
+                <b>
+                  <TweenNumber value={portfolio} format={fmtPct} className={tone(portfolio)} />
+                </b>
               </span>
-            )}
-            {r.spy && (
-              <span>
-                <i style={{ background: 'var(--chart-3)' }} />
-                SPY in CAD
-              </span>
-            )}
+              {spy !== null && (
+                <span>
+                  <i style={{ background: 'var(--chart-3)' }} />
+                  SPY{' '}
+                  <b>
+                    <TweenNumber value={spy} format={fmtPct} />
+                  </b>
+                </span>
+              )}
+              {xiu !== null && (
+                <span>
+                  <i style={{ background: 'var(--chart-2)' }} />
+                  XIU.TO{' '}
+                  <b>
+                    <TweenNumber value={xiu} format={fmtPct} />
+                  </b>
+                </span>
+              )}
+            </div>
           </div>
+          <p className="sub chart-note">{label} · SPY and XIU.TO in CAD</p>
+          <LineChart
+            series={r.portfolio}
+            dates={dates}
+            benchmarks={benchmarks}
+            height={210}
+            format={(v) => fmtPct(v)}
+            label="Portfolio return against XIU.TO and SPY in CAD"
+          />
         </>
       ) : (
         <p className="sub" style={{ margin: '14px 0 0' }}>

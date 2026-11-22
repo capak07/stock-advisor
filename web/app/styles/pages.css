@@ -29,30 +29,8 @@
 .stack-legend b { color: var(--foreground); font-weight: 500; font-family: var(--font-mono); }
 .warn-cell { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
 .warn-cell svg { width: 14px; height: 14px; color: var(--attention); }
-#holdings td.h-note { white-space: normal; min-width: 150px; max-width: 190px; }
-/* Phones: each holding becomes a stacked row (symbol and action, then account, value and P/L, then
-   the likely range, then the note). Cells are placed by class, not position. */
-@media (max-width: 639px) {
-  #holdings thead { display: none; }
-  #holdings, #holdings tbody { display: block; }
-  #holdings tr { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "sym sym sym" "acct val pl" "note note note"; gap: 6px 10px; padding: 12px 0; border-bottom: 1px solid var(--border); }
-  #holdings tr:last-child { border-bottom: 0; }
-  #holdings td { display: none; padding: 0; border: 0; white-space: normal; max-width: none; min-width: 0; }
-  #holdings td.h-acct { display: block; grid-area: acct; }
-  #holdings td.h-sym { display: block; grid-area: sym; }
-  #holdings td.h-sym br { display: none; }
-  #holdings td.h-sym .sub::before { content: " · "; }
-  #holdings td.h-value { display: block; grid-area: val; text-align: left !important; }
-  #holdings td.h-value::before { content: "C$"; }
-  #holdings td.h-pl { display: block; grid-area: pl; }
-  #holdings td.h-pl br { display: none; }
-  #holdings td.h-pl .sub::before { content: " · "; }
-  #holdings td.h-note:has(.warn-cell, .order-note) { display: block; grid-area: note; }
-  #holdings tr:has(td.h-action) { grid-template-areas: "sym sym act" "acct val pl" "rng rng rng" "note note note"; }
-  #holdings td.h-action:has(.chip) { display: block; grid-area: act; justify-self: end; }
-  #holdings td.h-range:has(.range) { display: block; grid-area: rng; }
-  .table-scroll { overflow: visible; margin: 0; padding: 0; }
-}
+/* Phones: the tables that stack their rows (trades) need no sideways scroller. */
+@media (max-width: 639px) { .table-scroll { overflow: visible; margin: 0; padding: 0; } }
 .before-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 12.5px; color: var(--muted-foreground); margin-bottom: 12px; }
 .before-note svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
 
@@ -96,7 +74,8 @@
 #trades td.t-del { width: 1%; text-align: right; }
 .trade-actions { display: flex; justify-content: flex-end; gap: 2px; }
 .trade-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; white-space: normal; }
-@media (max-width: 639px) {
+/* Phones, and the narrower desktops where the trades sit beside the 330 px column: each trade is a stacked row. */
+@media (max-width: 639px), (min-width: 1200px) and (max-width: 1399px) {
   #trades thead { display: none; }
   #trades, #trades tbody { display: block; }
   #trades tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "what amount" "meta del"; gap: 4px 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -239,7 +218,6 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .order-guide { display: grid; gap: 3px; padding: 8px 10px; border-radius: var(--radius-md); background: var(--muted); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .order-guide .og-caption { text-transform: none; letter-spacing: 0; }
 .order-guide .og-note { font-size: 11.5px; }
-.h-note .order-note { display: block; font-size: 12px; }
 
 /* ---------- Exit plan (2026-11-20 exit plan design; Ledger classes, no mockup file) ---------- */
 .plan-lines { display: grid; gap: 2px; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
@@ -248,12 +226,6 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .plan-alert { display: inline-block; margin-top: 4px; font-size: 12px; }
 .plan-card-account { display: block; margin-bottom: 4px; }
 .hold-note { grid-column: 1 / -1; text-align: right; font-size: 12px; }
-#holdings td.h-exit:has(.plan-lines) { white-space: normal; min-width: 240px; max-width: 320px; }
-/* Phones: the plan gets its own row of the stacked holding, under the likely range. */
-@media (max-width: 639px) {
-  #holdings tr:has(td.h-action):has(td.h-exit .plan-lines) { grid-template-areas: "sym sym act" "acct val pl" "rng rng rng" "plan plan plan" "note note note"; }
-  #holdings td.h-exit:has(.plan-lines) { display: block; grid-area: plan; min-width: 0; max-width: none; }
-}
 
 /* ---------- Day trade (2026-11-10 day trade design; Ledger classes, no mockup file) ---------- */
 .dt-status { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; overflow-wrap: anywhere; }
@@ -298,3 +270,85 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .show-all { margin-top: 6px; }
 .show-all svg { transition: transform 200ms; }
 .show-all[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+/* ---------- portfolio_2.html ---------- */
+.portfolio-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+.portfolio-col { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-content: start; }
+@media (min-width: 1024px) { .portfolio-grid, .portfolio-col { gap: 18px; } }
+@media (min-width: 1200px) { .portfolio-grid { grid-template-columns: minmax(0, 1fr) 330px; } }
+
+/* The value hero: total and gains on the left, today / all time / cost on the right, then the period control and
+   legend above the chart. */
+.value-hero { padding: 22px !important; }
+.value-hero .hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+.value-hero .hero-meta { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 2px; }
+.value-hero .hero-meta .num { margin-top: 3px; }
+.chart-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 18px 0 6px; }
+.chart-bar .seg { max-width: 100%; overflow-x: auto; }
+.value-hero .legend { gap: 14px; font-size: 12.5px; }
+.value-hero .legend span { display: inline-flex; align-items: center; }
+.value-hero .legend i { width: 16px; height: 2.5px; }
+.value-hero .legend b { margin-left: 2px; font: 600 12.5px var(--font-mono); color: var(--foreground); }
+.chart-note { margin: 0 0 4px; font-size: 12px; }
+/* The Actions card's cards get room in the wide left column. */
+.portfolio-col .action-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+
+/* Holdings: a table on a wide screen. The model's facts, the exit plan, the stop order and the notes sit under the
+   holding's name, so the columns stay the mockup's. Shares shows from 1360 px. */
+#holdings td.h-sym { white-space: normal; min-width: 180px; }
+#holdings td.h-action, #holdings td.h-acct { white-space: normal; }
+#holdings td.h-action, #holdings td.h-acct, #holdings td.h-shares, #holdings td.h-value,
+#holdings td.h-pl, #holdings td.h-weight { vertical-align: top; }
+.h-name { display: grid; gap: 2px; min-width: 0; }
+.h-name .sub { font-size: 12.5px; }
+.h-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+#holdings td.h-pl > span { display: block; }
+#holdings td.h-pl .sub { font-size: 12px; }
+.weight { display: inline-block; vertical-align: middle; width: 38px; height: 5px; margin-left: 8px; border-radius: 999px; background: var(--muted); overflow: hidden; }
+.weight i { display: block; height: 100%; border-radius: inherit; background: var(--foreground); opacity: .55; transform-origin: left; animation: band-grow 400ms ease-out both; }
+.weight.trim i { background: var(--trim); opacity: 1; }
+#holdings .h-shares { display: none; }
+@media (min-width: 1360px) { #holdings .h-shares { display: table-cell; } }
+/* Narrower desktops (beside the 330 px column): the name column gives way and the weight bar sits under its figure. */
+@media (min-width: 760px) and (max-width: 1359px) {
+  #holdings td.h-sym { min-width: 140px; }
+  #holdings td.h-weight .weight { display: block; margin: 6px 0 0 auto; }
+}
+.h-detail { display: grid; gap: 6px; margin-top: 8px; font-size: 12.5px; max-width: 460px; }
+.h-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--muted-foreground); }
+.h-facts .num { color: var(--foreground); }
+.h-facts .range { width: 112px; }
+.h-range, .h-risk { display: inline-flex; align-items: center; gap: 7px; }
+.h-note { display: grid; gap: 3px; }
+.h-note .sub { font-size: 12px; }
+.h-note .warn-cell { display: flex; align-items: flex-start; }
+.h-note .warn-cell svg { flex: none; margin-top: 1px; }
+
+/* Phones: each holding is a compact row — symbol and name with the value; the action, account and weight with the
+   P/L; then the details. Same markup: the name cell's two parts become items of the row's grid. */
+@media (max-width: 759px) {
+  #holdings thead { display: none; }
+  #holdings, #holdings tbody { display: block; }
+  #holdings tr {
+    display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 5px 10px;
+    grid-template-areas: "name name name val" "act acct wt pl" "det det det det"; padding: 12px 0; border-top: 1px solid var(--border);
+  }
+  #holdings tr:first-child { border-top: 0; padding-top: 4px; }
+  #holdings td { display: block; padding: 0; border: 0; min-width: 0; text-align: left; vertical-align: baseline; }
+  #holdings td.h-sym { display: contents; }
+  #holdings .h-name { grid-area: name; display: flex; align-items: baseline; gap: 8px; }
+  #holdings .h-name .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #holdings .h-detail { grid-area: det; margin-top: 4px; max-width: none; }
+  #holdings td.h-value { grid-area: val; text-align: right; }
+  #holdings td.h-action { grid-area: act; }
+  #holdings td.h-action:not(:has(.chip)) { display: none; }
+  #holdings tr:not(:has(.chip)) td.h-acct { grid-column: 1 / 3; }
+  #holdings td.h-acct { grid-area: acct; font-size: 12.5px; white-space: nowrap; }
+  #holdings td.h-weight { grid-area: wt; font-size: 12.5px; color: var(--muted-foreground); white-space: nowrap; }
+  #holdings td.h-weight .weight { display: none; }
+  #holdings td.h-pl { grid-area: pl; text-align: right; }
+  #holdings td.h-pl > span { display: inline; }
+  #holdings td.h-pl .sub::before { content: "· "; }
+  #holdings td.h-shares { display: none; }
+  .holdings-scroll { overflow: visible; margin: 0; padding: 0; }
+}

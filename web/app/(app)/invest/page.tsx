@@ -1,4 +1,4 @@
-import { Info, TriangleAlert } from 'lucide-react'
+import { Info, PiggyBank, TriangleAlert } from 'lucide-react'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
@@ -42,25 +42,25 @@ export default async function InvestPage({ searchParams }: Props) {
 
   return (
     <main className="page">
-      <div className="enter">
-        <h1>Invest</h1>
-        <p className="sub">Type an amount and choose stocks or crypto. It is split over the model&apos;s best-ranked names.</p>
+      <div className="page-head enter">
+        <div style={{ minWidth: 0 }}>
+          <h1>Invest</h1>
+          <p className="sub">Type an amount and choose stocks or crypto. It is split over the model&apos;s best-ranked names.</p>
+        </div>
       </div>
-      <section className="card card-pad enter" aria-labelledby="split-h">
-        <h2 id="split-h" style={{ marginBottom: 12 }}>
-          Split an amount
-        </h2>
-        <SplitForm inputs={inputs} />
-      </section>
-      {data === null ? (
-        <section className="card card-pad enter">
-          <div className="banner info">
-            <Info />
-            <div>No forecasts yet. They appear after the next run.</div>
-          </div>
+      <div className="invest-grid enter">
+        <section className="card card-pad invest-form-card" aria-labelledby="split-h">
+          <h2 id="split-h">Split an amount</h2>
+          <SplitForm inputs={inputs} />
         </section>
-      ) : (
-        ready && (
+        {data === null ? (
+          <section className="card card-pad">
+            <div className="banner info">
+              <Info />
+              <div>No forecasts yet. They appear after the next run.</div>
+            </div>
+          </section>
+        ) : ready ? (
           <Result
             run={data.run}
             amount={inputs.amount!}
@@ -70,6 +70,7 @@ export default async function InvestPage({ searchParams }: Props) {
             noTsx126={!data.stocks.some((c) => c.market === 'TSX' && c.rows.some((r) => r.horizonDays === 126))}
             orders={orders}
             stopRules={data.stopRules}
+            usdFxFeePct={data.usdFxFeePct}
             allocation={allocate({
               amount: inputs.amount!,
               stocks: inputs.stocks!,
@@ -83,8 +84,13 @@ export default async function InvestPage({ searchParams }: Props) {
               minEdgeByMarket: inputs.asset === 'stocks' ? data.minEdge : undefined,
             })}
           />
-        )
-      )}
+        ) : (
+          <section className="card card-pad invest-empty" aria-label="Where it would go">
+            <PiggyBank aria-hidden="true" />
+            <p className="sub">Type an amount and choose Split it. Where the money would go shows here.</p>
+          </section>
+        )}
+      </div>
     </main>
   )
 }
@@ -98,6 +104,7 @@ function Result({
   noTsx126,
   orders,
   stopRules,
+  usdFxFeePct,
   allocation,
 }: {
   run: Run
@@ -109,6 +116,8 @@ function Result({
   noTsx126: boolean
   orders: OrderContext
   stopRules: Partial<Record<Market, StopRules>>
+  /** The US conversion fee each way (a Setting); a US line's cost names it only when there is one. */
+  usdFxFeePct: number
   allocation: ReturnType<typeof allocate>
 }) {
   const { stocks, uninvested, notValidated, evenSplit } = allocation
@@ -117,25 +126,34 @@ function Result({
   const mixed = notValidated && stocks.some((s) => s.qualifies)
   const guides = new Map(stocks.map((s) => [s.symbol, investGuide(s, orders, stopRules)]))
   return (
-    <section className="card card-pad enter" aria-labelledby="result-h">
-      <div className="section-head" style={{ marginBottom: 6 }}>
+    <section className="card card-pad" aria-labelledby="result-h">
+      <div className="section-head" style={{ marginBottom: 4 }}>
         <h2 id="result-h">Where {fmtMoney(amount)} would go</h2>
       </div>
-      <p className="sub" style={{ margin: '0 0 12px' }}>
+      <p className="sub invest-from">
         From the {KIND_LABEL[run.kind]} run of {shortDay(run.et_date)} ·{' '}
         {asset === 'crypto'
           ? 'returns are vs BTC (Bitcoin itself vs SPY), not plain gains'
           : 'returns are vs SPY (US) or XIU.TO (TSX), not plain gains'}
       </p>
       {notValidated && (
-        <div className="banner warn" role="alert" style={{ marginBottom: 12 }}>
+        <div className="banner warn invest-warn" role="alert">
           <TriangleAlert />
           <div>{warning(names, mixed)}</div>
         </div>
       )}
       <ul className="invest-list stagger" id="invest-lines">
         {stocks.map((line, i) => (
-          <Line key={line.symbol} line={line} run={run} mixed={mixed} index={i} guide={guides.get(line.symbol) ?? null} />
+          <Line
+            key={line.symbol}
+            line={line}
+            run={run}
+            amount={amount}
+            mixed={mixed}
+            index={i}
+            fxFee={usdFxFeePct > 0}
+            guide={guides.get(line.symbol) ?? null}
+          />
         ))}
       </ul>
       {stocks.length === 1 && (
@@ -193,14 +211,20 @@ function Result({
 function Line({
   line,
   run,
+  amount,
   mixed,
   index,
+  fxFee,
   guide,
 }: {
   line: StockLine
   run: Run
+  /** The whole amount, so the line's weight bar shows its share. */
+  amount: number
   mixed: boolean
   index: number
+  /** Whether a US line pays a currency fee (the usd_fx_fee_pct Setting is above 0). */
+  fxFee: boolean
   guide: OrderPlan | null
 }) {
   const coin = line.assetType === 'crypto'
@@ -209,44 +233,53 @@ function Line({
     : [line.name, line.market, line.sector].filter(Boolean).join(' · ')
   const pct = (fraction: number) => fmtPct(fraction * 100)
   const exit = coin ? addDays(run.et_date, line.horizonDays) : addWeekdays(run.et_date, line.horizonDays)
+  const weight = amount > 0 ? Math.round((line.amount / amount) * 100) : 0
   return (
     <li className={`invest-row ${coin ? 'coin' : 'stock'}`} style={{ '--i': index } as CSSProperties}>
-      <div className="i-amount">
-        <b className="num">{fmtMoney(line.amount)}</b>
-        {line.shares !== null && (
-          <span className="sub num">{coin ? `≈ ${fmtQty(line.shares)} ${line.symbol}` : `≈ ${line.shares.toFixed(2)} sh`}</span>
-        )}
-      </div>
-      <div className="i-main">
-        <div className="i-title">
-          <Link className="sym" href={tickerHref(line.symbol, line.assetType)}>
-            {line.symbol}
-          </Link>
-          {!coin && line.market && (
-            <span className="chip" data-market={line.market}>
-              {line.market}
-            </span>
-          )}
-          <span className="sub">{about}</span>
-          {mixed && line.qualifies && <span className="chip buy">passes the bar</span>}
+      <div className="i-top">
+        <div className="i-id">
+          <div className="i-title">
+            <Link className="sym" href={tickerHref(line.symbol, line.assetType)}>
+              {line.symbol}
+            </Link>
+            {!coin && line.market && (
+              <span className="chip" data-market={line.market}>
+                {line.market}
+              </span>
+            )}
+            {mixed && line.qualifies && <span className="chip buy">passes the bar</span>}
+          </div>
+          <span className="sub i-about">{about}</span>
         </div>
-        <p className="i-line">
-          Likely <span className="num">{pct(line.q10)}</span> to <span className="num">{pct(line.q90)}</span> relative to{' '}
-          {line.benchmark} over {line.horizonDays} {coin ? 'days' : 'trading days'} · median{' '}
-          <span className="num">{pct(line.q50)}</span>
-        </p>
-        <p className="i-line sub">
-          {line.volatility !== null && line.vol60 !== null && (
-            <>
-              Volatility {line.volatility} ({Math.round(line.vol60 * 100)}%/yr) ·{' '}
-            </>
+        <div className="i-amount">
+          <b className="num">{fmtMoney(line.amount)}</b>
+          {line.shares !== null && (
+            <span className="sub num">{coin ? `≈ ${fmtQty(line.shares)} ${line.symbol}` : `≈ ${line.shares.toFixed(2)} sh`}</span>
           )}
-          exit by ≈ {shortDay(exit)} · round-trip cost {pct(line.cost)}
-          {line.market === 'US' && ' (incl. currency fee)'}
-          {coin && ' (incl. crypto fee)'}
-        </p>
-        {guide && <OrderGuide plan={guide} />}
+        </div>
       </div>
+      <div className="i-weight">
+        <span className="bar" aria-hidden="true">
+          <i style={{ width: `${weight}%` }} />
+        </span>
+        <span className="num">{weight}%</span>
+      </div>
+      <p className="i-line">
+        Likely <span className="num">{pct(line.q10)}</span> to <span className="num">{pct(line.q90)}</span> relative to{' '}
+        {line.benchmark} over {line.horizonDays} {coin ? 'days' : 'trading days'} · median{' '}
+        <span className="num">{pct(line.q50)}</span>
+      </p>
+      <p className="i-line sub">
+        {line.volatility !== null && line.vol60 !== null && (
+          <>
+            Volatility {line.volatility} ({Math.round(line.vol60 * 100)}%/yr) ·{' '}
+          </>
+        )}
+        exit by ≈ {shortDay(exit)} · round-trip cost {pct(line.cost)}
+        {line.market === 'US' && fxFee && ' (incl. currency fee)'}
+        {coin && ' (incl. crypto fee)'}
+      </p>
+      {guide && <OrderGuide plan={guide} fold={index === 0 ? 'open' : 'closed'} />}
     </li>
   )
 }

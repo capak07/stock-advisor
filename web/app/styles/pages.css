@@ -95,30 +95,45 @@
 .badge-current { border-color: var(--foreground); color: var(--foreground); }
 #import-rows td { white-space: normal; }
 
-/* ---------- Invest (2026-10-27 design's Layout; Ledger classes, no mockup file) ---------- */
-.invest-form { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: start; }
-.invest-form .field { flex: 1 1 150px; min-width: 0; }
-.invest-form .btn { margin-top: 24px; flex: 0 0 auto; }
-@media (max-width: 639px) {
-  .invest-form { display: grid; grid-template-columns: minmax(0, 1fr); }
-  .invest-form .field { flex: none; }
-  .invest-form .btn { margin-top: 0; justify-self: start; }
+/* ---------- invest_1.html ---------- */
+/* The form on the left (sticky on a desktop), where the money would go on the right; stacked on a phone. */
+.invest-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1024px) {
+  .invest-grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 18px; }
+  .invest-form-card { position: sticky; top: 76px; }
 }
+.invest-form { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); margin-top: 12px; }
+.invest-form .field > span:first-child { color: var(--muted-foreground); }
+.invest-amt { position: relative; display: block; }
+.invest-amt .cur { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font: 500 14px var(--font-mono); color: var(--muted-foreground); pointer-events: none; }
+.invest-amt .input { height: 48px; padding-left: 44px; font-size: 18px !important; font-weight: 600 !important; }
+.invest-go { width: 100%; height: 46px; }
+.invest-info { display: flex; gap: 10px; align-items: flex-start; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted-foreground); }
+.invest-info svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.invest-empty { display: grid; justify-items: center; gap: 10px; padding: 36px 18px !important; text-align: center; }
+.invest-empty svg { width: 26px; height: 26px; color: var(--brand); }
+.invest-empty p { margin: 0; max-width: 320px; font-size: 13.5px; }
+.invest-from { margin: 0 0 10px; font-size: 12.5px; }
+.invest-warn { margin: 4px 0 8px; }
+
+/* Each line: symbol and name with the amount, a weight bar, the forecast, then How to place it in a <details>. */
 .invest-list { margin: 0; padding: 0; list-style: none; }
-.invest-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
-.invest-row:last-child { border-bottom: 0; }
-.invest-row .i-amount { display: grid; gap: 2px; align-content: start; }
-.invest-row .i-amount b { font-size: 15px; font-weight: 600; }
-.invest-row .i-main { display: grid; gap: 4px; min-width: 0; }
-.invest-row .i-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
-.invest-row .i-title .chip { align-self: center; }
-.invest-row .i-line { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
-@media (max-width: 639px) {
-  .invest-row { grid-template-columns: minmax(0, 1fr); }
-  .invest-row .i-amount { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
-}
+.invest-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 0; border-top: 1px solid var(--border); }
+.invest-row:first-child { border-top: 0; padding-top: 8px; }
+.invest-row .i-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.invest-row .i-id { display: grid; gap: 4px; min-width: 0; }
+.invest-row .i-title { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.invest-row .i-about { font-size: 12.5px; overflow-wrap: anywhere; }
+.invest-row .i-amount { display: grid; gap: 2px; justify-items: end; flex: none; text-align: right; }
+.invest-row .i-amount b { font: 600 18px/1.1 var(--font-mono) !important; letter-spacing: -0.02em; }
+.invest-row .i-amount .sub { font-size: 12px; }
+.invest-row .i-weight { display: flex; align-items: center; gap: 10px; }
+.invest-row .i-weight .bar { flex: 1; height: 6px; border-radius: 999px; background: var(--muted); overflow: hidden; }
+.invest-row .i-weight .bar i { display: block; height: 100%; border-radius: inherit; background: var(--chart-1); transform-origin: left; animation: band-grow 600ms cubic-bezier(.2,.8,.2,1) both; }
+.invest-row .i-weight .num { min-width: 34px; font-size: 12px; color: var(--muted-foreground); text-align: right; }
+.invest-row .i-line { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .i-uninvested { margin: 10px 0 0; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 13px; }
-.invest-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.invest-foot { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--border); }
 
 /* ---------- picks_2.html ---------- */
 /* The empty run: the halo card, then "Why?" with three tiles, the explanation and each market's reason. */
@@ -250,6 +265,15 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .order-guide { display: grid; gap: 3px; padding: 8px 10px; border-radius: var(--radius-md); background: var(--muted); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .order-guide .og-caption { text-transform: none; letter-spacing: 0; }
 .order-guide .og-note { font-size: 11.5px; }
+/* Folded (the Invest lines): the title is the summary, the steps open under it. */
+.order-guide.og-fold { display: block; padding: 0; font-size: 13px; }
+.og-fold summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; cursor: pointer; list-style: none; font-weight: 500; }
+.og-fold summary::-webkit-details-marker { display: none; }
+.og-fold summary svg { width: 16px; height: 16px; flex: none; color: var(--muted-foreground); transition: transform 200ms; }
+.og-fold[open] summary svg { transform: rotate(180deg); }
+.og-fold .og-body { display: grid; gap: 6px; padding: 0 12px 12px; line-height: 1.45; }
+.og-fold[open] .og-body { animation: fade 200ms ease-out; }
+.og-fold .og-note { font-size: 12px; }
 
 /* ---------- Exit plan (2026-11-20 exit plan design; Ledger classes, no mockup file) ---------- */
 .plan-lines { display: grid; gap: 2px; font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }

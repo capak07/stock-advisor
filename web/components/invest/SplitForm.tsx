@@ -1,5 +1,6 @@
 'use client'
 
+import { Info, Split } from 'lucide-react'
 import { useState } from 'react'
 import { STOCKS, type Hold } from '@/lib/invest/allocate'
 import { holdsFor, type AssetChoice, type InvestInputs } from '@/lib/invest/inputs'
@@ -22,15 +23,20 @@ export function SplitForm({ inputs }: { inputs: InvestInputs }) {
     <form method="get" action="/invest" className="invest-form" noValidate>
       <label className={`field ${inputs.amountError ? 'invalid' : ''}`}>
         <span>Amount (C$)</span>
-        <input
-          className="input num-input"
-          name="amount"
-          inputMode="decimal"
-          autoComplete="off"
-          placeholder="1,000"
-          defaultValue={inputs.amountText}
-          aria-invalid={inputs.amountError ? true : undefined}
-        />
+        <span className="invest-amt">
+          <span className="cur" aria-hidden="true">
+            C$
+          </span>
+          <input
+            className="input num-input"
+            name="amount"
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="1,000"
+            defaultValue={inputs.amountText}
+            aria-invalid={inputs.amountError ? true : undefined}
+          />
+        </span>
         <span className="error">{inputs.amountError}</span>
       </label>
       <label className={`field ${inputs.assetError ? 'invalid' : ''}`}>
@@ -63,9 +69,18 @@ export function SplitForm({ inputs }: { inputs: InvestInputs }) {
         </select>
         <span className="error">{inputs.holdError}</span>
       </label>
-      <button type="submit" className="btn btn-primary">
+      <button type="submit" className="btn btn-primary invest-go">
+        <Split aria-hidden="true" />
         Split it
       </button>
+      <p className="invest-info">
+        <Info aria-hidden="true" />
+        <span>
+          {asset === 'crypto'
+            ? 'Returns are measured against BTC (Bitcoin itself against SPY), not plain gains.'
+            : 'Returns are measured against SPY (US) or XIU.TO (TSX), not plain gains.'}
+        </span>
+      </p>
     </form>
   )
 }

@@ -51,6 +51,7 @@ test('Invest is in the navigation and starts with the form only', async ({ page 
   await expect(page.getByLabel('How long to hold')).toHaveValue('any')
   await expect(page.getByRole('button', { name: 'Split it' })).toBeVisible()
   await expect(page.locator('#invest-lines')).toHaveCount(0)
+  await expect(page.getByText('Type an amount and choose Split it. Where the money would go shows here.')).toBeVisible()
 })
 
 test('an amount is split only over stocks that pass the rule, and the rest stays uninvested', async ({ page }) => {
@@ -70,6 +71,10 @@ test('an amount is split only over stocks that pass the rule, and the rest stays
   await expect(ry.locator('.chip[data-market="TSX"]')).toHaveText('TSX') // US and TSX share one list, each badged
   await expect(ry).toContainText('Likely −2.0% to +8.0% relative to XIU.TO over 21 trading days · median +3.0%')
   await expect(ry).toContainText('round-trip cost +0.1%')
+  // each line's weight bar is its share of the amount
+  const weights = await page.locator('#invest-lines .i-weight .num').allTextContents()
+  expect(weights).toHaveLength(2)
+  expect(weights.reduce((sum, text) => sum + Number(text.replace('%', '')), 0)).toBe(100)
   await expect(ry.getByRole('link', { name: 'RY.TO' })).toHaveAttribute('href', '/ticker/RY.TO')
 
   await expect(page.locator('#invest-lines .invest-row.coin')).toHaveCount(0)
@@ -108,7 +113,8 @@ test('crypto is ranked like stocks, and a coin expected to lag is left out', asy
   await expect(page.getByText(/With two coins the 40% cap/)).toBeVisible()
   const amounts = await page.locator('#invest-lines .i-amount b').allTextContents()
   expect(amounts.reduce((sum, text) => sum + Number(text.replace(/[^\d.]/g, '')), 0)).toBe(1000)
-  await expect(coins.nth(0).locator('.order-guide')).toContainText(/Limit buy C\$500 of it at/)
+  await expect(coins.nth(0).locator('details.order-guide')).toHaveAttribute('open', '')
+  await expect(coins.nth(0).locator('.og-step', { hasText: /Limit buy C\$500 of it at/ })).toBeVisible()
   await expect(page.getByText(/recurring buy/)).toHaveCount(0)
 
   await page.goto('/invest?amount=1000&asset=crypto&stocks=5&hold=30')
@@ -121,8 +127,12 @@ test('each Invest line says how to place it', async ({ page }) => {
   await seedCloses('SHOP.TO', 'stock', 'CAD', weekdays(daysAgo(10)), 80, 0) // priced, but with no daily range
   await sql`update features_live set features = features || '{"atr_14_pct": 0.02}'::jsonb where symbol = 'RY.TO'`
   await page.goto('/invest?amount=1000&asset=stocks&stocks=5')
-  const ry = stockRows(page).filter({ hasText: 'RY.TO' }).locator('.order-guide')
-  await expect(ry).toContainText('How to place it')
+  await expect(stockRows(page).first()).toContainText('RY.TO')
+  // each guide is a <details>; the first line's starts open
+  const ry = stockRows(page).filter({ hasText: 'RY.TO' }).locator('details.order-guide')
+  await expect(ry).toHaveAttribute('open', '')
+  await expect(ry.locator('summary')).toHaveText('How to place it')
+  await expect(ry.locator('.og-step').first()).toBeVisible()
   await expect(ry).toContainText(/Limit buy \d+ sh at C\$50\.25 · (Day order|set it to expire at the end of the next trading day)/)
   await expect(ry.locator('.og-step', { hasText: 'stop-limit' })).toHaveCount(0) // the Invest page isn't a pick, so no separate stop order
   // the bracket: the top of its 21-day range (C$50 × 1.08), and the picks' position stop (3 ranges under)
@@ -130,8 +140,12 @@ test('each Invest line says how to place it', async ({ page }) => {
     /Or as one bracket order: limit buy \d+ sh at C\$50\.25 · (Day order|set it to expire at the end of the next trading day), take profit C\$54\.00 \(\+7%\), stop loss C\$47\.00 \(−6%\)/,
   )
   // a priced stock without a daily range gets its buy, but no bracket
-  const shop = stockRows(page).filter({ hasText: 'SHOP.TO' }).locator('.order-guide')
-  await expect(shop).toContainText('Limit buy')
+  const shop = stockRows(page).filter({ hasText: 'SHOP.TO' }).locator('details.order-guide')
+  await expect(shop).not.toHaveAttribute('open')
+  await expect(shop.locator('.og-step').first()).toBeHidden()
+  await shop.locator('summary').click()
+  await expect(shop).toHaveAttribute('open', '')
+  await expect(shop.locator('.og-step', { hasText: 'Limit buy' })).toBeVisible()
   await expect(shop).not.toContainText('bracket')
   await expect(page.getByText("Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.")).toHaveCount(1)
 })

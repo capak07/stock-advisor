@@ -1,11 +1,10 @@
 import { ChevronRight, Sparkles } from 'lucide-react'
 import Link from 'next/link'
+import { NoPicksSentence } from '@/components/picks/BestChance'
 import type { MarketPicks } from '@/lib/data/picks'
 import type { Run } from '@/lib/runs'
-import { PICK_P_FLOOR } from '@/lib/today'
 
 const count = (m: MarketPicks) => m.swing.length + m.position.length
-const BAR = `${Math.round(PICK_P_FLOOR * 100)}%`
 
 /**
  * Today's Picks card (spec §7.1): the count per market when the latest run picked anything;
@@ -47,12 +46,7 @@ export function PicksStatus({
       ) : total === 0 ? (
         <>
           <p className="muted" style={{ margin: '6px 0 12px', fontSize: 13.5 }}>
-            {bestChance !== null && (
-              <>
-                The best chance of beating the market was <span className="num">{bestChance}</span>; a pick needs {BAR}.{' '}
-              </>
-            )}
-            Nothing has enough evidence to buy.
+            <NoPicksSentence bestChance={bestChance} />
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Link className="btn btn-secondary btn-sm" href="/picks">

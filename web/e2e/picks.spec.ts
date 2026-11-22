@@ -75,10 +75,12 @@ async function seedPicksRun() {
 
 const usCard = (page: Page, symbol: string) => page.locator('[data-panel="us"] article.pick', { hasText: symbol })
 
-test('picks page before any run says picks appear once the model runs', async ({ page }) => {
+test('picks page before any run says there is no run yet (Review Focus 2)', async ({ page }) => {
   await page.goto('/picks')
   await expect(page.getByRole('heading', { name: "Today's Picks", level: 1 })).toBeVisible()
-  await expect(page.getByText('Picks appear once the model runs')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'No run yet', level: 2 })).toBeVisible()
+  await expect(page.getByText(/^Picks appear after the first published run\./)).toBeVisible()
+  await expect(page.getByText(/best chance/i)).toHaveCount(0)
   await expect(page.locator('article.pick')).toHaveCount(0)
 })
 
@@ -103,30 +105,38 @@ test('a TSX pick shows the filings note and a US pick does not', async ({ page }
     exitBy: '2027-01-19', entry: 140, stop: 120, riskLevel: 'medium', maxPct: 3,
   })
   await page.goto('/picks')
-  await expect(usCard(page, 'AAPL')).not.toContainText(TSX_BASIS)
-  await expect(page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })).toContainText(TSX_BASIS)
-  // both markets are on the page at once, each under its own heading: no tab to miss (2026-11-08)
-  await expect(page.getByRole('heading', { name: /^US picks/ })).toBeVisible()
-  await expect(page.getByRole('heading', { name: /^TSX picks/ })).toBeVisible()
+  // a US | TSX control (spec §7.4) whose tabs carry each market's count, so no market's picks hide behind a bare tab (2026-11-08)
+  const market = page.getByRole('tablist', { name: 'Market' })
+  await expect(market.getByRole('tab', { name: 'US · 1' })).toHaveAttribute('aria-selected', 'true')
+  await expect(market.getByRole('tab', { name: 'TSX · 1' })).toHaveAttribute('aria-selected', 'false')
   await expect(usCard(page, 'AAPL')).toBeVisible()
-  await expect(page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'TSX' })).toHaveCount(0)
+  await expect(usCard(page, 'AAPL')).not.toContainText(TSX_BASIS)
+  const ry = page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })
+  await expect(ry).toBeHidden()
+  await market.getByRole('tab', { name: 'TSX · 1' }).click()
+  await expect(ry).toBeVisible()
+  await expect(ry).toContainText(TSX_BASIS)
+  await expect(usCard(page, 'AAPL')).toBeHidden()
 })
 
 test('a US pick card shows its range, rule, hold, stop, size and cost', async ({ page }) => {
   await seedPicksRun()
   await page.goto('/picks')
-  await expect(page.getByText(/^From the \d\d:\d\d pre-close run · at most 10 Swing and 10 Position picks per market, 3 per sector$/)).toBeVisible()
+  await expect(page.getByText(/^From the \d\d:\d\d pre-close run$/)).toBeVisible()
+  await expect(page.getByText('At most 10 Swing and 10 Position picks per market, 3 per sector.')).toBeVisible()
   const card = usCard(page, 'AAPL')
   await expect(card).toContainText('#1')
   await expect(card).toContainText('Apple Inc.')
   await expect(card).toContainText('Likely 63-day return relative to SPY')
   await expect(card.getByRole('img', { name: /^Likely range relative to SPY: q10 −6\.8%, median \+4\.9%, q90 \+16\.0%$/ })).toBeVisible()
-  await expect(card.locator('.pick-facts')).toContainText("Chosen byThe model's rule: P(beat) at least 0.58")
-  await expect(card.locator('.pick-facts')).not.toContainText('62%') // no P promise (owner decision 2026-11-07)
-  await expect(card).toContainText('~3 months · exit by Jan 19')
-  await expect(card).toContainText('US$205.10')
-  await expect(card.locator('.pick-facts')).toContainText(/Max size3% · C\$[\d,]+/)
+  await expect(card.locator('.pick-chosen')).toContainText("Chosen byThe model's rule: P(beat) at least 0.58")
+  await expect(card).toContainText('No chance of beating SPY is shown')
+  await expect(card).not.toContainText('62%') // no P promise (owner decision 2026-11-07)
+  await expect(card.locator('.pick-rlabels')).toHaveText('−6.8%mid +4.9%+16.0%')
+  await expect(card.locator('.pick-levels')).toContainText('Entry US$229.50')
+  await expect(card.locator('.pick-levels')).toContainText('Stop US$205.103 × ATR')
+  await expect(card.locator('[data-exit]')).toHaveText('Exit byJan 19~3 months')
+  await expect(card.locator('[data-size]')).toHaveText(/^Max size 3% · C\$[\d,]+ · A long hold keeps TFSA trades low$/)
   await expect(card).toContainText('3.1% round trip USD conversion 1.5% each way + spread')
   await expect(card.locator('.pick-why li')).toHaveText([
     'Return vs SPY over 63 days +9.8%',
@@ -184,24 +194,39 @@ test('a disabled market shows its gate reason and still lists verdicts', async (
     maxPct: 5,
   })
   await page.goto('/picks')
+  await page.getByRole('tab', { name: 'TSX · 0' }).click()
   const tsx = page.locator('[data-panel="tsx"]')
   await expect(tsx.getByText('No TSX picks today: model check failed')).toBeVisible()
   await expect(tsx).toContainText('only 12 backtest picks (needs 30)')
   await expect(tsx).toContainText('Watchlist verdicts and holding actions still run.')
   await expect(tsx.locator('article.pick')).toHaveCount(0)
-  const row = tsx.locator('.verdict', { hasText: 'TD.TO' })
+  // the run's verdicts sit once, under both markets
+  const row = page.locator('.verdict', { hasText: 'TD.TO' })
   await expect(row.locator('.chip')).toHaveText('Hold')
   await expect(row).toContainText('picks off for TSX this run')
 })
 
-test('a market with a passing gate and no picks says nothing cleared the bar', async ({ page }) => {
-  await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: hourAgo() })
+test("a run with no picks shows the run's best chance against the 58% bar, and why", async ({ page }) => {
+  const runId = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: hourAgo() })
   await seedModel('stock_us', { picks_enabled: true })
+  await seedPrediction(runId, 'AAPL', 21, { q10: -0.05, q50: 0.01, q90: 0.06, p: 0.527 })
+  await seedPrediction(runId, 'AAPL', 63, { q10: -0.05, q50: 0.01, q90: 0.06, p: 0.49 })
   await page.goto('/picks')
-  await expect(page.locator('[data-panel="us"]').getByText('No US picks today', { exact: true })).toBeVisible()
-  await expect(page.locator('[data-panel="us"]')).toContainText('Nothing cleared the bar this run')
-  await expect(page.locator('[data-panel="tsx"]').getByText('No TSX picks yet')).toBeVisible()
-  await expect(page.locator('[data-panel="tsx"]')).toContainText('TSX has no trained model yet.')
+  await expect(page.getByRole('heading', { name: 'No picks today', level: 2 })).toBeVisible()
+  await expect(
+    page.getByText('The best chance of beating the market was US 52.7% vs SPY; a pick needs 58%. Nothing has enough evidence to buy.'),
+  ).toBeVisible()
+  await expect(page.getByRole('link', { name: "See the watchlist's verdicts" })).toHaveAttribute('href', '/watchlist')
+  await page.getByRole('link', { name: 'Why?' }).click()
+  const why = page.locator('#picks-why')
+  await expect(why).toBeInViewport()
+  await expect(why.locator('.stat')).toHaveText(['Best chance today52.7%vs SPY', 'A pick needs58%', 'And a backtest of30 picks'])
+  await expect(why).toContainText('52.7% is close to a coin flip. There is no clear edge today.')
+  await expect(why).toContainText('a pick needs a chance of at least 58%')
+  await expect(why.locator('[data-market="us"]')).toHaveText('USNothing cleared the bar this run.')
+  await expect(why.locator('[data-market="tsx"]')).toHaveText('TSXNo trained model yet.')
+  await expect(page.getByRole('tablist', { name: 'Market' })).toHaveCount(0)
+  await expect(page.locator('article.pick')).toHaveCount(0)
 })
 
 test('an exited pick shows in the Exit early card', async ({ page }) => {

@@ -7,6 +7,8 @@ import {
   seedFeatures,
   seedFx,
   seedHoldingAction,
+  seedModel,
+  seedPick,
   seedPrediction,
   seedRun,
   seedSymbols,
@@ -184,11 +186,15 @@ test.describe('watchlist', () => {
     await expect(veea.locator('.chip')).toHaveText('Hold')
     await expect(veea.locator('.w-detail')).toContainText("doesn't qualify as a buy")
 
+    // Picks lists the run's verdicts under its picks (a run without picks links to the Watchlist instead)
+    await seedModel('stock_us', { picks_enabled: true })
+    await seedPrediction(runId, 'AAPL', 63, { q10: -0.02, q50: 0.04, q90: 0.1, p: 0.62 })
+    await seedPick(runId, { symbol: 'AAPL', market: 'US', style: 'position', horizon: 63, rank: 1, exitBy: '2027-01-19', entry: 200, stop: 180, riskLevel: 'medium', maxPct: 3 })
     await page.goto('/picks')
-    const sidebar = page.locator('[data-panel="us"]')
-    await expect(sidebar.locator('.verdict', { hasText: 'XRPN' }).locator('.chip')).toHaveText('Sell')
-    await expect(sidebar.locator('.verdict', { hasText: 'XRPN' })).toContainText('You hold it · Closed at 14.71, under its trailing stop 31.35')
-    await expect(sidebar.locator('.verdict', { hasText: 'VEEA' }).locator('.chip')).toHaveText('Hold')
+    const verdicts = page.locator('.card', { has: page.getByRole('heading', { name: 'Watchlist verdicts' }) })
+    await expect(verdicts.locator('.verdict', { hasText: 'XRPN' }).locator('.chip')).toHaveText('Sell')
+    await expect(verdicts.locator('.verdict', { hasText: 'XRPN' })).toContainText('You hold it · Closed at 14.71, under its trailing stop 31.35')
+    await expect(verdicts.locator('.verdict', { hasText: 'VEEA' }).locator('.chip')).toHaveText('Hold')
   })
 
   test('a watched Buy says how to place it, sized at C$1,000 with nothing held', async ({ page }) => {

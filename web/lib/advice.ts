@@ -111,9 +111,11 @@ export function factorBars(factors: readonly { feature: string; contribution: nu
 
 const HOLD_WORDS: Record<number, string> = { 63: '~3 months', 126: '~6 months' }
 
+/** "~10 trading days", "~3 months" */
+export const holdWords = (horizon: number): string => HOLD_WORDS[horizon] ?? `~${horizon} trading days`
+
 /** "~10 trading days · exit by Oct 30", "~3 months · exit by Jan 19" */
-export const holdText = (horizon: number, exitBy: string): string =>
-  `${HOLD_WORDS[horizon] ?? `~${horizon} trading days`} · exit by ${shortDay(exitBy)}`
+export const holdText = (horizon: number, exitBy: string): string => `${holdWords(horizon)} · exit by ${shortDay(exitBy)}`
 
 /** "3.1% round trip · USD conversion 1.5% each way + spread"; a TSX stock pays only the spread. */
 export const costText = (market: 'US' | 'TSX', cost: number, usdFxFeePct: number): string =>

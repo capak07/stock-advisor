@@ -38,14 +38,15 @@ export default async function PicksPage() {
     </div>
   )
 
+  // a run's exit-early advice is never behind a tab: each market's card, always on screen
+  const exits = markets.map((m) => <ExitEarlyCard key={m.market} market={m.market} exits={m.exitedEarly} />)
+
   if (!run || total === 0) {
     return (
       <main className="page">
         {head}
         <PicksEmpty run={run} chances={chances} markets={markets} />
-        {markets.map((m) => (
-          <ExitEarlyCard key={m.market} market={m.market} exits={m.exitedEarly} />
-        ))}
+        {exits}
       </main>
     )
   }
@@ -83,6 +84,7 @@ export default async function PicksPage() {
     <main className="page">
       <PickBuyDrawer rates={[...data.fx.rates]} today={todayInToronto()}>
         {head}
+        {exits}
         <PicksTabs
           counts={{ US: pickCount(byMarket('US')), TSX: pickCount(byMarket('TSX')) }}
           panels={{ US: panel('US'), TSX: panel('TSX') }}

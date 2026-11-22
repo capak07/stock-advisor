@@ -45,12 +45,14 @@ export function VerdictList({ verdicts }: { verdicts: VerdictView[] }) {
 
 const STYLE = { swing: 'Swing', position: 'Position' } as const
 
-/** The picks this run told the owner to exit (Plan 4c); hidden when there are none. */
+/** The picks this run told the owner to exit (Plan 4c), headed by their market; hidden when there are none. */
 export function ExitEarlyCard({ market, exits }: { market: Market; exits: ExitView[] }) {
   if (exits.length === 0) return null
   return (
     <div className="card card-pad" id={`exit-early-${market.toLowerCase()}`}>
-      <h2 style={{ marginBottom: 6 }}>Exit early</h2>
+      <h2 style={{ marginBottom: 6 }}>
+        Exit early <span className="sub" style={{ fontWeight: 400 }}>{market}</span>
+      </h2>
       {exits.map((e) => (
         <div key={e.id} className="verdict">
           <Link className="sym" href={tickerHref(e.symbol, 'stock')}>

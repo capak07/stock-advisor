@@ -3,7 +3,6 @@ import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { NoPicksSentence, PICK_BAR } from '@/components/picks/BestChance'
 import { PickCard } from '@/components/picks/PickCard'
-import { ExitEarlyCard } from '@/components/picks/VerdictList'
 import type { MarketPicks as Picks, PickView, Style } from '@/lib/data/picks'
 import type { Guide } from '@/lib/guidance'
 import type { Run } from '@/lib/runs'
@@ -68,7 +67,7 @@ function NoPicks({ market }: { market: Picks }) {
   )
 }
 
-/** One market's tab on Today's Picks: an early-exit card when there is one, then its Swing and Position lists, or why there are none. */
+/** One market's tab on Today's Picks: its Swing and Position lists, or why there are none. The early exits sit above the tabs (the page). */
 export function MarketPicks({
   market,
   portfolioCad,
@@ -84,7 +83,6 @@ export function MarketPicks({
 }) {
   return (
     <div className="grid gap-5">
-      <ExitEarlyCard market={market.market} exits={market.exitedEarly} />
       {pickCount(market) > 0 ? (
         LISTS.filter((l) => market[l.style].length > 0).map((l) => {
           const picks = market[l.style]

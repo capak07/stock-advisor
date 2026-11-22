@@ -257,6 +257,36 @@ test('an exited pick shows in the Exit early card', async ({ page }) => {
   await expect(page.locator('#exit-early-tsx')).toHaveCount(0)
 })
 
+test('with TSX picks only the page opens on TSX, and an early exit shows above the tabs whichever is open', async ({ page }) => {
+  const earlier = await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3 * 86_400_000).toISOString() })
+  const exited = await seedPick(earlier, {
+    symbol: 'NVDA', market: 'US', style: 'swing', horizon: 10, rank: 2,
+    exitBy: '2026-11-03', entry: 180, stop: 166, riskLevel: 'high', maxPct: 1.5, status: 'exited_early',
+  })
+  const runId = await seedRun({ kind: 'pre_close', status: 'success', published: true, finished: hourAgo() })
+  await seedModel('stock_us', { picks_enabled: true })
+  await seedModel('stock_tsx', { picks_enabled: true })
+  await seedPrediction(runId, 'RY.TO', 63, { q10: -0.02, q50: 0.04, q90: 0.1, p: 0.62 })
+  await seedPick(runId, {
+    symbol: 'RY.TO', market: 'TSX', style: 'position', horizon: 63, rank: 1,
+    exitBy: '2027-01-19', entry: 140, stop: 120, riskLevel: 'medium', maxPct: 3,
+  })
+  await seedOutcome(exited, { exitPrice: 174.24, exitReason: 'exit_early', ret: -0.032, benchRet: 0.004, beat: false })
+  await page.goto('/picks')
+  const market = page.getByRole('tablist', { name: 'Market' })
+  await expect(market.getByRole('tab', { name: 'TSX · 1' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('[data-panel="tsx"] article.pick', { hasText: 'RY.TO' })).toBeVisible()
+  await expect(page.locator('[data-panel="us"]')).toBeHidden()
+  // the US exit is on screen although the US tab is not open, headed by its market
+  const exit = page.locator('#exit-early-us')
+  await expect(exit).toBeVisible()
+  await expect(exit.getByRole('heading', { name: 'Exit early US' })).toBeVisible()
+  await expect(exit).toContainText('NVDA')
+  await market.getByRole('tab', { name: 'US · 0' }).click()
+  await expect(exit).toBeVisible()
+  await expect(page.locator('[data-panel="us"]').getByText('No US picks today', { exact: true })).toBeVisible()
+})
+
 test('I bought this saves a buy linked to the pick', async ({ page }) => {
   const { pickId } = await seedPicksRun()
   await page.goto('/picks')

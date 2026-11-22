@@ -34,27 +34,33 @@
 .before-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 12.5px; color: var(--muted-foreground); margin-bottom: 12px; }
 .before-note svg { width: 15px; height: 15px; flex: none; margin-top: 1px; }
 
-/* ---------- watchlist_1.html ---------- */
-.watch-row { display: grid; grid-template-columns: 110px 70px 86px minmax(0, 1fr) 96px 36px; gap: 12px; align-items: center; padding: 12px 4px; border-bottom: 1px solid var(--border); transition: background 150ms; }
-.watch-row:hover { background: var(--accent); }
-.watch-row:last-child { border-bottom: 0; }
-.watch-row.removing { animation: collapse 200ms ease-in forwards; overflow: hidden; }
-@keyframes collapse { to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; } }
+/* ---------- watchlist_2.html ---------- */
+.watch-list { display: grid; grid-template-columns: minmax(0, 1fr); }
+.watch-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px 0; border-top: 1px solid var(--border); transition: opacity 200ms, transform 200ms; }
+.watch-row:first-child { border-top: 0; padding-top: 4px; }
+.watch-row:last-child { padding-bottom: 0; }
+.watch-row.removing { opacity: 0; transform: translateX(16px); }
 .watch-row.row-added { animation: highlight 400ms ease-out; }
-.watch-row .w-why { display: grid; gap: 6px; min-width: 0; }
+/* Phone: symbol left, price and remove right, the outlook under them */
+.w-top { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "id quote x" "v v v"; gap: 10px 8px; align-items: start; }
+.w-id { grid-area: id; min-width: 0; display: grid; gap: 3px; }
+.w-sym { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.w-type { font: 500 10.5px var(--font-mono); letter-spacing: .04em; color: var(--muted-foreground); }
+.w-quote { grid-area: quote; display: grid; gap: 3px; justify-items: end; text-align: right; }
+.w-price { font-size: 15px; font-weight: 600; }
+.w-move { font-size: 12.5px; color: var(--muted-foreground); }
+.w-v { grid-area: v; display: grid; gap: 8px; min-width: 0; }
+.w-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font-size: 13px; color: var(--muted-foreground); min-width: 0; }
+.w-line b { font: 600 13px var(--font-mono); color: var(--foreground); }
+.w-range { min-width: 0; }
+.w-range .range { margin: 4px 0 5px !important; }
+.range-lab { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; font-weight: 500; color: var(--muted-foreground); }
+.w-detail { font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.w-x { grid-area: x; }
 .watch-row .icon-btn, .trade-actions .icon-btn { width: 32px; height: 32px; } /* in-row buttons stay inside their 36 px column */
-@media (max-width: 767px) {
-  .watch-row { grid-template-columns: minmax(0, 1fr) auto 36px; grid-template-areas: "sym verdict x" "detail detail detail"; gap: 4px 10px; }
-  .watch-row .w-sym { grid-area: sym; } .watch-row .w-verdict { grid-area: verdict; } .watch-row .w-x { grid-area: x; }
-  .watch-row .w-why { grid-area: detail; } .watch-row .w-type, .watch-row .w-price { display: none; }
-}
-.watch-head { display: grid; grid-template-columns: 110px 70px 86px minmax(0, 1fr) 96px 36px; gap: 12px; padding: 0 4px 10px; border-bottom: 1px solid var(--border); }
-@media (max-width: 767px) { .watch-head { display: none; } }
-/* Before the model there are no verdict columns: symbol, type, price, remove (Plan 5b). */
-.watch-head.plain, .watch-row.plain { grid-template-columns: minmax(0, 1fr) 70px 110px 36px; }
-@media (max-width: 767px) {
-  .watch-row.plain { grid-template-columns: minmax(0, 1fr) auto 36px; grid-template-areas: "sym price x"; }
-  .watch-row.plain .w-price { display: block; grid-area: price; }
+.watch-row .order-guide.og-fold { min-width: 0; }
+@media (min-width: 900px) {
+  .w-top { grid-template-columns: minmax(140px, 1fr) 110px minmax(0, 2.4fr) 32px; grid-template-areas: "id quote v x"; gap: 18px; align-items: center; }
 }
 
 /* ---------- settings_1.html ---------- */

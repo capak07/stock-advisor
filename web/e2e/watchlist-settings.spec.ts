@@ -90,7 +90,7 @@ test.describe('watchlist', () => {
     ])
   })
 
-  test('watchlist rows show each verdict and why', async ({ page }) => {
+  test('watchlist rows show each verdict and why, with the chance, horizon and likely range when the run forecast it', async ({ page }) => {
     await seedSymbols([
       { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
       { symbol: 'TD.TO', market: 'TSX', name: 'Toronto-Dominion Bank' },
@@ -111,23 +111,37 @@ test.describe('watchlist', () => {
       reasons: ['P(beat XIU.TO) 0.40 over 21 trading days'],
       details: { market_picks_enabled: true },
     })
+    // TD.TO's Avoid has no horizon: its outlook is at 21 days; AAPL was not forecast this run
+    for (const [horizon, p] of [[5, 0.44], [21, 0.4], [63, 0.41]] as const) {
+      await seedPrediction(runId, 'TD.TO', horizon, { q10: -0.064, q50: -0.01, q90: 0.071, p })
+    }
+    // SOL the stock is not watched; SOL the coin was added after the run, so it waits for its verdict
+    await seedPrediction(runId, 'SOL', 21, { q10: -0.1, q50: 0, q90: 0.1, p: 0.5 }, 'stock')
+    await seedPrediction(runId, 'SOL', 10, { q10: -0.1, q50: 0, q90: 0.1, p: 0.5 }, 'crypto')
+    await seedCloses('TD.TO', 'stock', 'CAD', [daysAgo(2), daysAgo(1)], 80, 0.4)
     await page.goto('/watchlist')
     await expect(page.getByText(/^verdicts from the \d\d:\d\d run$/)).toBeVisible()
     await expect(page.getByText('Verdicts appear once the model runs')).toHaveCount(0)
-    await expect(page.locator('.watch-head')).toContainText('Verdict')
 
     const aapl = page.locator('.watch-row', { hasText: 'AAPL' })
     await expect(aapl.locator('.chip')).toHaveText('Buy')
     await expect(aapl.locator('.w-detail')).toHaveText(
       "Swing · hold ~10 trading days · exit by Oct 30 · 64% to beat SPY · also today's #2 US pick",
     )
+    await expect(aapl.locator('.w-odds')).toHaveCount(0)
     const td = page.locator('.watch-row', { hasText: 'TD.TO' })
     await expect(td.locator('.chip')).toHaveText('Avoid')
+    await expect(td.locator('.w-odds')).toHaveText('40% to beat XIU.TO over 21 days')
+    await expect(td.locator('.range-lab')).toHaveText('−6.4%likely 21-day range+7.1%')
+    await expect(td.getByRole('img', { name: /^Likely range relative to XIU\.TO/ })).toBeVisible()
+    await expect(td.locator('.w-price')).toHaveText('C$80.40')
+    await expect(td.locator('.w-move')).toHaveText('+0.5%')
     await expect(td.locator('.w-detail')).toHaveText('P(beat XIU.TO) 0.40 over 21 trading days')
     // added after the run: no verdict yet
     const sol = page.locator('.watch-row', { hasText: 'SOL' })
     await expect(sol.locator('.chip')).toHaveText('New')
     await expect(sol.locator('.w-detail')).toHaveText('Gets its first verdict at the next run')
+    await expect(sol.locator('.w-odds')).toHaveCount(0)
   })
 
   test('a watched US stock in the bottom tenth of the run shows Low model rank beside its verdict', async ({ page }) => {
@@ -177,13 +191,17 @@ test.describe('watchlist', () => {
       reasons: ['closed at 14.71, under its trailing stop 31.35'],
       trailing_stop: 31.35,
     })
+    for (const symbol of ['XRPN', 'VEEA']) await seedPrediction(runId, symbol, 21, { q10: -0.08, q50: 0, q90: 0.07, p: 0.48 })
 
     await page.goto('/watchlist')
     const xrpn = page.locator('.watch-row', { hasText: 'XRPN' })
     await expect(xrpn.locator('.chip')).toHaveText('Sell')
     await expect(xrpn.locator('.w-detail')).toHaveText('You hold it · Closed at 14.71, under its trailing stop 31.35')
+    await expect(xrpn.getByText('% to beat')).toHaveCount(0) // held: My Portfolio's action, no chance
+    await expect(xrpn.locator('.range')).toHaveCount(0)
     const veea = page.locator('.watch-row', { hasText: 'VEEA' })
-    await expect(veea.locator('.chip')).toHaveText('Hold')
+    await expect(veea.locator('.chip')).toHaveText('No clear edge') // a Hold with a forecast, in words
+    await expect(veea.locator('.w-odds')).toHaveText('48% to beat SPY over 21 days')
     await expect(veea.locator('.w-detail')).toContainText("doesn't qualify as a buy")
 
     // Picks lists the run's verdicts under its picks (a run without picks links to the Watchlist instead)
@@ -214,7 +232,13 @@ test.describe('watchlist', () => {
     await page.goto('/watchlist')
     const row = page.locator('.watch-row', { hasText: 'TD.TO' })
     await expect(row.locator('.w-detail')).toHaveText("Swing · hold ~10 trading days · exit by Nov 10 · 62% to beat XIU.TO · also today's #1 TSX pick")
+    // the outlook at the Buy's horizon, not the 21 days a Hold would get
+    await expect(row.locator('.chip.buy')).toHaveText('Buy')
+    await expect(row.locator('.w-odds')).toHaveText('62% to beat XIU.TO over 10 days')
+    await expect(row.locator('.range-lab')).toHaveText('−3.0%likely 10-day range+6.0%')
     const guide = row.locator('.order-guide')
+    await expect(guide.locator('summary')).toContainText('How to place it · for C$1,000')
+    await guide.locator('summary').click()
     await expect(guide).toContainText('How to place it · for C$1,000')
     // C$1,000 at C$80.40 is 12 shares and C$35 left over, bought as a fraction
     await expect(guide).toContainText(/Limit buy 12 sh at C\$80\.40 · (Day order|set it to expire at the end of the next trading day)/)

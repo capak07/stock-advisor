@@ -6,10 +6,12 @@ import { ownerClient } from '@/lib/auth'
 import { loadCloses, loadFx, loadPortfolio } from '@/lib/data/portfolio'
 import { loadNames } from '@/lib/data/symbols'
 import { loadLowRanks } from '@/lib/data/low-rank'
+import { loadWatchOutlooks } from '@/lib/data/watch-outlook'
 import { loadVerdicts, loadWatchlist } from '@/lib/data/watchlist'
 import { addDays, todayInToronto } from '@/lib/dates'
 import { fmtPrice } from '@/lib/format'
 import { verdictGuide } from '@/lib/guidance'
+import { outlookFor } from '@/lib/outlook'
 import { portfolioView } from '@/lib/portfolio/view'
 import { assetKey } from '@/lib/portfolio/types'
 import { runTime } from '@/lib/runs'
@@ -37,6 +39,12 @@ async function portfolioValue(supabase: Supabase): Promise<number | null> {
   return totals.valueCad > 0 ? totals.valueCad : null
 }
 
+/** A verdict's horizon (a Buy's pick horizon), or null so the outlook takes the one closest to 21 days. */
+function horizonOf(v: { details: Record<string, unknown> } | null): number | null {
+  const h = v?.details.horizon_days
+  return typeof h === 'number' && Number.isInteger(h) && h > 0 ? h : null
+}
+
 /** Watchlist (spec §9): add listed US and TSX stocks and coins from the search, or remove them, each with the latest run's verdict. */
 export default async function WatchlistPage() {
   const supabase = await ownerClient()
@@ -53,38 +61,51 @@ export default async function WatchlistPage() {
   const rate = fx.latest()?.usdCad ?? null
   const withVerdicts = latest !== null && latest.verdicts.size > 0
   const buys = latest !== null && [...latest.verdicts.values()].some((v) => v.verdict === 'buy')
-  const portfolioCad = buys ? await portfolioValue(supabase) : null
+  const [portfolioCad, outlooks] = await Promise.all([
+    buys ? portfolioValue(supabase) : null,
+    // the run the verdicts come from, so the chance and the verdict agree
+    latest ? loadWatchOutlooks(supabase, latest.run.id, items) : new Map<string, never>(),
+  ])
   const orders = { now: new Date(), usdCad: rate }
 
   const rows: WatchRow[] = items.map((item) => {
-    const close = prices.latest(assetKey(item.assetType, item.symbol))
+    const key = assetKey(item.assetType, item.symbol)
+    const close = prices.latest(key)
+    const previous = close ? prices.on(key, addDays(close.day, -1)) : null
     let price: string | null = null
     if (close && item.assetType === 'stock') price = fmtPrice(close.close, close.currency)
     // Coinbase closes are in USD; coins are shown in CAD like their holdings.
     else if (close && rate !== null) price = fmtPrice(close.currency === 'USD' ? close.close * rate : close.close, 'CAD')
     const market = item.assetType === 'crypto' ? null : marketOf(item.symbol)
-    const v = latest?.verdicts.get(assetKey(item.assetType, item.symbol)) ?? null
+    const v = latest?.verdicts.get(key) ?? null
     // held at the run: My Portfolio's action, so the two pages never disagree
-    const held = latest?.held.get(assetKey(item.assetType, item.symbol)) ?? null
+    const held = latest?.held.get(key) ?? null
+    // a held row shows My Portfolio's action; one added since the run waits for its first verdict
+    const forecast = held || !v ? undefined : outlooks.get(key)
+    const at = forecast ? outlookFor(forecast.horizons, horizonOf(v)) : null
     return {
       symbol: item.symbol,
       assetType: item.assetType,
       name: names.get(item.symbol) ?? null,
       type: market ?? 'Crypto',
       price,
+      move: close && previous && previous.close > 0 ? (close.close / previous.close - 1) * 100 : null,
       verdict: v?.verdict ?? null,
       held: held && { group: held.group, label: held.label },
       why: held ? held.why : v ? verdictWhy({ ...v, market }, 'long') : null,
       guide: !held && v && item.assetType === 'stock' ? verdictGuide(item.symbol, v, portfolioCad, orders) : null,
       lowRank: item.assetType === 'stock' ? (lowRanks.get(item.symbol) ?? null) : null,
+      outlook: forecast && at ? { benchmark: forecast.benchmark, ...at } : null,
     }
   })
 
   return (
     <main className="page">
-      <div className="enter">
-        <h1>Watchlist</h1>
-        <p className="sub">Any listed US or TSX stock, or one of the 300 biggest coins Coinbase trades. Watched symbols are priced first and get a verdict every run.</p>
+      <div className="page-head enter">
+        <div style={{ minWidth: 0 }}>
+          <h1>Watchlist</h1>
+          <p className="sub">Any listed US or TSX stock, or one of the 300 biggest coins Coinbase trades. Watched symbols are priced first and get a verdict every run.</p>
+        </div>
       </div>
       <section className="card card-pad enter" aria-labelledby="add-h">
         <h2 id="add-h" style={{ marginBottom: 12 }}>
@@ -94,7 +115,9 @@ export default async function WatchlistPage() {
       </section>
       <section className="card card-pad enter" aria-labelledby="list-h">
         <div className="section-head">
-          <h2 id="list-h">Watching {rows.length}</h2>
+          <h2 id="list-h">
+            Watching <span className="count">{rows.length}</span>
+          </h2>
           {withVerdicts && <span className="sub">verdicts from the {runTime(latest.run)} run</span>}
         </div>
         {!withVerdicts && (

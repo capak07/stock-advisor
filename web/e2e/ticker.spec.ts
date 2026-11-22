@@ -52,7 +52,7 @@ test("a held stock's page shows its price, the position, the last two days of ne
   const last = 170 + 0.25 * (days.length - 1)
   await expect(page.locator('#last-price')).toHaveText(`C$${last.toFixed(2)}`)
   await expect(page.locator('#last-price')).toHaveAttribute('data-price', 'up')
-  // Your position: the shares and account, then value, average cost and P/L in CAD at the last close
+  // Your position: the shares and account, then value, average cost, today's return and the all-time P/L in CAD
   const position = page.getByRole('region', { name: 'Your position' }).getByTestId('position')
   await expect(position).toHaveCount(1)
   await expect(position).toContainText('You own 10TFSA')
@@ -60,7 +60,9 @@ test("a held stock's page shows its price, the position, the last two days of ne
   await expect(position.locator('.stat')).toHaveText([
     `ValueC$${Math.round(last * 10).toLocaleString('en-CA')}`,
     'Avg costC$170.00',
-    `P/L+C$${Math.round(gain).toLocaleString('en-CA')}+${((gain / 1700) * 100).toFixed(1)}%`,
+    // 10 shares × C$0.25 since the close before; "on Fri" when the last close is an earlier day
+    new RegExp(`^Today( on [A-Z][a-z]{2})?\\+C\\$3\\+${((0.25 / (last - 0.25)) * 100).toFixed(1).replace('.', '\\.')}%$`),
+    `All-time+C$${Math.round(gain).toLocaleString('en-CA')}+${((gain / 1700) * 100).toFixed(1)}%`,
   ])
   await expect(page.getByRole('img', { name: 'RY.TO closes over 6M' })).toBeVisible()
   await page.getByRole('tab', { name: '1D' }).click()

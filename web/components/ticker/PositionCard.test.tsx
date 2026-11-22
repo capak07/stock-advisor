@@ -22,14 +22,19 @@ const plan = (over: Partial<HeldPlan>): HeldPlan => ({
   ...over,
 })
 
-const render = (held: HeldPlan[], positions = [position('tfsa')]) =>
+const LATEST = { day: '2026-11-20', close: 120, currency: 'CAD' as const }
+const PREVIOUS = { day: '2026-11-19', close: 115, currency: 'CAD' as const }
+
+const render = (held: HeldPlan[], positions = [position('tfsa')], today = '2026-11-20') =>
   renderToStaticMarkup(
     <PositionCard
       symbol="RY.TO"
       assetType="stock"
       positions={positions}
       held={held}
-      price={120}
+      latest={LATEST}
+      previous={PREVIOUS}
+      today={today}
       currency="CAD"
       usdCad={1.4}
       benchmark="XIU.TO"
@@ -56,6 +61,19 @@ describe('PositionCard', () => {
     expect(tfsa).toContain('chip review')
     expect(taxable).toContain('chip add')
     expect(taxable).not.toContain('chip review')
+  })
+
+  it("shows the value, average cost, today's return and the all-time return, in that order", () => {
+    const html = render([])
+    const labels = [...html.matchAll(/<span class="label">([^<]+)<\/span><b/g)].map((m) => m[1])
+    expect(labels).toEqual(['Value', 'Avg cost', 'Today', 'All-time'])
+    expect(html).toContain('<b class="num gain">+C$50</b><span class="num sub">+4.3%</span>') // 10 × C$5 since C$115
+    expect(html).toContain('<b class="num gain">+C$200</b><span class="num sub">+20.0%</span>') // C$1,200 on C$1,000
+    expect(html).not.toContain('on Thu')
+  })
+
+  it("names the day of today's return when the last close is older (a weekend)", () => {
+    expect(render([], [position('tfsa')], '2026-11-22')).toContain('Today <span class="sub">on Fri</span>')
   })
 
   it('shows no chips without an action row', () => {

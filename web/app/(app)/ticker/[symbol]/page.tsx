@@ -21,7 +21,7 @@ import { loadSettings } from '@/lib/data/settings'
 import { loadSourceHealth } from '@/lib/data/sources'
 import { loadLowRanks } from '@/lib/data/low-rank'
 import { loadHeldAction, loadTicker, resolveAssetType } from '@/lib/data/ticker'
-import { shortDay, timeOrDate } from '@/lib/dates'
+import { shortDay, timeOrDate, todayInToronto } from '@/lib/dates'
 import { fmtMoney, fmtPct, fmtPrice } from '@/lib/format'
 import { outlookFor } from '@/lib/outlook'
 import { assetCurrency } from '@/lib/portfolio/exit-plan'
@@ -29,7 +29,7 @@ import type { AssetType } from '@/lib/portfolio/types'
 import { runWhen } from '@/lib/runs'
 import { answered, covers, coverageName, type Coverage } from '@/lib/sources'
 import { isValidSymbol, normalizeSymbol } from '@/lib/symbols'
-import { alertPrefill, fmtScore, lastMove, priceSeries, safeLink, tone } from '@/lib/ticker'
+import { alertPrefill, fmtScore, lastCloses, lastMove, priceSeries, safeLink, tone } from '@/lib/ticker'
 
 interface Props {
   params: Promise<{ symbol: string }>
@@ -181,7 +181,8 @@ export default async function TickerPage({ params, searchParams }: Props) {
                 assetType={assetType}
                 positions={data.positions}
                 held={held}
-                price={move?.price ?? null}
+                {...lastCloses(series)}
+                today={todayInToronto()}
                 currency={series.currency}
                 usdCad={data.fx.latest()?.usdCad ?? null}
                 benchmark={data.forecast?.benchmark ?? planBenchmark(assetType, symbol)}

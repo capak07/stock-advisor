@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { addDays } from './dates'
 import { FxRates } from './portfolio/lookup'
 import type { Close } from './portfolio/types'
-import { alertHref, alertPrefill, fmtScore, headlineSince, inRange, lastMove, positionFigures, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
+import { alertHref, alertPrefill, fmtScore, headlineSince, inRange, lastCloses, lastMove, positionFigures, priceSeries, safeLink, tickerHref, tone, type PriceSeries } from './ticker'
 
 const FX = new FxRates([
   { day: '2026-10-01', usdCad: 1.4 },
@@ -149,5 +149,17 @@ describe('positionFigures', () => {
     expect(positionFigures(5, 2000, null, 'CAD', 1.4)).toEqual({ valueCad: null, avgCostCad: 400, gainCad: null, gainPct: null })
     expect(positionFigures(5, 2000, 300, 'USD', null).valueCad).toBeNull()
     expect(positionFigures(0, 0, 300, 'CAD', null)).toEqual({ valueCad: 0, avgCostCad: null, gainCad: 0, gainPct: null })
+  })
+})
+
+describe('lastCloses', () => {
+  it("gives the series' last two prices as closes in its currency, for today's return", () => {
+    const series: PriceSeries = { days: ['2026-11-19', '2026-11-20'], values: [158.75, 148.18], currency: 'USD' }
+    expect(lastCloses(series)).toEqual({
+      latest: { day: '2026-11-20', close: 148.18, currency: 'USD' },
+      previous: { day: '2026-11-19', close: 158.75, currency: 'USD' },
+    })
+    expect(lastCloses({ ...series, days: ['2026-11-20'], values: [148.18] }).previous).toBeNull()
+    expect(lastCloses({ days: [], values: [], currency: 'CAD' })).toEqual({ latest: null, previous: null })
   })
 })

@@ -411,12 +411,12 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 #holdings td.h-sym { white-space: normal; min-width: 180px; }
 #holdings td.h-action, #holdings td.h-acct { white-space: normal; }
 #holdings td.h-action, #holdings td.h-acct, #holdings td.h-shares, #holdings td.h-value,
-#holdings td.h-pl, #holdings td.h-weight { vertical-align: top; }
+#holdings td.h-day, #holdings td.h-pl, #holdings td.h-weight { vertical-align: top; }
 .h-name { display: grid; gap: 2px; min-width: 0; }
 .h-name .sub { font-size: 12.5px; }
 .h-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
-#holdings td.h-pl > span { display: block; }
-#holdings td.h-pl .sub { font-size: 12px; }
+#holdings td.h-day > span, #holdings td.h-pl > span { display: block; }
+#holdings td.h-day .sub, #holdings td.h-pl .sub { font-size: 12px; }
 .weight { display: inline-block; vertical-align: middle; width: 38px; height: 5px; margin-left: 8px; border-radius: 999px; background: var(--muted); overflow: hidden; }
 .weight i { display: block; height: 100%; border-radius: inherit; background: var(--foreground); opacity: .55; transform-origin: left; animation: band-grow 400ms ease-out both; }
 .weight.trim i { background: var(--trim); opacity: 1; }
@@ -437,14 +437,14 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .h-note .warn-cell { display: flex; align-items: flex-start; }
 .h-note .warn-cell svg { flex: none; margin-top: 1px; }
 
-/* Phones: each holding is a compact row — symbol and name with the value; the action, account and weight with the
-   P/L; then the details. Same markup: the name cell's two parts become items of the row's grid. */
+/* Phones: each holding is a compact row — symbol and name with the value; the action, account and weight with
+   today's return; the all-time P/L under it; then the details. Same markup: the name cell's two parts become items of the row's grid. */
 @media (max-width: 759px) {
   #holdings thead { display: none; }
   #holdings, #holdings tbody { display: block; }
   #holdings tr {
     display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 5px 10px;
-    grid-template-areas: "name name name val" "act acct wt pl" "det det det det"; padding: 12px 0; border-top: 1px solid var(--border);
+    grid-template-areas: "name name name val" "act acct wt day" ". . . pl" "det det det det"; padding: 12px 0; border-top: 1px solid var(--border);
   }
   #holdings tr:first-child { border-top: 0; padding-top: 4px; }
   #holdings td { display: block; padding: 0; border: 0; min-width: 0; text-align: left; vertical-align: baseline; }
@@ -459,9 +459,13 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
   #holdings td.h-acct { grid-area: acct; font-size: 12.5px; white-space: nowrap; }
   #holdings td.h-weight { grid-area: wt; font-size: 12.5px; color: var(--muted-foreground); white-space: nowrap; }
   #holdings td.h-weight .weight { display: none; }
+  #holdings td.h-day { grid-area: day; text-align: right; }
   #holdings td.h-pl { grid-area: pl; text-align: right; }
-  #holdings td.h-pl > span { display: inline; }
-  #holdings td.h-pl .sub::before { content: "· "; }
+  #holdings td.h-day > span, #holdings td.h-pl > span { display: inline; }
+  #holdings td.h-day .sub::before, #holdings td.h-pl .sub::before { content: "· "; }
+  #holdings td.h-day::before, #holdings td.h-pl::before { font: 500 11.5px var(--font-sans); color: var(--muted-foreground); margin-right: 6px; }
+  #holdings td.h-day::before { content: "Today"; }
+  #holdings td.h-pl::before { content: "All-time"; }
   #holdings td.h-shares { display: none; }
   .holdings-scroll { overflow: visible; margin: 0; padding: 0; }
 }
@@ -530,7 +534,10 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .own-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .own-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; }
 .own-title b { font-size: 15px; font-weight: 600; }
-.own-stats, .earn-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.earn-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* Value and average cost, then today's return and the all-time P/L: two by two. */
+.own-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.own-stats .label .sub { font-size: inherit; }
 .own-stats .stat, .earn-stats .stat { min-width: 0; overflow-wrap: anywhere; }
 .own-stats .stat > span:last-child:not(.label), .earn-stats .stat > span:last-child:not(.label) { display: block; margin-top: 2px; font-size: 11.5px; }
 .exit-plan { display: grid; gap: 6px; }

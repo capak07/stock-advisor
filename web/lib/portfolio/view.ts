@@ -2,6 +2,7 @@ import { fmtMoney } from '../format'
 import type { PriceDirection } from '../motion'
 import { tradeCurrency } from '../symbols'
 import type { HoldingAction } from './actions'
+import { dayReturn, type DayReturn } from './day-return'
 import { buildLedger, positionKey } from './ledger'
 import type { FxRate, FxRates, PriceBook } from './lookup'
 import { PERIODS, growth, periodReturns, type Period, type PeriodReturns } from './returns'
@@ -40,6 +41,8 @@ export interface HoldingRow {
   /** Which way the price last moved (the latest close or live quote against the close before it), for the flash
    *  after a Refresh; null without two prices to compare. */
   priceMove: PriceDirection | null
+  /** Today's return (`dayReturn`); null without the prices to compare. */
+  today: DayReturn | null
 }
 
 /** What the sell form offers: each open position at average cost. */
@@ -128,6 +131,7 @@ export function portfolioView(
 
   const holdings = valued.map((h): HoldingRow => {
     const action = actionOf.get(positionKey(h)) ?? null
+    const asset = assetKey(h.assetType, h.symbol)
     const notes: Note[] = []
     if (h.priceCad === null) notes.push({ text: 'No close yet; at cost', warn: true })
     for (const w of lossWarnings) if (w.symbol === h.symbol && w.note) notes.push({ text: w.note, warn: true })
@@ -146,6 +150,7 @@ export function portfolioView(
       action,
       notes,
       priceMove: priceMove(h, prices, fx),
+      today: dayReturn(h, prices.latest(asset), prices.previous(asset), fx.latest()?.usdCad ?? null),
     }
   })
 

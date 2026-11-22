@@ -151,6 +151,14 @@ describe('portfolioView', () => {
     expect(rows).toEqual({ AAPL: 'up', ETH: 'down', NEWCO: null }) // NEWCO has no close
   })
 
+  it("gives each holding today's return: its latest close against the one before, in CAD", () => {
+    const rows = Object.fromEntries(view.holdings.map((h) => [h.symbol, h.today]))
+    expect(rows.AAPL).toEqual({ cad: 280, pct: 10, day: TODAY }) // 10 × US$20 × 1.4
+    expect(rows.ETH?.cad).toBeCloseTo(-280) // 1 left × US$-200 × 1.4
+    expect(rows.ETH?.pct).toBeCloseTo(-6.667, 2)
+    expect(rows.NEWCO).toBeNull() // no close
+  })
+
   it("compares a coin's CAD live quote with its USD history in CAD, and leaves a single close unmarked", () => {
     const eth = { assetType: 'crypto' as const, symbol: 'ETH' }
     const history = closes('USD', [['2026-10-15', 2000]]) // C$2,800 at 1.4

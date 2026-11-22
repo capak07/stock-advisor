@@ -36,6 +36,7 @@ const holding = (symbol: string, valueCad: number, kind: ActionKind | null): Hol
   action: kind === null ? null : action(symbol, kind),
   notes: [],
   priceMove: null,
+  today: null,
 })
 
 /** The markup of one holding's row. */
@@ -43,7 +44,7 @@ const rowOf = (html: string, symbol: string) => html.split('<tr>').find((row) =>
 
 describe('HoldingsCard', () => {
   const render = (holdings: HoldingRow[], qtys = new Map<string, number>()) =>
-    renderToStaticMarkup(<HoldingsCard holdings={holdings} accounts={1} guides={new Map()} qtys={qtys} asOf="2026-11-20" />)
+    renderToStaticMarkup(<HoldingsCard holdings={holdings} accounts={1} guides={new Map()} qtys={qtys} asOf="2026-11-20" today="2026-11-20" />)
 
   it("shows each holding's shares, value and weight, and draws the weight bar orange only on a Trim", () => {
     const html = render(
@@ -74,6 +75,23 @@ describe('HoldingsCard', () => {
     expect(rowOf(html, 'UP.TO')).toContain('class="r num h-value" data-price="up"')
     expect(rowOf(html, 'DN.TO')).toContain('class="r num h-value" data-price="down"')
     expect(rowOf(html, 'NO.TO')).not.toContain('data-price')
+  })
+
+  it("shows today's return beside the all-time one, and names the day when the last close is older", () => {
+    const html = render([
+      { ...holding('UP.TO', 300, 'hold'), gainCad: 50, gainPct: 20, today: { cad: 12.5, pct: 4.3, day: '2026-11-20' } },
+      { ...holding('DN.TO', 200, 'hold'), today: { cad: -8, pct: -3.9, day: '2026-11-19' } },
+      holding('NO.TO', 100, null),
+    ])
+    expect(html).toContain('>Today</th>')
+    expect(html).toContain('>All-time</th>')
+    const up = rowOf(html, 'UP.TO')
+    expect(up).toMatch(/class="r num h-day gain"><span>\+C\$13<\/span> <span class="sub gain">\+4\.3%<\/span><\/td>/)
+    expect(up).toMatch(/class="r num h-pl gain"><span>\+C\$50<\/span>/)
+    const dn = rowOf(html, 'DN.TO')
+    expect(dn).toContain('class="r num h-day loss"')
+    expect(dn).toContain('on Thu')
+    expect(rowOf(html, 'NO.TO')).toMatch(/class="r num h-day"><span class="sub">—<\/span>/)
   })
 
   it('draws small weights on a 20% scale', () => {

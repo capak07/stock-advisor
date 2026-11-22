@@ -23,6 +23,7 @@ import { NOT_RATED, type Slice } from '@/lib/portfolio/valuation'
 import type { HoldingRow } from '@/lib/portfolio/view'
 import type { Warning } from '@/lib/portfolio/warnings'
 import { tickerHref } from '@/lib/ticker'
+import { moveWhen } from '@/lib/today'
 import { ExitPlanCardLines, ExitPlanWithAlert, PlanFootnote, planBenchmark } from './ExitPlan'
 import { HoldList } from './HoldList'
 
@@ -304,11 +305,25 @@ export function BreakdownCard({ byRisk, byMarket, byAccount }: { byRisk: Slice[]
   )
 }
 
+/** A holding's return today: CAD and percent, then "on Fri" when the last close is from an earlier day. */
+function DayCell({ r, today }: { r: HoldingRow['today']; today: string }) {
+  if (r === null) return <td className="r num h-day">{dash}</td>
+  const tone = r.cad < 0 ? 'loss' : 'gain'
+  const when = moveWhen(r.day, today)
+  return (
+    <td className={`r num h-day ${tone}`}>
+      <span>{fmtMoney(r.cad, { signed: true })}</span> {r.pct !== null && <span className={`sub ${tone}`}>{fmtPct(r.pct)}</span>}
+      {when !== 'today' && <span className="sub h-when">{when}</span>}
+    </td>
+  )
+}
+
 /** Weight bars are drawn on a scale that 20% of the portfolio fills, or the largest holding when it is bigger. */
 const WEIGHT_SCALE = 20
 
 /**
- * Every holding (spec §7.2): account, action chip, shares, value in CAD, P/L and weight, with the model's facts,
+ * Every holding (spec §7.2): account, action chip, shares, value in CAD, today's return, the all-time P/L and weight,
+ * with the model's facts,
  * the exit plan, the stop order to keep and the notes under its name. A table on a wide screen, compact rows on a
  * phone (pages.css, same markup). The weight bar is orange on a Trim: the run says the holding is too big.
  */
@@ -318,6 +333,7 @@ export function HoldingsCard({
   guides,
   qtys,
   asOf,
+  today,
 }: {
   holdings: HoldingRow[]
   accounts: number
@@ -326,6 +342,8 @@ export function HoldingsCard({
   qtys: Map<string, number>
   /** The day of the run the actions come from. */
   asOf: string | null
+  /** Toronto's today: a day return from an older close (a weekend) names its day. */
+  today: string
 }) {
   const modelled = holdings.some((h) => h.action !== null)
   const total = holdings.reduce((sum, h) => sum + h.valueCad, 0)
@@ -362,7 +380,8 @@ export function HoldingsCard({
                 {modelled && <th>Action</th>}
                 <th className="r h-shares">Shares</th>
                 <th className="r">Value</th>
-                <th className="r">P/L</th>
+                <th className="r">Today</th>
+                <th className="r">All-time</th>
                 <th className="r">Weight</th>
               </tr>
             </thead>
@@ -426,6 +445,7 @@ export function HoldingsCard({
                     <td className="r num h-value" data-price={h.priceMove ?? undefined}>
                       {fmtMoney(h.valueCad)}
                     </td>
+                    <DayCell r={h.today} today={today} />
                     <td className={`r num h-pl ${tone}`}>
                       <span>{fmtMoney(h.gainCad, { signed: true })}</span> <span className={`sub ${tone}`}>{fmtPct(h.gainPct)}</span>
                     </td>

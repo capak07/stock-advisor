@@ -4,22 +4,26 @@ import { ExitPlanWithAlert } from '@/components/portfolio/ExitPlan'
 import type { HeldPlan } from '@/lib/data/ticker'
 import { fmtMoney, fmtPct, fmtQty } from '@/lib/format'
 import { ACTION_LABELS } from '@/lib/portfolio/actions'
+import { dayReturn } from '@/lib/portfolio/day-return'
 import { assetCurrency } from '@/lib/portfolio/exit-plan'
-import { ACCOUNT_LABELS, type AssetType, type Currency, type Position } from '@/lib/portfolio/types'
+import { ACCOUNT_LABELS, type AssetType, type Close, type Currency, type Position } from '@/lib/portfolio/types'
 import { positionFigures } from '@/lib/ticker'
+import { moveWhen } from '@/lib/today'
 
 /**
- * Your position (spec §7.7, ticker_2.html), only when held: per account, the shares, value, average cost and
- * P/L in CAD, the run's action with its Review flag (as My Portfolio's holdings table shows them), and the exit
+ * Your position (spec §7.7, ticker_2.html), only when held: per account, the shares, value, average cost,
+ * today's return and the all-time P/L in CAD, the run's action with its Review flag (as My Portfolio's holdings table shows them), and the exit
  * plan's lines as `ExitPlanWithAlert` shows them, with its rules for when a sell-at price is shown, in the asset's
- * own currency. `price` is the last price in `currency`.
+ * own currency. `latest` and `previous` are the last two prices in `currency` (the chart's series).
  */
 export function PositionCard({
   symbol,
   assetType,
   positions,
   held,
-  price,
+  latest,
+  previous,
+  today,
   currency,
   usdCad,
   benchmark,
@@ -29,13 +33,17 @@ export function PositionCard({
   positions: Position[]
   /** The newest published run's action rows for this asset, one per account. */
   held: HeldPlan[]
-  price: number | null
+  latest: Close | null
+  previous: Close | null
+  /** Toronto's today: a day return from an older close (a weekend) names its day. */
+  today: string
   currency: Currency
   usdCad: number | null
   benchmark: string
 }) {
   const planCurrency = assetCurrency(assetType, symbol)
   const planned = held.some((h) => h.exitPlan !== null)
+  const price = latest?.close ?? null
   return (
     <section className="card card-pad enter t-position" aria-labelledby="position-h" id="position">
       <div className="section-head">
@@ -45,6 +53,8 @@ export function PositionCard({
       {positions.map((p) => {
         const h = held.find((x) => x.account === p.account)
         const f = positionFigures(p.qty, p.costCad, price, currency, usdCad)
+        const day = dayReturn(p, latest, previous, usdCad)
+        const when = day === null ? 'today' : moveWhen(day.day, today)
         return (
           <div key={p.account} className="own" data-testid="position">
             <div className="own-top">
@@ -69,7 +79,16 @@ export function PositionCard({
                 <b className="num">{f.avgCostCad === null ? '—' : fmtMoney(f.avgCostCad, { digits: 2 })}</b>
               </div>
               <div className="stat">
-                <span className="label">P/L</span>
+                <span className="label">
+                  Today{when !== 'today' && <> <span className="sub">{when}</span></>}
+                </span>
+                <b className={`num ${day === null ? '' : day.cad < 0 ? 'loss' : 'gain'}`}>
+                  {day === null ? '—' : fmtMoney(day.cad, { signed: true })}
+                </b>
+                {day?.pct != null && <span className="num sub">{fmtPct(day.pct)}</span>}
+              </div>
+              <div className="stat">
+                <span className="label">All-time</span>
                 <b className={`num ${f.gainCad === null ? '' : f.gainCad < 0 ? 'loss' : 'gain'}`}>
                   {f.gainCad === null ? '—' : fmtMoney(f.gainCad, { signed: true })}
                 </b>

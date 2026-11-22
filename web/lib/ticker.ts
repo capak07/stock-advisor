@@ -74,6 +74,14 @@ export function lastMove(series: PriceSeries): LastMove | null {
   }
 }
 
+/** The series' last two prices as closes in its currency (a position's day return compares them), or nulls. */
+export function lastCloses(series: PriceSeries): { latest: Close | null; previous: Close | null } {
+  const at = (i: number): Close | null =>
+    i < 0 ? null : { day: series.days[i], close: series.values[i], currency: series.currency }
+  const n = series.values.length
+  return { latest: at(n - 1), previous: at(n - 2) }
+}
+
 /** A held position's figures in CAD at the last close, as My Portfolio values it. */
 export interface PositionFigures {
   /** Null without a CAD price (a US stock before the first exchange rate). */

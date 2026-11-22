@@ -56,7 +56,7 @@ export default async function PortfolioPage() {
       <ValueCard totals={view.totals} periods={view.periods} firstBuy={view.firstBuy} />
       <section className="portfolio-grid">
         <div className="portfolio-col">
-          <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} guides={guides} qtys={qtyOf} asOf={latest?.day ?? null} />
+          <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} guides={guides} qtys={qtyOf} asOf={latest?.day ?? null} today={today} />
           <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} lowRanks={lowRanks} />
           {[...guides.values()].some((g) => (g.order?.steps.length ?? 0) + (g.stop?.steps.length ?? 0) > 0) && <OrderDisclaimer />}
           {data.trades.length > 0 && (

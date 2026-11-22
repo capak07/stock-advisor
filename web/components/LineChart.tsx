@@ -26,10 +26,11 @@ interface Drawn {
 }
 
 /**
- * The Ledger line chart (the mockups' `lineChart`). The main line draws in over 600 ms, benchmark
- * lines fade in, and a new window of data morphs from the old one over 250 ms. Hovering shows the
- * day and value under the pointer. An optional forecast cone opens from the last close over the
- * right quarter of the plot, and morphs to another horizon's range over 300 ms.
+ * The Ledger line chart (the mockups' `lineChart`). On first show the lines draw left to right over
+ * 700 ms and the forecast range fades in after them (`.draw` in ledger.css); a new window of data
+ * morphs from the old one over 250 ms. Hovering shows the day and value under the pointer. An
+ * optional forecast cone opens from the last close over the right quarter of the plot, and morphs
+ * to another horizon's range over 300 ms.
  */
 export function LineChart({
   series,
@@ -49,7 +50,7 @@ export function LineChart({
   cone?: Cone
 }) {
   const box = useRef<HTMLDivElement>(null)
-  const mainLine = useRef<SVGPathElement>(null)
+  const svg = useRef<SVGSVGElement>(null)
   const lastWidth = useRef<number | null>(null)
   const shown = useRef<Drawn>({ series, benchmarks, dates })
   const [width, setWidth] = useState<number | null>(null)
@@ -76,10 +77,11 @@ export function LineChart({
     return () => observer.disconnect()
   }, [])
 
-  // The draw-in animation needs the main line's length.
+  // The draw-in animation needs each line's length, set before the first paint.
   useLayoutEffect(() => {
-    if (intro && mainLine.current) {
-      mainLine.current.style.setProperty('--len', String(Math.ceil(mainLine.current.getTotalLength())))
+    if (!intro || !svg.current) return
+    for (const line of svg.current.querySelectorAll<SVGPathElement>('path.line')) {
+      line.style.setProperty('--len', String(Math.ceil(line.getTotalLength())))
     }
   }, [intro, width])
 
@@ -172,6 +174,8 @@ export function LineChart({
     <div ref={box} className="chart">
       {g && (
         <svg
+          ref={svg}
+          className={intro ? 'draw' : undefined}
           role="img"
           aria-label={label}
           viewBox={`0 0 ${g.width} ${height}`}
@@ -203,7 +207,7 @@ export function LineChart({
               stroke={b.color}
               strokeWidth={1.6}
               strokeLinejoin="round"
-              className={intro ? 'late' : undefined}
+              className="line"
             />
           ))}
           {c && shownCone && (
@@ -212,7 +216,6 @@ export function LineChart({
                 className={intro ? 'cone forecast-cone' : 'forecast-cone'}
                 points={c.points}
                 fill="var(--chart-5)"
-                style={{ transformOrigin: `${c.x0}px ${c.y0}px` }}
               />
               <path
                 className={intro ? 'cone' : undefined}
@@ -220,7 +223,6 @@ export function LineChart({
                 stroke="var(--chart-4)"
                 strokeWidth={1.6}
                 strokeDasharray="5 4"
-                style={{ transformOrigin: `${c.x0}px ${c.y0}px` }}
               />
               <g className={intro ? 'late' : undefined}>
                 <text x={c.x1 + 4} y={c.y90 + 3} style={{ fill: 'var(--gain)' }}>
@@ -239,14 +241,13 @@ export function LineChart({
             </g>
           )}
           <path
-            ref={mainLine}
             d={linePath(drawn.series, g)}
             fill="none"
             stroke="var(--chart-1)"
             strokeWidth={2}
             strokeLinejoin="round"
             strokeLinecap="round"
-            className={intro ? 'draw main-line' : 'main-line'}
+            className="line main-line"
           />
           <circle
             cx={g.x(n - 1, n)}

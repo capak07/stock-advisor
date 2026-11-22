@@ -40,7 +40,15 @@ test('holdings are valued in CAD, charted against both benchmarks, and warned ab
   await expect(eth).toContainText(/Loss window to/)
   await expect(eth).toContainText(/Taxable: est\./)
 
-  await expect(page.getByRole('img', { name: 'Portfolio return against XIU.TO and SPY in CAD' })).toBeVisible()
+  const chart = page.getByRole('img', { name: 'Portfolio return against XIU.TO and SPY in CAD' })
+  await expect(chart).toBeVisible()
+  // the three lines draw in (.draw in ledger.css), each from its own length measured before the first paint
+  await expect(chart).toHaveClass(/draw/)
+  const lengths = await chart
+    .locator('path.line')
+    .evaluateAll((paths) => paths.map((p) => Number((p as SVGPathElement).style.getPropertyValue('--len'))))
+  expect(lengths).toHaveLength(3)
+  for (const len of lengths) expect(len).toBeGreaterThan(0)
   await expect(page.getByText(/since the first buy, /)).toBeVisible()
   await page.getByRole('tab', { name: '1D' }).click()
   await expect(page.getByText('over the last day')).toBeVisible()

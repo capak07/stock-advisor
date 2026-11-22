@@ -391,7 +391,6 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 @keyframes enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 @keyframes banner-in { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: none; } }
 @keyframes draw { to { stroke-dashoffset: 0; } }
-@keyframes cone-in { from { opacity: 0; transform: scaleX(0); } to { opacity: 1; transform: scaleX(1); } }
 @keyframes band-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
 @keyframes attention { 0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--tone) 50%, transparent), var(--shadow-xs); } 100% { box-shadow: 0 0 0 6px color-mix(in oklch, var(--tone) 0%, transparent), var(--shadow-xs); } }
@@ -434,13 +433,20 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 .tick-up::after { background: var(--gain-soft); }
 .tick-down::after { background: var(--loss-soft); }
 
-/* Chart lines draw left to right; the forecast range fades in after. .draw is on the svg (the mockups);
- * the app's LineChart marks the path itself with .draw inside .chart. */
+/* Chart lines draw left to right; the forecast range fades in after. .draw is on the svg while it first shows
+ * (LineChart, Sparkline). LineChart sets each path.line's --len from getTotalLength(); without one, 1200 is used. */
 .draw path.line { stroke-dasharray: var(--len, 1200); stroke-dashoffset: var(--len, 1200); animation: draw 700ms cubic-bezier(.4,0,.2,1) forwards; }
 .draw .cone { opacity: 0; animation: fade 400ms 200ms forwards; }
-.chart .draw { stroke-dasharray: var(--len); stroke-dashoffset: var(--len); animation: draw 600ms ease-out forwards; }
-.chart .cone { transform-box: view-box; animation: cone-in 400ms ease-out 500ms both; }
 .chart .late { animation: fade 300ms ease-out 300ms both; }
+
+/* Between routes, a 220 ms crossfade through the browser's view transitions (app/(app)/template.tsx). React names the
+ * page that leaves and the one that arrives (class route-fade) and leaves the frame live, so the bars do not fade;
+ * the root rule covers a transition that snapshots the whole page. The overlay lets clicks through to the page. */
+::view-transition { pointer-events: none; }
+::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root),
+::view-transition-group(.route-fade), ::view-transition-old(.route-fade), ::view-transition-new(.route-fade) {
+  animation-duration: 220ms; animation-timing-function: ease-out;
+}
 
 .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); animation: sweep 1.6s infinite;
   background: linear-gradient(90deg, transparent, oklch(1 0 0 / .45), transparent); }
@@ -476,7 +482,7 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
   .stagger > *, [data-panel], .empty { animation: fade 120ms ease-out both !important; animation-delay: 0ms !important; }
   .dot.running, .dot.live::after, .action-card.attention, .skeleton::after, .shake, .icon-btn.spinning svg { animation: none !important; }
   .draw path.line { stroke-dasharray: none; stroke-dashoffset: 0; animation: none !important; }
-  .chart .draw { stroke-dasharray: none !important; stroke-dashoffset: 0 !important; animation: none !important; }
-  .chart .cone, .chart .late { animation: none !important; opacity: 1 !important; transform: none !important; }
+  .chart .late { animation: none !important; opacity: 1 !important; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: 120ms !important; }
   .card.lift:hover, .card.rim:hover, .btn:active, .icon-btn:active, .bottom-tab:active { transform: none !important; }
 }

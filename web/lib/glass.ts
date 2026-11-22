@@ -12,3 +12,10 @@ export function supportsLiquidGlass(brands: readonly { brand: string }[] | undef
   if (brands?.some((b) => b.brand === 'Chromium')) return true
   return userAgent.includes('Chrome/') && !NOT_CHROMIUM.some((token) => userAgent.includes(token))
 }
+
+/**
+ * The same rule as supportsLiquidGlass, as plain ES5 for the inline <head> script (THEME_SCRIPT in lib/theme.ts), so
+ * Chrome's first paint already has html.liquid instead of waiting for GlassBackdrop to hydrate. glass.test.ts runs both
+ * on the same browsers to keep them in step.
+ */
+export const LIQUID_SCRIPT = `(function(){try{var n=navigator,b=n.userAgentData&&n.userAgentData.brands,u=n.userAgent||'',x=${JSON.stringify(NOT_CHROMIUM)};if((b&&b.some(function(i){return i.brand==='Chromium'}))||(u.indexOf('Chrome/')>=0&&!x.some(function(t){return u.indexOf(t)>=0})))document.documentElement.classList.add('liquid')}catch(e){}})()`

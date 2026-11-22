@@ -1,10 +1,15 @@
 /** Light or dark: the owner's choice on this device (localStorage), else the device setting. */
 
+import { LIQUID_SCRIPT } from './glass'
+
 export type ThemeChoice = 'system' | 'light' | 'dark'
 export const THEME_KEY = 'ledger-theme'
 
-/** Runs in <head> before first paint, so a dark page never flashes light. */
-export const THEME_SCRIPT = `(function(){var t=null;try{t=localStorage.getItem('${THEME_KEY}')}catch(e){}var d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)})()`
+/**
+ * Runs in <head> before first paint, so a dark page never flashes light, and Chrome's first frame already has
+ * html.liquid (LIQUID_SCRIPT) instead of waiting for GlassBackdrop to hydrate.
+ */
+export const THEME_SCRIPT = `(function(){var t=null;try{t=localStorage.getItem('${THEME_KEY}')}catch(e){}var d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)})();${LIQUID_SCRIPT}`
 
 export function savedTheme(): ThemeChoice {
   try {

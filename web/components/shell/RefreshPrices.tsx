@@ -1,24 +1,34 @@
 'use client'
 
 import { RefreshCw } from 'lucide-react'
-import { useTransition } from 'react'
+import { useEffect, useRef, useTransition } from 'react'
 import { refreshQuotes } from '@/app/(app)/quotes'
+import { tickPrices } from '@/lib/motion'
 import { useToast } from '../Toast'
 
 const TIME = new Intl.DateTimeFormat('en-CA', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Toronto' })
 
 /**
  * Refresh: fetches live prices for everything held or watched (lib/quotes.ts). After one, the pill
- * says when, so a value can be told from the last run's.
+ * says when, so a value can be told from the last run's, and the prices on the page flash once,
+ * gain-soft or loss-soft (`data-price` on the element, spec §5).
  */
 export function RefreshPrices({ liveAt }: { liveAt: string | null }) {
   const toast = useToast()
   const [pending, start] = useTransition()
+  const priced = useRef(false)
   const refresh = () =>
     start(async () => {
       const result = await refreshQuotes()
+      priced.current = result.ok
       toast(result.message)
     })
+  // The transition ends in the same commit as the re-rendered page, so the flash lands on the new prices.
+  useEffect(() => {
+    if (pending || !priced.current) return
+    priced.current = false
+    tickPrices(document)
+  }, [pending])
   return (
     <>
       {liveAt && (

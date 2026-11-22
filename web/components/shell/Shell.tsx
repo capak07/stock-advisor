@@ -9,6 +9,7 @@ import { ToastProvider } from '../Toast'
 import { FindTicker } from './FindTicker'
 import { BottomTabs, SidebarLinks } from './Navigation'
 import { RefreshPrices } from './RefreshPrices'
+import { RimLight } from './RimLight'
 import { RunsPill, type RunView } from './RunsPill'
 
 const brand = (
@@ -107,6 +108,7 @@ export function Shell({
           </footer>
         </div>
         <BottomTabs />
+        <RimLight />
       </div>
     </ToastProvider>
   )

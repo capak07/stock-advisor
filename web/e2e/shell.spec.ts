@@ -58,3 +58,22 @@ test('dark mode is remembered', async ({ page }) => {
   await page.reload()
   await expect.poll(dark).toBe(!before)
 })
+
+test('with reduced motion the aurora stands still', async ({ page }) => {
+  const drift = () => page.locator('.aurora').evaluate((el) => getComputedStyle(el, '::before').animationName)
+  await page.goto('/')
+  expect(await drift()).toBe('drift')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  expect(await drift()).toBe('none')
+})
+
+test('with reduced transparency the cards are solid, without a blur', async ({ page }) => {
+  const blur = () => page.locator('.card').first().evaluate((el) => getComputedStyle(el).backdropFilter)
+  await page.goto('/')
+  await expect(page.locator('.card').first()).toBeVisible()
+  expect(await blur()).not.toBe('none')
+  // Playwright's emulateMedia has no reduced-transparency option, so Chromium's DevTools protocol sets the feature.
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }] })
+  await expect.poll(blur).toBe('none')
+})

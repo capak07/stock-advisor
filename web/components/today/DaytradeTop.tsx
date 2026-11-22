@@ -1,6 +1,17 @@
 import { ChevronRight, Scale } from 'lucide-react'
 import Link from 'next/link'
-import { etClock, fmtR, isFresh, noTradeLine, oddsLine, priceOf, statusLine, type DayRow, type Signal } from '@/lib/daytrade'
+import {
+  MARKET_CLOSED,
+  etClock,
+  fmtR,
+  isFresh,
+  noTradeLine,
+  oddsLine,
+  priceOf,
+  statusLine,
+  type DayRow,
+  type Signal,
+} from '@/lib/daytrade'
 
 /** The status chip: the same words as the Day trade page's cards, open ones with their signal time. */
 function chipOf(s: Signal, now: string): { label: string; tone: string } {
@@ -21,7 +32,9 @@ function chipOf(s: Signal, now: string): { label: string; tone: string } {
 /**
  * Day trade · top 3 after costs (spec §7.1): the Day trade page's day and its after-costs top 3, each
  * with its status chip, the replays line its card shows and its net history R; the first one also
- * shows entry, target and stop. "No session today" when that page has no session (no row, or closed).
+ * shows entry, target and stop. With no top 3 it says what the Day trade page says (`statusLine`, and
+ * why nothing made the list once the day has run), except "No session today" where that page says the
+ * market is closed (a weekend, or a stored closed row).
  */
 export function DaytradeTop({
   day,
@@ -37,7 +50,7 @@ export function DaytradeTop({
   signals: number
   now: string
 }) {
-  const session = day !== null && day.status !== 'closed'
+  const status = statusLine(day, now)
   const ran = day !== null && (day.status === 'scanning' || day.status === 'done' || (day.status === 'failed' && day.lastUpdate !== null))
   return (
     <section className="card card-pad dt-today enter" aria-labelledby="dt-today-h">
@@ -47,14 +60,21 @@ export function DaytradeTop({
           Open <ChevronRight style={{ width: 14, height: 14 }} aria-hidden />
         </Link>
       </div>
-      {!session ? (
+      {top.length === 0 && status === MARKET_CLOSED ? (
         <p className="sub" style={{ margin: 0, fontSize: 13 }}>
           No session today.
         </p>
       ) : top.length === 0 ? (
-        <p className="sub" style={{ margin: 0, fontSize: 13 }}>
-          {ran ? noTradeLine(signals) : statusLine(day, now)}
-        </p>
+        <>
+          <p className="sub" style={{ margin: 0, fontSize: 13 }}>
+            {status}
+          </p>
+          {ran && (
+            <p className="sub" style={{ margin: '4px 0 0', fontSize: 13 }}>
+              {noTradeLine(signals)}
+            </p>
+          )}
+        </>
       ) : (
         top.map((s, i) => {
           const chip = chipOf(s, now)

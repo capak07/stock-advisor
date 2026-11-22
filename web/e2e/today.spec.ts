@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { MARKET_CLOSED } from '../lib/daytrade'
 import {
   nyAt,
   resetData,
@@ -74,10 +75,21 @@ test('a run with no picks shows the best chance per market against the 58% bar',
   await expect(picks.getByRole('link', { name: 'Watchlist verdicts' })).toHaveAttribute('href', '/watchlist')
 })
 
-test('with no day-trade row, the card says No session today and the header markets closed (Review Focus 3)', async ({ page }) => {
+test('a closed day (a holiday) reads No session today and markets closed (Review Focus 3)', async ({ page }) => {
+  await seedDaytradeDay({ status: 'closed' })
   await page.goto('/')
   await expect(page.getByRole('region', { name: DAYTRADE }).getByText('No session today.')).toBeVisible()
   await expect(page.getByTestId('today-line')).toContainText('markets closed')
+})
+
+test('with no day-trade row the header says markets closed and the card says what the Day trade page says', async ({ page }) => {
+  // the weekday-before-the-job wording is covered with a fixed clock in DaytradeTop.test.tsx
+  await page.goto('/daytrade')
+  const line = (await page.getByTestId('daytrade-status').textContent())!.trim()
+  await page.goto('/')
+  await expect(page.getByTestId('today-line')).toContainText('markets closed')
+  const card = page.getByRole('region', { name: DAYTRADE })
+  await expect(card.getByText(line === MARKET_CLOSED ? 'No session today.' : line)).toBeVisible()
 })
 
 test("the Day trade card shows the Day trade page's top 3 after costs, the first with its levels", async ({ page }) => {

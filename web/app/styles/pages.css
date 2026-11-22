@@ -143,7 +143,7 @@
 
 /* ---------- picks_1.html (Plan 4b) ---------- */
 .pick-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
-.pick { display: grid; gap: 12px; padding: 16px; align-content: start; transition: box-shadow 150ms, transform 150ms; }
+.pick { display: grid; gap: 12px; padding: 16px; align-content: start; transition: transform 150ms; }
 .pick:hover { box-shadow: var(--glass-highlight), 0 0 0 1px var(--glass-edge), var(--shadow-md); }
 .pick-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .pick-rank { font: 500 12px/1 var(--font-mono); color: var(--muted-foreground); }

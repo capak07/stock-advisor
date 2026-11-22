@@ -61,7 +61,7 @@ main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0;
 }
 .nav { position: relative; display: grid; gap: 2px; }
 .nav-pill { position: absolute; left: 0; right: 0; top: 0; height: 40px; border-radius: var(--radius-md); background: var(--brand-soft);
-  box-shadow: inset 0 0 0 1px var(--glass-border); transition: transform 300ms cubic-bezier(.3,1.3,.5,1), height 300ms; pointer-events: none; }
+  box-shadow: inset 0 0 0 1px var(--glass-border); transition: transform 300ms cubic-bezier(.3,1.3,.5,1); pointer-events: none; }
 .nav-link {
   position: relative; display: flex; align-items: center; gap: 11px; height: 40px; padding: 0 12px; border-radius: var(--radius-md);
   color: var(--muted-foreground) !important; font-size: 14px; font-weight: 500; transition: color 150ms, background 150ms;
@@ -96,7 +96,7 @@ main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0;
 .statusbar-search { flex-basis: 100%; min-width: 0; }
 .statusbar-search > .field { flex: 1; min-width: 0; }
 .statusbar-search .error:empty { display: none; }
-.statusbar-search .find { height: 44px; border-radius: 999px; color: var(--muted-foreground); transition: box-shadow 220ms; }
+.statusbar-search .find { height: 44px; border-radius: 999px; color: var(--muted-foreground); }
 .statusbar-search .find svg { left: 14px; width: 16px; height: 16px; }
 .statusbar-search .find .input {
   height: 100%; padding: 0 14px 0 38px !important; border: 0 !important; border-radius: inherit; background: transparent !important;
@@ -163,7 +163,7 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
 
 /* ---------- Surfaces and controls ---------- */
 /* .card is glass (glass.css); here only its shape and the hover transition. */
-.card { color: var(--card-foreground); border-radius: var(--radius-lg); transition: transform 200ms, box-shadow 200ms; }
+.card { color: var(--card-foreground); border-radius: var(--radius-lg); transition: transform 200ms; }
 .card-pad { padding: 16px; }
 @media (min-width: 1024px) { .card-pad { padding: 18px 20px; } }
 .hero { border-radius: var(--radius-xl); }
@@ -356,7 +356,7 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted-foreground); }
 .legend i { display: inline-block; width: 14px; height: 2px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 
-/* ---------- Motion (glass_ui.css "Motion"; transform and opacity only, except the row flash) ---------- */
+/* ---------- Motion (glass_ui.css "Motion"; transform and opacity only, the sheet backdrop's blur excepted) ---------- */
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes fade-only { from { opacity: 0; } to { opacity: 1; } }
 @keyframes drop-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -371,8 +371,7 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 @keyframes running { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
 @keyframes live { from { transform: scale(1); opacity: .6; } to { transform: scale(2.6); opacity: 0; } }
 @keyframes flip { 0% { transform: scale(.9); } 60% { transform: scale(1.05); } 100% { transform: none; } }
-@keyframes tick-up { 30% { background: var(--gain-soft); } }
-@keyframes tick-down { 30% { background: var(--loss-soft); } }
+@keyframes tick { 30% { opacity: 1; } }
 @keyframes sweep { to { transform: translateX(100%); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shake { 0%, 100% { transform: none; } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
@@ -402,8 +401,11 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 .dot.live { position: relative; }
 .dot.live::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: inherit; animation: live 2s ease-out infinite; }
 .chip.flip { animation: flip 400ms cubic-bezier(.3,1.3,.5,1); }
-.tick-up { animation: tick-up 900ms ease-out; }
-.tick-down { animation: tick-down 900ms ease-out; }
+/* The flash is an overlay whose opacity animates; the element keeps its own background. */
+.tick-up, .tick-down { position: relative; }
+.tick-up::after, .tick-down::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; animation: tick 900ms ease-out; }
+.tick-up::after { background: var(--gain-soft); }
+.tick-down::after { background: var(--loss-soft); }
 
 /* Chart lines draw left to right; the forecast range fades in after. .draw is on the svg (the mockups);
  * the app's LineChart marks the path itself with .draw inside .chart. */
@@ -416,10 +418,11 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); animation: sweep 1.6s infinite;
   background: linear-gradient(90deg, transparent, oklch(1 0 0 / .45), transparent); }
 
-/* Press scales down, release springs back past 1 (the transitions on .btn, .icon-btn and .bottom-tab). */
-.btn:active, .icon-btn:active, .bottom-tab:active { transform: scale(.97); transition-duration: 120ms; }
+/* Press scales to 0.98 (spec §5), release springs back past 1 (the transitions on .btn, .icon-btn and .bottom-tab). */
+.btn:active, .icon-btn:active, .bottom-tab:active { transform: scale(.98); transition-duration: 120ms; }
 
-/* Desktop: clickable cards lift 2px; a highlight follows the pointer along the rim (--mx/--my set from script). */
+/* Desktop: clickable cards lift 2px (only the transform transitions; the shadow changes at once); a highlight
+ * follows the pointer along the rim (--mx/--my set from script). */
 @media (hover: hover) and (min-width: 1024px) {
   .card.rim:hover, .card.lift:hover { transform: translateY(-2px); box-shadow: var(--glass-highlight), 0 0 0 1px var(--glass-edge), var(--shadow-lg); }
 }
@@ -441,6 +444,8 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
   *, *::before, *::after { animation-duration: 120ms !important; animation-iteration-count: 1 !important; transition-duration: 120ms !important; scroll-behavior: auto !important; }
   .aurora::before { animation: none !important; }
   .enter { animation-name: fade-only !important; }
+  .enter, .draw .cone, .range .mid { animation-delay: 0ms !important; }
+  .chip.flip, .tab-pill.stretch, .bottom-tab[aria-current="page"] svg { animation: none !important; }
   .stagger > *, [data-panel], .empty { animation: fade 120ms ease-out both !important; animation-delay: 0ms !important; }
   .dot.running, .dot.live::after, .action-card.attention, .skeleton::after, .shake, .icon-btn.spinning svg { animation: none !important; }
   .draw path.line { stroke-dasharray: none; stroke-dashoffset: 0; animation: none !important; }

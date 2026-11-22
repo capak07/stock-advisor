@@ -55,6 +55,9 @@ html.liquid .sidebar, html.liquid .bottom-tabs, html.liquid .statusbar-search .f
   .glass, .card { background: var(--glass-bg-strong); }
 }
 @media (prefers-reduced-transparency: reduce) {
+  /* Controls that fill with the glass tokens directly (.pill, .icon-btn, .btn-secondary, .tab-indicator, the pressed
+   * .seg button) go solid through the tokens, whatever their selector's specificity or !important. */
+  :root, .dark { --glass-bg: var(--popover); --glass-bg-strong: var(--popover); }
   /* The html.liquid selectors are named too: their higher specificity would otherwise keep the filter. */
   .glass, .card, .popover, .combo-list,
   .sidebar, .drawer, .bottom-tabs, .statusbar-search .find,

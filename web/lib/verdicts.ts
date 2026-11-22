@@ -24,6 +24,18 @@ const P_BEAT = /^P\(beat (\S+)\) (\d*\.?\d+)/
 
 const int = (value: unknown): number | null => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : null)
 
+const OVER_DAYS = /over (\d+) trading days/
+
+/**
+ * The horizon a verdict was judged at: a Buy's `horizon_days`, a Hold's `horizon` (its best-ratio
+ * horizon), else the N in an Avoid's "P(beat …) 0.38 over N trading days" (pipeline recommend/verdicts.py);
+ * null when it names none (a coin without a model).
+ */
+export function verdictHorizon(v: Pick<VerdictLike, 'reasons' | 'details'>): number | null {
+  const said = OVER_DAYS.exec(v.reasons[0] ?? '')
+  return int(v.details.horizon_days) ?? int(v.details.horizon) ?? (said ? int(Number(said[1])) : null)
+}
+
 /**
  * Long, for the Watchlist: "Swing · hold ~10 trading days · exit by Oct 30 · 64% to beat SPY · also today's #1 US pick".
  * Short, for the picks sidebar: "Swing · ~10 trading days · exit by Oct 30 · 64%".

@@ -17,7 +17,7 @@ import { assetKey } from '@/lib/portfolio/types'
 import { runTime } from '@/lib/runs'
 import type { Supabase } from '@/lib/supabase/server'
 import { marketOf } from '@/lib/symbols'
-import { verdictWhy } from '@/lib/verdicts'
+import { verdictHorizon, verdictWhy } from '@/lib/verdicts'
 
 export const metadata: Metadata = { title: 'Watchlist' }
 
@@ -37,12 +37,6 @@ async function portfolioValue(supabase: Supabase): Promise<number | null> {
     todayInToronto(),
   )
   return totals.valueCad > 0 ? totals.valueCad : null
-}
-
-/** A verdict's horizon (a Buy's pick horizon), or null so the outlook takes the one closest to 21 days. */
-function horizonOf(v: { details: Record<string, unknown> } | null): number | null {
-  const h = v?.details.horizon_days
-  return typeof h === 'number' && Number.isInteger(h) && h > 0 ? h : null
 }
 
 /** Watchlist (spec §9): add listed US and TSX stocks and coins from the search, or remove them, each with the latest run's verdict. */
@@ -82,7 +76,8 @@ export default async function WatchlistPage() {
     const held = latest?.held.get(key) ?? null
     // a held row shows My Portfolio's action; one added since the run waits for its first verdict
     const forecast = held || !v ? undefined : outlooks.get(key)
-    const at = forecast ? outlookFor(forecast.horizons, horizonOf(v)) : null
+    // at the horizon the verdict was judged at, so an Avoid's chance is the one that made it an Avoid
+    const at = forecast && v ? outlookFor(forecast.horizons, verdictHorizon(v)) : null
     return {
       symbol: item.symbol,
       assetType: item.assetType,

@@ -108,11 +108,11 @@ test.describe('watchlist', () => {
       symbol: 'TD.TO',
       assetType: 'stock',
       verdict: 'avoid',
-      reasons: ['P(beat XIU.TO) 0.40 over 21 trading days'],
+      reasons: ['P(beat XIU.TO) 0.38 over 5 trading days'],
       details: { market_picks_enabled: true },
     })
-    // TD.TO's Avoid has no horizon: its outlook is at 21 days; AAPL was not forecast this run
-    for (const [horizon, p] of [[5, 0.44], [21, 0.4], [63, 0.41]] as const) {
+    // TD.TO's Avoid was judged at 5 days (its reason says so): its outlook is at 5, not 21; AAPL was not forecast this run
+    for (const [horizon, p] of [[5, 0.38], [21, 0.52], [63, 0.41]] as const) {
       await seedPrediction(runId, 'TD.TO', horizon, { q10: -0.064, q50: -0.01, q90: 0.071, p })
     }
     // SOL the stock is not watched; SOL the coin was added after the run, so it waits for its verdict
@@ -131,12 +131,12 @@ test.describe('watchlist', () => {
     await expect(aapl.locator('.w-odds')).toHaveCount(0)
     const td = page.locator('.watch-row', { hasText: 'TD.TO' })
     await expect(td.locator('.chip')).toHaveText('Avoid')
-    await expect(td.locator('.w-odds')).toHaveText('40% to beat XIU.TO over 21 days')
-    await expect(td.locator('.range-lab')).toHaveText('−6.4%likely 21-day range+7.1%')
+    await expect(td.locator('.w-odds')).toHaveText('38% to beat XIU.TO over 5 days')
+    await expect(td.locator('.range-lab')).toHaveText('−6.4%likely 5-day range+7.1%')
     await expect(td.getByRole('img', { name: /^Likely range relative to XIU\.TO/ })).toBeVisible()
     await expect(td.locator('.w-price')).toHaveText('C$80.40')
     await expect(td.locator('.w-move')).toHaveText('+0.5%')
-    await expect(td.locator('.w-detail')).toHaveText('P(beat XIU.TO) 0.40 over 21 trading days')
+    await expect(td.locator('.w-detail')).toHaveText('P(beat XIU.TO) 0.38 over 5 trading days')
     // added after the run: no verdict yet
     const sol = page.locator('.watch-row', { hasText: 'SOL' })
     await expect(sol.locator('.chip')).toHaveText('New')

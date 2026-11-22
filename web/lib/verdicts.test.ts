@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { heldCalls, type HeldActionLike, verdictWhy } from './verdicts'
+import { heldCalls, type HeldActionLike, verdictHorizon, verdictWhy } from './verdicts'
 
 const buy = {
   verdict: 'buy' as const,
@@ -142,5 +142,18 @@ describe('heldCalls', () => {
     ])
     expect(calls.get('crypto:LINK')?.label).toBe('Sell')
     expect(calls.has('stock:LINK')).toBe(false)
+  })
+})
+
+describe('verdictHorizon', () => {
+  it("takes a Buy's horizon_days, a Hold's horizon, or the horizon an Avoid's reason names", () => {
+    expect(verdictHorizon(buy)).toBe(10)
+    expect(verdictHorizon({ reasons: ["doesn't qualify as a buy", 'P(beat SPY) 0.47 is under 0.58 at every horizon'], details: { horizon: 63, p_beat: 0.47 } })).toBe(63)
+    expect(verdictHorizon({ reasons: ['P(beat XIU.TO) 0.38 over 5 trading days'], details: {} })).toBe(5)
+  })
+
+  it('is null when the verdict names no horizon', () => {
+    expect(verdictHorizon({ reasons: ['No coin model yet'], details: {} })).toBeNull()
+    expect(verdictHorizon({ reasons: [], details: { horizon_days: 0, horizon: 'soon' } })).toBeNull()
   })
 })

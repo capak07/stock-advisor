@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day trade · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme_2.css">
+<link rel="stylesheet" href="glass_ui.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .stack { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  .cards { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1024px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; } }
+  .two { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 1024px) { .two { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; } }
+  .dcard { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); align-content: start; }
+  .dc-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .who-t { display: grid; gap: 3px; min-width: 0; }
+  .rank { flex: none; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
+  .dc-head .chip { flex: none; }
+  .dc-line { margin: 0; font-size: 13px; }
+  .levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .facts > div { display: grid; gap: 4px; }
+  .facts b { font-size: 13.5px; font-weight: 600; }
+  .fine { font-size: 12px; color: var(--muted-foreground); }
+  .news-line { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; line-height: 1.4; padding-top: 10px; border-top: 1px solid var(--border); }
+  .news-line svg.lucide { margin-top: 2px; color: var(--muted-foreground); }
+  .news-line > span { min-width: 0; }
+  .dcard.sm { gap: 10px; }
+  .sm-line { font-size: 13px; }
+  .sm-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+  .all summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
+  .all summary::-webkit-details-marker { display: none; }
+  .all summary h2 { display: flex; align-items: center; gap: 8px; }
+  .all summary .chev { margin-left: auto; transition: transform 240ms cubic-bezier(.2,.8,.2,1); color: var(--muted-foreground); }
+  .all[open] summary .chev { transform: rotate(180deg); }
+  .all summary .only-lg { margin-left: 4px; }
+  .bars { display: block; width: 100%; height: 64px; }
+  .axis { display: flex; justify-content: space-between; gap: 8px; margin: 6px 0 4px; }
+  .rec-list { margin-top: 10px; }
+  .rec-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .8fr) minmax(0, 1.3fr) minmax(0, .7fr); gap: 8px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .rec-row .num { font-size: 12px; }
+  .rec-total { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+  .rec-total > div { padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); display: grid; gap: 4px; }
+  .rec-total b { font-size: 14px; font-weight: 600; }
+  .warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-top: 12px; border-radius: var(--radius-md); background: var(--attention-soft); color: var(--foreground); font-size: 13px; }
+  .warn svg.lucide { color: var(--attention); margin-top: 2px; }
+  .note-block { padding: 10px 0; border-top: 1px solid var(--border); }
+  .note-block:first-of-type { border-top: 0; }
+  .note-block ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; color: var(--muted-foreground); }
+  .note-block li .num { color: var(--foreground); }
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .more-item { display: grid; justify-items: center; gap: 8px; padding: 16px 8px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 500; }
+  .more-item svg.lucide { width: 22px; height: 22px; color: var(--brand); }
+  @media (max-width: 480px) { .rec-row { grid-template-columns: minmax(0, 1fr) auto; } .rec-row > :nth-child(2) { display: none; } .rec-row > :nth-child(3) { grid-column: 1 / 2; grid-row: 2; } .rec-row > :nth-child(4) { grid-row: 1 / 3; grid-column: 2; align-self: center; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div class="aurora"></div>
+
+<div class="shell">
+  <!-- Desktop sidebar -->
+  <aside class="sidebar glass glass-strong glass-liquid">
+    <div class="brand"><span class="brand-mark">◆</span>ADVISOR</div>
+    <nav class="nav">
+      <a class="nav-link" href="today_1.html"><i data-lucide="sun"></i>Today</a>
+      <a class="nav-link" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+      <a class="nav-link" href="daytrade_1.html" aria-current="page"><i data-lucide="chart-candlestick"></i>Day trade</a>
+      <a class="nav-link" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+      <a class="nav-link" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+      <a class="nav-link" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+      <div class="nav-sep"></div>
+      <a class="nav-link" href="#"><i data-lucide="activity"></i>Sources</a>
+      <a class="nav-link" href="#"><i data-lucide="settings"></i>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span style="display:flex;align-items:center;gap:8px"><span class="dot"></span>All sources fresh</span>
+      <span>Not financial advice.</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <!-- Top bar: search is the first thing on every page -->
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◆</span></div>
+      <div class="searchbar glass glass-strong glass-liquid" data-search style="position:relative">
+        <i data-lucide="search"></i>
+        <input placeholder="Search any stock…" aria-label="Search any stock">
+        <span class="kbd only-lg">/</span>
+        <div class="popover glass glass-strong">
+          <div class="label" style="padding:6px 10px 4px">Recent</div>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">TSLA</span><span class="name">Tesla</span><span class="num small">$364.18</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">T.TO</span><span class="name">Telus</span><span class="num small">C$24.71</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">NVDA</span><span class="name">NVIDIA</span><span class="num small">$187.40</span></a>
+        </div>
+      </div>
+      <button class="pill hide-sm" data-tick><i data-lucide="refresh-cw"></i>Refresh prices</button>
+      <span class="pill only-lg"><span class="dot"></span>Run Fri 3:15 PM</span>
+      <button class="icon-btn" data-theme-toggle aria-label="Light or dark"><i data-lucide="moon"></i></button>
+    </header>
+
+    <main class="page">
+      <div class="page-head enter">
+        <div>
+          <div class="label">Monday, Nov 23 · New York time</div>
+          <h1 style="margin-top:6px">Day trade</h1>
+          <p class="sub">Opening-range breakouts on US and TSX stocks, checked every 5 minutes from 9:50 AM to 3:30 PM.</p>
+        </div>
+        <span class="pill"><span class="dot live"></span>Live · updates every minute</span>
+      </div>
+
+      <!-- Top 3 after your costs -->
+      <section aria-labelledby="top-h" class="stack">
+        <div class="section-head enter" style="margin-bottom:0">
+          <h2 id="top-h">Top 3 after your costs</h2>
+          <span class="label">ranked by track record, net of costs</span>
+        </div>
+        <div class="cards">
+          <article class="glass card card-pad dcard enter" aria-label="TSLA signal">
+            <div class="dc-head">
+              <span class="who"><span class="rank">1</span><span class="who-t"><span class="sym">TSLA</span><span class="name">Tesla</span></span></span>
+              <span class="chip triggered flip">Triggered 10:15</span>
+            </div>
+            <p class="dc-line">Signal at <b class="num">364.18</b> <span class="muted">· volume 2.4× the opening range</span></p>
+            <div class="levels">
+              <div class="stat"><span class="label">Entry</span><b>364.18</b></div>
+              <div class="stat"><span class="label">Target</span><b class="gain">370.04</b></div>
+              <div class="stat"><span class="label">Stop</span><b class="loss">358.32</b></div>
+            </div>
+            <div class="facts">
+              <div><span class="label">Costs</span><b class="num">0.06R</b></div>
+              <div><span class="label">History, net</span><b class="num gain">+0.12R</b></div>
+              <div><span class="label">Replays, net</span><b class="num gain">+0.05R</b></div>
+            </div>
+            <div class="verdict"><i data-lucide="scale"></i>Close to a coin flip</div>
+            <div class="fine num">Opening range 354.47–362.18 · flat by 3:55 PM</div>
+            <div class="news-line"><i data-lucide="newspaper"></i><span>Tesla extends robotaxi service to two more cities <span class="muted">· Reuters 9:42 AM</span></span></div>
+          </article>
+
+          <article class="glass card card-pad dcard enter" aria-label="AMD signal">
+            <div class="dc-head">
+              <span class="who"><span class="rank">2</span><span class="who-t"><span class="sym">AMD</span><span class="name">Advanced Micro Devices</span></span></span>
+              <span class="chip waiting">Waiting · 0.4% away</span>
+            </div>
+            <p class="dc-line">Fires above <b class="num">162.40</b> <span class="muted">· now 161.75</span></p>
+            <div class="levels">
+              <div class="stat"><span class="label">Entry</span><b>162.40</b></div>
+              <div class="stat"><span class="label">Target</span><b class="gain">164.70</b></div>
+              <div class="stat"><span class="label">Stop</span><b class="loss">160.10</b></div>
+            </div>
+            <div class="facts">
+              <div><span class="label">Costs</span><b class="num">0.07R</b></div>
+              <div><span class="label">History, net</span><b class="num gain">+0.09R</b></div>
+              <div><span class="label">Replays, net</span><b class="num gain">+0.11R</b></div>
+            </div>
+            <div class="verdict"><i data-lucide="scale"></i>Leans toward the target</div>
+            <div class="fine num">Opening range 158.00–162.20 · flat by 3:55 PM</div>
+            <div class="news-line"><i data-lucide="newspaper"></i><span>AMD says new data-center chips are shipping to customers <span class="muted">· Yahoo Finance 8:55 AM</span></span></div>
+          </article>
+
+          <article class="glass card card-pad dcard enter" aria-label="SOFI signal">
+            <div class="dc-head">
+              <span class="who"><span class="rank">3</span><span class="who-t"><span class="sym">SOFI</span><span class="name">SoFi Technologies</span></span></span>
+              <span class="chip stopped">Stopped 11:40</span>
+            </div>
+            <p class="dc-line">Signal 10:25 at <b class="num">18.42</b> <span class="muted">· out at 18.10</span> <b class="num loss">−1.06R</b></p>
+            <div class="levels">
+              <div class="stat"><span class="label">Entry</span><b>18.42</b></div>
+              <div class="stat"><span class="label">Target</span><b class="gain">18.74</b></div>
+              <div class="stat"><span class="label">Stop</span><b class="loss">18.10</b></div>
+            </div>
+            <div class="facts">
+              <div><span class="label">Costs</span><b class="num">0.06R</b></div>
+              <div><span class="label">History, net</span><b class="num gain">+0.04R</b></div>
+              <div><span class="label">Replays, net</span><b class="num">+0.00R</b></div>
+            </div>
+            <div class="verdict"><i data-lucide="scale"></i>Close to break-even</div>
+            <div class="fine num">Opening range 17.90–18.30 · flat by 3:55 PM</div>
+            <div class="news-line"><i data-lucide="newspaper"></i><span>SoFi says member growth topped 14 million <span class="muted">· Reuters 10:05 AM</span></span></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- The skill's top 3 -->
+      <section aria-labelledby="skill-h" class="stack">
+        <div class="section-head enter" style="margin-bottom:0">
+          <h2 id="skill-h">The skill&rsquo;s top 3</h2>
+          <span class="label">before your costs</span>
+        </div>
+        <p class="muted small enter" style="margin:0">The strongest volume-confirmed US breakouts at 10:00 AM ET, by how far the price is above the range high.</p>
+        <div class="cards">
+          <article class="glass card card-pad dcard sm enter" aria-label="PLTR skill signal">
+            <div class="dc-head">
+              <span class="who"><span class="rank">1</span><span class="who-t"><span class="sym">PLTR</span><span class="name">Palantir</span></span></span>
+              <span class="chip target">Target hit</span>
+            </div>
+            <div class="sm-line num">Entry 148.30 <span class="muted">→</span> <span class="gain">150.05</span> <span class="muted">/</span> <span class="loss">146.55</span></div>
+            <div class="sm-meta"><span class="num">+1.12% above range high</span><span class="num gain">+0.84R</span></div>
+            <div class="verdict"><i data-lucide="scale"></i>Leans toward the target</div>
+          </article>
+          <article class="glass card card-pad dcard sm enter" aria-label="HOOD skill signal">
+            <div class="dc-head">
+              <span class="who"><span class="rank">2</span><span class="who-t"><span class="sym">HOOD</span><span class="name">Robinhood Markets</span></span></span>
+              <span class="chip triggered">Triggered 10:05</span>
+            </div>
+            <div class="sm-line num">Entry 91.84 <span class="muted">→</span> <span class="gain">93.10</span> <span class="muted">/</span> <span class="loss">90.58</span></div>
+            <div class="sm-meta"><span class="num">+0.84% above range high</span><span class="num muted">open</span></div>
+            <div class="verdict"><i data-lucide="scale"></i>Close to a coin flip</div>
+          </article>
+          <article class="glass card card-pad dcard sm enter" aria-label="COIN skill signal">
+            <div class="dc-head">
+              <span class="who"><span class="rank">3</span><span class="who-t"><span class="sym">COIN</span><span class="name">Coinbase</span></span></span>
+              <span class="chip stopped">Stopped 10:50</span>
+            </div>
+            <div class="sm-line num">Entry 268.40 <span class="muted">→</span> <span class="gain">274.20</span> <span class="muted">/</span> <span class="loss">262.60</span></div>
+            <div class="sm-meta"><span class="num">+0.61% above range high</span><span class="num loss">−1.03R</span></div>
+            <div class="verdict"><i data-lucide="scale"></i>Close to break-even</div>
+          </article>
+        </div>
+      </section>
+
+      <!-- All signals (collapsed) -->
+      <details class="glass card card-pad enter all">
+        <summary>
+          <h2>All signals <span class="count">8</span></h2>
+          <span class="muted small only-lg">every signal the scan found · New York time</span>
+          <i data-lucide="chevron-down" class="chev"></i>
+        </summary>
+        <div class="scroll-x" style="margin-top:10px">
+          <table class="table">
+            <thead><tr>
+              <th>Symbol</th><th>Status</th><th class="r">Entry</th><th class="r">Stop</th><th class="r">Target</th>
+              <th class="r">Volume ×</th><th class="r">History, net</th><th class="r">Replays, net</th><th>Eligible</th>
+            </tr></thead>
+            <tbody>
+              <tr><td><span class="sym">TSLA</span> <span class="muted small">US</span></td><td><span class="chip triggered">Triggered</span></td><td class="r num">364.18</td><td class="r num">358.32</td><td class="r num">370.04</td><td class="r num">2.4×</td><td class="r num gain">+0.12R</td><td class="r num gain">+0.05R</td><td>Yes</td></tr>
+              <tr><td><span class="sym">AMD</span> <span class="muted small">US</span></td><td><span class="chip waiting">Waiting</span></td><td class="r num">162.40</td><td class="r num">160.10</td><td class="r num">164.70</td><td class="r num">1.8×</td><td class="r num gain">+0.09R</td><td class="r num gain">+0.11R</td><td>Yes</td></tr>
+              <tr><td><span class="sym">SOFI</span> <span class="muted small">US</span></td><td><span class="chip stopped">Stopped</span></td><td class="r num">18.42</td><td class="r num">18.10</td><td class="r num">18.74</td><td class="r num">1.6×</td><td class="r num gain">+0.04R</td><td class="r num">+0.00R</td><td>Yes</td></tr>
+              <tr><td><span class="sym">PLTR</span> <span class="muted small">US</span></td><td><span class="chip target">Target</span></td><td class="r num">148.30</td><td class="r num">146.55</td><td class="r num">150.05</td><td class="r num">3.1×</td><td class="r num loss">−0.03R</td><td class="r num">+0.01R</td><td>No, history net ≤ 0</td></tr>
+              <tr><td><span class="sym">HOOD</span> <span class="muted small">US</span></td><td><span class="chip triggered">Triggered</span></td><td class="r num">91.84</td><td class="r num">90.58</td><td class="r num">93.10</td><td class="r num">2.0×</td><td class="r num gain">+0.02R</td><td class="r num loss">−0.04R</td><td>No, replays net ≤ 0</td></tr>
+              <tr><td><span class="sym">COIN</span> <span class="muted small">US</span></td><td><span class="chip stopped">Stopped</span></td><td class="r num">268.40</td><td class="r num">262.60</td><td class="r num">274.20</td><td class="r num">1.9×</td><td class="r num loss">−0.06R</td><td class="r num loss">−0.02R</td><td>No, history net ≤ 0</td></tr>
+              <tr><td><span class="sym">SHOP.TO</span> <span class="muted small">TSX</span></td><td><span class="chip waiting">Waiting</span></td><td class="r num">148.90</td><td class="r num">146.40</td><td class="r num">151.40</td><td class="r num">1.5×</td><td class="r num muted">—</td><td class="r num muted">—</td><td>No, fired 11 times (needs 20)</td></tr>
+              <tr><td><span class="sym">RIVN</span> <span class="muted small">US</span></td><td><span class="chip neutral">Flat</span></td><td class="r num">14.26</td><td class="r num">13.98</td><td class="r num">14.54</td><td class="r num">1.4×</td><td class="r num gain">+0.03R</td><td class="r num gain">+0.02R</td><td>Yes, ranked below the top 3</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      <div class="two">
+        <!-- Track record -->
+        <section class="glass card card-pad enter" aria-labelledby="rec-h">
+          <div class="section-head" style="margin-bottom:4px">
+            <h2 id="rec-h">Track record</h2>
+            <span class="label">paper · after costs</span>
+          </div>
+          <p class="muted small" style="margin:0 0 12px">What each day&rsquo;s top 3 would have done. Net R per finished day, last 15 days.</p>
+          <svg class="bars" viewBox="0 0 240 64" preserveAspectRatio="none" role="img" aria-label="Net R per day over the last 15 trading days">
+            <line x1="0" x2="240" y1="32" y2="32" stroke="var(--border)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+            <rect x="1"   y="22" width="10" height="10" rx="2" fill="var(--gain)"/>
+            <rect x="17"  y="32" width="10" height="18" rx="2" fill="var(--loss)"/>
+            <rect x="33"  y="14" width="10" height="18" rx="2" fill="var(--gain)"/>
+            <rect x="49"  y="32" width="10" height="7"  rx="2" fill="var(--loss)"/>
+            <rect x="65"  y="18" width="10" height="14" rx="2" fill="var(--gain)"/>
+            <rect x="81"  y="32" width="10" height="24" rx="2" fill="var(--loss)"/>
+            <rect x="97"  y="26" width="10" height="6"  rx="2" fill="var(--gain)"/>
+            <rect x="113" y="8"  width="10" height="24" rx="2" fill="var(--gain)"/>
+            <rect x="129" y="32" width="10" height="12" rx="2" fill="var(--loss)"/>
+            <rect x="145" y="20" width="10" height="12" rx="2" fill="var(--gain)"/>
+            <rect x="161" y="32" width="10" height="9"  rx="2" fill="var(--loss)"/>
+            <rect x="177" y="24" width="10" height="8"  rx="2" fill="var(--gain)"/>
+            <rect x="193" y="32" width="10" height="16" rx="2" fill="var(--loss)"/>
+            <rect x="209" y="17" width="10" height="15" rx="2" fill="var(--gain)"/>
+            <rect x="225" y="27" width="10" height="5"  rx="2" fill="var(--gain)"/>
+          </svg>
+          <div class="axis"><span class="label">Nov 2</span><span class="label">gain above the line, loss below</span><span class="label">Nov 20</span></div>
+          <div class="rec-list">
+            <div class="rec-row"><span>Fri Nov 20</span><span class="num muted">3 trades</span><span class="num">1 win · 2 losses</span><span class="num loss right">−0.39R</span></div>
+            <div class="rec-row"><span>Thu Nov 19</span><span class="num muted">3 trades</span><span class="num">2 wins · 1 loss</span><span class="num gain right">+0.35R</span></div>
+            <div class="rec-row"><span>Wed Nov 18</span><span class="num muted">2 trades</span><span class="num">1 win · 1 flat</span><span class="num gain right">+0.14R</span></div>
+            <div class="rec-row"><span>Tue Nov 17</span><span class="num muted">3 trades</span><span class="num">0 wins · 3 losses</span><span class="num loss right">−0.82R</span></div>
+            <div class="rec-row"><span>Mon Nov 16</span><span class="num muted">3 trades</span><span class="num">2 wins · 1 loss</span><span class="num gain right">+0.47R</span></div>
+          </div>
+          <div class="rec-total">
+            <div><span class="label">15 days</span><b class="num">38 trades</b></div>
+            <div><span class="label">Wins / losses</span><b class="num">17 / 18</b></div>
+            <div><span class="label">Sum, net</span><b class="num gain">+1.62R</b></div>
+          </div>
+          <div class="warn"><i data-lucide="triangle-alert"></i><span>This is a short record: 15 days and 38 trades. That is too few to say the rule works, so treat it as a trial.</span></div>
+        </section>
+
+        <!-- Notes -->
+        <section class="glass card card-pad enter" aria-labelledby="notes-h">
+          <div class="section-head" style="margin-bottom:6px"><h2 id="notes-h">Notes: costs, rules, limits</h2></div>
+          <div class="note-block">
+            <div class="label">Costs</div>
+            <ul>
+              <li>US stocks: <span class="num">0.1%</span> round trip, the spread. You hold USD, so there is no currency conversion.</li>
+              <li>TSX stocks: <span class="num">0.1%</span> round trip.</li>
+              <li>Each signal shows its cost in R: the cost divided by the distance from entry to stop.</li>
+            </ul>
+          </div>
+          <div class="note-block">
+            <div class="label">Rules</div>
+            <ul>
+              <li>Long only. Entry is the first 5-minute bar that closes above the opening-range high.</li>
+              <li>Stop at the middle of the opening range. Target is 1R above entry.</li>
+              <li>Flat by <span class="num">3:55 PM</span> (12:55 PM on a 1:00 PM close).</li>
+              <li>Size each trade so the loss at the stop fits your max loss per trade.</li>
+            </ul>
+          </div>
+          <div class="note-block">
+            <div class="label">Limits</div>
+            <ul>
+              <li>These are rule matches, not recommendations. Nothing is ordered: you place trades yourself.</li>
+              <li>Frequent day trading in a TFSA can be treated as a business, which makes the gains taxable (not tax advice).</li>
+              <li>Yahoo&rsquo;s free 5-minute bars can lag a few minutes.</li>
+            </ul>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Phone tab bar -->
+<nav class="tabbar glass glass-strong glass-liquid" aria-label="Main">
+  <a class="tab" href="today_1.html"><i data-lucide="sun"></i>Today</a>
+  <a class="tab" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+  <a class="tab" href="daytrade_1.html" aria-current="page"><i data-lucide="chart-candlestick"></i>Day trade</a>
+  <a class="tab" href="#"><i data-lucide="search"></i>Search</a>
+  <button class="tab" data-sheet="more"><i data-lucide="ellipsis"></i>More</button>
+</nav>
+
+<!-- More sheet -->
+<div class="scrim"></div>
+<div class="sheet glass glass-strong" id="more" role="dialog" aria-label="More">
+  <div class="grabber"></div>
+  <div class="more-grid">
+    <a class="more-item glass" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+    <a class="more-item glass" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+    <a class="more-item glass" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+    <a class="more-item glass" href="#"><i data-lucide="activity"></i>Sources</a>
+    <a class="more-item glass" href="#"><i data-lucide="settings"></i>Settings</a>
+    <button class="more-item glass" data-theme-toggle style="border:0;cursor:pointer"><i data-lucide="moon"></i>Dark mode</button>
+  </div>
+</div>
+
+<script src="glass_ui.js"></script>
+
+</body>
+</html>

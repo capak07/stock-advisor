@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Portfolio · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme_2.css">
+<link rel="stylesheet" href="glass_ui.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .cols { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 1200px) { .cols { grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; } }
+  .col { display: grid; gap: 14px; }
+  @media (min-width: 1024px) { .col { gap: 18px; } }
+  .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* Value hero */
+  .hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+  .hero-meta { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 14px; }
+  .chart-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 18px 0 6px; }
+  .seg { max-width: 100%; overflow-x: auto; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted-foreground); }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .legend i { width: 16px; height: 0; border-top: 2.5px solid var(--chart-1); border-radius: 2px; }
+  .legend i.spy { border-top: 2px dashed var(--chart-3); }
+  .legend i.xiu { border-top: 2px dashed var(--chart-2); }
+  .legend b { font: 600 12.5px var(--font-mono); color: var(--foreground); }
+  .chart { position: relative; }
+  .chart svg { width: 100%; height: 150px; display: block; }
+  @media (min-width: 760px) { .chart svg { height: 200px; } }
+  .chart .zero { position: absolute; left: 0; top: 88%; transform: translateY(-120%); font: 500 10.5px var(--font-mono); color: var(--muted-foreground); }
+  .x-axis { display: flex; justify-content: space-between; margin-top: 4px; font: 500 10.5px var(--font-mono); color: var(--muted-foreground); }
+
+  /* Holdings: table on wide screens, rows on a phone */
+  .only-table { display: none; }
+  .only-rows { display: block; }
+  @media (min-width: 760px) { .only-table { display: block; } .only-rows { display: none; } }
+  .tbl td { vertical-align: middle; }
+  .tbl .sym-cell { display: grid; gap: 3px; }
+  .tbl .sym-cell .name { max-width: 150px; }
+  .c-shares { display: none; }
+  @media (min-width: 1360px) { .c-shares { display: table-cell; } }
+  .tbl .go { width: 28px; color: var(--muted-foreground); }
+  .tbl a.sym:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .wbar { display: inline-block; vertical-align: middle; width: 38px; height: 5px; margin-left: 8px; border-radius: 999px; background: var(--muted); overflow: hidden; }
+  .wbar i { display: block; height: 100%; border-radius: inherit; background: var(--foreground); opacity: .55; }
+  .wbar.over i { background: var(--trim); opacity: 1; }
+  .hrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); }
+  .hrow:first-child { border-top: 0; }
+  .hrow .l1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .hrow .l1 .name { min-width: 0; }
+  .hrow .l2 { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--muted-foreground); }
+  .hrow .r { text-align: right; font-size: 13.5px; }
+  .cash-line { display: flex; justify-content: space-between; gap: 12px; padding-top: 11px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted-foreground); }
+
+  /* Trades */
+  .tr { display: grid; grid-template-columns: 56px 52px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+  .tr:first-of-type { border-top: 0; }
+  .tr .chip { justify-self: start; padding: 5px 8px; font-size: 10.5px !important; }
+  .tr .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tr .acct { font-size: 12px; color: var(--muted-foreground); }
+  @media (max-width: 480px) {
+    .tr { grid-template-columns: 48px 48px minmax(0, 1fr); }
+    .tr .acct { display: none; }
+  }
+
+  /* Breakdown */
+  .bk { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--border); }
+  .bk:first-of-type { border-top: 0; padding-top: 4px; }
+  .donut { width: 76px; height: 76px; display: block; }
+  .donut circle { fill: none; stroke-width: 5.2; }
+  .donut .trk { stroke: var(--muted); }
+  .donut text { font: 600 7px var(--font-mono); fill: var(--foreground); text-anchor: middle; }
+  .donut .s-ink1 { stroke: color-mix(in oklch, var(--foreground) 82%, transparent); }
+  .donut .s-ink2 { stroke: color-mix(in oklch, var(--foreground) 30%, transparent); }
+  .donut .seg-a { animation: ring 700ms cubic-bezier(.4,0,.2,1) both; }
+  @keyframes ring { from { stroke-dasharray: 0 100; } }
+  .bk-body { min-width: 0; display: grid; gap: 5px; }
+  .bk-key { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .bk-key i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+  .bk-key .num { margin-left: auto; font-size: 12.5px; }
+  .ink-1 { background: color-mix(in oklch, var(--foreground) 82%, transparent); }
+  .ink-2 { background: color-mix(in oklch, var(--foreground) 30%, transparent); }
+  .warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: var(--radius-md); background: var(--attention-soft); font-size: 13px; }
+  .warn svg.lucide { color: var(--attention); margin-top: 2px; }
+
+  /* Buy sheet */
+  .sheet-in { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
+  .sheet-in .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .sheet-in .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .sheet-in .hint { font-size: 12.5px; color: var(--muted-foreground); }
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .more-item { display: grid; justify-items: center; gap: 8px; padding: 16px 8px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 500; }
+  .more-item svg.lucide { width: 22px; height: 22px; color: var(--brand); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div class="aurora"></div>
+
+<div class="shell">
+  <!-- Desktop sidebar -->
+  <aside class="sidebar glass glass-strong glass-liquid">
+    <div class="brand"><span class="brand-mark">◆</span>ADVISOR</div>
+    <nav class="nav">
+      <a class="nav-link" href="today_1.html"><i data-lucide="sun"></i>Today</a>
+      <a class="nav-link" href="portfolio_2.html" aria-current="page"><i data-lucide="wallet"></i>Portfolio</a>
+      <a class="nav-link" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+      <a class="nav-link" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+      <a class="nav-link" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+      <a class="nav-link" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+      <div class="nav-sep"></div>
+      <a class="nav-link" href="#"><i data-lucide="activity"></i>Sources</a>
+      <a class="nav-link" href="#"><i data-lucide="settings"></i>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span style="display:flex;align-items:center;gap:8px"><span class="dot"></span>All sources fresh</span>
+      <span>Not financial advice.</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <!-- Top bar: search is the first thing on every page -->
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◆</span></div>
+      <div class="searchbar glass glass-strong glass-liquid" data-search style="position:relative">
+        <i data-lucide="search"></i>
+        <input placeholder="Search any stock…" aria-label="Search any stock">
+        <span class="kbd only-lg">/</span>
+        <div class="popover glass glass-strong">
+          <div class="label" style="padding:6px 10px 4px">Recent</div>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">TSLA</span><span class="name">Tesla</span><span class="num small">$364.18</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">T.TO</span><span class="name">Telus</span><span class="num small">C$24.71</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">NVDA</span><span class="name">NVIDIA</span><span class="num small">$187.40</span></a>
+        </div>
+      </div>
+      <button class="pill hide-sm" data-tick><i data-lucide="refresh-cw"></i>Refresh prices</button>
+      <span class="pill only-lg"><span class="dot"></span>Run Fri 3:15 PM</span>
+      <button class="icon-btn" data-theme-toggle aria-label="Light or dark"><i data-lucide="moon"></i></button>
+    </header>
+
+    <main class="page">
+      <div class="page-head enter">
+        <div>
+          <div class="label">TFSA and Non-reg · prices as of Fri close</div>
+          <h1 style="margin-top:6px">My Portfolio</h1>
+        </div>
+        <div class="head-actions">
+          <button class="btn btn-primary" data-sheet="buy"><i data-lucide="plus"></i>Buy</button>
+          <button class="btn btn-glass"><i data-lucide="minus"></i>Sell</button>
+          <button class="btn btn-glass"><i data-lucide="upload"></i>Import</button>
+        </div>
+      </div>
+
+      <!-- Value hero -->
+      <section class="hero glass card card-pad enter" style="padding:22px" aria-label="Portfolio value">
+        <div class="hero-top">
+          <div>
+            <div class="label">Total value</div>
+            <div class="big num" style="margin:8px 0 6px" data-price="up">$12,340.18</div>
+            <div class="num gain" style="font-size:14px">▲ $1,204 (10.8%) all time</div>
+          </div>
+          <div class="hero-meta" style="margin-top:2px">
+            <div><div class="label">Today</div><div class="num gain" style="margin-top:3px">+$148.20 (1.2%)</div></div>
+            <div><div class="label">vs SPY, 1Y</div><div class="num" style="margin-top:3px">+2.1 pts</div></div>
+            <div><div class="label">Cash</div><div class="num" style="margin-top:3px">$640</div></div>
+          </div>
+        </div>
+
+        <div class="chart-bar">
+          <div class="seg" role="group" aria-label="Period" data-seg>
+            <button aria-pressed="false">1D</button><button aria-pressed="false">1W</button><button aria-pressed="false">1M</button><button aria-pressed="false">3M</button><button aria-pressed="false">YTD</button><button aria-pressed="true">1Y</button><button aria-pressed="false">All</button>
+          </div>
+          <div class="legend">
+            <span><i></i>You <b class="gain">+9.9%</b></span>
+            <span><i class="spy"></i>SPY <b>+7.8%</b></span>
+            <span><i class="xiu"></i>XIU.TO <b>+5.2%</b></span>
+          </div>
+        </div>
+        <div class="chart">
+          <svg class="draw" viewBox="0 40 640 110" preserveAspectRatio="none" role="img" aria-label="Your portfolio over one year, against SPY and XIU.TO, as a percent change">
+            <defs><linearGradient id="pf-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--chart-1)" stop-opacity=".13"/><stop offset="1" stop-color="var(--chart-1)" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0 136.8 H640" stroke="var(--border)" stroke-width="1" stroke-dasharray="2 5" fill="none"/>
+            <path class="cone" d="M0 136.8 L53 119.3 L107 126.8 L160 105.2 L213 111.9 L267 91.2 L320 100.3 L373 79.5 L427 88.6 L480 69.5 L533 77 L587 60.4 L640 54.6 L640 150 L0 150Z" fill="url(#pf-fill)"/>
+            <path d="M0 136.8 L53 131.8 L107 124.4 L160 121 L213 125.2 L267 113.6 L320 115.2 L373 107.7 L427 111.9 L480 101.9 L533 98.6 L587 96.1 L640 93.6" fill="none" stroke="var(--chart-2)" stroke-width="1.6" stroke-dasharray="5 4" opacity=".95" stroke-linejoin="round"/>
+            <path d="M0 136.8 L53 128.5 L107 135.1 L160 115.2 L213 116 L267 101.1 L320 111.9 L373 95.3 L427 96.1 L480 83.6 L533 88.6 L587 76.2 L640 72.1" fill="none" stroke="var(--chart-3)" stroke-width="1.6" stroke-dasharray="5 4" opacity=".95" stroke-linejoin="round"/>
+            <path class="line" d="M0 136.8 L53 119.3 L107 126.8 L160 105.2 L213 111.9 L267 91.2 L320 100.3 L373 79.5 L427 88.6 L480 69.5 L533 77 L587 60.4 L640 54.6" fill="none" stroke="var(--chart-1)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+          </svg>
+          <span class="zero">0%</span>
+        </div>
+        <div class="x-axis"><span>Nov '25</span><span>Feb</span><span>May</span><span>Aug</span><span>Nov '26</span></div>
+      </section>
+
+      <div class="cols">
+        <div class="col">
+          <!-- Holdings -->
+          <section class="glass card card-pad enter" aria-labelledby="hold-h">
+            <div class="section-head">
+              <h2 id="hold-h">Holdings <span class="count">8</span></h2>
+              <span class="label">actions from the Fri 3:15 PM run</span>
+            </div>
+
+            <div class="only-table scroll-x">
+              <table class="table tbl">
+                <thead><tr><th>Stock</th><th>Account</th><th>Action</th><th class="r c-shares">Shares</th><th class="r">Value</th><th class="r">P/L</th><th class="r">Weight</th><th class="go"></th></tr></thead>
+                <tbody>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">SHOP.TO</a><span class="name">Shopify</span></div></td><td class="small muted">TFSA</td><td><span class="chip sell">Sell</span></td><td class="r num c-shares">12</td><td class="r num">C$1,783</td><td class="r num loss">−6.1%</td><td class="r num">14.4%<span class="wbar"><i style="width:72%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">NVDA</a><span class="name">NVIDIA</span></div></td><td class="small muted">Non-reg</td><td><span class="chip trim">Trim</span></td><td class="r num c-shares">8.5</td><td class="r num">C$2,234</td><td class="r num gain">+22.4%</td><td class="r num">18.1%<span class="wbar over"><i style="width:90%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">T.TO</a><span class="name">Telus</span></div></td><td class="small muted">Non-reg</td><td><span class="chip review">Review</span></td><td class="r num c-shares">60</td><td class="r num">C$1,488</td><td class="r num gain">+31.8%</td><td class="r num">12.1%<span class="wbar"><i style="width:60%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">AAPL</a><span class="name">Apple</span></div></td><td class="small muted">TFSA</td><td><span class="chip hold">Hold</span></td><td class="r num c-shares">5</td><td class="r num">C$1,540</td><td class="r num gain">+8.2%</td><td class="r num">12.5%<span class="wbar"><i style="width:62%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">MSFT</a><span class="name">Microsoft</span></div></td><td class="small muted">Non-reg</td><td><span class="chip hold">Hold</span></td><td class="r num c-shares">2</td><td class="r num">C$1,360</td><td class="r num gain">+12.7%</td><td class="r num">11.0%<span class="wbar"><i style="width:55%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">RY.TO</a><span class="name">Royal Bank</span></div></td><td class="small muted">TFSA</td><td><span class="chip hold">Hold</span></td><td class="r num c-shares">5</td><td class="r num">C$1,290</td><td class="r num gain">+5.4%</td><td class="r num">10.5%<span class="wbar"><i style="width:52%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">XEQT.TO</a><span class="name">iShares All-Equity ETF</span></div></td><td class="small muted">TFSA</td><td><span class="chip hold">Hold</span></td><td class="r num c-shares">32</td><td class="r num">C$1,190</td><td class="r num gain">+3.1%</td><td class="r num">9.6%<span class="wbar"><i style="width:48%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                  <tr><td><div class="sym-cell"><a class="sym" href="ticker_2.html">ENB.TO</a><span class="name">Enbridge</span></div></td><td class="small muted">Non-reg</td><td><span class="chip hold">Hold</span></td><td class="r num c-shares">13</td><td class="r num">C$816</td><td class="r num loss">−1.8%</td><td class="r num">6.6%<span class="wbar"><i style="width:33%"></i></span></td><td class="go"><i data-lucide="chevron-right"></i></td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="only-rows">
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">SHOP.TO</span><span class="name">Shopify</span></div><div class="r num">C$1,783</div><div class="l2"><span class="chip sell">Sell</span>TFSA · 14.4%</div><div class="r num loss">−6.1%</div></a>
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">NVDA</span><span class="name">NVIDIA</span></div><div class="r num">C$2,234</div><div class="l2"><span class="chip trim">Trim</span>Non-reg · 18.1%</div><div class="r num gain">+22.4%</div></a>
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">T.TO</span><span class="name">Telus</span></div><div class="r num">C$1,488</div><div class="l2"><span class="chip review">Review</span>Non-reg · 12.1%</div><div class="r num gain">+31.8%</div></a>
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">AAPL</span><span class="name">Apple</span></div><div class="r num">C$1,540</div><div class="l2"><span class="chip hold">Hold</span>TFSA · 12.5%</div><div class="r num gain">+8.2%</div></a>
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">MSFT</span><span class="name">Microsoft</span></div><div class="r num">C$1,360</div><div class="l2"><span class="chip hold">Hold</span>Non-reg · 11.0%</div><div class="r num gain">+12.7%</div></a>
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">RY.TO</span><span class="name">Royal Bank</span></div><div class="r num">C$1,290</div><div class="l2"><span class="chip hold">Hold</span>TFSA · 10.5%</div><div class="r num gain">+5.4%</div></a>
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">XEQT.TO</span><span class="name">iShares All-Equity ETF</span></div><div class="r num">C$1,190</div><div class="l2"><span class="chip hold">Hold</span>TFSA · 9.6%</div><div class="r num gain">+3.1%</div></a>
+              <a class="hrow" href="ticker_2.html"><div class="l1"><span class="sym">ENB.TO</span><span class="name">Enbridge</span></div><div class="r num">C$816</div><div class="l2"><span class="chip hold">Hold</span>Non-reg · 6.6%</div><div class="r num loss">−1.8%</div></a>
+            </div>
+            <div class="cash-line"><span>Cash, both accounts</span><span class="num">C$640 · 5.2%</span></div>
+          </section>
+
+          <!-- Trades -->
+          <section class="glass card card-pad enter" aria-labelledby="trades-h">
+            <div class="section-head">
+              <h2 id="trades-h">Trades <span class="count">newest first</span></h2>
+              <a class="link" href="#">Show all <i data-lucide="chevron-right"></i></a>
+            </div>
+            <div class="tr"><span class="num muted">Nov 18</span><span class="chip buy">Buy</span><span class="what"><span class="sym">MSFT</span> <span class="num small muted">1 sh @ US$481.30</span></span><span class="acct">Non-reg</span></div>
+            <div class="tr"><span class="num muted">Nov 12</span><span class="chip sell">Sell</span><span class="what"><span class="sym">ENB.TO</span> <span class="num small muted">7 sh @ C$63.10</span></span><span class="acct">Non-reg</span></div>
+            <div class="tr"><span class="num muted">Nov 05</span><span class="chip buy">Buy</span><span class="what"><span class="sym">XEQT.TO</span> <span class="num small muted">12 sh @ C$36.90</span></span><span class="acct">TFSA</span></div>
+            <div class="tr"><span class="num muted">Oct 29</span><span class="chip buy">Buy</span><span class="what"><span class="sym">RY.TO</span> <span class="num small muted">2 sh @ C$255.40</span></span><span class="acct">TFSA</span></div>
+            <div class="tr"><span class="num muted">Oct 21</span><span class="chip buy">Buy</span><span class="what"><span class="sym">NVDA</span> <span class="num small muted">2 sh @ US$181.60</span></span><span class="acct">Non-reg</span></div>
+          </section>
+        </div>
+
+        <div class="col">
+          <!-- Breakdown -->
+          <section class="glass card card-pad enter" aria-labelledby="bk-h">
+            <div class="section-head" style="margin-bottom:6px">
+              <h2 id="bk-h">Breakdown</h2>
+              <span class="label">of holdings</span>
+            </div>
+
+            <div class="bk">
+              <svg class="donut" viewBox="0 0 42 42" role="img" aria-label="By risk: low 28%, medium 38%, high 15%, very high 19%">
+                <circle class="trk" cx="21" cy="21" r="15.9155"/>
+                <circle class="seg-a" cx="21" cy="21" r="15.9155" stroke="var(--risk-low)" stroke-dasharray="27.4 72.6" stroke-dashoffset="25"/>
+                <circle class="seg-a" cx="21" cy="21" r="15.9155" stroke="var(--risk-medium)" stroke-dasharray="36.7 63.3" stroke-dashoffset="-3.2"/>
+                <circle class="seg-a" cx="21" cy="21" r="15.9155" stroke="var(--risk-high)" stroke-dasharray="14.4 85.6" stroke-dashoffset="-40.7"/>
+                <circle class="seg-a" cx="21" cy="21" r="15.9155" stroke="var(--risk-very-high)" stroke-dasharray="18.3 81.7" stroke-dashoffset="-55.9"/>
+              </svg>
+              <div class="bk-body">
+                <div class="label" style="margin-bottom:2px">By risk</div>
+                <div class="bk-key"><i style="background:var(--risk-low)"></i>Low<span class="num">28%</span></div>
+                <div class="bk-key"><i style="background:var(--risk-medium)"></i>Medium<span class="num">38%</span></div>
+                <div class="bk-key"><i style="background:var(--risk-high)"></i>High<span class="num">15%</span></div>
+                <div class="bk-key"><i style="background:var(--risk-very-high)"></i>Very high<span class="num">19%</span></div>
+              </div>
+            </div>
+
+            <div class="bk">
+              <svg class="donut" viewBox="0 0 42 42" role="img" aria-label="By market: US 44%, TSX 56%">
+                <circle class="trk" cx="21" cy="21" r="15.9155"/>
+                <circle class="seg-a s-ink1" cx="21" cy="21" r="15.9155" stroke-dasharray="43.1 56.9" stroke-dashoffset="25"/>
+                <circle class="seg-a s-ink2" cx="21" cy="21" r="15.9155" stroke-dasharray="55.3 44.7" stroke-dashoffset="-18.9"/>
+              </svg>
+              <div class="bk-body">
+                <div class="label" style="margin-bottom:2px">By market</div>
+                <div class="bk-key"><i class="ink-1"></i>US<span class="num">44%</span></div>
+                <div class="bk-key"><i class="ink-2"></i>TSX<span class="num">56%</span></div>
+                <div class="small muted">By where each stock trades.</div>
+              </div>
+            </div>
+
+            <div class="bk">
+              <svg class="donut" viewBox="0 0 42 42" role="img" aria-label="By account: TFSA 47%, Non-reg 53%">
+                <circle class="trk" cx="21" cy="21" r="15.9155"/>
+                <circle class="seg-a s-ink1" cx="21" cy="21" r="15.9155" stroke-dasharray="46.2 53.8" stroke-dashoffset="25"/>
+                <circle class="seg-a s-ink2" cx="21" cy="21" r="15.9155" stroke-dasharray="52.2 47.8" stroke-dashoffset="-22"/>
+              </svg>
+              <div class="bk-body">
+                <div class="label" style="margin-bottom:2px">By account</div>
+                <div class="bk-key"><i class="ink-1"></i>TFSA<span class="num">47%</span></div>
+                <div class="bk-key"><i class="ink-2"></i>Non-reg<span class="num">53%</span></div>
+                <div class="small muted">Includes cash.</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Warnings -->
+          <section class="glass card card-pad enter" aria-labelledby="warn-h">
+            <div class="section-head" style="margin-bottom:8px">
+              <h2 id="warn-h">Warnings <span class="count">1</span></h2>
+            </div>
+            <div class="warn"><i data-lucide="triangle-alert"></i><span>TFSA: 4 round trips this year. Frequent trading there can be taxed as business income.</span></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Phone tab bar -->
+<nav class="tabbar glass glass-strong glass-liquid" aria-label="Main">
+  <a class="tab" href="today_1.html"><i data-lucide="sun"></i>Today</a>
+  <a class="tab" href="portfolio_2.html" aria-current="page"><i data-lucide="wallet"></i>Portfolio</a>
+  <a class="tab" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+  <a class="tab" href="#"><i data-lucide="search"></i>Search</a>
+  <button class="tab" data-sheet="more"><i data-lucide="ellipsis"></i>More</button>
+</nav>
+
+<!-- More sheet -->
+<div class="scrim"></div>
+<div class="sheet glass glass-strong" id="more" role="dialog" aria-label="More">
+  <div class="grabber"></div>
+  <div class="more-grid">
+    <a class="more-item glass" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+    <a class="more-item glass" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+    <a class="more-item glass" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+    <a class="more-item glass" href="#"><i data-lucide="activity"></i>Sources</a>
+    <a class="more-item glass" href="#"><i data-lucide="settings"></i>Settings</a>
+    <button class="more-item glass" data-theme-toggle style="border:0;cursor:pointer"><i data-lucide="moon"></i>Dark mode</button>
+  </div>
+</div>
+
+
+<!-- Buy sheet -->
+<div class="sheet glass glass-strong" id="buy" role="dialog" aria-label="Record a buy">
+  <div class="grabber"></div>
+  <form class="sheet-in" onsubmit="return false">
+    <div>
+      <h2>Record a buy</h2>
+      <p class="hint" style="margin:4px 0 0">Add a purchase you made. Nothing is sent to your broker.</p>
+    </div>
+    <div class="field"><label class="label" for="b-sym">Symbol</label><input class="input num" id="b-sym" placeholder="e.g. RY.TO or NVDA" autocomplete="off"></div>
+    <div class="field"><label class="label" for="b-acct">Account</label>
+      <select class="select" id="b-acct"><option>TFSA</option><option>Non-reg</option></select></div>
+    <div class="grid2">
+      <div class="field"><label class="label" for="b-sh">Shares</label><input class="input num" id="b-sh" inputmode="decimal" placeholder="0"></div>
+      <div class="field"><label class="label" for="b-px">Price per share</label><input class="input num" id="b-px" inputmode="decimal" placeholder="0.00"></div>
+    </div>
+    <div class="field"><label class="label" for="b-date">Date</label><input class="input num" id="b-date" type="date" value="2026-11-21"></div>
+    <div class="actions"><button type="button" class="btn btn-ghost" data-close>Cancel</button><button type="button" class="btn btn-primary" data-close>Save buy</button></div>
+  </form>
+</div>
+
+<script>
+  // Period control: one pressed at a time (the real page reloads the chart).
+  document.querySelectorAll('[data-seg]').forEach((seg) => seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return
+    seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b))
+  }))
+</script>
+<script src="glass_ui.js"></script>
+</body>
+</html>

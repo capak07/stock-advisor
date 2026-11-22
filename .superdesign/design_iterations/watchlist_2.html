@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Watchlist · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme_2.css">
+<link rel="stylesheet" href="glass_ui.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .tab-pill { opacity: 0; } /* Watchlist lives under More: no tab is current */
+  .add-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .add-form { display: flex; gap: 8px; align-items: center; }
+  .add-form .searchbar { box-shadow: var(--glass-highlight), 0 0 0 1px var(--glass-edge); }
+  .add-form .btn { flex: none; }
+  .hint { font-size: 12.5px; color: var(--muted-foreground); }
+
+  .wl { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .wrow { display: grid; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border); transition: opacity 200ms, transform 200ms; }
+  .wrow:first-child { border-top: 0; padding-top: 4px; }
+  .wrow.removing { opacity: 0; transform: translateX(16px); }
+  .w-id { min-width: 0; display: grid; gap: 3px; }
+  .w-id .sym:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .w-id .type { font-size: 11px; font-family: var(--font-mono); color: var(--muted-foreground); letter-spacing: .04em; }
+  .w-px { text-align: right; display: grid; gap: 3px; }
+  .w-px .num:first-child { font-size: 15px; font-weight: 600; }
+  .w-px .mv { font-size: 12.5px; }
+  .w-v { grid-area: v; display: grid; gap: 8px; min-width: 0; }
+  .w-line { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font-size: 13px; color: var(--muted-foreground); min-width: 0; }
+  .w-line b { font: 600 13px var(--font-mono); color: var(--foreground); }
+  .w-range { min-width: 0; }
+  .w-range .range { margin: 8px 0 5px; }
+  .range .zero-tick { position: absolute; left: 50%; top: -2px; width: 1px; height: 12px; background: var(--muted-foreground); opacity: .55; }
+  .range-lab { display: flex; justify-content: space-between; gap: 8px; font: 500 10.5px var(--font-mono); color: var(--muted-foreground); }
+  .w-note { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted-foreground); }
+  .w-note svg.lucide { width: 14px; height: 14px; }
+  .held-tag { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border-radius: 6px; background: var(--muted); color: var(--muted-foreground); }
+
+  /* Header of a row on a phone: symbol left, price and remove right */
+  .w-top { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "id px rm" "v v v"; gap: 10px 8px; align-items: start; }
+  .w-id { grid-area: id; } .w-px { grid-area: px; } .rm { grid-area: rm; }
+  .rm { width: 32px; height: 32px; border: 0; background: transparent; box-shadow: none; color: var(--muted-foreground); }
+  .rm:hover { background: var(--accent); color: var(--foreground); }
+  .rm svg.lucide { width: 15px; height: 15px; }
+
+  @media (min-width: 900px) {
+    .w-top { grid-template-columns: minmax(140px, 1fr) 110px minmax(0, 2.4fr) 32px; grid-template-areas: "id px v rm"; gap: 18px; align-items: center; }
+  }
+
+  /* Order guide */
+  details.guide { border-radius: var(--radius-md); background: var(--muted); }
+  details.guide summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  details.guide summary::-webkit-details-marker { display: none; }
+  details.guide summary .chev { margin-left: auto; transition: transform 200ms; }
+  details.guide[open] summary .chev { transform: rotate(90deg); }
+  .guide-body { display: grid; gap: 8px; padding: 2px 12px 12px; font-size: 13px; }
+  .step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; }
+  .step i { width: 22px; height: 22px; border-radius: 8px; display: grid; place-items: center; background: var(--glass-bg-strong); box-shadow: var(--glass-highlight); font: 600 11px/1 var(--font-mono); font-style: normal; }
+  .guide-body .note { color: var(--muted-foreground); font-size: 12.5px; }
+  .disclaimer { margin: 4px 2px 0; font-size: 12.5px; color: var(--muted-foreground); }
+
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .more-item { display: grid; justify-items: center; gap: 8px; padding: 16px 8px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 500; }
+  .more-item svg.lucide { width: 22px; height: 22px; color: var(--brand); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div class="aurora"></div>
+
+<div class="shell">
+  <!-- Desktop sidebar -->
+  <aside class="sidebar glass glass-strong glass-liquid">
+    <div class="brand"><span class="brand-mark">◆</span>ADVISOR</div>
+    <nav class="nav">
+      <a class="nav-link" href="today_1.html"><i data-lucide="sun"></i>Today</a>
+      <a class="nav-link" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+      <a class="nav-link" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+      <a class="nav-link" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+      <a class="nav-link" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+      <a class="nav-link" href="watchlist_2.html" aria-current="page"><i data-lucide="eye"></i>Watchlist</a>
+      <div class="nav-sep"></div>
+      <a class="nav-link" href="#"><i data-lucide="activity"></i>Sources</a>
+      <a class="nav-link" href="#"><i data-lucide="settings"></i>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span style="display:flex;align-items:center;gap:8px"><span class="dot"></span>All sources fresh</span>
+      <span>Not financial advice.</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <!-- Top bar: search is the first thing on every page -->
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◆</span></div>
+      <div class="searchbar glass glass-strong glass-liquid" data-search style="position:relative">
+        <i data-lucide="search"></i>
+        <input placeholder="Search any stock…" aria-label="Search any stock">
+        <span class="kbd only-lg">/</span>
+        <div class="popover glass glass-strong">
+          <div class="label" style="padding:6px 10px 4px">Recent</div>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">TSLA</span><span class="name">Tesla</span><span class="num small">$364.18</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">T.TO</span><span class="name">Telus</span><span class="num small">C$24.71</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">NVDA</span><span class="name">NVIDIA</span><span class="num small">$187.40</span></a>
+        </div>
+      </div>
+      <button class="pill hide-sm" data-tick><i data-lucide="refresh-cw"></i>Refresh prices</button>
+      <span class="pill only-lg"><span class="dot"></span>Run Fri 3:15 PM</span>
+      <button class="icon-btn" data-theme-toggle aria-label="Light or dark"><i data-lucide="moon"></i></button>
+    </header>
+
+    <main class="page">
+      <div class="page-head enter">
+        <div>
+          <div class="label">Latest run Fri 3:15 PM · prices as of Fri close</div>
+          <h1 style="margin-top:6px">Watchlist</h1>
+        </div>
+      </div>
+
+      <!-- Add a stock -->
+      <section class="glass card card-pad add-card enter" aria-label="Add to watchlist">
+        <form class="add-form" onsubmit="return false">
+          <label class="searchbar glass glass-strong" style="height:46px">
+            <i data-lucide="search"></i>
+            <input placeholder="Company, coin or ticker, e.g. Shopify, Ethereum or RY.TO" aria-label="Add a stock to watch" autocomplete="off">
+          </label>
+          <button class="btn btn-primary" type="submit" style="height:46px"><i data-lucide="plus"></i>Add</button>
+        </form>
+        <div class="hint">US stocks, TSX stocks and coins. A new one gets its first verdict at the next run.</div>
+      </section>
+
+      <!-- The list -->
+      <section class="glass card card-pad enter" aria-labelledby="list-h">
+        <div class="section-head">
+          <h2 id="list-h">Watching <span class="count" id="list-n">6</span></h2>
+          <span class="label">chance to beat the market</span>
+        </div>
+
+        <div class="wl" id="watch-list">
+
+          <!-- CNR.TO: a Buy, with an order guide -->
+          <div class="wrow">
+            <div class="w-top">
+              <div class="w-id"><a class="sym" href="ticker_2.html">CNR.TO</a><span class="name">CN Rail</span></div>
+              <div class="w-px"><span class="num" data-price="up">C$142.85</span><span class="num mv gain">+0.4%</span></div>
+              <div class="w-v">
+                <div class="w-line"><span class="chip buy">Buy</span><span><b>58%</b> to beat XIU.TO over 60 days</span></div>
+                <div class="w-range">
+                  <div class="range" aria-label="Likely 60-day range: about −5% to +9%, middle +1.8%"><span class="band" style="left:28.3%;width:57.5%"></span><span class="zero-tick"></span><span class="mid" style="left:57.5%"></span></div>
+                  <div class="range-lab"><span>−5.2%</span><span>likely 60-day range</span><span>+8.6%</span></div>
+                </div>
+              </div>
+              <button class="icon-btn rm" aria-label="Remove CNR.TO" data-remove><i data-lucide="x"></i></button>
+            </div>
+            <details class="guide">
+              <summary><i data-lucide="list-ordered"></i>How to place it · limit buy <i data-lucide="chevron-right" class="chev"></i></summary>
+              <div class="guide-body">
+                <div class="step"><i>1</i><span>Place a day limit buy for 4 shares at <b class="num">C$141.90</b>, just under the last close.</span></div>
+                <div class="step"><i>2</i><span>If it has not filled by the close, you can renew it for up to 3 trading days. After that, cancel it rather than chase the price.</span></div>
+                <div class="step"><i>3</i><span>Once it fills, set a stop-limit sell at <b class="num">C$132.50</b>, about 7% below.</span></div>
+                <div class="note">58% is a small tilt, not a sure thing: about 4 times in 10 it does not beat the market. Size it small.</div>
+              </div>
+            </details>
+          </div>
+
+          <!-- DOL.TO -->
+          <div class="wrow">
+            <div class="w-top">
+              <div class="w-id"><a class="sym" href="ticker_2.html">DOL.TO</a><span class="name">Dollarama</span></div>
+              <div class="w-px"><span class="num" data-price="down">C$191.30</span><span class="num mv loss">−0.3%</span></div>
+              <div class="w-v">
+                <div class="w-line"><span class="chip neutral">No clear edge</span><span><b>54%</b> to beat XIU.TO over 21 days</span></div>
+                <div class="w-range">
+                  <div class="range" aria-label="Likely 21-day range: about −6% to +7%, middle +0.6%"><span class="band" style="left:23.3%;width:56.3%"></span><span class="zero-tick"></span><span class="mid" style="left:52.5%"></span></div>
+                  <div class="range-lab"><span>−6.4%</span><span>likely 21-day range</span><span>+7.1%</span></div>
+                </div>
+              </div>
+              <button class="icon-btn rm" aria-label="Remove DOL.TO" data-remove><i data-lucide="x"></i></button>
+            </div>
+          </div>
+
+          <!-- T.TO: held, so the Portfolio action shows instead of a verdict -->
+          <div class="wrow">
+            <div class="w-top">
+              <div class="w-id"><a class="sym" href="ticker_2.html">T.TO</a><span class="name">Telus</span></div>
+              <div class="w-px"><span class="num" data-price="up">C$24.71</span><span class="num mv gain">+1.1%</span></div>
+              <div class="w-v">
+                <div class="w-line"><span class="chip review">Review</span><span class="held-tag">In your portfolio</span></div>
+                <div class="w-note"><i data-lucide="wallet"></i><span>Takeover bid · the action comes from <a href="portfolio_2.html" style="text-decoration:underline !important;text-underline-offset:3px">My Portfolio</a>, so the two pages agree.</span></div>
+              </div>
+              <button class="icon-btn rm" aria-label="Remove T.TO" data-remove><i data-lucide="x"></i></button>
+            </div>
+          </div>
+
+          <!-- BCE.TO: a plain watched stock, not held -->
+          <div class="wrow">
+            <div class="w-top">
+              <div class="w-id"><a class="sym" href="ticker_2.html">BCE.TO</a><span class="name">BCE</span></div>
+              <div class="w-px"><span class="num" data-price="down">C$31.42</span><span class="num mv loss">−0.8%</span></div>
+              <div class="w-v">
+                <div class="w-line"><span class="chip neutral">No clear edge</span><span><b>51%</b> to beat XIU.TO over 21 days</span></div>
+                <div class="w-range">
+                  <div class="range" aria-label="Likely 21-day range: about −6% to +6%, middle +0.2%"><span class="band" style="left:25.8%;width:49.2%"></span><span class="zero-tick"></span><span class="mid" style="left:50.8%"></span></div>
+                  <div class="range-lab"><span>−5.8%</span><span>likely 21-day range</span><span>+6.0%</span></div>
+                </div>
+                <div class="w-note"><i data-lucide="eye"></i><span>Watching only. Not in any holding.</span></div>
+              </div>
+              <button class="icon-btn rm" aria-label="Remove BCE.TO" data-remove><i data-lucide="x"></i></button>
+            </div>
+          </div>
+
+          <!-- SOL -->
+          <div class="wrow">
+            <div class="w-top">
+              <div class="w-id"><a class="sym" href="ticker_2.html">SOL</a><span class="name">Solana</span></div>
+              <div class="w-px"><span class="num" data-price="up">C$271.40</span><span class="num mv gain">+2.3%</span></div>
+              <div class="w-v">
+                <div class="w-line"><span class="chip neutral">No clear edge</span><span><b>49%</b> to beat BTC over 10 days</span></div>
+                <div class="w-range">
+                  <div class="range" aria-label="Likely 10-day range: about −10% to +10%, middle +0.3%"><span class="band" style="left:18.3%;width:75%"></span><span class="zero-tick"></span><span class="mid" style="left:51.3%"></span></div>
+                  <div class="range-lab"><span>−9.8%</span><span>likely 10-day range</span><span>+10.4%</span></div>
+                </div>
+              </div>
+              <button class="icon-btn rm" aria-label="Remove SOL" data-remove><i data-lucide="x"></i></button>
+            </div>
+          </div>
+
+          <!-- LINK: Avoid -->
+          <div class="wrow">
+            <div class="w-top">
+              <div class="w-id"><a class="sym" href="ticker_2.html">LINK</a><span class="name">Chainlink</span></div>
+              <div class="w-px"><span class="num" data-price="down">C$24.90</span><span class="num mv loss">−1.9%</span></div>
+              <div class="w-v">
+                <div class="w-line"><span class="chip avoid">Avoid</span><span>At most <b>42%</b> to beat BTC at every horizon</span></div>
+                <div class="w-range">
+                  <div class="range" aria-label="Likely 10-day range: about −11% to +8%, middle −1.4%"><span class="band" style="left:11.7%;width:56.7%"></span><span class="zero-tick"></span><span class="mid" style="left:44.2%"></span></div>
+                  <div class="range-lab"><span>−10.6%</span><span>likely 10-day range</span><span>+8.2%</span></div>
+                </div>
+              </div>
+              <button class="icon-btn rm" aria-label="Remove LINK" data-remove><i data-lucide="x"></i></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <p class="disclaimer">Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast. Most stocks show no clear edge, and that is the honest answer.</p>
+    </main>
+  </div>
+</div>
+
+<!-- Phone tab bar -->
+<nav class="tabbar glass glass-strong glass-liquid" aria-label="Main">
+  <a class="tab" href="today_1.html"><i data-lucide="sun"></i>Today</a>
+  <a class="tab" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+  <a class="tab" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+  <a class="tab" href="#"><i data-lucide="search"></i>Search</a>
+  <button class="tab" data-sheet="more"><i data-lucide="ellipsis"></i>More</button>
+</nav>
+
+<!-- More sheet -->
+<div class="scrim"></div>
+<div class="sheet glass glass-strong" id="more" role="dialog" aria-label="More">
+  <div class="grabber"></div>
+  <div class="more-grid">
+    <a class="more-item glass" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+    <a class="more-item glass" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+    <a class="more-item glass" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+    <a class="more-item glass" href="#"><i data-lucide="activity"></i>Sources</a>
+    <a class="more-item glass" href="#"><i data-lucide="settings"></i>Settings</a>
+    <button class="more-item glass" data-theme-toggle style="border:0;cursor:pointer"><i data-lucide="moon"></i>Dark mode</button>
+  </div>
+</div>
+
+
+<script>
+  // Remove: the row fades out, then the count updates.
+  const list = document.getElementById('watch-list'), n = document.getElementById('list-n')
+  list.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-remove]'); if (!b) return
+    const row = b.closest('.wrow'); row.classList.add('removing')
+    setTimeout(() => { row.remove(); n.textContent = list.querySelectorAll('.wrow').length }, 200)
+  })
+</script>
+<script src="glass_ui.js"></script>
+</body>
+</html>

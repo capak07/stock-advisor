@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Invest · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme_2.css">
+<link rel="stylesheet" href="glass_ui.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .two { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 1024px) { .two { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; } }
+  .col { display: grid; gap: 14px; }
+  @media (min-width: 1024px) { .col { gap: 18px; } }
+  .hero-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: end; }
+  @media (min-width: 760px) { .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); } }
+  .spark { width: 100%; height: 84px; display: block; }
+  .hero-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+  .trade { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .trade:first-of-type { border-top: 0; padding-top: 4px; }
+  .trade-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .trade-top > span:first-child { min-width: 0; overflow: hidden; }
+  .trade-top .chip { flex: none; }
+  .rank { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
+  .levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .news { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--border); }
+  .news:first-child { border-top: 0; }
+  .news .t { font-size: 13.5px; line-height: 1.4; }
+  .tag { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border-radius: 6px; background: var(--muted); color: var(--muted-foreground); margin-right: 6px; }
+  .warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-top: 6px; border-radius: var(--radius-md); background: var(--attention-soft); color: var(--foreground); font-size: 13px; }
+  .warn svg.lucide { color: var(--attention); margin-top: 2px; }
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .more-item { display: grid; justify-items: center; gap: 8px; padding: 16px 8px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 500; }
+  .more-item svg.lucide { width: 22px; height: 22px; color: var(--brand); }
+  /* ---- Invest page ---- */
+  .inv { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+  @media (min-width: 1024px) { .inv { grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 18px; } .inv .formcard { position: sticky; top: 76px; } }
+  .form { display: grid; gap: 16px; margin-top: 12px; }
+  .field > span:first-child { font-size: 12.5px; color: var(--muted-foreground); }
+  .amt { position: relative; }
+  .amt .cur { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font: 500 14px var(--font-mono); color: var(--muted-foreground); pointer-events: none; }
+  .amt .input { padding-left: 52px; font-size: 18px; font-weight: 600; height: 48px; }
+  .seg.block { display: flex; }
+  .seg.block button { flex: 1; }
+  .info { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--muted-foreground); line-height: 1.5; }
+  .info svg.lucide { margin-top: 2px; }
+  .btn.wide { width: 100%; height: 46px; }
+  .warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin: 4px 0 8px; border-radius: var(--radius-md); background: var(--attention-soft); color: var(--foreground); font-size: 13px; }
+  .warn svg.lucide { color: var(--attention); margin-top: 2px; }
+  .lines { list-style: none; margin: 0; padding: 0; }
+  .line { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 0; border-top: 1px solid var(--border); }
+  .line:first-child { border-top: 0; padding-top: 8px; }
+  .l-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .l-id { min-width: 0; }
+  .l-id .t { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .l-id .name { margin-top: 4px; }
+  .mk { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; padding: 4px 6px; border-radius: 6px; background: var(--muted); color: var(--muted-foreground); }
+  .l-amt { text-align: right; flex: none; }
+  .l-amt b { display: block; font: 600 18px/1.1 var(--font-mono); letter-spacing: -0.02em; }
+  .l-amt span { font-size: 12px; color: var(--muted-foreground); }
+  .wt { display: flex; align-items: center; gap: 10px; }
+  .wt .bar { flex: 1; height: 6px; border-radius: 999px; background: var(--muted); overflow: hidden; }
+  .wt .bar i { display: block; height: 100%; border-radius: inherit; background: var(--chart-1); transform-origin: left; animation: grow 600ms cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes grow { from { transform: scaleX(0); } }
+  .wt .num { font-size: 12px; color: var(--muted-foreground); min-width: 34px; text-align: right; }
+  .why { margin: 0; font-size: 13px; color: var(--muted-foreground); line-height: 1.45; }
+  .guide { border-radius: var(--radius-md); background: var(--muted); }
+  .guide summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; font-size: 13px; font-weight: 500; }
+  .guide summary::-webkit-details-marker { display: none; }
+  .guide summary svg.lucide { transition: transform 200ms; color: var(--muted-foreground); }
+  .guide[open] summary svg.lucide { transform: rotate(180deg); }
+  .guide .steps { display: grid; gap: 8px; padding: 0 12px 12px; font-size: 13px; line-height: 1.45; }
+  .guide .steps .st { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; }
+  .guide .steps .n { width: 20px; height: 20px; border-radius: 7px; display: grid; place-items: center; font: 600 11px/1 var(--font-mono); background: var(--glass-bg-strong); }
+  .guide .steps .sm { font-size: 12px; color: var(--muted-foreground); }
+  .guide .steps .usd { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--muted-foreground); }
+  .guide .steps .usd svg.lucide { margin-top: 2px; color: var(--gain); }
+  .foot { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--border); }
+  .smallp { margin: 8px 0 0; font-size: 12.5px; color: var(--muted-foreground); }
+
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div class="aurora"></div>
+
+<div class="shell">
+  <!-- Desktop sidebar -->
+  <aside class="sidebar glass glass-strong glass-liquid">
+    <div class="brand"><span class="brand-mark">◆</span>ADVISOR</div>
+    <nav class="nav">
+      <a class="nav-link" href="#"><i data-lucide="sun"></i>Today</a>
+      <a class="nav-link" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+      <a class="nav-link" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+      <a class="nav-link" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+      <a class="nav-link" href="invest_1.html" aria-current="page"><i data-lucide="piggy-bank"></i>Invest</a>
+      <a class="nav-link" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+      <div class="nav-sep"></div>
+      <a class="nav-link" href="#"><i data-lucide="activity"></i>Sources</a>
+      <a class="nav-link" href="#"><i data-lucide="settings"></i>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span style="display:flex;align-items:center;gap:8px"><span class="dot"></span>All sources fresh</span>
+      <span>Not financial advice.</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <!-- Top bar: search is the first thing on every page -->
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◆</span></div>
+      <div class="searchbar glass glass-strong glass-liquid" data-search style="position:relative">
+        <i data-lucide="search"></i>
+        <input placeholder="Search any stock…" aria-label="Search any stock">
+        <span class="kbd only-lg">/</span>
+        <div class="popover glass glass-strong">
+          <div class="label" style="padding:6px 10px 4px">Recent</div>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">TSLA</span><span class="name">Tesla</span><span class="num small">$364.18</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">T.TO</span><span class="name">Telus</span><span class="num small">C$24.71</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">NVDA</span><span class="name">NVIDIA</span><span class="num small">$187.40</span></a>
+        </div>
+      </div>
+      <button class="pill hide-sm" data-tick><i data-lucide="refresh-cw"></i>Refresh prices</button>
+      <span class="pill only-lg"><span class="dot"></span>Run Fri 3:15 PM</span>
+      <button class="icon-btn" data-theme-toggle aria-label="Light or dark"><i data-lucide="moon"></i></button>
+    </header>
+
+    <main class="page">
+      <div class="page-head enter">
+        <div>
+          <h1>Invest</h1>
+          <p class="sub">Type an amount. It is split over the model's best-ranked names.</p>
+        </div>
+      </div>
+
+      <div class="inv">
+        <!-- Form -->
+        <section class="glass card card-pad enter formcard" aria-labelledby="split-h">
+          <h2 id="split-h">Split an amount</h2>
+          <form class="form" onsubmit="return false">
+            <label class="field"><span>Amount to invest (CAD)</span>
+              <span class="amt"><span class="cur">C$</span><input class="input num" inputmode="decimal" autocomplete="off" value="2,000" aria-label="Amount to invest in Canadian dollars"></span>
+            </label>
+            <div class="field"><span>Account</span>
+              <div class="seg block" role="group" aria-label="Account"><button type="button" aria-pressed="true">TFSA</button><button type="button" aria-pressed="false">Non-reg</button></div>
+            </div>
+            <label class="field"><span>Market mix</span>
+              <select class="select" aria-label="Market mix"><option>Canada and US</option><option>Canada only</option><option>US only</option></select>
+            </label>
+            <button type="button" class="btn btn-primary wide" id="go"><i data-lucide="split"></i>Show the split</button>
+            <div class="info"><i data-lucide="info"></i><span>Returns are measured against SPY (US) or XIU.TO (TSX), not plain gains. Shares are approximate; Wealthsimple allows fractional shares for many stocks.</span></div>
+          </form>
+        </section>
+
+        <!-- Result -->
+        <section class="glass card card-pad enter" id="result" aria-labelledby="result-h">
+          <div class="section-head" style="margin-bottom:4px"><h2 id="result-h">Where $2,000 would go</h2></div>
+          <p class="muted small" style="margin:0 0 10px">From the Fri 3:15 PM run · returns are vs SPY (US) or XIU.TO (TSX), not plain gains</p>
+          <div class="warn" role="alert"><i data-lucide="triangle-alert"></i><span>No stock clears the bar today; the split leans on broad funds. These are the model's best-ranked names, not recommendations.</span></div>
+
+          <ul class="lines">
+            <li class="line">
+              <div class="l-top">
+                <div class="l-id"><div class="t"><a class="sym" href="ticker_2.html">XEQT.TO</a><span class="mk">TSX</span></div><div class="name" style="white-space:normal">iShares Core Equity ETF Portfolio</div></div>
+                <div class="l-amt"><b>$800</b><span class="num">≈ 21.2 sh</span></div>
+              </div>
+              <div class="wt"><span class="bar"><i style="width:40%"></i></span><span class="num">40%</span></div>
+              <p class="why">A broad fund, the plain alternative while no single stock earns the weight. Round-trip cost 0.2%.</p>
+              <details class="guide">
+                <summary><span>How to place it</span><i data-lucide="chevron-down"></i></summary>
+                <div class="steps">
+                  <div class="st"><span class="n">1</span><span>Limit buy <b class="num">21 sh</b> at <b class="num">$37.82</b><br><span class="sm">Set it to expire at the end of the next trading day</span></span></div>
+                </div>
+              </details>
+            </li>
+            <li class="line">
+              <div class="l-top">
+                <div class="l-id"><div class="t"><a class="sym" href="ticker_2.html">ENB.TO</a><span class="mk">TSX</span></div><div class="name" style="white-space:normal">Enbridge · Energy</div></div>
+                <div class="l-amt"><b>$500</b><span class="num">≈ 7.3 sh</span></div>
+              </div>
+              <div class="wt"><span class="bar"><i style="width:25%"></i></span><span class="num">25%</span></div>
+              <p class="why">Likely <span class="num">−2.1%</span> to <span class="num">+4.8%</span> vs XIU.TO over 21 trading days · median <span class="num">+1.2%</span>. Close to a coin flip.</p>
+              <details class="guide">
+                <summary><span>How to place it</span><i data-lucide="chevron-down"></i></summary>
+                <div class="steps">
+                  <div class="st"><span class="n">1</span><span>Limit buy <b class="num">7 sh</b> at <b class="num">$68.45</b><br><span class="sm">Set it to expire at the end of the next trading day</span></span></div>
+                  <div class="st"><span class="n">2</span><span>Then a stop-limit sell <b class="num">7 sh</b>: stop <b class="num">$63.90</b>, limit <b class="num">$63.20</b>, expiry 90 days</span></div>
+                </div>
+              </details>
+            </li>
+            <li class="line">
+              <div class="l-top">
+                <div class="l-id"><div class="t"><a class="sym" href="ticker_2.html">RY.TO</a><span class="mk">TSX</span></div><div class="name" style="white-space:normal">Royal Bank of Canada · Financials</div></div>
+                <div class="l-amt"><b>$400</b><span class="num">≈ 2.2 sh</span></div>
+              </div>
+              <div class="wt"><span class="bar"><i style="width:20%"></i></span><span class="num">20%</span></div>
+              <p class="why">Likely <span class="num">−2.6%</span> to <span class="num">+4.1%</span> vs XIU.TO over 21 trading days · median <span class="num">+0.8%</span>.</p>
+              <details class="guide">
+                <summary><span>How to place it</span><i data-lucide="chevron-down"></i></summary>
+                <div class="steps">
+                  <div class="st"><span class="n">1</span><span>Limit buy <b class="num">2 sh</b> at <b class="num">$184.10</b><br><span class="sm">Set it to expire at the end of the next trading day</span></span></div>
+                  <div class="st"><span class="n">2</span><span>Market buy <b class="num">$32</b><br><span class="sm">Fractional: Wealthsimple fills fractions only as market orders; not in the first 15 minutes after the open</span></span></div>
+                  <div class="st"><span class="n">3</span><span>Then a stop-limit sell <b class="num">2 sh</b>: stop <b class="num">$171.80</b>, limit <b class="num">$170.20</b>, expiry 90 days</span></div>
+                </div>
+              </details>
+            </li>
+            <li class="line">
+              <div class="l-top">
+                <div class="l-id"><div class="t"><a class="sym" href="ticker_2.html">KO</a><span class="mk">US</span></div><div class="name" style="white-space:normal">Coca-Cola · Consumer staples</div></div>
+                <div class="l-amt"><b>$300</b><span class="num">≈ 3.0 sh</span></div>
+              </div>
+              <div class="wt"><span class="bar"><i style="width:15%"></i></span><span class="num">15%</span></div>
+              <p class="why">Likely <span class="num">−3.0%</span> to <span class="num">+3.6%</span> vs SPY over 21 trading days · median <span class="num">+0.3%</span>. Round-trip cost 0.4%.</p>
+              <details class="guide" open>
+                <summary><span>How to place it</span><i data-lucide="chevron-down"></i></summary>
+                <div class="steps">
+                  <div class="st"><span class="n">1</span><span>Limit buy <b class="num">3 sh</b> at <b class="num">US$71.40</b><br><span class="sm">Set it to expire at the end of the next trading day</span></span></div>
+                  <div class="st"><span class="n">2</span><span>Then a stop-limit sell <b class="num">3 sh</b>: stop <b class="num">US$66.70</b>, limit <b class="num">US$66.10</b>, expiry 90 days</span></div>
+                  <div class="usd"><i data-lucide="circle-check"></i><span>Paid from your USD account, no conversion.</span></div>
+                </div>
+              </details>
+            </li>
+          </ul>
+
+          <div class="foot"><b class="num">Total $2,000</b><span class="muted small">Not financial or tax advice. Forecasts are probabilistic and can be wrong.</span></div>
+          <p class="smallp">Frequent short-term trades in a TFSA can be treated as a business, which makes the gains taxable; a longer hold avoids that (not tax advice).</p>
+          <p class="smallp">Shares are approximate; Wealthsimple allows fractional shares for many stocks.</p>
+          <p class="smallp">Order guidance is a rule of thumb for Wealthsimple's order types, not a price forecast.</p>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Phone tab bar -->
+<nav class="tabbar glass glass-strong glass-liquid" aria-label="Main">
+  <a class="tab" href="#"><i data-lucide="sun"></i>Today</a>
+  <a class="tab" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+  <a class="tab" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+  <a class="tab" href="#"><i data-lucide="search"></i>Search</a>
+  <button class="tab" data-sheet="more"><i data-lucide="ellipsis"></i>More</button>
+</nav>
+
+<!-- More sheet -->
+<div class="scrim"></div>
+<div class="sheet glass glass-strong" id="more" role="dialog" aria-label="More">
+  <div class="grabber"></div>
+  <div class="more-grid">
+    <a class="more-item glass" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+    <a class="more-item glass" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+    <a class="more-item glass" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+    <a class="more-item glass" href="#"><i data-lucide="activity"></i>Sources</a>
+    <a class="more-item glass" href="#"><i data-lucide="settings"></i>Settings</a>
+    <button class="more-item glass" data-theme-toggle style="border:0;cursor:pointer"><i data-lucide="moon"></i>Dark mode</button>
+  </div>
+</div>
+
+<script src="glass_ui.js"></script>
+<script>
+(() => {
+  document.querySelectorAll('.seg').forEach((g) => g.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    g.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'))
+  })))
+  const go = document.getElementById('go')
+  if (go) go.addEventListener('click', () => document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' }))
+})()
+
+</script>
+</body>
+</html>

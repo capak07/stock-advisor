@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Today · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme_2.css">
+<link rel="stylesheet" href="glass_ui.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .two { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 1024px) { .two { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; } }
+  .col { display: grid; gap: 14px; }
+  @media (min-width: 1024px) { .col { gap: 18px; } }
+  .hero-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: end; }
+  @media (min-width: 760px) { .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); } }
+  .spark { width: 100%; height: 84px; display: block; }
+  .hero-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+  .trade { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .trade:first-of-type { border-top: 0; padding-top: 4px; }
+  .trade-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .trade-top > span:first-child { min-width: 0; overflow: hidden; }
+  .trade-top .chip { flex: none; }
+  .rank { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
+  .levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .news { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--border); }
+  .news:first-child { border-top: 0; }
+  .news .t { font-size: 13.5px; line-height: 1.4; }
+  .tag { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border-radius: 6px; background: var(--muted); color: var(--muted-foreground); margin-right: 6px; }
+  .warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-top: 6px; border-radius: var(--radius-md); background: var(--attention-soft); color: var(--foreground); font-size: 13px; }
+  .warn svg.lucide { color: var(--attention); margin-top: 2px; }
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .more-item { display: grid; justify-items: center; gap: 8px; padding: 16px 8px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 500; }
+  .more-item svg.lucide { width: 22px; height: 22px; color: var(--brand); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div class="aurora"></div>
+
+<div class="shell">
+  <!-- Desktop sidebar -->
+  <aside class="sidebar glass glass-strong glass-liquid">
+    <div class="brand"><span class="brand-mark">◆</span>ADVISOR</div>
+    <nav class="nav">
+      <a class="nav-link" href="#" aria-current="page"><i data-lucide="sun"></i>Today</a>
+      <a class="nav-link" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+      <a class="nav-link" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+      <a class="nav-link" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+      <a class="nav-link" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+      <a class="nav-link" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+      <div class="nav-sep"></div>
+      <a class="nav-link" href="#"><i data-lucide="activity"></i>Sources</a>
+      <a class="nav-link" href="#"><i data-lucide="settings"></i>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span style="display:flex;align-items:center;gap:8px"><span class="dot"></span>All sources fresh</span>
+      <span>Not financial advice.</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <!-- Top bar: search is the first thing on every page -->
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◆</span></div>
+      <div class="searchbar glass glass-strong glass-liquid" data-search style="position:relative">
+        <i data-lucide="search"></i>
+        <input placeholder="Search any stock…" aria-label="Search any stock">
+        <span class="kbd only-lg">/</span>
+        <div class="popover glass glass-strong">
+          <div class="label" style="padding:6px 10px 4px">Recent</div>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">TSLA</span><span class="name">Tesla</span><span class="num small">$364.18</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">T.TO</span><span class="name">Telus</span><span class="num small">C$24.71</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">NVDA</span><span class="name">NVIDIA</span><span class="num small">$187.40</span></a>
+        </div>
+      </div>
+      <button class="pill hide-sm" data-tick><i data-lucide="refresh-cw"></i>Refresh prices</button>
+      <span class="pill only-lg"><span class="dot"></span>Run Fri 3:15 PM</span>
+      <button class="icon-btn" data-theme-toggle aria-label="Light or dark"><i data-lucide="moon"></i></button>
+    </header>
+
+    <main class="page">
+      <div class="page-head enter">
+        <div>
+          <div class="label">Saturday, Nov 21 · markets closed</div>
+          <h1 style="margin-top:6px">Today</h1>
+        </div>
+      </div>
+
+      <!-- Portfolio at a glance -->
+      <a class="hero glass card rim lift card-pad enter" href="portfolio_2.html" style="padding:22px">
+        <div class="hero-grid">
+          <div>
+            <div class="label">Portfolio · TFSA and Non-reg</div>
+            <div class="big num" style="margin:8px 0 6px" data-price="up">$12,340.18</div>
+            <div class="num gain" style="font-size:14px">▲ $148.20 (1.2%) today</div>
+            <div class="hero-meta">
+              <div><div class="label">All time</div><div class="num gain" style="margin-top:3px">+$1,204 (10.8%)</div></div>
+              <div><div class="label">vs SPY, 1Y</div><div class="num" style="margin-top:3px">+2.1 pts</div></div>
+              <div><div class="label">Cash</div><div class="num" style="margin-top:3px">$640</div></div>
+            </div>
+          </div>
+          <svg class="spark draw" viewBox="0 0 320 84" preserveAspectRatio="none" aria-label="Portfolio over 3 months against SPY">
+            <defs><linearGradient id="fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--chart-1)" stop-opacity=".14"/><stop offset="1" stop-color="var(--chart-1)" stop-opacity="0"/></linearGradient></defs>
+            <path class="cone" d="M0 66 L32 60 L64 63 L96 50 L128 54 L160 40 L192 44 L224 31 L256 35 L288 18 L320 20 L320 84 L0 84Z" fill="url(#fill)"/>
+            <path d="M0 68 L64 66 L128 59 L192 54 L256 48 L320 43" fill="none" stroke="var(--chart-3)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".9"/>
+            <path class="line" d="M0 66 L32 60 L64 63 L96 50 L128 54 L160 40 L192 44 L224 31 L256 35 L288 18 L320 20" fill="none" stroke="var(--chart-1)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </a>
+
+      <div class="two">
+        <div class="col">
+          <!-- What to do with what you own -->
+          <section class="glass card card-pad enter" aria-labelledby="att-h">
+            <div class="section-head">
+              <h2 id="att-h">Needs your attention <span class="count">3</span></h2>
+              <span class="label">run Fri 3:15 PM</span>
+            </div>
+            <a class="row" href="ticker_2.html"><span class="chip sell">Sell</span><div><div class="sym">SHOP.TO</div><div class="name">Closed below its stop, C$148.60</div></div><span class="num loss right">−6.1%</span></a>
+            <a class="row" href="ticker_2.html"><span class="chip trim">Trim</span><div><div class="sym">NVDA</div><div class="name">18% of your portfolio, over your 15% cap</div></div><span class="num gain right">+22.4%</span></a>
+            <a class="row" href="ticker_2.html"><span class="chip review">Review</span><div><div class="sym">T.TO</div><div class="name">Takeover bid · up 32% this week</div></div><span class="num gain right">+31.8%</span></a>
+            <a class="row" href="portfolio_2.html"><span class="chip hold">Hold</span><div class="name" style="font-size:13px">5 more holdings, nothing to do</div><i data-lucide="chevron-right" class="muted"></i></a>
+            <div class="warn"><i data-lucide="triangle-alert"></i><span>TFSA: 4 round trips this year. Frequent trading there can be taxed as business income.</span></div>
+          </section>
+
+          <!-- News on what you own -->
+          <section class="glass card card-pad enter" aria-labelledby="news-h">
+            <div class="section-head">
+              <h2 id="news-h">News on your holdings</h2>
+              <a class="link" href="portfolio_2.html">All <i data-lucide="chevron-right"></i></a>
+            </div>
+            <div class="news"><span class="sym">T.TO</span><span class="t"><span class="tag">Deal</span>Takeover bid at C$19.45 a share in cash and stock</span><span class="label">2h</span></div>
+            <div class="news"><span class="sym">NVDA</span><span class="t"><span class="tag">Earnings</span>Revenue +62% vs a year ago; guidance above estimates</span><span class="label">1d</span></div>
+            <div class="news"><span class="sym">SHOP.TO</span><span class="t"><span class="tag">Analyst</span>Downgraded to hold, target cut to C$150</span><span class="label">2d</span></div>
+          </section>
+        </div>
+
+        <div class="col">
+          <!-- Today's day trades -->
+          <section class="glass card card-pad enter" aria-labelledby="dt-h">
+            <div class="section-head">
+              <h2 id="dt-h">Day trade · top 3 after costs</h2>
+              <a class="link" href="daytrade_1.html">Open <i data-lucide="chevron-right"></i></a>
+            </div>
+            <div class="trade">
+              <div class="trade-top">
+                <span style="display:flex;align-items:center;gap:10px"><span class="rank">1</span><span class="sym">TSLA</span><span class="name">Tesla</span></span>
+                <span class="chip triggered">Triggered 10:15</span>
+              </div>
+              <div class="levels">
+                <div class="stat"><span class="label">Entry</span><b>364.18</b></div>
+                <div class="stat"><span class="label">Target</span><b class="gain">370.04</b></div>
+                <div class="stat"><span class="label">Stop</span><b class="loss">358.32</b></div>
+              </div>
+              <div class="verdict"><i data-lucide="scale"></i>Close to a coin flip in replays · history +0.12R</div>
+            </div>
+            <div class="trade">
+              <div class="trade-top">
+                <span style="display:flex;align-items:center;gap:10px"><span class="rank">2</span><span class="sym">AMD</span><span class="name">Advanced Micro Devices</span></span>
+                <span class="chip waiting">Waiting · 0.4% away</span>
+              </div>
+              <div class="verdict"><i data-lucide="scale"></i>Leans toward the target · history +0.09R</div>
+            </div>
+            <div class="trade">
+              <div class="trade-top">
+                <span style="display:flex;align-items:center;gap:10px"><span class="rank">3</span><span class="sym">SOFI</span><span class="name">SoFi Technologies</span></span>
+                <span class="chip stopped">Stopped 11:40</span>
+              </div>
+              <div class="verdict"><i data-lucide="scale"></i>Close to break-even · history +0.04R</div>
+            </div>
+          </section>
+
+          <!-- Picks: honest status -->
+          <section class="glass card card-pad enter" aria-labelledby="pk-h">
+            <div class="section-head" style="margin-bottom:4px">
+              <h2 id="pk-h"><i data-lucide="sparkles" style="color:var(--brand)"></i>Picks</h2>
+              <span class="chip neutral">None today</span>
+            </div>
+            <p class="muted" style="margin:6px 0 12px;font-size:13.5px">The best chance of beating the market was <span class="num">52.7%</span>; a pick needs <span class="num">58%</span>. Nothing has enough evidence to buy.</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <a class="btn btn-glass btn-sm" href="picks_2.html">Why none?</a>
+              <a class="btn btn-ghost btn-sm" href="watchlist_2.html">Watchlist verdicts</a>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Phone tab bar -->
+<nav class="tabbar glass glass-strong glass-liquid" aria-label="Main">
+  <a class="tab" href="#" aria-current="page"><i data-lucide="sun"></i>Today</a>
+  <a class="tab" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+  <a class="tab" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+  <a class="tab" href="#"><i data-lucide="search"></i>Search</a>
+  <button class="tab" data-sheet="more"><i data-lucide="ellipsis"></i>More</button>
+</nav>
+
+<!-- More sheet -->
+<div class="scrim"></div>
+<div class="sheet glass glass-strong" id="more" role="dialog" aria-label="More">
+  <div class="grabber"></div>
+  <div class="more-grid">
+    <a class="more-item glass" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+    <a class="more-item glass" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+    <a class="more-item glass" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+    <a class="more-item glass" href="#"><i data-lucide="activity"></i>Sources</a>
+    <a class="more-item glass" href="#"><i data-lucide="settings"></i>Settings</a>
+    <button class="more-item glass" data-theme-toggle style="border:0;cursor:pointer"><i data-lucide="moon"></i>Dark mode</button>
+  </div>
+</div>
+
+<script src="glass_ui.js"></script>
+</body>
+</html>

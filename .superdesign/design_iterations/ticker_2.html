@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stock · Advisor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme_2.css">
+<link rel="stylesheet" href="glass_ui.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+  .two { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 1024px) { .two { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; } }
+  .col { display: grid; gap: 14px; }
+  @media (min-width: 1024px) { .col { gap: 18px; } }
+  .hero-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: end; }
+  @media (min-width: 760px) { .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); } }
+  .spark { width: 100%; height: 84px; display: block; }
+  .hero-meta { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+  .trade { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
+  .trade:first-of-type { border-top: 0; padding-top: 4px; }
+  .trade-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .trade-top > span:first-child { min-width: 0; overflow: hidden; }
+  .trade-top .chip { flex: none; }
+  .rank { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
+  .levels { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .news { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--border); }
+  .news:first-child { border-top: 0; }
+  .news .t { font-size: 13.5px; line-height: 1.4; }
+  .tag { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border-radius: 6px; background: var(--muted); color: var(--muted-foreground); margin-right: 6px; }
+  .warn { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-top: 6px; border-radius: var(--radius-md); background: var(--attention-soft); color: var(--foreground); font-size: 13px; }
+  .warn svg.lucide { color: var(--attention); margin-top: 2px; }
+  .more-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .more-item { display: grid; justify-items: center; gap: 8px; padding: 16px 8px; border-radius: var(--radius-lg); font-size: 13px; font-weight: 500; }
+  .more-item svg.lucide { width: 22px; height: 22px; color: var(--brand); }
+  /* ---- Stock page ---- */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+  .lcol, .rcol { display: contents; }
+  .o1 { order: 1; } .o2 { order: 2; } .o3 { order: 3; } .o4 { order: 4; } .o5 { order: 5; } .o6 { order: 6; }
+  @media (min-width: 1024px) {
+    .layout { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 18px; }
+    .lcol, .rcol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; align-content: start; }
+  }
+  .head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .head-l { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  .head-l > div { min-width: 0; }
+  .back { width: 36px; height: 36px; margin: -2px 0 0 -6px; display: inline-grid; place-items: center; border-radius: 999px; flex: none; color: var(--muted-foreground) !important; }
+  .back:hover { background: var(--accent); }
+  @media (min-width: 1024px) { .back { display: none; } }
+  .tsym { font: 650 24px/1.1 var(--font-mono) !important; letter-spacing: -0.02em; }
+  .tname { font-size: 14px; color: var(--muted-foreground); }
+  .px { font: 600 28px/1.05 var(--font-mono) !important; letter-spacing: -0.03em; text-align: right; border-radius: 8px; padding: 0 2px; }
+  @media (min-width: 1024px) { .px { font-size: 32px !important; } }
+  .head-r { text-align: right; flex: none; }
+  .head-r .num.mv { font-size: 13px; margin-top: 5px; display: block; }
+  .phone-outlook { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 13px; line-height: 1.4; }
+  .phone-outlook svg.lucide { color: var(--muted-foreground); }
+  @media (min-width: 1024px) { .phone-outlook { display: none; } }
+  .chart { position: relative; margin-top: 16px; }
+  .chart svg { display: block; width: 100%; height: 190px; overflow: visible; }
+  @media (min-width: 1024px) { .chart svg { height: 250px; } }
+  .chart .grid line { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .chart .tag-now { position: absolute; top: -12px; left: 68.75%; transform: translateX(-50%); font: 500 10px/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted-foreground); padding: 3px 6px; border-radius: 999px; background: var(--glass-bg-strong); border: 1px solid var(--glass-border); }
+  .chart .ax { position: absolute; right: 0; transform: translateY(-50%); font: 500 11px/1 var(--font-mono); color: var(--muted-foreground); padding: 2px 5px; border-radius: 6px; background: var(--glass-bg-strong); }
+  .chart-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted-foreground); }
+  .legend i { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--chart-1); vertical-align: middle; margin-right: 6px; }
+  .legend i.med { border-top: 2px dashed var(--chart-4); }
+  .legend i.rng { height: 8px; border: 0; background: var(--chart-5); border-radius: 3px; }
+  .headline-edge { font-size: 22px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; margin: 6px 0 2px; }
+  .chance { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .chance .num { font-size: 26px; font-weight: 600; letter-spacing: -0.03em; }
+  .scale { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
+  .scale > div { min-width: 0; }
+  .scale > div:nth-child(2) { text-align: center; }
+  .scale > div:last-child { text-align: right; }
+  .scale b { display: block; font: 600 14px/1.3 var(--font-mono); margin-top: 3px; }
+  .range .now { transition: left 300ms cubic-bezier(.3,1.3,.5,1); }
+  .range .band, .range .mid { transition: left 300ms, width 300ms; }
+  .own-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .own-top > span:first-child { min-width: 0; }
+  .plan-lines { display: grid; gap: 0; margin-top: 12px; }
+  .plan-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--border); font-size: 13.5px; }
+  .plan-line small { display: block; color: var(--muted-foreground); font-size: 12px; margin-top: 1px; }
+  .plan-line .num { font-weight: 600; white-space: nowrap; }
+  .note { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; font-size: 12.5px; color: var(--muted-foreground); }
+  .note svg.lucide { margin-top: 2px; color: var(--gain); }
+  .item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+  .item:first-of-type { border-top: 0; padding-top: 4px; }
+  .item .t { font-size: 13.5px; line-height: 1.4; min-width: 0; }
+  .item .meta { font-size: 12px; color: var(--muted-foreground); grid-column: 1 / -1; }
+  .tag { font: 600 10px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border-radius: 6px; background: var(--muted); color: var(--muted-foreground); margin-right: 6px; white-space: nowrap; }
+  .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .actions .btn { padding: 0 8px; min-width: 0; }
+  .actions .btn[aria-pressed="true"] svg { fill: var(--attention); color: var(--attention); }
+  .src { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
+  .src summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 500; }
+  .src summary::-webkit-details-marker { display: none; }
+  .src summary svg.lucide { transition: transform 200ms; }
+  .src[open] summary svg.lucide { transform: rotate(180deg); }
+  .src-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 14px; margin-top: 12px; font-size: 12.5px; }
+  .src-grid span { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .src-grid .sub { color: var(--muted-foreground); white-space: nowrap; }
+  .sdot { width: 7px; height: 7px; border-radius: 999px; flex: none; background: var(--status-ok); }
+  .sdot.partial { background: var(--status-partial); }
+  .sdot.stale { background: var(--status-stale); }
+  .sdot.skipped { background: var(--status-skipped); }
+  .sheet.narrow { max-width: 520px; margin: 0 auto; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+  .field > span:first-child { font-size: 12.5px; color: var(--muted-foreground); }
+  .cur-alert { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: var(--radius-md); background: var(--muted); font-size: 13px; margin-bottom: 14px; }
+
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="liquid" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="38" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div class="aurora"></div>
+
+<div class="shell">
+  <!-- Desktop sidebar -->
+  <aside class="sidebar glass glass-strong glass-liquid">
+    <div class="brand"><span class="brand-mark">◆</span>ADVISOR</div>
+    <nav class="nav">
+      <a class="nav-link" href="#"><i data-lucide="sun"></i>Today</a>
+      <a class="nav-link" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+      <a class="nav-link" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+      <a class="nav-link" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+      <a class="nav-link" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+      <a class="nav-link" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+      <div class="nav-sep"></div>
+      <a class="nav-link" href="#"><i data-lucide="activity"></i>Sources</a>
+      <a class="nav-link" href="#"><i data-lucide="settings"></i>Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span style="display:flex;align-items:center;gap:8px"><span class="dot"></span>All sources fresh</span>
+      <span>Not financial advice.</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <!-- Top bar: search is the first thing on every page -->
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">◆</span></div>
+      <div class="searchbar glass glass-strong glass-liquid" data-search style="position:relative">
+        <i data-lucide="search"></i>
+        <input placeholder="Search any stock…" aria-label="Search any stock">
+        <span class="kbd only-lg">/</span>
+        <div class="popover glass glass-strong">
+          <div class="label" style="padding:6px 10px 4px">Recent</div>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">TSLA</span><span class="name">Tesla</span><span class="num small">$364.18</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">T.TO</span><span class="name">Telus</span><span class="num small">C$24.71</span></a>
+          <a class="pop-row" href="ticker_2.html"><span class="sym">NVDA</span><span class="name">NVIDIA</span><span class="num small">$187.40</span></a>
+        </div>
+      </div>
+      <button class="pill hide-sm" data-tick><i data-lucide="refresh-cw"></i>Refresh prices</button>
+      <span class="pill only-lg"><span class="dot"></span>Run Fri 3:15 PM</span>
+      <button class="icon-btn" data-theme-toggle aria-label="Light or dark"><i data-lucide="moon"></i></button>
+    </header>
+
+    <main class="page">
+      <div class="layout">
+        <div class="lcol">
+          <!-- Header + price chart + forecast range -->
+          <section class="glass hero card card-pad enter o1" style="padding:20px" aria-label="TSLA price and forecast">
+            <div class="head">
+              <div class="head-l">
+                <a class="back" href="today_1.html" aria-label="Back"><i data-lucide="chevron-left" style="width:22px;height:22px"></i></a>
+                <div>
+                  <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap"><span class="tsym">TSLA</span><span class="tname">Tesla</span></div>
+                  <div class="label" style="margin-top:7px">Nasdaq · USD</div>
+                </div>
+              </div>
+              <div class="head-r">
+                <div class="px" data-price="up">$364.18</div>
+                <span class="num mv gain">▲ $7.46 · +2.1% today</span>
+              </div>
+            </div>
+
+            <a class="phone-outlook" href="#outlook"><i data-lucide="scale"></i><span><b>Outlook (21 days): no clear edge.</b> <span class="muted">52% chance to beat the market.</span></span></a>
+
+            <div class="chart">
+              <span class="tag-now">today</span>
+              <svg class="draw" viewBox="0 0 640 200" preserveAspectRatio="none" role="img" aria-label="TSLA price over 3 months with the 21-day forecast range">
+                <defs><linearGradient id="hfill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--chart-1)" stop-opacity=".12"/><stop offset="1" stop-color="var(--chart-1)" stop-opacity="0"/></linearGradient></defs>
+                <g class="grid"><line x1="0" x2="640" y1="30" y2="30"/><line x1="0" x2="640" y1="80" y2="80"/><line x1="0" x2="640" y1="130" y2="130"/><line x1="0" x2="640" y1="180" y2="180"/></g>
+                <path class="cone" d="M0 142 L20 148 L40 136 L60 128.5 L80 134.5 L100 121 L120 113.5 L140 118 L160 104.5 L180 97 L200 107.5 L220 98.5 L240 91 L260 101.5 L280 88 L300 94 L320 83.5 L340 89.5 L360 80.5 L380 85 L400 76 L420 82 L440 79 L440 200 L0 200Z" fill="url(#hfill)"/>
+                <path class="cone" d="M440 79 L480 66 L520 52 L560 42 L600 32 L640 22 L640 128.5 L600 122 L560 115 L520 105 L480 92 Z" fill="var(--chart-5)" opacity=".85"/>
+                <path class="cone" d="M440 79 L640 76" fill="none" stroke="var(--chart-4)" stroke-width="2" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"/>
+                <line class="cone" x1="440" x2="440" y1="0" y2="200" stroke="var(--muted-foreground)" stroke-width="1" stroke-dasharray="2 4" vector-effect="non-scaling-stroke"/>
+                <path class="line" d="M0 142 L20 148 L40 136 L60 128.5 L80 134.5 L100 121 L120 113.5 L140 118 L160 104.5 L180 97 L200 107.5 L220 98.5 L240 91 L260 101.5 L280 88 L300 94 L320 83.5 L340 89.5 L360 80.5 L380 85 L400 76 L420 82 L440 79" fill="none" stroke="var(--chart-1)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+              </svg>
+              <span class="ax" style="top:11%">$402</span>
+              <span class="ax" style="top:64%">$331</span>
+            </div>
+
+            <div class="chart-foot">
+              <div class="seg" role="group" aria-label="Period" id="periods">
+                <button aria-pressed="false">1W</button><button aria-pressed="false">1M</button><button aria-pressed="true">3M</button><button aria-pressed="false">1Y</button>
+              </div>
+              <div class="legend"><span><i></i>Price</span><span><i class="rng"></i>Likely range, 21 days</span><span><i class="med"></i>Median</span></div>
+            </div>
+          </section>
+
+          <!-- News & filings -->
+          <section class="glass card card-pad enter o4" aria-labelledby="news-h">
+            <div class="section-head">
+              <h2 id="news-h">News &amp; filings</h2>
+              <span class="label">latest 5</span>
+            </div>
+            <div class="item"><span class="t"><span class="tag">Earnings</span>Revenue up 12% from a year ago; operating margin 6.1%</span><span class="label">1d</span><span class="meta">Company press release · Nasdaq: TSLA</span></div>
+            <div class="item"><span class="t"><span class="tag">8-K</span>Filed an 8-K: entry into a material agreement</span><span class="label">3d</span><span class="meta">SEC EDGAR</span></div>
+            <div class="item"><span class="t"><span class="tag">Analyst</span>Price target raised to $390, rating kept at neutral</span><span class="label">3d</span><span class="meta">Reuters</span></div>
+            <div class="item"><span class="t"><span class="tag">Deal</span>Signs a multi-year battery supply deal with a Canadian miner</span><span class="label">4d</span><span class="meta">Globe and Mail</span></div>
+            <div class="item"><span class="t"><span class="tag">Analyst</span>Deliveries estimate trimmed for next quarter</span><span class="label">6d</span><span class="meta">Yahoo Finance</span></div>
+          </section>
+        </div>
+
+        <div class="rcol">
+          <!-- Outlook: honest by design -->
+          <section class="glass card card-pad enter o2" id="outlook" aria-labelledby="out-h">
+            <div class="section-head" style="margin-bottom:2px">
+              <h2 id="out-h"><i data-lucide="scale" style="color:var(--muted-foreground)"></i>Outlook</h2>
+              <div class="seg" role="group" aria-label="Horizon in days" id="horizons">
+                <button data-h="5" aria-pressed="false">5 d</button><button data-h="21" aria-pressed="true">21 d</button><button data-h="63" aria-pressed="false">63 d</button>
+              </div>
+            </div>
+            <div class="headline-edge">No clear edge</div>
+            <div class="chance"><span class="num" id="chance">52%</span><span class="muted" style="font-size:13.5px">chance to beat the market over <span id="hd">21</span> days</span></div>
+            <p class="muted small" style="margin:8px 0 0">A coin flip is 50%. Picks need 58%.</p>
+            <div style="margin-top:14px">
+              <div class="label">Likely range at <span id="hd2">21</span> days</div>
+              <div class="range" id="rng" aria-label="Likely price range">
+                <span class="band" id="band"></span><span class="mid" id="mid"></span><span class="now" id="nowm"></span>
+              </div>
+              <div class="scale">
+                <div><span class="label">Low (q10)</span><b id="q10">$331</b></div>
+                <div><span class="label">Median</span><b id="q50">$366</b></div>
+                <div><span class="label">High (q90)</span><b id="q90">$402</b></div>
+              </div>
+              <p class="muted small" style="margin:10px 0 0">The circle is today's price, $364.18. The range is wide on purpose: nine times in ten the price should land inside it.</p>
+            </div>
+          </section>
+
+          <!-- Your position (only if held) -->
+          <section class="glass card rim lift card-pad enter o3" aria-labelledby="own-h">
+            <div class="own-top">
+              <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 id="own-h">You own 8</h2><span class="label">TFSA</span></span>
+              <span class="chip hold">Hold</span>
+            </div>
+            <div class="stats" style="margin-top:12px;grid-template-columns:repeat(3,minmax(0,1fr))">
+              <div class="stat"><span class="label">Value</span><b class="num">$2,913</b></div>
+              <div class="stat"><span class="label">Avg cost</span><b class="num">$312.40</b></div>
+              <div class="stat"><span class="label">P/L</span><b class="num gain">+$414</b></div>
+            </div>
+            <div class="plan-lines">
+              <div class="plan-line"><span>Sell at<small>Limit sell 8 sh · expiry 90 days</small></span><span class="num gain">$402.10</span></div>
+              <div class="plan-line"><span>Break-even<small>Your cost plus fees</small></span><span class="num">$312.40</span></div>
+              <div class="plan-line"><span>Stop<small>If it closes below, the plan says sell</small></span><span class="num loss">$330.80</span></div>
+            </div>
+            <div class="note"><i data-lucide="circle-check"></i><span>Validated in the benchmark. The plan's sell-at price held up in the replays.</span></div>
+            <a class="link" href="portfolio_2.html" style="margin-top:12px">Full exit plan <i data-lucide="chevron-right"></i></a>
+          </section>
+
+          <!-- Earnings -->
+          <section class="glass card card-pad enter o5" aria-labelledby="earn-h">
+            <div class="section-head" style="margin-bottom:6px">
+              <h2 id="earn-h">Earnings</h2>
+              <span class="label">next Jan 28</span>
+            </div>
+            <p class="small muted" style="margin:0 0 10px">Last quarter (Sep 30), each against a year ago:</p>
+            <div class="stats" style="grid-template-columns:repeat(3,minmax(0,1fr))">
+              <div class="stat"><span class="label">Revenue</span><b class="num">$25.2B</b><span class="num small gain">+12%</span></div>
+              <div class="stat"><span class="label">Op. margin</span><b class="num">6.1%</b><span class="num small muted">5.4% before</span></div>
+              <div class="stat"><span class="label">EPS</span><b class="num">$0.62</b><span class="num small muted">$0.72 before</span></div>
+            </div>
+            <p class="small muted" style="margin:10px 0 0">Trailing 12 months: revenue <span class="num">$96.8B</span> · operating margin <span class="num">6.8%</span> · EPS <span class="num">$2.41</span>.</p>
+          </section>
+
+          <!-- Actions -->
+          <section class="glass card card-pad enter o6" aria-label="Actions">
+            <div class="actions">
+              <button class="btn btn-glass" id="watch" aria-pressed="false"><i data-lucide="star"></i>Watch</button>
+              <button class="btn btn-glass" data-sheet="alerts"><i data-lucide="bell"></i>Alerts</button>
+              <a class="btn btn-glass" href="#sources" id="src-open"><i data-lucide="activity"></i>Sources</a>
+            </div>
+            <details class="src" id="sources">
+              <summary><span>7 of 8 sources answered in the Fri 3:15 PM run</span><i data-lucide="chevron-down"></i></summary>
+              <div class="src-grid">
+                <span><span class="sdot"></span><span class="num">Yahoo prices</span></span>
+                <span><span class="sdot"></span><span class="num">SEC EDGAR</span></span>
+                <span><span class="sdot"></span><span class="num">Google News</span></span>
+                <span><span class="sdot"></span><span class="num">Finnhub</span></span>
+                <span><span class="sdot"></span><span class="num">FINRA short data</span></span>
+                <span><span class="sdot partial"></span><span class="num">Analyst targets</span><span class="sub">partial</span></span>
+                <span><span class="sdot stale"></span><span class="num">Insider trades</span><span class="sub">stale</span></span>
+                <span><span class="sdot skipped"></span><span class="num">Bank of Canada</span><span class="sub">skipped</span></span>
+              </div>
+            </details>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- Alerts sheet -->
+    <div class="sheet narrow glass glass-strong" id="alerts" role="dialog" aria-label="Price alerts for TSLA">
+      <div class="grabber"></div>
+      <div class="sheet-head"><h2>Alert me about TSLA</h2><button class="icon-btn" data-close aria-label="Close"><i data-lucide="x"></i></button></div>
+      <p class="muted small" style="margin:0">Price now <span class="num">$364.18</span>. You get one alert when the price crosses a level.</p>
+      <div class="fields">
+        <label class="field"><span>Price goes above</span><input class="input num" inputmode="decimal" placeholder="402.10" value="402.10"></label>
+        <label class="field"><span>Price goes below</span><input class="input num" inputmode="decimal" placeholder="330.80" value="330.80"></label>
+      </div>
+      <div class="cur-alert"><span style="min-width:0">Exit plan stop <span class="num">$330.80</span> · below</span><span class="chip waiting">Waiting</span></div>
+      <div style="display:flex;gap:8px"><button class="btn btn-primary" style="flex:1" data-close>Save alerts</button><button class="btn btn-glass" data-close>Cancel</button></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Phone tab bar -->
+<nav class="tabbar glass glass-strong glass-liquid" aria-label="Main">
+  <a class="tab" href="#"><i data-lucide="sun"></i>Today</a>
+  <a class="tab" href="portfolio_2.html"><i data-lucide="wallet"></i>Portfolio</a>
+  <a class="tab" href="daytrade_1.html"><i data-lucide="chart-candlestick"></i>Day trade</a>
+  <a class="tab" href="#" aria-current="page"><i data-lucide="search"></i>Search</a>
+  <button class="tab" data-sheet="more"><i data-lucide="ellipsis"></i>More</button>
+</nav>
+
+<!-- More sheet -->
+<div class="scrim"></div>
+<div class="sheet glass glass-strong" id="more" role="dialog" aria-label="More">
+  <div class="grabber"></div>
+  <div class="more-grid">
+    <a class="more-item glass" href="picks_2.html"><i data-lucide="sparkles"></i>Picks</a>
+    <a class="more-item glass" href="invest_1.html"><i data-lucide="piggy-bank"></i>Invest</a>
+    <a class="more-item glass" href="watchlist_2.html"><i data-lucide="eye"></i>Watchlist</a>
+    <a class="more-item glass" href="#"><i data-lucide="activity"></i>Sources</a>
+    <a class="more-item glass" href="#"><i data-lucide="settings"></i>Settings</a>
+    <button class="more-item glass" data-theme-toggle style="border:0;cursor:pointer"><i data-lucide="moon"></i>Dark mode</button>
+  </div>
+</div>
+
+<script src="glass_ui.js"></script>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s)
+  const seg = (sel, cb) => { const g = $(sel); g.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+    g.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false')); cb && cb(b) })) }
+  seg('#periods')
+  const price = 364.18
+  const D = { 5: { p: '50.6%', lo: 349, md: 365, hi: 381 }, 21: { p: '52%', lo: 331, md: 366, hi: 402 }, 63: { p: '53%', lo: 305, md: 371, hi: 445 } }
+  const show = (h) => {
+    const d = D[h], pad = (d.hi - d.lo) * 0.18, min = d.lo - pad, max = d.hi + pad, at = (v) => ((v - min) / (max - min)) * 100
+    $('#chance').textContent = d.p; $('#hd').textContent = h; $('#hd2').textContent = h
+    $('#q10').textContent = '$' + d.lo; $('#q50').textContent = '$' + d.md; $('#q90').textContent = '$' + d.hi
+    const band = $('#band'); band.style.left = at(d.lo) + '%'; band.style.width = (at(d.hi) - at(d.lo)) + '%'
+    $('#mid').style.left = at(d.md) + '%'; $('#nowm').style.left = at(price) + '%'
+  }
+  seg('#horizons', (b) => show(b.dataset.h)); show(21)
+  const w = $('#watch'); w.addEventListener('click', () => { const on = w.getAttribute('aria-pressed') !== 'true'; w.setAttribute('aria-pressed', on); w.lastChild.textContent = on ? 'Watching' : 'Watch' })
+  $('#src-open').addEventListener('click', (e) => { e.preventDefault(); const d = $('#sources'); d.open = !d.open })
+})()
+
+</script>
+</body>
+</html>

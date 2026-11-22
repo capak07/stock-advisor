@@ -1,0 +1,246 @@
+/* Glass: the stock-advisor liquid-glass theme (superdesign step 2, theme_2.css). Replaces Ledger (theme_1.css).
+ *
+ * Frosted, translucent surfaces float over a slow "aurora" of warm colour: apricot, rose-plum, lilac, butter.
+ * The aurora is the only decoration and it carries no meaning, so its hues stay away from green and red.
+ * The interface itself stays ink-and-white (night: white-on-plum-graphite). Colour on top of the glass is
+ * kept for meaning: gains and losses, the five holding actions, the four risk levels, source status.
+ * One brand accent, plum, marks where you are (active tab, focus ring) and is never a gain or a loss.
+ * Numbers stay in Geist Mono so prices and percentages line up. No blue or indigo anywhere.
+ *
+ * Token names match theme_1.css one for one, so the app's components pick the theme up unchanged;
+ * the glass and aurora tokens at the end of each block are new.
+ */
+:root {
+  --background: oklch(0.9650 0.0120 70);          /* warm base, mostly hidden under the aurora */
+  --foreground: oklch(0.2000 0.0120 50);
+  --card: oklch(1 0 0 / 0.55);                    /* glass */
+  --card-foreground: oklch(0.2000 0.0120 50);
+  --popover: oklch(0.9900 0.0050 80 / 0.86);      /* menus: more opaque glass, text never fights the page */
+  --popover-foreground: oklch(0.2000 0.0120 50);
+  --primary: oklch(0.2200 0.0120 50);             /* ink: the prominent button */
+  --primary-foreground: oklch(0.9900 0.0030 85);
+  --secondary: oklch(1 0 0 / 0.60);
+  --secondary-foreground: oklch(0.2000 0.0120 50);
+  --muted: oklch(0.2500 0.0200 50 / 0.06);
+  --muted-foreground: oklch(0.4500 0.0150 55);    /* darker than Ledger's: it sits on glass */
+  --accent: oklch(1 0 0 / 0.70);                  /* hover */
+  --accent-foreground: oklch(0.2000 0.0120 50);
+  --destructive: oklch(0.5300 0.1900 27);
+  --destructive-foreground: oklch(0.9900 0.0030 85);
+  --border: oklch(0.2500 0.0200 50 / 0.10);       /* hairlines inside glass */
+  --input: oklch(0.2500 0.0200 50 / 0.16);
+  --ring: oklch(0.5500 0.1700 345);               /* plum */
+
+  --brand: oklch(0.5500 0.1700 345);
+  --brand-soft: oklch(0.5500 0.1700 345 / 0.14);
+
+  /* Meaning. Strong tone for text, dots and bars; soft tone (translucent, so it tints the glass) for badges. */
+  --gain: oklch(0.4900 0.1400 155);
+  --gain-soft: oklch(0.6000 0.1400 155 / 0.15);
+  --loss: oklch(0.5300 0.1900 27);
+  --loss-soft: oklch(0.6000 0.1900 27 / 0.13);
+  --attention: oklch(0.5100 0.1150 75);           /* Review, warnings, Paper */
+  --attention-soft: oklch(0.7800 0.1300 85 / 0.22);
+  --trim: oklch(0.5300 0.1500 48);
+  --trim-soft: oklch(0.7000 0.1500 50 / 0.16);
+  --hold: oklch(0.4600 0.0150 55);
+  --hold-soft: oklch(0.2500 0.0200 50 / 0.07);
+  --risk-low: oklch(0.5000 0.1000 165);
+
+  --chart-1: oklch(0.2200 0.0120 50);             /* the portfolio, the price */
+  --chart-2: oklch(0.6200 0.1500 50);             /* XIU.TO: ember */
+  --chart-3: oklch(0.5500 0.1500 345);            /* SPY: plum (was a blue-grey) */
+  --chart-4: oklch(0.5300 0.1400 155);            /* forecast median */
+  --chart-5: oklch(0.5300 0.1400 155 / 0.14);     /* forecast range */
+
+  --sidebar: oklch(1 0 0 / 0.42);
+  --sidebar-foreground: oklch(0.2000 0.0120 50);
+  --sidebar-primary: oklch(0.2200 0.0120 50);
+  --sidebar-primary-foreground: oklch(0.9900 0.0030 85);
+  --sidebar-accent: oklch(1 0 0 / 0.70);
+  --sidebar-accent-foreground: oklch(0.2000 0.0120 50);
+  --sidebar-border: oklch(1 0 0 / 0.60);
+  --sidebar-ring: oklch(0.5500 0.1700 345);
+
+  --font-sans: var(--font-geist), 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  --font-mono: var(--font-geist-mono), 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius: 1.25rem;                              /* 20px cards; controls get their own steps below */
+  --radius-sm: 0.625rem;                          /* 10px: chips' inner parts, focus outline */
+  --radius-md: 0.875rem;                          /* 14px: inputs, buttons, nav links */
+  --radius-lg: var(--radius);                     /* 20px: cards, sheets */
+  --radius-xl: 1.75rem;                           /* 28px: hero card, floating tab bar */
+
+  --shadow-2xs: 0 1px 1px 0 hsl(25 30% 20% / 0.04);
+  --shadow-xs: 0 1px 2px 0 hsl(25 30% 20% / 0.05), 0 10px 30px -14px hsl(335 35% 30% / 0.22);
+  --shadow-sm: 0 1px 2px 0 hsl(25 30% 20% / 0.06), 0 12px 32px -14px hsl(335 35% 30% / 0.24);
+  --shadow: 0 2px 4px 0 hsl(25 30% 20% / 0.06), 0 16px 36px -16px hsl(335 35% 30% / 0.26);
+  --shadow-md: 0 2px 6px -1px hsl(25 30% 20% / 0.07), 0 20px 40px -18px hsl(335 35% 30% / 0.28);
+  --shadow-lg: 0 6px 16px -4px hsl(25 30% 20% / 0.10), 0 28px 56px -24px hsl(335 35% 30% / 0.32);
+  --shadow-xl: 0 12px 28px -8px hsl(25 30% 20% / 0.14), 0 36px 72px -28px hsl(335 35% 30% / 0.34);
+  --shadow-2xl: 0 24px 48px -12px hsl(25 30% 20% / 0.20);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+
+  /* Glass. One recipe, two strengths: cards use the regular glass, bars and sheets the strong one. */
+  --glass-bg: oklch(1 0 0 / 0.42);
+  --glass-bg-strong: oklch(1 0 0 / 0.66);
+  --glass-border: oklch(1 0 0 / 0.70);            /* the bright rim */
+  --glass-edge: oklch(0.2500 0.0200 50 / 0.08);   /* a hairline outside the rim, so glass reads on pale aurora */
+  --glass-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.95), inset 0 -1px 0 0 oklch(1 0 0 / 0.30);
+  --glass-sheen: linear-gradient(160deg, oklch(1 0 0 / 0.55) 0%, oklch(1 0 0 / 0.08) 38%, oklch(1 0 0 / 0) 60%);
+  --glass-blur: 22px;
+  --glass-saturate: 170%;
+
+  /* The aurora behind everything. */
+  --aurora-1: oklch(0.8600 0.1000 60);            /* apricot */
+  --aurora-2: oklch(0.8200 0.0950 345);           /* rose-plum */
+  --aurora-3: oklch(0.8700 0.0700 305);           /* lilac */
+  --aurora-4: oklch(0.9300 0.0700 95);            /* butter */
+  --aurora-base: oklch(0.9650 0.0120 70);
+}
+
+.dark {
+  --background: oklch(0.1500 0.0150 320);          /* plum-graphite */
+  --foreground: oklch(0.9600 0.0050 80);
+  --card: oklch(1 0 0 / 0.07);
+  --card-foreground: oklch(0.9600 0.0050 80);
+  --popover: oklch(0.2000 0.0180 320 / 0.88);
+  --popover-foreground: oklch(0.9600 0.0050 80);
+  --primary: oklch(0.9600 0.0050 80);             /* the prominent button is white at night */
+  --primary-foreground: oklch(0.1700 0.0150 320);
+  --secondary: oklch(1 0 0 / 0.09);
+  --secondary-foreground: oklch(0.9600 0.0050 80);
+  --muted: oklch(1 0 0 / 0.06);
+  --muted-foreground: oklch(0.7500 0.0120 70);
+  --accent: oklch(1 0 0 / 0.12);
+  --accent-foreground: oklch(0.9600 0.0050 80);
+  --destructive: oklch(0.7000 0.1800 25);
+  --destructive-foreground: oklch(0.1500 0.0150 320);
+  --border: oklch(1 0 0 / 0.10);
+  --input: oklch(1 0 0 / 0.16);
+  --ring: oklch(0.7400 0.1500 345);
+
+  --brand: oklch(0.7400 0.1500 345);
+  --brand-soft: oklch(0.7400 0.1500 345 / 0.18);
+
+  --gain: oklch(0.7800 0.1500 155);
+  --gain-soft: oklch(0.7800 0.1500 155 / 0.16);
+  --loss: oklch(0.7200 0.1700 25);
+  --loss-soft: oklch(0.7200 0.1700 25 / 0.16);
+  --attention: oklch(0.8200 0.1300 80);
+  --attention-soft: oklch(0.8200 0.1300 80 / 0.16);
+  --trim: oklch(0.7600 0.1500 55);
+  --trim-soft: oklch(0.7600 0.1500 55 / 0.16);
+  --hold: oklch(0.7600 0.0120 70);
+  --hold-soft: oklch(1 0 0 / 0.08);
+  --risk-low: oklch(0.7500 0.1100 165);
+
+  --chart-1: oklch(0.9600 0.0050 80);
+  --chart-2: oklch(0.7600 0.1400 55);
+  --chart-3: oklch(0.7400 0.1400 345);
+  --chart-4: oklch(0.7800 0.1500 155);
+  --chart-5: oklch(0.7800 0.1500 155 / 0.16);
+
+  --sidebar: oklch(1 0 0 / 0.05);
+  --sidebar-foreground: oklch(0.9600 0.0050 80);
+  --sidebar-primary: oklch(0.9600 0.0050 80);
+  --sidebar-primary-foreground: oklch(0.1700 0.0150 320);
+  --sidebar-accent: oklch(1 0 0 / 0.10);
+  --sidebar-accent-foreground: oklch(0.9600 0.0050 80);
+  --sidebar-border: oklch(1 0 0 / 0.12);
+  --sidebar-ring: oklch(0.7400 0.1500 345);
+
+  /* Night glass draws its edges with the rim; shadows only lift floating things. */
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 10px 30px -14px hsl(320 40% 3% / 0.6);
+  --shadow-sm: 0 12px 32px -14px hsl(320 40% 3% / 0.6);
+  --shadow: 0 16px 36px -16px hsl(320 40% 3% / 0.65);
+  --shadow-md: 0 20px 40px -18px hsl(320 40% 3% / 0.65);
+  --shadow-lg: 0 28px 56px -24px hsl(320 40% 3% / 0.7);
+  --shadow-xl: 0 36px 72px -28px hsl(320 40% 3% / 0.75);
+  --shadow-2xl: 0 24px 48px -12px hsl(320 40% 3% / 0.8);
+
+  --glass-bg: oklch(1 0 0 / 0.07);
+  --glass-bg-strong: oklch(0.2200 0.0200 320 / 0.62);
+  --glass-border: oklch(1 0 0 / 0.14);
+  --glass-edge: oklch(0 0 0 / 0.30);
+  --glass-highlight: inset 0 1px 0 0 oklch(1 0 0 / 0.20), inset 0 -1px 0 0 oklch(1 0 0 / 0.04);
+  --glass-sheen: linear-gradient(160deg, oklch(1 0 0 / 0.12) 0%, oklch(1 0 0 / 0.02) 40%, oklch(1 0 0 / 0) 60%);
+  --glass-blur: 26px;
+  --glass-saturate: 150%;
+
+  --aurora-1: oklch(0.4200 0.1200 345);           /* plum */
+  --aurora-2: oklch(0.4500 0.1100 55);            /* ember */
+  --aurora-3: oklch(0.3600 0.1000 305);           /* violet */
+  --aurora-4: oklch(0.3400 0.0600 80);            /* bronze */
+  --aurora-base: oklch(0.1500 0.0150 320);
+}
+
+/* Aliases, declared for both modes so each resolves against its own mode's colours. Unchanged from Ledger. */
+:root,
+.dark {
+  --action-sell: var(--loss);
+  --action-trim: var(--trim);
+  --action-review: var(--attention);
+  --action-add: var(--gain);
+  --action-hold: var(--hold);
+  --risk-medium: var(--attention);
+  --risk-high: var(--trim);
+  --risk-very-high: var(--loss);
+  --status-ok: var(--gain);
+  --status-partial: var(--attention);
+  --status-stale: var(--trim);
+  --status-failed: var(--loss);
+  --status-skipped: var(--hold);
+}
+
+/* ---------- The two recipes the theme rests on ---------- */
+
+/* The aurora: fixed behind the page, four soft blobs over the warm base. Motion is added in step 3. */
+.aurora {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none; background: var(--aurora-base);
+}
+.aurora::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(38% 42% at 18% 22%, var(--aurora-1), transparent 70%),
+    radial-gradient(34% 40% at 82% 18%, var(--aurora-2), transparent 70%),
+    radial-gradient(40% 44% at 70% 82%, var(--aurora-3), transparent 70%),
+    radial-gradient(30% 34% at 22% 86%, var(--aurora-4), transparent 70%);
+  filter: blur(40px) saturate(115%);
+}
+
+/* Glass: blur and lift what is behind, a bright rim, a top highlight and a soft sheen. */
+.glass {
+  position: relative; isolation: isolate;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), 0 0 0 1px var(--glass-edge), var(--shadow-xs);
+  border-radius: var(--radius-lg);
+}
+.glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: var(--glass-sheen);
+}
+.glass-strong { background: var(--glass-bg-strong); }
+
+/* Liquid refraction, Chrome-based browsers only (the Android app, Chrome, Edge): the bars bend what is
+ * behind them through an SVG displacement filter. Safari and Firefox keep the plain frosted glass above. */
+@supports (backdrop-filter: url(#liquid)) {
+  .glass-liquid {
+    -webkit-backdrop-filter: url(#liquid) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: url(#liquid) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+}
+
+/* No blur where it cannot be drawn or is not wanted: solid enough to read. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--glass-bg-strong); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--popover); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}

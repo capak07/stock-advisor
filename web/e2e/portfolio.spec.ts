@@ -20,7 +20,7 @@ test.beforeEach(resetData)
 const holdings = (page: Page) => page.locator('#holdings tbody tr')
 
 test('an empty portfolio invites the first buy', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/portfolio')
   await expect(page.getByRole('heading', { name: 'My Portfolio' })).toBeVisible()
   await expect(page.getByText('No holdings yet. Add your first buy to start.')).toBeVisible()
   await expect(page.getByText('No actions yet')).toBeVisible()
@@ -29,7 +29,7 @@ test('an empty portfolio invites the first buy', async ({ page }) => {
 
 test('holdings are valued in CAD, charted against both benchmarks, and warned about', async ({ page }) => {
   await seedPortfolio()
-  await page.goto('/')
+  await page.goto('/portfolio')
 
   await expect(page.getByText('Crypto and TFSA accounts · values in CAD at the latest Bank of Canada rate (1.4000)')).toBeVisible()
   await expect(holdings(page)).toHaveCount(3)
@@ -115,7 +115,7 @@ test('the actions of the latest run fill the Actions card and the holdings table
     exit_by: addDays(today(), 10),
     risk_level: 'medium',
   })
-  await page.goto('/')
+  await page.goto('/portfolio')
 
   const actions = page.getByRole('heading', { name: 'Actions' }).locator('../..')
   const sell = actions.locator('.action-card.sell')
@@ -189,7 +189,7 @@ test('each action says how to place it, and each holding the stop to keep', asyn
     trailing_stop: 398.5,
     ref_price: 420,
   })
-  await page.goto('/')
+  await page.goto('/portfolio')
 
   // the order is priced off the latest close (a Refresh's live price when there is one), not the run's ref_price
   const lastShop = 160 - 0.5 * (days.length - 1)
@@ -235,7 +235,7 @@ test('an Add also offers the buy as one bracket order on the new shares', async 
     exit_by: addDays(today(), 14),
     risk_level: 'medium',
   })
-  await page.goto('/')
+  await page.goto('/portfolio')
   const guide = page.locator('.action-card.add .order-guide')
   // C$2,000 at C$100.50 is 19 sh; the take-profit is C$100 × 1.12, the stop loss the trailing stop
   await expect(guide).toContainText(
@@ -312,7 +312,7 @@ test("a holding's exit plan shows in the table, the cards and the hold list, and
       cost_price: 180,
     },
   })
-  await page.goto('/')
+  await page.goto('/portfolio')
 
   const by = shortDay(recheck)
   await expect(page.locator('#holdings thead')).toContainText('Exit plan')

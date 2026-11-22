@@ -232,8 +232,7 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .combo-tag { white-space: nowrap; }
 .combo-row.typed .combo-name { color: var(--muted-foreground); }
 .combo-note { margin: 0; padding: 8px 10px; font-size: 13px; }
-/* An open list sits above what follows its box: the next card, or the page beside the sidebar. */
-.sidebar:has(.combo-list:not([hidden])) { z-index: 50; }
+/* An open list sits above what follows its box: the next card. */
 .card:has(.combo-list:not([hidden])) { position: relative; z-index: 50; }
 
 /* ---------- How to place it (2026-10-28 order guidance design; Ledger classes, no mockup file) ---------- */

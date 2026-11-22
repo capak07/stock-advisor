@@ -164,7 +164,7 @@ export function AlertsCard({
         {(error('symbol') || error('direction')) && <p className="error">{error('symbol') ?? error('direction')}</p>}
       </form>
       <p className="sub" style={{ margin: '10px 0 0' }}>
-        Alerts are checked on each run (about 3 a day), not live, and appear only here and on My Portfolio.
+        Alerts are checked on each run (about 3 a day), not live, and appear only here and on Today.
       </p>
     </section>
   )

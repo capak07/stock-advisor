@@ -18,8 +18,8 @@ const brand = (
 )
 
 /**
- * The app frame from the mockups: a sidebar on desktop, a status bar with the latest runs, the
- * stale banner, the disclaimer, and tabs at the bottom on phones.
+ * The app frame from the mockups: a floating glass sidebar on desktop, a top bar led by the symbol search, the
+ * stale banner, the disclaimer, and a floating tab bar on phones.
  */
 export function Shell({
   runs,
@@ -52,9 +52,20 @@ export function Shell({
           <Link className="brand" href="/">
             {brand}ADVISOR
           </Link>
-          <FindTicker />
           <SidebarLinks />
           <div className="sidebar-foot">
+            {sources && (
+              <Link className="sidebar-note" href="/sources">
+                <span>
+                  <span className="num">{sources}</span>&nbsp;sources
+                </span>
+              </Link>
+            )}
+            {/* Every market is in its paper period until picks are graded live (spec §6.6, Plan 4). */}
+            <span className="sidebar-note" title="No picks graded live yet">
+              <span className="dot paper" />
+              US Paper · TSX Paper
+            </span>
             <form action={signOut}>
               <button type="submit" className="btn btn-ghost btn-sm" style={{ paddingLeft: 0 }}>
                 <LogOut />
@@ -68,28 +79,15 @@ export function Shell({
             <Link className="brand" href="/" aria-label="Advisor">
               {brand}
             </Link>
-            <RunsPill runs={views} />
-            {sources && (
-              <Link className="pill hide-sm" href="/sources">
-                <span className="num">{sources}</span>&nbsp;sources
-              </Link>
-            )}
-            {/* Every market is in its paper period until picks are graded live (spec §6.6, Plan 4). */}
-            <span className="pill hide-sm" title="No picks graded live yet">
-              <span className="dot paper" />
-              US Paper
-            </span>
-            <span className="pill hide-sm" title="No picks graded live yet">
-              <span className="dot paper" />
-              TSX Paper
-            </span>
-            <span className="status-spacer" />
-            <RefreshPrices liveAt={liveAt} />
-            <ThemeToggle />
-            {/* on a phone the search is a row of its own at the top; the sidebar has it on a desktop */}
-            <div className="statusbar-search only-sm">
+            {/* Search comes first on every page and at every width (spec §6); "/" focuses it on a desktop. */}
+            <div className="statusbar-search">
               <FindTicker />
             </div>
+            <RefreshPrices liveAt={liveAt} />
+            <div className="only-lg">
+              <RunsPill runs={views} />
+            </div>
+            <ThemeToggle />
           </header>
           <div className="banners" aria-live="polite">
             {stale && (

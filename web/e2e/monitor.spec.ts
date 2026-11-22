@@ -8,7 +8,7 @@ test.beforeEach(async () => {
   await seedPortfolio() // AAPL (US) and RY.TO (TSX) held
 })
 
-test('My Portfolio lists a headline, an important 8-K, an insider buy and an upcoming report', async ({ page }) => {
+test('Today lists a headline, an important 8-K, an insider buy and an upcoming report', async ({ page }) => {
   await seedNews([
     { symbol: 'AAPL', asset_type: 'stock', hoursAgo: 3, outlet: 'Reuters', url: 'https://example.com/aapl', title: 'Apple unveils a new chip', sentiment: 0.4 },
   ])

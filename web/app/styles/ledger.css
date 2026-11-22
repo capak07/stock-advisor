@@ -67,8 +67,8 @@ main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0;
   color: var(--muted-foreground) !important; font-size: 14px; font-weight: 500; transition: color 150ms, background 150ms;
 }
 .nav-link:hover { color: var(--foreground) !important; background: var(--accent); }
-/* Until the sliding .nav-pill is rendered, the current link wears the pill's look itself. */
-.nav-link[aria-current="page"] { color: var(--foreground) !important; background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--glass-border); }
+/* The sliding .nav-pill (NavPill.tsx) draws the current link's background; the link keeps the colours. */
+.nav-link[aria-current="page"] { color: var(--foreground) !important; }
 .nav-link[aria-current="page"] svg { color: var(--brand); }
 .nav-link svg { width: 18px; height: 18px; }
 .nav-sep { height: 1px; background: var(--border); margin: 10px 10px; }
@@ -76,6 +76,8 @@ main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0;
 .sidebar-search input { width: 100%; padding-left: 32px !important; }
 .sidebar-search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--muted-foreground); }
 .sidebar-foot { margin-top: auto; padding: 10px 12px; font-size: 12px; color: var(--muted-foreground); display: grid; gap: 6px; }
+.sidebar-note { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground) !important; }
+a.sidebar-note:hover { color: var(--foreground) !important; }
 
 /* The top bar is transparent; its search field is a 44 px glass pill (glass.css: strong glass, liquid). */
 .statusbar {
@@ -92,8 +94,8 @@ main.page > *, main.page section > *, main.page .grid > *, .card { min-width: 0;
 }
 .statusbar .brand { padding: 0 6px 0 0; }
 @media (min-width: 1024px) { .statusbar .brand { display: none; } }
-.status-spacer { flex: 1; }
-.statusbar-search { flex-basis: 100%; min-width: 0; }
+/* The search pill takes the row's free width, at every size (spec §6: search first on every page). */
+.statusbar-search { flex: 1; min-width: 0; display: flex; }
 .statusbar-search > .field { flex: 1; min-width: 0; }
 .statusbar-search .error:empty { display: none; }
 .statusbar-search .find { height: 44px; border-radius: 999px; color: var(--muted-foreground); }
@@ -156,8 +158,8 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
   transition: transform 240ms cubic-bezier(.3,1.4,.5,1), background 150ms;
 }
 .bottom-tab svg { width: 21px; height: 21px; }
-/* Until the sliding .tab-pill is rendered, the current tab wears the pill's look itself. */
-.bottom-tab[aria-current="page"] { color: var(--foreground) !important; background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--glass-border); }
+/* The sliding .tab-pill (NavPill.tsx) draws the current tab's background; More, current for a page under it, only takes the colours. */
+.bottom-tab[aria-current="page"] { color: var(--foreground) !important; }
 .bottom-tab[aria-current="page"] svg { color: var(--brand); animation: bump 180ms ease-out; }
 @keyframes bump { 50% { transform: scale(1.12); } }
 
@@ -332,6 +334,12 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
 .drawer-body { padding: 18px; overflow-y: auto; display: grid; gap: 14px; align-content: start; }
+/* The phone's Search sheet is (nearly) full-screen, so the results have room under the box. */
+#search-sheet .drawer-body { flex: 1; }
+@media (max-width: 767px) { #search-sheet { height: 92dvh; } }
+/* The More sheet's last row: the light/dark switch, the paper-period note, Sign out. */
+.more-foot { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted-foreground); }
+.more-note { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .drawer-foot { margin-top: auto; padding: 14px 18px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
 .grab { width: 40px; height: 5px; border-radius: 999px; background: var(--border); margin: 10px auto 0; flex: none; }
 @media (min-width: 768px) { .grab { display: none; } }

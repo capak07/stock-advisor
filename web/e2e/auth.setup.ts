@@ -28,6 +28,6 @@ setup('owner and visitor exist, and the owner is signed in', async ({ page }) =>
   await page.getByLabel('Email').fill(OWNER.email)
   await page.getByLabel('Password').fill(OWNER.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'My Portfolio' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible()
   await page.context().storageState({ path: OWNER_STATE })
 })

@@ -33,7 +33,7 @@ test('the owner signs in and out', async ({ page }) => {
   await page.getByLabel('Email').fill(OWNER.email)
   await page.getByLabel('Password').fill(OWNER.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'My Portfolio' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toBeVisible()
 
   await page.goto('/login')
   await expect(page).toHaveURL(/\/$/) // a signed-in owner doesn't see the sign-in page
@@ -60,5 +60,5 @@ test('someone who is not the owner sees no data', async ({ page }) => {
   await page.getByLabel('Password').fill(VISITOR.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByText("This account isn't the owner")).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'My Portfolio' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Today', level: 1 })).toHaveCount(0)
 })

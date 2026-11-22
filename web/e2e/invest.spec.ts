@@ -219,7 +219,8 @@ test.describe('on a phone', () => {
     await sql`update symbols set name = 'Royal Bank of Canada Global Diversified Holdings and Trust Incorporated' where symbol = 'RY.TO'`
     await page.goto('/invest?amount=1000&asset=stocks')
     await expect(stockRows(page)).toHaveCount(2)
-    await expect(page.getByRole('navigation', { name: 'Main' }).last().getByRole('link', { name: 'Invest' })).toHaveAttribute('aria-current', 'page')
+    // Invest is under More on a phone (spec §6), so More is the current tab
+    await expect(page.getByRole('navigation', { name: 'Main' }).last().getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)
   })

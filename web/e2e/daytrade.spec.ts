@@ -316,11 +316,11 @@ test('the page refreshes itself while the day is scanning', async ({ page }) => 
   await expect(page.getByTestId('daytrade-status')).toHaveText(/^Today's scan failed: the scan failed: test/)
 })
 
-test('the sidebar reaches Day trade right after Invest', async ({ page }) => {
+test('the sidebar reaches Day trade right after Portfolio', async ({ page }) => {
   await page.goto('/')
   const links = page.getByRole('complementary', { name: 'Main' }).getByRole('link')
   const names = await links.allInnerTexts()
-  expect(names.indexOf('Day trade')).toBe(names.indexOf('Invest') + 1)
+  expect(names.indexOf('Day trade')).toBe(names.indexOf('Portfolio') + 1)
   await page.getByRole('complementary', { name: 'Main' }).getByRole('link', { name: 'Day trade' }).click()
   await expect(page.getByRole('heading', { name: 'Day trade', level: 1 })).toBeVisible()
 })
@@ -340,7 +340,7 @@ test.describe('on a phone', () => {
       headlines: [{ title: `TGTX ${'quarterly-results-'.repeat(8)}beat`, url: 'https://finance.yahoo.com/x', published_at: ago(60).toISOString(), outlet: 'Reuters' }],
     })
     await seedDaytradeSignal({ symbol: 'AMD', triggerAt: ago(5), entry: 50, stop: 49, eligible: false, netHistoryR: -0.2 })
-    // Day trade is a tab on a phone (owner, 2026-11-15: in place of Watchlist, which moved under More)
+    // Day trade is a phone tab, after Today and Portfolio (spec §6)
     await page.goto('/')
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
     await tabs.getByRole('link', { name: 'Day trade' }).click()

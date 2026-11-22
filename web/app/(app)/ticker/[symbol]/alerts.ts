@@ -8,6 +8,7 @@ import type { FormState } from '@/lib/trade-form'
 
 const refresh = () => {
   revalidatePath('/')
+  revalidatePath('/portfolio')
   revalidatePath('/ticker/[symbol]', 'page')
 }
 
@@ -48,7 +49,7 @@ export async function addAlert(_prev: FormState, data: FormData): Promise<FormSt
 
 const validId = (id: unknown): id is number => typeof id === 'number' && Number.isSafeInteger(id) && id > 0
 
-/** Hide a hit alert from My Portfolio and the ticker page. */
+/** Hide a hit alert from Today and the ticker page. */
 export async function dismissAlert(id: number): Promise<FormState> {
   if (!validId(id)) return { message: 'That alert was not found.', at: Date.now() }
   const supabase = await createClient()

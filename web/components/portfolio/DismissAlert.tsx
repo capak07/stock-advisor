@@ -4,7 +4,7 @@ import { useTransition } from 'react'
 import { dismissAlert } from '@/app/(app)/ticker/[symbol]/alerts'
 import { useToast } from '@/components/Toast'
 
-/** Dismiss a hit alert from the My Portfolio feed. */
+/** Dismiss a hit alert from the feed on Today. */
 export function DismissAlert({ id }: { id: number }) {
   const toast = useToast()
   const [pending, startTransition] = useTransition()

@@ -3,7 +3,7 @@ import { resetData, seedRun } from './db'
 
 test.beforeEach(resetData)
 
-test('the status bar shows the latest run and opens the last four', async ({ page }) => {
+test('the top bar shows the latest run and opens the last four', async ({ page }) => {
   await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: '2026-10-16T12:24:00Z' })
   await seedRun({
     kind: 'pre_close',
@@ -21,7 +21,7 @@ test('the status bar shows the latest run and opens the last four', async ({ pag
   await expect(runs).toContainText('Oct 16 · pre-open 08:24')
   await page.keyboard.press('Escape')
   await expect(runs).not.toHaveClass(/open/)
-  await expect(page.getByText('US Paper')).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Main' }).getByText('US Paper · TSX Paper')).toBeVisible()
   await expect(page.getByRole('contentinfo')).toContainText(
     'Not financial or tax advice. Forecasts are probabilistic and can be wrong.',
   )

@@ -6,7 +6,7 @@ test.beforeEach(resetData)
 const holdings = (page: Page) => page.locator('#holdings tbody tr')
 
 async function openBuy(page: Page) {
-  await page.goto('/')
+  await page.goto('/portfolio')
   await page.getByRole('button', { name: 'Buy' }).click()
   return page.getByRole('dialog', { name: 'Add a buy' })
 }
@@ -72,7 +72,7 @@ test('a stock missing from the lists needs a second look', async ({ page }) => {
 test('a sell shows its gain at average cost and reduces the holding', async ({ page }) => {
   await seedSymbols([{ symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' }])
   await seedLot({ account: 'tfsa', symbol: 'RY.TO', asset_type: 'stock', qty: 10, price: 170, currency: 'CAD', bought_at: daysAgo(30) })
-  await page.goto('/')
+  await page.goto('/portfolio')
   await page.getByRole('button', { name: 'Sell' }).click()
   const drawer = page.getByRole('dialog', { name: 'Add a sell' })
   await expect(drawer.getByLabel('Holding')).toHaveValue('tfsa:stock:RY.TO')

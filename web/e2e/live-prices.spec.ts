@@ -20,7 +20,7 @@ async function refreshedTo(page: Page, price: number) {
 }
 
 test("without a refresh, holdings are valued at the last run's prices", async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/portfolio')
   await expect(page.getByRole('button', { name: 'Refresh prices' })).toBeVisible()
   await expect(page.locator('#live-prices')).toHaveCount(0)
   await expect(ry(page)).toContainText('1,000')
@@ -28,14 +28,14 @@ test("without a refresh, holdings are valued at the last run's prices", async ({
 
 test("after a refresh, holdings are valued at the live price and the top bar says when", async ({ page }) => {
   await refreshedTo(page, 150)
-  await page.goto('/')
+  await page.goto('/portfolio')
   await expect(page.locator('#live-prices')).toContainText(/^Live prices \d{1,2}:\d{2}/)
   await expect(ry(page)).toContainText('1,500')
 })
 
 test('a malformed live-prices cookie is ignored', async ({ page }) => {
   await page.context().addCookies([{ name: 'live_quotes', value: 'garbage', url: 'http://127.0.0.1:3100' }])
-  await page.goto('/')
+  await page.goto('/portfolio')
   await expect(page.locator('#live-prices')).toHaveCount(0)
   await expect(ry(page)).toContainText('1,000')
 })

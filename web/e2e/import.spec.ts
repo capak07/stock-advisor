@@ -16,7 +16,7 @@ const csv = (...rows: string[]) =>
   ['Date,Activity Type,Symbol,Quantity,Price,Currency,Account', ...rows].join('\r\n')
 
 async function upload(page: Page, text: string, name = 'activities.csv') {
-  await page.goto('/')
+  await page.goto('/portfolio')
   await page.getByRole('button', { name: 'Import file' }).click()
   const drawer = page.getByRole('dialog', { name: 'Import a file' })
   await drawer.getByLabel('Activity file or holdings report (CSV)').setInputFiles({

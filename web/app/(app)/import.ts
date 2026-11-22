@@ -109,6 +109,7 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
         const { error: undoError } = await supabase.from('lots').delete().in('id', buyIds)
         if (undoError) {
           revalidatePath('/')
+          revalidatePath('/portfolio')
           return failed(
             `Only the buys went in: the sells failed (${error.message}) and the ${buyIds.length} buys couldn't be taken back. Delete them under Trades, then import the file again.`,
           )
@@ -118,6 +119,7 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
     }
   }
   revalidatePath('/')
+  revalidatePath('/portfolio')
   const n = incoming.length
   const skipped = trades.length - n
   const note = skipped > 0 ? ` (${skipped} already recorded, skipped)` : ''

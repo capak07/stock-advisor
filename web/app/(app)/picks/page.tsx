@@ -36,7 +36,7 @@ export default async function PicksPage() {
               Picks appear once the model runs. Until then nothing here is a suggestion to buy. Your holdings are on My
               Portfolio.
             </span>
-            <Link className="btn btn-secondary btn-sm" href="/" style={{ marginTop: 6 }}>
+            <Link className="btn btn-secondary btn-sm" href="/portfolio" style={{ marginTop: 6 }}>
               Go to My Portfolio
             </Link>
           </div>

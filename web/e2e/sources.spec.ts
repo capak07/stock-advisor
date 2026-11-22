@@ -54,7 +54,7 @@ test("every source shows this run's result, its daily check and its last answer,
   await expect(rows.locator('td:first-child .sym')).toHaveText(['coingecko', 'google_news', 'yfinance_bars'])
 })
 
-test("the status bar's sources pill opens Source health, which waits for the first run", async ({ page }) => {
+test("the sidebar's sources link opens Source health, which waits for the first run", async ({ page }) => {
   await page.goto('/')
   await expect(page.getByRole('link', { name: /sources$/ })).toHaveCount(0) // no run, no pill
   await seedRun({ kind: 'pre_open', status: 'success', published: true, finished: new Date(Date.now() - 3_600_000).toISOString() })

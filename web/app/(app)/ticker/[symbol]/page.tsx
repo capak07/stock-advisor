@@ -115,7 +115,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
   return (
     <main className="page">
       <div className="enter">
-        <Link href="/" className="sub inline-flex items-center gap-1">
+        <Link href="/portfolio" className="sub inline-flex items-center gap-1">
           <ArrowLeft style={{ width: 14, height: 14 }} />
           My Portfolio
         </Link>

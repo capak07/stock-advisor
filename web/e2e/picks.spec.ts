@@ -265,7 +265,7 @@ test('a buy whose symbol was changed is not linked to the pick', async ({ page }
 test('the nav links to Picks', async ({ page }) => {
   await page.goto('/')
   const sidebar = page.getByRole('complementary', { name: 'Main' })
-  await expect(sidebar.getByRole('link')).toContainText(['Portfolio', 'Picks', 'Watchlist', 'Invest', 'Sources', 'Settings'])
+  await expect(sidebar.getByRole('link')).toContainText(['Today', 'Portfolio', 'Day trade', 'Picks', 'Invest', 'Watchlist', 'Sources', 'Settings'])
   await sidebar.getByRole('link', { name: 'Picks' }).click()
   await expect(page.getByRole('heading', { name: "Today's Picks", level: 1 })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: 'Picks' })).toHaveAttribute('aria-current', 'page')
@@ -274,13 +274,14 @@ test('the nav links to Picks', async ({ page }) => {
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('Picks is a bottom tab, and the page is no wider than the screen', async ({ page }) => {
+  test('Picks is under More, and the page is no wider than the screen', async ({ page }) => {
     await seedPicksRun()
     await page.goto('/')
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
-    await tabs.getByRole('link', { name: 'Picks' }).click()
+    await tabs.getByRole('button', { name: 'More' }).click()
+    await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Picks' }).click()
     await expect(page.getByRole('heading', { name: "Today's Picks", level: 1 })).toBeVisible()
-    await expect(tabs.getByRole('link', { name: 'Picks' })).toHaveAttribute('aria-current', 'page')
+    await expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
     await expect(usCard(page, 'AAPL')).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
     expect(overflow).toBeLessThanOrEqual(0)  })

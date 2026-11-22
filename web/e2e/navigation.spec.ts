@@ -6,7 +6,11 @@ test.beforeEach(resetData)
 test('the sidebar reaches every page and marks the current one', async ({ page }) => {
   await page.goto('/')
   const sidebar = page.getByRole('complementary', { name: 'Main' })
+  await expect(sidebar.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page')
+  await sidebar.getByRole('link', { name: 'Portfolio' }).click()
+  await expect(page.getByRole('heading', { name: 'My Portfolio', level: 1 })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page')
+  await expect(sidebar.getByRole('link', { name: 'Today' })).not.toHaveAttribute('aria-current', 'page')
   await sidebar.getByRole('link', { name: 'Watchlist' }).click()
   await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: 'Watchlist' })).toHaveAttribute('aria-current', 'page')
@@ -16,15 +20,29 @@ test('the sidebar reaches every page and marks the current one', async ({ page }
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 })
 
+test('on a desktop, "/" jumps to the search in the top bar', async ({ page }) => {
+  await page.goto('/portfolio')
+  await expect(page.getByRole('heading', { name: 'My Portfolio', level: 1 })).toBeVisible()
+  await page.keyboard.press('/')
+  const search = page.getByRole('banner').getByRole('combobox', { name: 'Find a symbol' })
+  await expect(search).toBeFocused()
+  await expect(search).toHaveValue('') // the key only moved the focus
+})
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('pages are tabs at the bottom, and Watchlist and Settings are under More', async ({ page }) => {
+  test('Today, Portfolio and Day trade are tabs at the bottom, and the other pages are under More', async ({ page }) => {
     await page.goto('/')
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
+    await expect(tabs.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page')
+    await expect(tabs.getByRole('link')).toHaveText(['Today', 'Portfolio', 'Day trade'])
+    await expect(tabs.getByRole('button')).toHaveText(['Search', 'More'])
+    await tabs.getByRole('link', { name: 'Portfolio' }).click()
+    await expect(page.getByRole('heading', { name: 'My Portfolio', level: 1 })).toBeVisible()
     await expect(tabs.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page')
-    await expect(tabs.getByRole('link')).toHaveText(['Portfolio', 'Picks', 'Invest', 'Day trade'])
     await tabs.getByRole('button', { name: 'More' }).click()
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link')).toHaveText(['Picks', 'Invest', 'Watchlist', 'Sources', 'Settings'])
     await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Watchlist' }).click()
     await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible()
     await expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
@@ -49,6 +67,19 @@ test.describe('on a phone', () => {
     await expect(page).toHaveURL(/\/ticker\/RY\.TO/)
   })
 
+  test('the Search tab opens a search sheet that goes to a stock', async ({ page }) => {
+    await seedSymbols([{ symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' }])
+    await page.goto('/')
+    await page.getByRole('navigation', { name: 'Main' }).last().getByRole('button', { name: 'Search' }).click()
+    const sheet = page.getByRole('dialog', { name: 'Search' })
+    const search = sheet.getByRole('combobox', { name: 'Find a symbol' })
+    await expect(search).toBeFocused()
+    await search.fill('royal')
+    await sheet.getByRole('option', { name: /RY\.TO/ }).click()
+    await expect(page).toHaveURL(/\/ticker\/RY\.TO/)
+    await expect(sheet).toBeHidden()
+  })
+
   test('no page is wider than the screen', async ({ page }) => {
     // Pages with content: holdings with long names, notes, the chart, warnings, watchlist rows.
     await seedPortfolio()
@@ -71,7 +102,8 @@ test.describe('on a phone', () => {
       { symbol: 'RY.TO', asset_type: 'stock', hoursAgo: 2, outlet: 'finance.yahoo.com', url: 'https://finance.yahoo.com/x', title: `RBC ${'quarterly-results-'.repeat(8)}beat`, sentiment: 0.4 },
     ])
     const pages = [
-      ['/', 'My Portfolio'],
+      ['/', 'Today'],
+      ['/portfolio', 'My Portfolio'],
       ['/picks', "Today's Picks"],
       ['/watchlist', 'Watchlist'],
       ['/ticker/RY.TO', 'RY.TO'],
@@ -83,7 +115,7 @@ test.describe('on a phone', () => {
       await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible()
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
       expect(overflow, path).toBeLessThanOrEqual(0)
-      if (path === '/') {
+      if (path === '/portfolio') {
         // The holdings table sits in a scroller, so the page itself never widens: check that the
         // phone layout stacks the rows, so the table fits without scrolling sideways.
         await expect(page.locator('#holdings tbody tr')).toHaveCount(3)

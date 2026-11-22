@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { resetData, seedAlert, seedPortfolio, seedSymbols } from './db'
 
 const FEED = "What's new on your stocks"
-const COPY = 'Alerts are checked on each run (about 3 a day), not live, and appear only here and on My Portfolio.'
+const COPY = 'Alerts are checked on each run (about 3 a day), not live, and appear only here and on Today.'
 
 test.beforeEach(async () => {
   await resetData()
@@ -59,7 +59,7 @@ test('an alert on a coin does not show on a stock with the same symbol', async (
   await expect(page.getByRole('region', { name: 'Alerts' }).getByTestId('alert-row')).toHaveCount(0)
 })
 
-test('a sub-cent coin hit keeps its digits on My Portfolio', async ({ page }) => {
+test('a sub-cent coin hit keeps its digits on Today', async ({ page }) => {
   await seedAlert({ symbol: 'ETH', assetType: 'crypto', direction: 'below', level: 0.00000123, hit: { hoursAgo: 1, price: 0.00000119 } })
   await page.goto('/')
   const item = page.getByRole('region', { name: FEED }).getByTestId('monitor-item')
@@ -78,7 +78,7 @@ test('an unknown symbol is refused', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Alerts' }).getByTestId('alert-row')).toHaveCount(0)
 })
 
-test('a hit alert on an unheld stock shows on My Portfolio, past the since window, until dismissed', async ({ page }) => {
+test('a hit alert on an unheld stock shows on Today, past the since window, until dismissed', async ({ page }) => {
   await seedAlert({ symbol: 'TSLA', direction: 'above', level: 400, hit: { hoursAgo: 24 * 20, price: 402.1 } })
   await seedAlert({ symbol: 'TSLA', direction: 'below', level: 100, hit: { hoursAgo: 5, price: 99 }, dismissed: true })
 

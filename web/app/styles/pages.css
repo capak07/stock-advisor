@@ -72,7 +72,8 @@
 .setting strong { font-size: 13.5px; font-weight: 600; }
 .setting p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted-foreground); }
 .with-unit { position: relative; }
-.with-unit .input { padding-right: 70px !important; text-align: right; }
+/* Room on the right for the longest unit ("% round trip", about 75px at 12px, set 11px in), so a value never runs under it. */
+.with-unit .input { padding-right: 96px !important; text-align: right; }
 .with-unit span.unit { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted-foreground); pointer-events: none; }
 
 /* ---------- Trade list (Plan 5c, in the portfolio page's table style) ---------- */
@@ -203,7 +204,7 @@
 .usage { height: 8px; border-radius: 999px; background: var(--muted); overflow: hidden; margin-top: 6px; }
 .usage span { display: block; height: 100%; background: var(--chart-1); transform-origin: left; animation: band-grow 400ms ease-out both; }
 #sources tr.err td { white-space: normal; padding-top: 0; color: var(--muted-foreground); font: 12px/1.5 var(--font-mono) !important; background: var(--muted); overflow-wrap: anywhere; }
-.core { font: 500 10px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 5px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted-foreground); margin-left: 6px; }
+.core { font: 500 10px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-foreground); margin-left: 6px; } /* a pill, like the glass chips */
 @media (max-width: 639px) {
   #sources thead { display: none; }
   #sources, #sources tbody { display: block; }
@@ -298,7 +299,8 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 /* Track record and Notes side by side on a desktop. */
 .dt-two { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 @media (min-width: 1024px) { .dt-two { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; } }
-.dt-card { overflow-wrap: anywhere; }
+/* The padding .pick had when these cards were built (Picks later moved its own to .card-pad). */
+.dt-card { overflow-wrap: anywhere; padding: 16px; }
 .dt-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .dt-head > .chip { flex: none; }
 .dt-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -307,6 +309,11 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-line { margin: 0; font-size: 13px; }
 .dt-levels, .dt-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .dt-levels b { overflow-wrap: anywhere; }
+/* Three cards beside the sidebar leave each level box narrow (about 70px inside at 1280px): the boxes keep 8px at
+   the sides and the figure shrinks to fit ("US$100.00" is 5.4em of Geist Mono), up to its usual 15px, rather than
+   breaking mid-number. Below about 1200px wide the three-up row is too narrow for any size, and the figure wraps. */
+.dt-levels .stat { container-type: inline-size; padding-left: 8px; padding-right: 8px; }
+.dt-levels b { font-size: clamp(12px, 18cqi, 15px); }
 @media (max-width: 480px) { .dt-levels .stat { padding: 8px 9px; } .dt-levels b { font-size: 13px; } }
 .dt-facts > div { display: grid; gap: 4px; align-content: start; }
 .dt-facts b { font-size: 13.5px; font-weight: 600; }

@@ -27,7 +27,7 @@
   --muted-foreground: oklch(0.4600 0.0140 250);
   --accent: oklch(1 0 0 / 0.72);                  /* hover */
   --accent-foreground: oklch(0.2000 0.0120 250);
-  --destructive: oklch(0.5300 0.1800 25);
+  --destructive: oklch(0.5100 0.1800 25);         /* = --loss */
   --destructive-foreground: oklch(0.9900 0.0020 240);
   --border: oklch(0.2500 0.0150 250 / 0.10);
   --input: oklch(0.2500 0.0150 250 / 0.16);
@@ -36,14 +36,16 @@
   --brand: oklch(0.5000 0.0700 225);
   --brand-soft: oklch(0.5000 0.0700 225 / 0.12);
 
-  /* Meaning. Strong tone for text, dots and bars; soft tone (translucent, so it tints the glass) for badges. */
-  --gain: oklch(0.5000 0.1250 158);
+  /* Meaning. Strong tone for text, dots and bars; soft tone (translucent, so it tints the glass) for badges.
+   * Gain, loss and Trim are a shade darker than theme_2.css (0.50, 0.53, 0.53): their chips' 11px labels on the
+   * soft tint measured 4.3-4.5:1 over the aurora's darkest frost, under WCAG AA; now 4.8-5.0:1 (Task 13). */
+  --gain: oklch(0.4700 0.1250 158);
   --gain-soft: oklch(0.6000 0.1250 158 / 0.14);
-  --loss: oklch(0.5300 0.1800 25);
+  --loss: oklch(0.5100 0.1800 25);
   --loss-soft: oklch(0.6000 0.1800 25 / 0.12);
   --attention: oklch(0.5100 0.1050 75);           /* Review, warnings, Paper */
   --attention-soft: oklch(0.7800 0.1200 85 / 0.20);
-  --trim: oklch(0.5300 0.1350 50);
+  --trim: oklch(0.5000 0.1350 50);
   --trim-soft: oklch(0.7000 0.1350 50 / 0.14);
   --hold: oklch(0.4800 0.0120 250);
   --hold-soft: oklch(0.2500 0.0150 250 / 0.07);

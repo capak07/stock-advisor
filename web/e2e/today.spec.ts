@@ -104,8 +104,9 @@ test("the Day trade card shows the Day trade page's top 3 after costs, the first
   const trades = card.getByTestId('today-trade')
   await expect(trades).toHaveCount(2)
   await expect(trades.nth(0)).toContainText('TSLA')
-  await expect(trades.nth(0).getByText('Entry')).toBeVisible()
-  await expect(trades.nth(0).getByText('US$364.18')).toBeVisible()
+  // the currency in the label, the figure whole
+  await expect(trades.nth(0).getByText('Entry US$', { exact: true })).toBeVisible()
+  await expect(trades.nth(0).getByText('364.18', { exact: true })).toBeVisible()
   await expect(trades.nth(0).getByText('Target hit')).toBeVisible()
   await expect(trades.nth(0)).toContainText('10,000 replays: target first 34%')
   await expect(trades.nth(0)).toContainText('history +0.12R after costs')

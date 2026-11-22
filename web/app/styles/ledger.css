@@ -162,7 +162,8 @@ button.pill:hover, a.pill:hover { background: var(--accent); }
   width: min(440px, calc(100% - 24px)); display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px;
   border-radius: var(--radius-xl); transition: transform 250ms cubic-bezier(.2,.8,.2,1);
 }
-.bottom-tabs.hidden { transform: translate(-50%, 120%); }
+/* Hidden: down by its own height, the 14px gap, the safe-area inset and 8px for the shadow, so no strip stays on screen. */
+.bottom-tabs.hidden { transform: translate(-50%, calc(100% + 14px + var(--safe-area-inset-bottom, 0px) + 8px)); }
 @media (min-width: 1024px) { .bottom-tabs { display: none; } }
 .tab-pill { position: absolute; top: 6px; bottom: 6px; left: 6px; border-radius: 20px; background: var(--brand-soft);
   box-shadow: inset 0 0 0 1px var(--glass-border); transition: transform 300ms cubic-bezier(.3,1.3,.5,1); pointer-events: none; }

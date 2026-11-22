@@ -87,8 +87,13 @@ describe('DaytradeTop', () => {
   it('shows the top 3, the first with its entry, target and stop', () => {
     const html = render(row('scanning', '2026-11-23T16:00:00Z'), MON_11AM, [signal('TSLA', 1), signal('AMD', 2)], 4)
     expect(html.match(/data-testid="today-trade"/g)).toHaveLength(2)
-    expect(html.match(/>Entry</g)).toHaveLength(1)
-    expect(html).toContain('US$100.00')
+    // the currency in the label, the figure whole: "Entry US$" over "100.00"
+    expect(html.match(/>Entry US\$</g)).toHaveLength(1)
+    expect(html).toContain('<b>100.00</b>')
+    expect(html).toContain('<b class="gain">102.00</b>')
+    expect(html).toContain('<b class="loss">99.00</b>')
+    expect(html).toContain('>Target US$<')
+    expect(html).toContain('>Stop US$<')
     expect(html).toContain('Target hit')
     expect(html).toContain('10,000 replays: target first 34%')
     expect(html).toContain('history +0.12R after costs')

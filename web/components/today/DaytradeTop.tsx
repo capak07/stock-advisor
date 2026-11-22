@@ -3,12 +3,13 @@ import Link from 'next/link'
 import { StatusChip } from '@/components/daytrade/StatusChip'
 import {
   MARKET_CLOSED,
+  barePrice,
+  curOf,
   fmtR,
   hasRun,
   isFresh,
   noTradeLine,
   oddsLine,
-  priceOf,
   statusChip,
   statusLine,
   type DayRow,
@@ -75,18 +76,19 @@ export function DaytradeTop({
                 <StatusChip label={chip.label} tone={chip.tone} />
               </div>
               {i === 0 && (
+                // the currency sits in the label, so the figure stays whole: "Entry US$" over "364.18"
                 <div className="levels">
                   <div className="stat">
-                    <span className="label">Entry</span>
-                    <b>{priceOf(s.entry, s.market)}</b>
+                    <span className="label">Entry {curOf(s.market)}</span>
+                    <b>{barePrice(s.entry, s.market)}</b>
                   </div>
                   <div className="stat">
-                    <span className="label">Target</span>
-                    <b className="gain">{priceOf(s.target, s.market)}</b>
+                    <span className="label">Target {curOf(s.market)}</span>
+                    <b className="gain">{barePrice(s.target, s.market)}</b>
                   </div>
                   <div className="stat">
-                    <span className="label">Stop</span>
-                    <b className="loss">{priceOf(s.stop, s.market)}</b>
+                    <span className="label">Stop {curOf(s.market)}</span>
+                    <b className="loss">{barePrice(s.stop, s.market)}</b>
                   </div>
                 </div>
               )}

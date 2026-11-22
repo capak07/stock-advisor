@@ -147,11 +147,14 @@ test.describe('on a phone', () => {
     const tabs = page.locator('nav.bottom-tabs')
     await expect(tabs).not.toHaveAttribute('inert')
     await page.evaluate(() => {
+      // the Android app's bottom inset (a gesture bar): the hidden bar must still clear the screen
+      document.documentElement.style.setProperty('--safe-area-inset-bottom', '34px')
       document.body.style.minHeight = '4000px'
       window.scrollTo(0, 800)
     })
     await expect(tabs).toHaveClass(/hidden/)
     await expect(tabs).toHaveAttribute('inert')
+    await expect.poll(() => tabs.evaluate((el) => el.getBoundingClientRect().top - window.innerHeight)).toBeGreaterThanOrEqual(0)
     const today = tabs.locator('a', { hasText: 'Today' })
     await today.evaluate((link: HTMLElement) => link.focus())
     await expect(today).not.toBeFocused()

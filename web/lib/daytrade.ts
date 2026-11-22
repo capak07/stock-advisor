@@ -108,7 +108,7 @@ export const NOTE_COSTS = [
   'Each signal shows its cost in R: the round-trip cost divided by the distance from entry to stop. The trade must gain more than that to pay.',
 ] as const
 export const NOTE_RULES = [
-  'Long only. The opening range is the first 15 minutes; the entry is the first 5-minute bar that closes above its high on at least 1.5× its average volume.',
+  "Long only. The opening range is the first 15 minutes; the entry is the first 5-minute bar that closes above its high on at least 1.5× the opening range's average volume.",
   'The stop is the middle of the opening range; the target is 2R above the entry.',
   'No new entries in the last 30 minutes; flat 5 minutes before the close (3:55 PM, or 12:55 PM on a 1:00 PM close).',
   'Shares are sized so the loss at the stop fits your max loss per trade, set in Settings.',
@@ -243,6 +243,12 @@ export const fmtShare = (fraction: number): string => `${Math.round(fraction * 1
 
 /** A price in the stock's own currency: "US$67.65", "C$150.00". */
 export const priceOf = (value: number, market: DaytradeMarket): string => fmtPrice(value, market === 'US' ? 'USD' : 'CAD')
+
+/** A market's currency sign: a level tile carries it in its label ("Entry US$"), as a pick card does. */
+export const curOf = (market: DaytradeMarket): string => (market === 'US' ? 'US$' : 'C$')
+
+/** A price without its currency sign, for a tile labelled with it: "1,234.56", one unbroken figure. */
+export const barePrice = (value: number, market: DaytradeMarket): string => priceOf(value, market).replace(curOf(market), '')
 
 export const isSkipped = (stats: object): stats is Skipped => 'skipped' in stats
 

@@ -67,8 +67,8 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(first).toContainText('TG Therapeutics')
   await expect(first).toContainText(/Entry signal \d{1,2}:\d{2} [AP]M at US\$67\.65/)
   await expect(first.getByText('Fresh', { exact: true })).toBeVisible()
-  await expect(first).toContainText('StopUS$66.05')
-  await expect(first).toContainText('TargetUS$70.85')
+  await expect(first).toContainText('Stop US$66.05')
+  await expect(first).toContainText('Target US$70.85')
   await expect(first).toContainText('Opening range US$64.45–US$67.55 · flat by 12:55 PM')
   await expect(first).toContainText('Cost1.31R')
   await expect(first).toContainText('History, net+0.29R')
@@ -83,7 +83,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   const second = cards(page).nth(1)
   await expect(second).toContainText('RY')
   await expect(second).toContainText('TSX')
-  await expect(second).toContainText('StopC$149.50')
+  await expect(second).toContainText('Stop C$149.50')
   await expect(second).toContainText('≈ 100 shares (risking ≈ C$50 at the stop)')
   await expect(second).toContainText('flat by 3:55 PM')
   await expect(cards(page).nth(2)).toContainText('Even one share risks more than your C$50 limit.')
@@ -166,7 +166,7 @@ test("the top 3 after costs come first, then the skill's top 3 in compact cards 
   await expect(cards(page)).toHaveCount(1)
   const ogc = cards(page).first()
   await expectPlace(ogc, 1, 'OGC.TO')
-  await expect(ogc).toContainText('StopC$5.40')
+  await expect(ogc).toContainText('Stop C$5.40')
   await expect(ogc).not.toContainText('above the range high')
 
   // every signal is still listed; the skill's ones are marked
@@ -225,6 +225,42 @@ test('a day with no eligible signal says no trade and still lists the signals', 
   const table = await allSignals(page)
   await expect(table.getByRole('row', { name: /AMD/ })).toContainText('History is −0.20R after costs')
   await expect(table.getByRole('row', { name: /SOFI/ })).toContainText('Not enough history: only 4 full past session(s); need at least 20')
+})
+
+test('each level is one unbroken figure, never wrapped or cut, at 1100 px, 1280 px and on a 390 px phone', async ({ page }) => {
+  await seedFx([daysAgo(1)], 1.4)
+  await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
+  // a four-digit US price: target US$3,567.88
+  await seedDaytradeSignal({ symbol: 'AZO', name: 'AutoZone', triggerAt: ago(2), entry: 3456.78, stop: 3401.23, rank: 1 })
+  await seedDaytradeSignal({ symbol: 'FIS', name: 'Fidelity National Information Services', triggerAt: ago(3), entry: 68.12, stop: 67, rank: 2 })
+  await seedDaytradeSignal({ symbol: 'RY', market: 'TSX', name: 'Royal Bank', triggerAt: ago(4), entry: 150, stop: 149.5, costPct: 0.1, rank: 3 })
+
+  const today = (p: Page) => p.getByRole('region', { name: 'Day trade · top 3 after costs' })
+  for (const width of [1100, 1280, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    for (const [path, levels, count] of [
+      ['/daytrade', (p: Page) => costSection(p).locator('.dt-levels b'), 9],
+      ['/', (p: Page) => today(p).locator('.levels b'), 3], // Today shows the first one's levels
+    ] as const) {
+      await page.goto(path)
+      await expect(levels(page)).toHaveCount(count)
+      const figures = await levels(page).evaluateAll((els) =>
+        els.map((el) => ({
+          text: el.textContent,
+          height: el.getBoundingClientRect().height,
+          lineHeight: parseFloat(getComputedStyle(el).lineHeight),
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        })),
+      )
+      const where = `${path} at ${width}px`
+      expect(figures.map((f) => f.text), where).toContain('3,456.78')
+      for (const f of figures) {
+        expect(f.height, `${f.text} on one line, ${where}`).toBeLessThan(f.lineHeight * 1.5)
+        expect(f.scrollWidth, `${f.text} not cut, ${where}`).toBeLessThanOrEqual(f.clientWidth)
+      }
+    }
+  }
 })
 
 test('a signal more than 10 minutes old is late and shows the latest price with its time', async ({ page }) => {

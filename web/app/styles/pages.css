@@ -295,7 +295,10 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-skill-sub { margin: -4px 0 0; font-size: 13px; }
 /* The three cards side by side on a desktop, stacked on a phone. */
 .dt-cards { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-@media (min-width: 1024px) { .dt-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; } }
+/* Three across only from 1200px (as .portfolio-grid): narrower, beside the sidebar, a level tile can't hold a four-digit
+   price on one line. */
+@media (min-width: 1024px) { .dt-cards { gap: 18px; } }
+@media (min-width: 1200px) { .dt-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 /* Track record and Notes side by side on a desktop. */
 .dt-two { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 @media (min-width: 1024px) { .dt-two { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 18px; } }
@@ -308,12 +311,12 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-who-t .sym { font-size: 15px; }
 .dt-line { margin: 0; font-size: 13px; }
 .dt-levels, .dt-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.dt-levels b { overflow-wrap: anywhere; }
-/* Three cards beside the sidebar leave each level box narrow (about 70px inside at 1280px): the boxes keep 8px at
-   the sides and the figure shrinks to fit ("US$100.00" is 5.4em of Geist Mono), up to its usual 15px, rather than
-   breaking mid-number. Below about 1200px wide the three-up row is too narrow for any size, and the figure wraps. */
-.dt-levels .stat { container-type: inline-size; padding-left: 8px; padding-right: 8px; }
-.dt-levels b { font-size: clamp(12px, 18cqi, 15px); }
+/* A level is one unbroken figure, never wrapped mid-number or cut: the currency sits in the tile's label ("Entry US$",
+   as on a pick card), so the box holds the bare number ("1,234.56"). The boxes keep 8px at the sides; three cards
+   beside the sidebar leave each box narrow, so the figure shrinks with its box, up to its usual 15px. */
+/* A narrow box wraps a long label ("Target US$") onto two lines: the figures keep to the bottom, so the three line up. */
+.dt-levels .stat { container-type: inline-size; padding-left: 8px; padding-right: 8px; display: grid; align-content: space-between; }
+.dt-levels b { overflow-wrap: normal; white-space: nowrap; font-size: clamp(12px, 19cqi, 15px); }
 @media (max-width: 480px) { .dt-levels .stat { padding: 8px 9px; } .dt-levels b { font-size: 13px; } }
 .dt-facts > div { display: grid; gap: 4px; align-content: start; }
 .dt-facts b { font-size: 13.5px; font-weight: 600; }
@@ -372,7 +375,8 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-today .trade-top .chip { flex: none; }
 .dt-today .rank, .dt-card .rank { width: 24px; height: 24px; flex: none; border-radius: 8px; display: grid; place-items: center; font: 600 12px/1 var(--font-mono); background: var(--muted); }
 .dt-today .levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.dt-today .levels b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The currency sits in the label, so the figure is the bare number: whole, on one line, never cut. */
+.dt-today .levels b { white-space: nowrap; overflow-wrap: normal; }
 @media (max-width: 480px) { .dt-today .levels .stat { padding: 8px 9px; } .dt-today .levels b { font-size: 13px; } }
 .dt-today .trade-verdict { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--muted-foreground); overflow-wrap: anywhere; }
 .dt-today .trade-verdict svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }

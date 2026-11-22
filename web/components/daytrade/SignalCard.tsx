@@ -5,7 +5,9 @@ import { shortDay } from '@/lib/dates'
 import {
   LATE_LINE,
   LATE_SHARES,
+  barePrice,
   costLine,
+  curOf,
   etClock,
   fmtR,
   historyLine,
@@ -124,6 +126,7 @@ export function SignalCard({
   const risk = Number((s.entry - s.stop).toFixed(4))
   const top = s.headlines[0]
   const link = top ? safeLink(top.url) : null
+  const cur = curOf(s.market)
   return (
     <article className="card pick dt-card" data-testid="daytrade-card" aria-label={`${s.symbol} signal`}>
       {head}
@@ -144,18 +147,19 @@ export function SignalCard({
           </div>
         </div>
       )}
+      {/* the tiles are narrow three across, so the currency sits in the label: "Entry US$" over "68.12" */}
       <div className="dt-levels">
         <div className="stat">
-          <span className="label">Entry</span>
-          <b>{priceOf(s.entry, s.market)}</b>
+          <span className="label">Entry {cur}</span>
+          <b>{barePrice(s.entry, s.market)}</b>
         </div>
         <div className="stat">
-          <span className="label">Target</span>
-          <b className="gain">{priceOf(s.target, s.market)}</b>
+          <span className="label">Target {cur}</span>
+          <b className="gain">{barePrice(s.target, s.market)}</b>
         </div>
         <div className="stat">
-          <span className="label">Stop</span>
-          <b className="loss">{priceOf(s.stop, s.market)}</b>
+          <span className="label">Stop {cur}</span>
+          <b className="loss">{barePrice(s.stop, s.market)}</b>
         </div>
       </div>
       <div className="dt-facts">

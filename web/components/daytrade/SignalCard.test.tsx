@@ -50,13 +50,15 @@ const text = (html: string) => html.replace(/<[^>]+>/g, '')
 describe('SignalCard', () => {
   it('the full card: entry, target and stop tiles, the cost in R, the net R values and the verdict line', () => {
     const html = render(signal())
-    expect(html).toMatch(/>Entry</)
-    expect(html).toMatch(/>Target</)
-    expect(html).toMatch(/>Stop</)
+    // the currency in the label, the figure whole: "Entry US$" over "67.65"
+    expect(html).toMatch(/>Entry US\$</)
+    expect(html).toMatch(/>Target US\$</)
+    expect(html).toMatch(/>Stop US\$</)
+    expect(html).toContain('<b>67.65</b>')
     const t = text(html)
-    expect(t).toContain('EntryUS$67.65')
-    expect(t).toContain('TargetUS$70.85')
-    expect(t).toContain('StopUS$66.05')
+    expect(t).toContain('Entry US$67.65')
+    expect(t).toContain('Target US$70.85')
+    expect(t).toContain('Stop US$66.05')
     expect(t).toContain('Cost1.31R')
     expect(t).toContain('History, net+0.30R')
     expect(t).toContain('Replays, net+0.20R')
@@ -76,8 +78,8 @@ describe('SignalCard', () => {
     expect(t).toContain('+0.64R after costs')
     expect(t).toContain('Target hit')
     expect(t).toContain('2') // the skill's rank
-    expect(html).not.toMatch(/>Target</) // no tile labels
-    expect(html).not.toMatch(/>Stop</)
+    expect(html).not.toMatch(/>Target( US\$)?</) // no tile labels
+    expect(html).not.toMatch(/>Stop( US\$)?</)
     expect(html).not.toContain('class="stat"')
     expect(t).not.toContain('shares')
     expect(t).not.toContain('TG Therapeutics beats estimates')

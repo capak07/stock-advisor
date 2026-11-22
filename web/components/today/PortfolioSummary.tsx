@@ -4,6 +4,7 @@ import { fmtMoney, fmtPct } from '@/lib/format'
 import { priceDirection } from '@/lib/motion'
 import { dayMove, type Period, type PeriodReturns } from '@/lib/portfolio/returns'
 import type { Totals } from '@/lib/portfolio/valuation'
+import { moveWhen } from '@/lib/today'
 
 const last = (values: readonly number[] | null | undefined): number | null =>
   values && values.length > 0 ? values[values.length - 1] : null
@@ -17,15 +18,17 @@ const pts = (value: number) => fmtPct(value).replace('%', ' pts')
 const tone = (value: number) => (value < 0 ? 'loss' : 'gain')
 
 /**
- * Today's portfolio card (spec §7.1), a link to My Portfolio: the total value, today's change, the
- * return since the first buy, the gap to SPY over a year, and three months against SPY in CAD. No
- * cash figure: the app keeps no cash balance. An empty portfolio shows C$0.00 and no chart.
+ * Today's portfolio card (spec §7.1), a link to My Portfolio: the total value, today's change (the last
+ * session's, named by its weekday on a weekend or holiday), the return since the first buy, the gap to
+ * SPY over a year, and three months against SPY in CAD. No cash figure: the app keeps no cash balance.
+ * An empty portfolio shows C$0.00 and no chart.
  */
 export function PortfolioSummary({
   totals,
   periods,
   accounts,
   holdings,
+  today,
 }: {
   totals: Totals
   periods: Record<Period, PeriodReturns> | null
@@ -33,6 +36,8 @@ export function PortfolioSummary({
   accounts: string[]
   /** How many holdings are open. */
   holdings: number
+  /** Today in Toronto (`YYYY-MM-DD`): the day move reads "today" only when the 1D period ends on it. */
+  today: string
 }) {
   const move = dayMove(totals.valueCad, periods)
   const allPct = last(periods?.all.portfolio) ?? (totals.costCad > 0 ? (totals.gainCad / totals.costCad) * 100 : null)
@@ -58,7 +63,7 @@ export function PortfolioSummary({
             <>
               {move && (
                 <div className={`num ${tone(move.pct)}`} style={{ fontSize: 14 }}>
-                  {fmtMoney(move.cad, { digits: 2, signed: true })} ({fmtPct(move.pct)}) today
+                  {fmtMoney(move.cad, { digits: 2, signed: true })} ({fmtPct(move.pct)}) {moveWhen(periods?.['1d'].days.at(-1), today)}
                 </div>
               )}
               <div className="hero-meta">

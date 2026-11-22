@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { DayRow } from './daytrade'
 import type { ActionKind, HoldingAction } from './portfolio/actions'
 import type { HoldingRow } from './portfolio/view'
-import { PICK_P_FLOOR, bestChanceLine, needsAttention, todayLine } from './today'
+import { PICK_P_FLOOR, bestChanceLine, moveWhen, needsAttention, todayLine } from './today'
 
 let n = 0
 /** A minimal holding with an action of `kind` (or none when `kind` is null). */
@@ -73,6 +73,23 @@ describe('todayLine', () => {
   it("uses New York's date late in the evening", () => {
     // 11:30 PM Monday in New York is already Tuesday in UTC
     expect(todayLine(null, '2026-11-24T04:30:00Z')).toBe('Monday, Nov 23 · markets closed')
+  })
+})
+
+describe('moveWhen', () => {
+  it('says today when the 1D period ends today', () => {
+    expect(moveWhen('2026-11-20', '2026-11-20')).toBe('today')
+  })
+
+  it("names the last session's weekday on a weekend or holiday", () => {
+    // Sunday, Nov 22: the last session was Friday
+    expect(moveWhen('2026-11-20', '2026-11-22')).toBe('on Fri')
+    // Thanksgiving, Thursday Nov 26: the last session was Wednesday
+    expect(moveWhen('2026-11-25', '2026-11-26')).toBe('on Wed')
+  })
+
+  it('gives the date when the session is more than six days back', () => {
+    expect(moveWhen('2026-11-13', '2026-11-22')).toBe('on Nov 13')
   })
 })
 

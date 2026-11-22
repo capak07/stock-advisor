@@ -5,6 +5,7 @@ import { NoPicksSentence, PICK_BAR } from '@/components/picks/BestChance'
 import { PickCard } from '@/components/picks/PickCard'
 import type { MarketPicks as Picks, PickView, Style } from '@/lib/data/picks'
 import type { Guide } from '@/lib/guidance'
+import { pickCount } from '@/lib/picks'
 import type { Run } from '@/lib/runs'
 import { bestChanceLine, PICK_P_FLOOR, type BestChance } from '@/lib/today'
 
@@ -36,9 +37,6 @@ const LISTS: { style: Style; title: string; span: string }[] = [
   { style: 'swing', title: 'Swing', span: '2 days to 4 weeks' },
   { style: 'position', title: 'Position', span: '1 to 6 months' },
 ]
-
-/** A market's pick count, both styles. */
-export const pickCount = (m: Picks): number => (m.enabled ? m.swing.length + m.position.length : 0)
 
 /** Why one market shows no picks: no model, a failed gate, or nothing cleared the bar. */
 function NoPicks({ market }: { market: Picks }) {

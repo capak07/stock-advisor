@@ -15,7 +15,7 @@ const periods = (end: number, spy: number, n = 64): Record<Period, PeriodReturns
 describe('PortfolioSummary', () => {
   it('shows C$0.00 and No holdings yet without a chart for an empty portfolio (Review Focus 1)', () => {
     const html = renderToStaticMarkup(
-      <PortfolioSummary totals={{ valueCad: 0, costCad: 0, gainCad: 0, unpriced: [] }} periods={null} accounts={[]} holdings={0} />,
+      <PortfolioSummary totals={{ valueCad: 0, costCad: 0, gainCad: 0, unpriced: [] }} periods={null} accounts={[]} holdings={0} today="2026-08-02" />,
     )
     expect(html).toContain('C$0.00')
     expect(html).not.toContain('data-price') // no day move to flash
@@ -31,11 +31,12 @@ describe('PortfolioSummary', () => {
         periods={periods(10.8, 8.7)}
         accounts={['TFSA', 'Non-registered']}
         holdings={3}
+        today="2026-08-02"
       />,
     )
     expect(html).toContain('C$12,340.18')
     expect(html).toMatch(/data-testid="today-value" data-price="up"/) // flashes after a Refresh, by today's move
-    expect(html).toContain('today')
+    expect(html).toMatch(/\(\+[\d.]+%\) today</) // the 1D period ends on Aug 2, today
     expect(html).toContain('All time')
     expect(html).toContain('+10.8%')
     expect(html).toContain('+2.1 pts')
@@ -47,13 +48,25 @@ describe('PortfolioSummary', () => {
 
   it('names the comparison since the first buy when there is less than a year of history', () => {
     const html = renderToStaticMarkup(
-      <PortfolioSummary totals={{ valueCad: 100, costCad: 90, gainCad: 10, unpriced: [] }} periods={periods(1, 2)} accounts={['TFSA']} holdings={1} />,
+      <PortfolioSummary totals={{ valueCad: 100, costCad: 90, gainCad: 10, unpriced: [] }} periods={periods(1, 2)} accounts={['TFSA']} holdings={1} today="2026-08-02" />,
     )
     expect(html).toContain('vs SPY, since first buy')
     const down = renderToStaticMarkup(
-      <PortfolioSummary totals={{ valueCad: 100, costCad: 90, gainCad: 10, unpriced: [] }} periods={periods(-1, 2)} accounts={['TFSA']} holdings={1} />,
+      <PortfolioSummary totals={{ valueCad: 100, costCad: 90, gainCad: 10, unpriced: [] }} periods={periods(-1, 2)} accounts={['TFSA']} holdings={1} today="2026-08-02" />,
     )
     expect(down).toContain('data-price="down"')
     expect(html).toContain('−1.0 pts')
+  })
+
+  it("names the last session's weekday when it isn't today (a weekend or holiday), and says today when it is", () => {
+    // the 1D period ends on Friday, Nov 20
+    const p = periods(10.8, 8.7)
+    p['1d'] = { ...p['1d'], days: ['2026-11-19', '2026-11-20'] }
+    const props = { totals: { valueCad: 12340.18, costCad: 11000, gainCad: 1340.18, unpriced: [] }, periods: p, accounts: ['TFSA'], holdings: 3 }
+    const sunday = renderToStaticMarkup(<PortfolioSummary {...props} today="2026-11-22" />)
+    expect(sunday).toMatch(/\(\+10\.8%\) on Fri</)
+    expect(sunday).not.toMatch(/%\) today/)
+    const friday = renderToStaticMarkup(<PortfolioSummary {...props} today="2026-11-20" />)
+    expect(friday).toMatch(/\(\+10\.8%\) today</)
   })
 })

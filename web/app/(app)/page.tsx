@@ -13,6 +13,7 @@ import { loadPicks } from '@/lib/data/picks'
 import { loadPortfolio, portfolioViewOf } from '@/lib/data/portfolio'
 import { shortDay, todayInToronto } from '@/lib/dates'
 import { nyTime } from '@/lib/daytrade'
+import { pickCount } from '@/lib/picks'
 import { runWhen } from '@/lib/runs'
 import { bestChanceLine, needsAttention, todayLine } from '@/lib/today'
 
@@ -35,10 +36,11 @@ export default async function TodayPage() {
     loadDaytrade(supabase, nyTime(now).day),
     loadPicks(supabase),
   ])
-  const view = portfolioViewOf(data, latest?.actions ?? [], todayInToronto())
+  const today = todayInToronto()
+  const view = portfolioViewOf(data, latest?.actions ?? [], today)
   const attention = needsAttention(view.holdings)
   const top = daytrade.signals.filter((s) => s.rank !== null)
-  const picked = picks.markets.some((m) => m.swing.length + m.position.length > 0)
+  const picked = picks.markets.some((m) => pickCount(m) > 0) // as /picks counts: none for a market whose model failed its check
   // the best chance only shows when nothing was picked
   const bestChance = picks.run && !picked ? bestChanceLine(await loadBestChances(supabase, picks.run.id)) : null
 
@@ -53,7 +55,7 @@ export default async function TodayPage() {
           <p className="sub">{picks.run ? `Last run ${runWhen(picks.run)}` : 'No run yet'}</p>
         </div>
       </div>
-      <PortfolioSummary totals={view.totals} periods={view.periods} accounts={view.accounts} holdings={view.holdings.length} />
+      <PortfolioSummary totals={view.totals} periods={view.periods} accounts={view.accounts} holdings={view.holdings.length} today={today} />
       <div className="today-grid">
         <div className="today-col">
           <AttentionCard

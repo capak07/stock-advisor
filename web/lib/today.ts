@@ -2,6 +2,7 @@
  * Today's pure parts (spec §7.1): what needs the owner's attention, the header's date and market
  * state, and the best chance of beating the market in the latest run.
  */
+import { daysBetween, shortDay } from './dates'
 import { isLive, type DayRow } from './daytrade'
 import { P_MIN } from './invest/allocate'
 import { actionGroup, type ActionGroup } from './portfolio/actions'
@@ -35,6 +36,18 @@ const NY_DAY = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short
 export function todayLine(day: DayRow | null, now: string): string {
   const open = day !== null && isLive(day, now)
   return `${NY_DAY.format(new Date(now))} · ${open ? 'market open' : 'markets closed'}`
+}
+
+const WEEKDAY = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' })
+
+/**
+ * When the portfolio's day move happened, from the day its 1D period ends on: "today" when that is
+ * today (Toronto), else that session's weekday, "on Fri" (a weekend or a holiday shows the last
+ * session), or its date when it is more than six days back, "on Nov 13".
+ */
+export function moveWhen(lastDay: string | undefined, today: string): string {
+  if (lastDay === undefined || lastDay >= today) return 'today'
+  return `on ${daysBetween(lastDay, today) > 6 ? shortDay(lastDay) : WEEKDAY.format(new Date(`${lastDay}T12:00:00Z`))}`
 }
 
 /** The best P(beat) among a run's stock predictions against one market's benchmark. */

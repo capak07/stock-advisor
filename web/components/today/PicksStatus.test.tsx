@@ -57,4 +57,19 @@ describe('PicksStatus', () => {
     expect(html).not.toContain(LINE)
     expect(html).not.toContain('None today')
   })
+
+  it('counts no picks for a market whose model failed its check, as the Picks page does', () => {
+    const failed = (m: 'US' | 'TSX', n: number): MarketPicks => ({ ...market(m, n), enabled: false, reason: 'only 12 backtest picks (needs 30)' })
+    // both markets withheld: None today and the best chance, not "3 picks / Open"
+    const none = renderToStaticMarkup(<PicksStatus run={RUN} markets={[failed('US', 3), market('TSX', 0)]} bestChance={LINE} />)
+    expect(none).toContain('None today')
+    expect(none).toContain(LINE)
+    expect(none).not.toContain('3 picks')
+    expect(none).not.toContain('Open')
+    // one market withheld: the other's count, and None for the withheld one
+    const one = renderToStaticMarkup(<PicksStatus run={RUN} markets={[failed('US', 3), market('TSX', 2)]} bestChance={LINE} />)
+    expect(one).toContain('2 picks')
+    expect(one).not.toContain('3 picks')
+    expect(one.replace(/<[^>]+>/g, '')).toContain('USNone')
+  })
 })

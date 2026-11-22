@@ -2,12 +2,12 @@ import { ChevronRight, Sparkles } from 'lucide-react'
 import Link from 'next/link'
 import { NoPicksSentence } from '@/components/picks/BestChance'
 import type { MarketPicks } from '@/lib/data/picks'
+import { pickCount } from '@/lib/picks'
 import type { Run } from '@/lib/runs'
 
-const count = (m: MarketPicks) => m.swing.length + m.position.length
-
 /**
- * Today's Picks card (spec §7.1): the count per market when the latest run picked anything;
+ * Today's Picks card (spec §7.1): the count per market when the latest run picked anything, counted as
+ * the Picks page counts (`pickCount`: none for a market whose model failed its check);
  * otherwise "None today" with the run's best chance of beating the market against the picks' bar.
  * The best chance is a fact about the run, never shown on a pick card. Before any run: "No run yet".
  */
@@ -21,7 +21,7 @@ export function PicksStatus({
   /** `bestChanceLine` of the run, e.g. "US 52.7% vs SPY · TSX 55.1% vs XIU.TO"; null when it has none. */
   bestChance: string | null
 }) {
-  const total = markets.reduce((sum, m) => sum + count(m), 0)
+  const total = markets.reduce((sum, m) => sum + pickCount(m), 0)
   return (
     <section className="card card-pad enter" aria-labelledby="pk-h">
       <div className="section-head" style={{ marginBottom: 4 }}>
@@ -60,7 +60,7 @@ export function PicksStatus({
       ) : (
         <div className="stats" style={{ marginTop: 8 }}>
           {markets.map((m) => {
-            const n = count(m)
+            const n = pickCount(m)
             return (
               <div className="stat" key={m.market}>
                 <span className="label">{m.market}</span>

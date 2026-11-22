@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rimPoint, tickClass, tickPrices } from './motion'
+import { priceDirection, rimPoint, tickClass, tickPrices } from './motion'
 
 /** Just enough of an element for tickPrices: its data-price, classes, a layout read and its listeners. */
 function fakePrice(price?: string) {
@@ -37,6 +37,17 @@ describe('tickClass', () => {
     expect(tickClass('down')).toBe('tick-down')
     expect(tickClass(undefined)).toBeNull()
     expect(tickClass('flat')).toBeNull()
+  })
+})
+
+describe('priceDirection', () => {
+  it('marks a price that fell down, one that rose or held up, and leaves an unknown move unmarked', () => {
+    expect(priceDirection(-0.4)).toBe('down')
+    expect(priceDirection(1.2)).toBe('up')
+    expect(priceDirection(0)).toBe('up')
+    expect(priceDirection(null)).toBeUndefined()
+    expect(priceDirection(undefined)).toBeUndefined()
+    expect(priceDirection(Number.NaN)).toBeUndefined()
   })
 })
 

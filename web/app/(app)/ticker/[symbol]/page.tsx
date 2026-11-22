@@ -154,7 +154,7 @@ export default async function TickerPage({ params, searchParams }: Props) {
                   </div>
                 )}
               </div>
-              <PhoneOutlook verdict={verdict?.verdict ?? null} coin={coin} />
+              <PhoneOutlook verdict={verdict?.verdict ?? null} judgedAt={verdict?.horizon ?? null} coin={coin} />
               <PriceChart symbol={symbol} series={series} coin={coin} />
             </section>
             <NewsCard headlines={headlines} kpis={kpis} source={data.news ? runWhen(data.news.run) : null} />

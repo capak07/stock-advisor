@@ -31,6 +31,8 @@ test("after a refresh, holdings are valued at the live price and the top bar say
   await page.goto('/portfolio')
   await expect(page.locator('#live-prices')).toContainText(/^Live prices \d{1,2}:\d{2}/)
   await expect(ry(page)).toContainText('1,500')
+  // the live price is above the last close, so the value is marked to flash gain-soft
+  await expect(ry(page).locator('.h-value')).toHaveAttribute('data-price', 'up')
 })
 
 test('a malformed live-prices cookie is ignored', async ({ page }) => {

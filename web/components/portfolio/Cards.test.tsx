@@ -35,6 +35,7 @@ const holding = (symbol: string, valueCad: number, kind: ActionKind | null): Hol
   gainPct: 0,
   action: kind === null ? null : action(symbol, kind),
   notes: [],
+  priceMove: null,
 })
 
 /** The markup of one holding's row. */
@@ -62,6 +63,17 @@ describe('HoldingsCard', () => {
     expect(ry).toContain('width:50%')
     expect(rowOf(html, 'T.TO')).toContain('class="weight"')
     expect(html).toContain('actions as of Nov 20')
+  })
+
+  it("marks each holding's value with the way its price moved, so a Refresh flashes it", () => {
+    const html = render([
+      { ...holding('UP.TO', 300, 'hold'), priceMove: 'up' },
+      { ...holding('DN.TO', 200, 'hold'), priceMove: 'down' },
+      holding('NO.TO', 100, null),
+    ])
+    expect(rowOf(html, 'UP.TO')).toContain('class="r num h-value" data-price="up"')
+    expect(rowOf(html, 'DN.TO')).toContain('class="r num h-value" data-price="down"')
+    expect(rowOf(html, 'NO.TO')).not.toContain('data-price')
   })
 
   it('draws small weights on a 20% scale', () => {

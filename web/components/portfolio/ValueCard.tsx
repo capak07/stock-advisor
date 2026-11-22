@@ -6,6 +6,7 @@ import { Tabs } from '@/components/Tabs'
 import { TweenNumber } from '@/components/TweenNumber'
 import { longDay, shortDay } from '@/lib/dates'
 import { fmtMoney, fmtPct } from '@/lib/format'
+import { priceDirection } from '@/lib/motion'
 import { dayMove, type Period, type PeriodReturns } from '@/lib/portfolio/returns'
 import type { Totals } from '@/lib/portfolio/valuation'
 
@@ -65,7 +66,7 @@ export function ValueCard({
           <span className="label" id="value-h">
             Total value
           </span>
-          <div className="big num" style={{ margin: '8px 0 6px' }}>
+          <div className="big num" style={{ margin: '8px 0 6px' }} data-price={priceDirection(move?.pct)}>
             {fmtMoney(totals.valueCad, { digits: 2 })}
           </div>
           {totals.costCad > 0 && (

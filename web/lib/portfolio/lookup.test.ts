@@ -52,11 +52,14 @@ describe('PriceBook', () => {
     expect(book.latest('stock:SPY')?.day).toBe('2026-10-02')
     expect(book.days('stock:SPY')).toEqual(['2026-10-01', '2026-10-02'])
     expect(book.first('stock:SPY')?.day).toBe('2026-10-01')
+    expect(book.previous('stock:SPY')?.close).toBe(500)
   })
 
   it('knows nothing about an asset without closes', () => {
     expect(book.on('stock:XIU.TO', '2026-10-03')).toBeNull()
     expect(book.latest('crypto:BTC')).toBeNull()
     expect(book.first('crypto:BTC')).toBeNull()
+    expect(book.previous('crypto:BTC')).toBeNull()
+    expect(new PriceBook(new Map([['stock:A', [{ day: '2026-10-01', close: 1, currency: 'CAD' as const }]]])).previous('stock:A')).toBeNull()
   })
 })

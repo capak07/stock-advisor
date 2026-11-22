@@ -433,11 +433,13 @@ html.dark .data-table tbody tr:hover td { background: oklch(1 0 0 / .03); }
 .tick-up::after { background: var(--gain-soft); }
 .tick-down::after { background: var(--loss-soft); }
 
-/* Chart lines draw left to right; the forecast range fades in after. .draw is on the svg while it first shows
- * (LineChart, Sparkline). LineChart sets each path.line's --len from getTotalLength(); without one, 1200 is used. */
+/* Chart lines draw left to right; the forecast range fades in after (spec §5): the cone and the late marks wait
+ * 600 ms, until the 700 ms line has all but reached its end. .draw is on the svg while it first shows
+ * (LineChart, Sparkline). LineChart sets each path.line's --len from getTotalLength(); without one, 1200 is used.
+ * Reduced motion zeroes the cone's delay and shows the late marks at once (the rules at the end). */
 .draw path.line { stroke-dasharray: var(--len, 1200); stroke-dashoffset: var(--len, 1200); animation: draw 700ms cubic-bezier(.4,0,.2,1) forwards; }
-.draw .cone { opacity: 0; animation: fade 400ms 200ms forwards; }
-.chart .late { animation: fade 300ms ease-out 300ms both; }
+.draw .cone { opacity: 0; animation: fade 400ms 600ms forwards; }
+.chart .late { animation: fade 300ms ease-out 600ms both; }
 
 /* Between routes, a 220 ms crossfade through the browser's view transitions (app/(app)/template.tsx). React names the
  * page that leaves and the one that arrives (class route-fade) and leaves the frame live, so the bars do not fade;

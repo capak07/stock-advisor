@@ -423,7 +423,9 @@ export function HoldingsCard({
                       </td>
                     )}
                     <td className="r num h-shares">{qty === undefined ? dash : fmtQty(qty)}</td>
-                    <td className="r num h-value">{fmtMoney(h.valueCad)}</td>
+                    <td className="r num h-value" data-price={h.priceMove ?? undefined}>
+                      {fmtMoney(h.valueCad)}
+                    </td>
                     <td className={`r num h-pl ${tone}`}>
                       <span>{fmtMoney(h.gainCad, { signed: true })}</span> <span className={`sub ${tone}`}>{fmtPct(h.gainPct)}</span>
                     </td>

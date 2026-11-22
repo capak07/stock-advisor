@@ -246,6 +246,8 @@ export interface HeldPlan {
   account: Account
   /** The run's action for it; null for one this page doesn't know (then no sell-at price is shown). */
   action: ActionKind | null
+  /** The run flagged it for a review (shown as a Review chip beside the action, as on My Portfolio). */
+  review: boolean
   /** Null for a row stored before plans existed, or one that can't be read. */
   exitPlan: ExitPlan | null
   /** The close the plan was built on, in the asset's own currency. */
@@ -269,17 +271,18 @@ export async function loadHeldAction(supabase: Supabase, symbol: string, assetTy
   const rows = must(
     await supabase
       .from('holding_actions')
-      .select('account, action, exit_plan, ref_price')
+      .select('account, action, review, exit_plan, ref_price')
       .eq('run_id', newest[0].run_id)
       .eq('symbol', symbol)
       .eq('asset_type', assetType)
       .order('account'),
-  ) as { account: Account; action: string; exit_plan: unknown; ref_price: string | number | null }[]
+  ) as { account: Account; action: string; review: boolean | null; exit_plan: unknown; ref_price: string | number | null }[]
   return rows.map((r) => {
     const ref = r.ref_price === null ? null : Number(r.ref_price)
     return {
       account: r.account,
       action: ACTION_KINDS.find((k) => k === r.action) ?? null,
+      review: r.review === true,
       exitPlan: parseExitPlan(r.exit_plan, assetType),
       refPrice: ref !== null && Number.isFinite(ref) ? ref : null,
     }

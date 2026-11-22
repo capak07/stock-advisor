@@ -68,6 +68,11 @@ export class PriceBook {
     return this.byKey.get(key)?.at(-1) ?? null
   }
 
+  /** The close before the latest, or null with fewer than two. */
+  previous(key: string): Close | null {
+    return this.byKey.get(key)?.at(-2) ?? null
+  }
+
   /** The earliest close, or null for an asset without closes. */
   first(key: string): Close | null {
     return this.byKey.get(key)?.[0] ?? null

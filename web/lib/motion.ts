@@ -2,6 +2,14 @@
 
 export type TickClass = 'tick-up' | 'tick-down'
 
+export type PriceDirection = 'up' | 'down'
+
+/** An element's `data-price` from its price's move: down when it fell, up otherwise; none when the move is unknown. */
+export function priceDirection(change: number | null | undefined): PriceDirection | undefined {
+  if (change === null || change === undefined || !Number.isFinite(change)) return undefined
+  return change < 0 ? 'down' : 'up'
+}
+
 /** The flash for an element's `data-price`: gain-soft when it went up, loss-soft when it went down. */
 export function tickClass(direction: string | undefined): TickClass | null {
   return direction === 'up' ? 'tick-up' : direction === 'down' ? 'tick-down' : null

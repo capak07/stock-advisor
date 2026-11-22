@@ -133,20 +133,28 @@ export function OutlookCard({
   )
 }
 
-/** On a phone, under the price: the outlook in one line, linking to the Outlook card. Nothing without a forecast. */
-export function PhoneOutlook({ verdict, coin }: { verdict: Verdict | null; coin: boolean }) {
+/**
+ * On a phone, under the price: the outlook in one line, linking to the Outlook card. Nothing without a forecast.
+ * The verdict is paired with the horizon it was judged at (`judgedAt`), not the one the Outlook control is on;
+ * when they differ, the chance names its own horizon.
+ */
+export function PhoneOutlook({ verdict, judgedAt, coin }: { verdict: Verdict | null; judgedAt: number | null; coin: boolean }) {
   const f = useForecast()
   if (!f || !f.row) return null
   const words = edgeWords(verdict)
+  const { span } = f.forecast
+  const n = f.row.horizon
+  const judged = verdict !== null && judgedAt !== null ? judgedAt : n
   return (
     <a className="phone-outlook" href="#outlook">
       <Scale aria-hidden="true" />
       <span>
         <b>
-          Outlook ({f.row.horizon} {f.forecast.span}): {words === 'No clear edge' ? 'no clear edge' : words}.
+          Outlook ({judged} {span}): {words === 'No clear edge' ? 'no clear edge' : words}.
         </b>{' '}
         <span className="sub">
-          {chance(f.row.pBeat)} chance to beat {coin ? f.forecast.benchmark : 'the market'}.
+          {chance(f.row.pBeat)} chance to beat {coin ? f.forecast.benchmark : 'the market'}
+          {judged !== n && ` over ${n} ${span}`}.
         </span>
       </span>
     </a>

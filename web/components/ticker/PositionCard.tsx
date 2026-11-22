@@ -10,8 +10,9 @@ import { positionFigures } from '@/lib/ticker'
 
 /**
  * Your position (spec §7.7, ticker_2.html), only when held: per account, the shares, value, average cost and
- * P/L in CAD, the run's action, and the exit plan's lines as `ExitPlanWithAlert` shows them, with its rules for
- * when a sell-at price is shown, in the asset's own currency. `price` is the last price in `currency`.
+ * P/L in CAD, the run's action with its Review flag (as My Portfolio's holdings table shows them), and the exit
+ * plan's lines as `ExitPlanWithAlert` shows them, with its rules for when a sell-at price is shown, in the asset's
+ * own currency. `price` is the last price in `currency`.
  */
 export function PositionCard({
   symbol,
@@ -51,7 +52,12 @@ export function PositionCard({
                 <b>You own {fmtQty(p.qty)}</b>
                 <span className="label">{ACCOUNT_LABELS[p.account]}</span>
               </span>
-              {h?.action && <span className={`chip ${h.action}`}>{ACTION_LABELS[h.action]}</span>}
+              {(h?.action || h?.review) && (
+                <span className="h-chips">
+                  {h.action && <span className={`chip ${h.action}`}>{ACTION_LABELS[h.action]}</span>}
+                  {h.review && <span className="chip review">Review</span>}
+                </span>
+              )}
             </div>
             <div className="stats own-stats">
               <div className="stat">

@@ -177,6 +177,18 @@ test('the actions of the latest run fill the Actions card and the holdings table
   await expect(aapl.locator('.chip.hold')).toHaveText('Hold')
   await expect(aapl.locator('.chip.review')).toHaveText('Review')
   await expect(page.getByText('appear once the model runs')).toHaveCount(0)
+  // each value is marked with its price's last move, so a Refresh flashes it gain-soft or loss-soft
+  await expect(shop.locator('.h-value')).toHaveAttribute('data-price', 'down')
+  await expect(msft.locator('.h-value')).toHaveAttribute('data-price', 'up')
+
+  // the stock page's Your position shows the same chips as the holdings table, the Review flag included
+  await page.goto('/ticker/AAPL')
+  const own = page.getByRole('region', { name: 'Your position' }).getByTestId('position')
+  await expect(own.locator('.chip.hold')).toHaveText('Hold')
+  await expect(own.locator('.chip.review')).toHaveText('Review')
+  await page.goto('/ticker/MSFT')
+  await expect(own.locator('.chip.hold')).toHaveText('Hold')
+  await expect(own.locator('.chip.review')).toHaveCount(0)
 })
 
 test('each action says how to place it, and each holding the stop to keep', async ({ page }) => {

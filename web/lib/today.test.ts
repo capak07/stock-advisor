@@ -20,6 +20,7 @@ const holding = (kind: ActionKind | null, review = false, symbol = 'AAA'): Holdi
       ? null
       : ({ account: 'tfsa', symbol, assetType: 'stock', action: kind, review, reasons: ['why'], warnings: [] } as unknown as HoldingAction),
   notes: [],
+  priceMove: null,
 })
 
 const dayRow = (status: DayRow['status']): DayRow => ({

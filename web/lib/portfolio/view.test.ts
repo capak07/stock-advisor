@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { HoldingAction } from './actions'
 import { FxRates, PriceBook } from './lookup'
 import type { Close, Trade } from './types'
-import { portfolioView } from './view'
+import { portfolioView, priceMove } from './view'
 
 const TODAY = '2026-10-16'
 const FX = new FxRates([{ day: '2026-09-01', usdCad: 1.4 }])
@@ -144,6 +144,21 @@ describe('portfolioView', () => {
     ])
     expect(modelView.byRisk.map((s) => s.label)).toEqual(['Medium', 'Not rated'])
     expect(view.byRisk.map((s) => s.label)).toEqual(['Not rated'])
+  })
+
+  it('gives each holding the way its price last moved, for the flash after a Refresh', () => {
+    const rows = Object.fromEntries(view.holdings.map((h) => [h.symbol, h.priceMove]))
+    expect(rows).toEqual({ AAPL: 'up', ETH: 'down', NEWCO: null }) // NEWCO has no close
+  })
+
+  it("compares a coin's CAD live quote with its USD history in CAD, and leaves a single close unmarked", () => {
+    const eth = { assetType: 'crypto' as const, symbol: 'ETH' }
+    const history = closes('USD', [['2026-10-15', 2000]]) // C$2,800 at 1.4
+    const quoted = (cad: number) => new PriceBook(new Map([['crypto:ETH', [...history, { day: TODAY, close: cad, currency: 'CAD' as const }]]]))
+    expect(priceMove(eth, quoted(2900), FX)).toBe('up')
+    expect(priceMove(eth, quoted(2700), FX)).toBe('down')
+    expect(priceMove(eth, quoted(2900), new FxRates([]))).toBeNull() // no rate to compare with
+    expect(priceMove(eth, new PriceBook(new Map([['crypto:ETH', history]])), FX)).toBeNull()
   })
 
   it('is empty without trades', () => {

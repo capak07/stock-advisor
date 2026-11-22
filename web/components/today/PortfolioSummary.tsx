@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Sparkline } from '@/components/Sparkline'
 import { fmtMoney, fmtPct } from '@/lib/format'
+import { priceDirection } from '@/lib/motion'
 import { dayMove, type Period, type PeriodReturns } from '@/lib/portfolio/returns'
 import type { Totals } from '@/lib/portfolio/valuation'
 
@@ -46,7 +47,7 @@ export function PortfolioSummary({
       <div className="hero-grid">
         <div>
           <div className="label">Portfolio{accounts.length > 0 && ` · ${accounts.join(' and ')}`}</div>
-          <div className="big num" style={{ margin: '8px 0 6px' }} data-testid="today-value">
+          <div className="big num" style={{ margin: '8px 0 6px' }} data-testid="today-value" data-price={priceDirection(move?.pct)}>
             {fmtMoney(totals.valueCad, { digits: 2 })}
           </div>
           {holdings === 0 ? (

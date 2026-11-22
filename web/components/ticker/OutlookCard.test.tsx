@@ -26,7 +26,7 @@ const render = (
 ) =>
   renderToStaticMarkup(
     <ForecastProvider forecast={f} initialHorizon={start}>
-      <PhoneOutlook verdict={verdict} coin={coin} />
+      <PhoneOutlook verdict={verdict} judgedAt={judgedAt} coin={coin} />
       <OutlookCard verdict={verdict} judgedAt={judgedAt} price={364.18} currency="USD" coin={coin} emptyText="No forecast yet." />
     </ForecastProvider>,
   )
@@ -79,6 +79,19 @@ describe('OutlookCard', () => {
 
   it('puts the outlook in one line for a phone', () => {
     expect(text(render(forecast(), { verdict: 'hold' }))).toContain('Outlook (21 trading days): no clear edge. 52% chance to beat the market.')
+    expect(text(render(forecast(), { verdict: 'avoid', judgedAt: 63, start: 63 }))).toContain(
+      'Outlook (63 trading days): Avoid. 53% chance to beat the market.',
+    )
+  })
+
+  it("pairs the phone line's verdict with the horizon it was judged at, not the selected one", () => {
+    const out = text(render(forecast(), { verdict: 'avoid', judgedAt: 63, start: 21 }))
+    expect(out).toContain('Outlook (63 trading days): Avoid. 52% chance to beat the market over 21 trading days.')
+    expect(out).not.toContain('Outlook (21 trading days)')
+    // without a verdict there is nothing judged: the line takes the selected horizon
+    expect(text(render(forecast(), { verdict: null, judgedAt: 63, start: 21 }))).toContain(
+      'Outlook (21 trading days): no clear edge. 52% chance to beat the market.',
+    )
   })
 
   it('says when a forecast appears, or that this run had none', () => {

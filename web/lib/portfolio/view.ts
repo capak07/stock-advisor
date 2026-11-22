@@ -1,4 +1,5 @@
 import { fmtMoney } from '../format'
+import type { PriceDirection } from '../motion'
 import { tradeCurrency } from '../symbols'
 import type { HoldingAction } from './actions'
 import { buildLedger, positionKey } from './ledger'
@@ -36,6 +37,9 @@ export interface HoldingRow {
   /** The latest run's action; null for a holding bought after it, or before the first. */
   action: HoldingAction | null
   notes: Note[]
+  /** Which way the price last moved (the latest close or live quote against the close before it), for the flash
+   *  after a Refresh; null without two prices to compare. */
+  priceMove: PriceDirection | null
 }
 
 /** What the sell form offers: each open position at average cost. */
@@ -90,6 +94,22 @@ function lastClose(p: { assetType: AssetType; symbol: string }, prices: PriceBoo
   return rate === undefined ? null : { day: close.day, close: close.close * rate, currency: 'CAD' }
 }
 
+/**
+ * Which way an asset's price last moved: its latest close (a live quote after a Refresh) against the close before.
+ * A coin's CAD quote on its USD history is compared in CAD at the latest rate; without one, null.
+ */
+export function priceMove(p: { assetType: AssetType; symbol: string }, prices: PriceBook, fx: FxRates): PriceDirection | null {
+  const key = assetKey(p.assetType, p.symbol)
+  const latest = prices.latest(key)
+  const before = prices.previous(key)
+  if (latest === null || before === null) return null
+  const rate = fx.latest()?.usdCad ?? null
+  const cad = (c: Close) => (c.currency === 'CAD' ? c.close : rate === null ? null : c.close * rate)
+  const [now, then] = latest.currency === before.currency ? [latest.close, before.close] : [cad(latest), cad(before)]
+  if (now === null || then === null) return null
+  return now < then ? 'down' : 'up'
+}
+
 /** Everything the portfolio page shows: values, returns, the model's actions and the checks (spec §7, §9). */
 export function portfolioView(
   { trades, prices, fx, names, guideline, actions, sectors }: PortfolioInputs,
@@ -125,6 +145,7 @@ export function portfolioView(
       gainPct: h.gainPct,
       action,
       notes,
+      priceMove: priceMove(h, prices, fx),
     }
   })
 

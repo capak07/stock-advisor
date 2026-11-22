@@ -15,6 +15,7 @@ const holding = (symbol: string, kind: ActionKind, reasons: string[], gainPct: n
   gainPct,
   action: { account: 'tfsa', symbol, assetType: 'stock', action: kind, review, reasons, warnings: [] } as unknown as HoldingAction,
   notes: [],
+  priceMove: null,
 })
 
 describe('AttentionCard', () => {

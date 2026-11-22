@@ -18,6 +18,7 @@ describe('PortfolioSummary', () => {
       <PortfolioSummary totals={{ valueCad: 0, costCad: 0, gainCad: 0, unpriced: [] }} periods={null} accounts={[]} holdings={0} />,
     )
     expect(html).toContain('C$0.00')
+    expect(html).not.toContain('data-price') // no day move to flash
     expect(html).toContain('No holdings yet')
     expect(html).not.toContain('<svg')
     expect(html).toContain('href="/portfolio"')
@@ -33,6 +34,7 @@ describe('PortfolioSummary', () => {
       />,
     )
     expect(html).toContain('C$12,340.18')
+    expect(html).toMatch(/data-testid="today-value" data-price="up"/) // flashes after a Refresh, by today's move
     expect(html).toContain('today')
     expect(html).toContain('All time')
     expect(html).toContain('+10.8%')
@@ -48,6 +50,10 @@ describe('PortfolioSummary', () => {
       <PortfolioSummary totals={{ valueCad: 100, costCad: 90, gainCad: 10, unpriced: [] }} periods={periods(1, 2)} accounts={['TFSA']} holdings={1} />,
     )
     expect(html).toContain('vs SPY, since first buy')
+    const down = renderToStaticMarkup(
+      <PortfolioSummary totals={{ valueCad: 100, costCad: 90, gainCad: 10, unpriced: [] }} periods={periods(-1, 2)} accounts={['TFSA']} holdings={1} />,
+    )
+    expect(down).toContain('data-price="down"')
     expect(html).toContain('−1.0 pts')
   })
 })

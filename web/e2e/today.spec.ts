@@ -46,11 +46,12 @@ test('a Sell holding shows under Needs your attention with its Sell chip; the Ho
   await expect(row.getByText('Closed below its stop')).toBeVisible()
   await expect(row).toHaveAttribute('href', '/ticker/RY.TO')
   await expect(card.getByRole('link', { name: /2 more on Hold/ })).toHaveAttribute('href', '/portfolio')
-  // the summary values the holdings and draws three months against SPY
+  // the summary shows only the money made or lost on the last session, with no chart or SPY gap
   const summary = page.getByRole('link', { name: 'Portfolio summary' })
   await expect(summary).toHaveAttribute('href', '/portfolio')
-  await expect(summary.locator('svg.spark path.line')).toHaveCount(1)
-  await expect(summary.getByText(/cash/i)).toHaveCount(0)
+  await expect(summary.getByTestId('today-value')).toHaveText(/^[+−]C\$[\d,]+\.\d\d$/)
+  await expect(summary.locator('svg')).toHaveCount(0)
+  await expect(summary.getByText(/All time|SPY|cash/i)).toHaveCount(0)
 })
 
 test('with no run, the Picks card says No run yet (Review Focus 2)', async ({ page }) => {

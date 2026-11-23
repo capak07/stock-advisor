@@ -10,6 +10,8 @@ export interface Settings {
   tfsa_short_hold_share_warn: number
   daytrade_max_loss_cad: number
   daytrade_spread_pct: number
+  /** Null until the owner sets it. */
+  marginal_tax_pct: number | null
   updated_at: string
 }
 
@@ -18,11 +20,11 @@ export async function loadSettings(supabase: Supabase): Promise<Settings> {
     await supabase
       .from('settings')
       .select(
-        'usd_fx_fee_pct, crypto_fee_pct, tfsa_round_trips_warn, tfsa_short_hold_share_warn, daytrade_max_loss_cad, daytrade_spread_pct, updated_at',
+        'usd_fx_fee_pct, crypto_fee_pct, tfsa_round_trips_warn, tfsa_short_hold_share_warn, daytrade_max_loss_cad, daytrade_spread_pct, marginal_tax_pct, updated_at',
       )
       .eq('id', 1)
       .single(),
-  ) as Record<string, string | number>
+  ) as Record<string, string | number | null>
   return {
     usd_fx_fee_pct: Number(row.usd_fx_fee_pct),
     crypto_fee_pct: Number(row.crypto_fee_pct),
@@ -30,6 +32,7 @@ export async function loadSettings(supabase: Supabase): Promise<Settings> {
     tfsa_short_hold_share_warn: Number(row.tfsa_short_hold_share_warn),
     daytrade_max_loss_cad: Number(row.daytrade_max_loss_cad),
     daytrade_spread_pct: Number(row.daytrade_spread_pct),
+    marginal_tax_pct: row.marginal_tax_pct === null ? null : Number(row.marginal_tax_pct),
     updated_at: String(row.updated_at),
   }
 }

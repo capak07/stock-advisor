@@ -54,6 +54,7 @@ export async function addBuy(_: FormState, form: FormData): Promise<FormState> {
   if (error) return failed(`The buy wasn't saved: ${error.message}`)
   revalidatePath('/')
   revalidatePath('/portfolio')
+  revalidatePath('/history')
   return { ok: true, message: `Buy saved: ${fmtQty(buy.qty)} ${buy.symbol} in ${ACCOUNT_LABELS[buy.account]}`, at: Date.now() }
 }
 
@@ -76,6 +77,7 @@ export async function deleteTrade(side: 'buy' | 'sell', id: number): Promise<For
   if (!row) return failed(`That ${side} was already gone.`)
   revalidatePath('/')
   revalidatePath('/portfolio')
+  revalidatePath('/history')
   return {
     ok: true,
     message: `${side === 'buy' ? 'Buy' : 'Sell'} deleted: ${fmtQty(Number(row.qty))} ${row.symbol}`,
@@ -185,6 +187,7 @@ export async function updateTrade(_: FormState, form: FormData): Promise<FormSta
   if (!row) return failed(`That ${side} was already gone.`)
   revalidatePath('/')
   revalidatePath('/portfolio')
+  revalidatePath('/history')
   const label = side === 'buy' ? 'Buy' : 'Sell'
   return { ok: true, message: `${label} updated: ${fmtQty(Number(row.qty))} ${row.symbol}`, at: Date.now() }
 }
@@ -219,5 +222,6 @@ export async function addSell(_: FormState, form: FormData): Promise<FormState> 
   if (error) return failed(`The sell wasn't saved: ${error.message}`)
   revalidatePath('/')
   revalidatePath('/portfolio')
+  revalidatePath('/history')
   return { ok: true, message: `Sell saved: ${fmtQty(sell.qty)} ${sell.symbol} from ${ACCOUNT_LABELS[sell.account]}`, at: Date.now() }
 }

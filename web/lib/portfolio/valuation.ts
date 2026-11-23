@@ -2,7 +2,7 @@ import { marketOf } from '../symbols'
 import { RISK_LABELS, RISK_LEVELS, type HoldingAction } from './actions'
 import { positionKey } from './ledger'
 import type { FxRates, PriceBook } from './lookup'
-import { ACCOUNT_LABELS, TAXABLE, assetKey } from './types'
+import { ACCOUNT_LABELS, INCLUSION_RATE, TAXABLE, assetKey } from './types'
 import type { Account, Market, Position } from './types'
 import type { Warning } from './warnings'
 
@@ -131,4 +131,4 @@ const listed = (items: readonly string[]): string =>
   items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
 
 /** The estimated taxable amount of an unrealized gain or loss: 50% inclusion (spec §7.5). */
-export const taxableEstimate = (h: Holding): number | null => (TAXABLE.has(h.account) ? h.gainCad * 0.5 : null)
+export const taxableEstimate = (h: Holding): number | null => (TAXABLE.has(h.account) ? h.gainCad * INCLUSION_RATE : null)

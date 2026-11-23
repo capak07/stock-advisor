@@ -644,6 +644,17 @@ def test_daytrade_settings_default_and_only_the_owner_changes_them(owned_db):
             owned_db.execute("update settings set daytrade_max_loss_cad = 10")
 
 
+def test_marginal_tax_rate_starts_unset_and_only_the_owner_sets_it(owned_db):
+    assert owned_db.execute("select marginal_tax_pct from settings").fetchone()["marginal_tax_pct"] is None
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert owned_db.execute("update settings set marginal_tax_pct = 43.41").rowcount == 1
+        with pytest.raises(psycopg.errors.CheckViolation):
+            owned_db.execute("update settings set marginal_tax_pct = 101")
+    with acting_as(owned_db, "pipeline_rw"):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute("update settings set marginal_tax_pct = 10")
+
+
 def test_daytrade_skill_rank_is_1_to_3_and_unique_per_day(db):
     db.execute(DAYTRADE_DAY)
     db.execute(DAYTRADE_SIGNAL)

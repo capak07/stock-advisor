@@ -78,23 +78,29 @@ async function seedResults() {
 
 const results = (page: Page) => page.locator('#results tbody tr')
 
-test('results by stock show what a sold stock made and what a holding is up right now', async ({ page }) => {
+test('results by stock are on History, each with what it made and what is left after tax', async ({ page }) => {
   await seedResults()
   await page.goto('/portfolio')
+  // the holdings table counts AAPL as History does; Results by stock and the trades are not on My Portfolio
+  await expect(holdings(page).filter({ hasText: 'AAPL' }).locator('.h-pl')).toContainText('+C$280')
+  await expect(page.getByRole('heading', { name: /Results by stock/ })).toHaveCount(0)
+  await expect(page.locator('#trades')).toHaveCount(0)
+
+  await page.getByRole('complementary', { name: 'Main' }).getByRole('link', { name: 'History' }).click()
+  await expect(page.getByRole('heading', { name: 'History', level: 1 })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Results by stock/ })).toBeVisible()
+  await expect(page.locator('#trades tbody tr')).toHaveCount(3)
   await expect(results(page)).toHaveCount(2)
   const aapl = results(page).nth(0)
   await expect(aapl).toContainText('AAPL')
   await expect(aapl).toContainText('Holding')
   await expect(aapl).toContainText('10 @ US$200.00 avg · now US$220.00')
-  await expect(aapl.locator('.rs-result')).toContainText('+C$280 +10.0% now')
+  await expect(aapl.locator('.rs-result')).toContainText('+C$280 +10.0% now+C$280 +10.0% after tax')
   const nvda = results(page).nth(1)
   await expect(nvda).toContainText('Sold')
   await expect(nvda).toContainText('bought @ US$100.00 avg → sold @ US$90.00 avg')
-  await expect(nvda.locator('.rs-result')).toContainText('−C$140 −10.0% sold')
-  await expect(page.locator('.rs-total')).toHaveText('Made on sales: −C$140 · Open now: +C$280')
-  // the holdings table counts AAPL the same way
-  await expect(holdings(page).filter({ hasText: 'AAPL' }).locator('.h-pl')).toContainText('+C$280')
+  await expect(nvda.locator('.rs-result')).toContainText('−C$140 −10.0% made−C$140 −10.0% after tax')
+  await expect(page.locator('.rs-total')).toHaveText('Made on sales: −C$140 · after tax −C$140Open now: +C$280 · after tax +C$280')
 })
 
 test.describe('on a phone', () => {
@@ -102,7 +108,7 @@ test.describe('on a phone', () => {
 
   test('results by stock fit the screen', async ({ page }) => {
     await seedResults()
-    await page.goto('/portfolio')
+    await page.goto('/history')
     await expect(results(page)).toHaveCount(2)
     const widths = await page.evaluate(() => ({
       page: document.documentElement.scrollWidth,

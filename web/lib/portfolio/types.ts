@@ -16,6 +16,9 @@ export const ACCOUNT_LABELS: Record<Account, string> = {
 /** Accounts whose gains are taxed (spec §7.5); the others are sheltered. */
 export const TAXABLE: ReadonlySet<Account> = new Set(['crypto', 'non_registered'])
 
+/** The share of a capital gain that is taxed (spec §7.5). */
+export const INCLUSION_RATE = 0.5
+
 /** A buy (a `lots` row) or a sell (a `sells` row). Days are ISO dates, `YYYY-MM-DD`. */
 export interface Trade {
   side: 'buy' | 'sell'

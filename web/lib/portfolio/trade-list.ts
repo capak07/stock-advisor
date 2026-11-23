@@ -2,7 +2,7 @@ import { buildLedger, positionKey, tradeCad } from './ledger'
 import type { FxRates } from './lookup'
 import type { Account, AssetType, Currency, RecordedTrade } from './types'
 
-/** One row of the portfolio page's trade list (Plan 5c). */
+/** One row of the History page's trade list (Plan 5c). */
 export interface TradeLine {
   /** `buy:12` or `sell:3`: ids are only unique within their table. */
   key: string

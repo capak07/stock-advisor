@@ -18,7 +18,7 @@ export async function resetData() {
             restart identity cascade`
   await sql`update settings set usd_fx_fee_pct = 1.5, crypto_fee_pct = 2.0, tfsa_round_trips_warn = 24,
             tfsa_short_hold_share_warn = 0.5,
-            daytrade_max_loss_cad = 50, daytrade_spread_pct = 0.10, updated_at = now() where id = 1`
+            daytrade_max_loss_cad = 50, daytrade_spread_pct = 0.10, marginal_tax_pct = null, updated_at = now() where id = 1`
 }
 
 export const today = () => todayInToronto()

@@ -2,7 +2,7 @@ import { daysBetween, shortDay } from '../dates'
 import { fmtMoney, fmtPct, fmtPrice, fmtQty } from '../format'
 import { buildLedger, inOrder, positionKey, QTY_EPSILON, tradeCad } from './ledger'
 import type { FxRates, PriceBook } from './lookup'
-import { ACCOUNT_LABELS, type Account, type AssetType, type Currency, type Trade } from './types'
+import { ACCOUNT_LABELS, INCLUSION_RATE, TAXABLE, type Account, type AssetType, type Currency, type Trade } from './types'
 import { valueHoldings } from './valuation'
 import { lastClose } from './view'
 
@@ -10,6 +10,8 @@ import { lastClose } from './view'
 export interface Result {
   cad: number
   pct: number | null
+  /** What it cost, in CAD. */
+  costCad: number
 }
 
 /** What is still held of a holding, valued as the holdings table values it. */
@@ -21,6 +23,8 @@ export interface OpenPart {
   price: number | null
   /** In CAD as the holdings table values it: at cost without a price. */
   valueCad: number
+  /** What is left cost, in CAD. */
+  costCad: number
   /** Null without a price: the holdings table shows such a holding at cost. */
   cad: number | null
   pct: number | null
@@ -129,6 +133,7 @@ function resultLine(trades: Trade[], prices: PriceBook, fx: FxRates): ResultLine
       avgCost: openAvgCost(trades),
       price: priced ? (lastClose(position, prices, fx)?.close ?? null) : null,
       valueCad: valued.valueCad,
+      costCad: position.costCad,
       cad: priced ? valued.gainCad : null,
       pct: priced && position.costCad > 0 ? valued.gainPct : null,
     }
@@ -147,7 +152,7 @@ function resultLine(trades: Trade[], prices: PriceBook, fx: FxRates): ResultLine
     avgBuy: average(buys),
     avgSell: average(sells),
     soldQty: sells.reduce((sum, t) => sum + t.qty, 0),
-    realized: ledger.sales.length === 0 ? null : { cad: realizedCad, pct: soldCost > 0 ? (realizedCad / soldCost) * 100 : null },
+    realized: ledger.sales.length === 0 ? null : { cad: realizedCad, pct: soldCost > 0 ? (realizedCad / soldCost) * 100 : null, costCad: soldCost },
     open,
   }
 }
@@ -191,21 +196,69 @@ export function resultDetail(line: ResultLine): [string, string] {
   return [first, `${account} · since ${shortDay(line.openedOn)}`]
 }
 
+/**
+ * A profit or loss after tax: in a taxable account (non-registered, crypto) half of it (the inclusion rate) is taxed
+ * at the owner's marginal rate, and a loss is reduced the same way, as it offsets gains; a TFSA or RRSP pays none.
+ * Null in a taxable account until the rate is set in Settings.
+ */
+export function afterTax(cad: number, account: Account, taxPct: number | null): number | null {
+  if (!TAXABLE.has(account)) return cad
+  return taxPct === null ? null : cad * (1 - INCLUSION_RATE * (taxPct / 100))
+}
+
+/** A line's whole result: what the sales made plus what the rest is up now; null with nothing priced. */
+function lineResult(line: ResultLine): { label: 'made' | 'now' | 'so far' | 'sold'; cad: number | null; costCad: number } {
+  const { realized, open } = line
+  if (open === null) return { label: 'made', cad: realized?.cad ?? 0, costCad: realized?.costCad ?? 0 }
+  if (open.cad === null) {
+    // no price for what is left: only the sales are known
+    return realized === null ? { label: 'now', cad: null, costCad: 0 } : { label: 'sold', cad: realized.cad, costCad: realized.costCad }
+  }
+  if (realized === null) return { label: 'now', cad: open.cad, costCad: open.costCad }
+  return { label: 'so far', cad: realized.cad + open.cad, costCad: realized.costCad + open.costCad }
+}
+
 export interface ResultPart {
-  label: 'sold' | 'now'
+  label: 'made' | 'now' | 'so far' | 'sold' | 'after tax'
   amount: string
   pct: string | null
   tone: 'gain' | 'loss' | null
 }
 
-/** The profit or loss column: what the sells made, then what is left is up or down now. */
-export function resultParts(line: ResultLine): ResultPart[] {
-  const part = (label: ResultPart['label'], cad: number | null, pct: number | null): ResultPart =>
+/**
+ * The profit or loss column, two lines: what the stock made (sold in full), is up now (held) or has made so far (part
+ * sold: the sales plus the rest now), then the same after tax at the owner's marginal rate (`taxPct`, null until set).
+ */
+export function resultParts(line: ResultLine, taxPct: number | null): ResultPart[] {
+  const part = (label: ResultPart['label'], cad: number | null, costCad: number): ResultPart =>
     cad === null
       ? { label, amount: '—', pct: null, tone: null }
-      : { label, amount: fmtMoney(cad, { signed: true }), pct: pct === null ? null : fmtPct(pct), tone: cad < 0 ? 'loss' : 'gain' }
-  const parts: ResultPart[] = []
-  if (line.realized !== null) parts.push(part('sold', line.realized.cad, line.realized.pct))
-  if (line.open !== null) parts.push(part('now', line.open.cad, line.open.pct))
-  return parts
+      : {
+          label,
+          amount: fmtMoney(cad, { signed: true }),
+          pct: costCad > 0 ? fmtPct((cad / costCad) * 100) : null,
+          tone: cad < 0 ? 'loss' : 'gain',
+        }
+  const total = lineResult(line)
+  const taxed = total.cad === null ? null : afterTax(total.cad, line.account, taxPct)
+  return [part(total.label, total.cad, total.costCad), part('after tax', taxed, total.costCad)]
+}
+
+export interface ResultTotals {
+  realizedCad: number
+  /** Null when a taxable account has a result and the rate isn't set. */
+  realizedAfterTax: number | null
+  openCad: number
+  openAfterTax: number | null
+}
+
+/** What the sales made and what the holdings are up now, before and after tax. */
+export function resultTotals(results: Results, taxPct: number | null): ResultTotals {
+  const sum = (values: (number | null)[]) => (values.some((v) => v === null) ? null : values.reduce<number>((a, v) => a + v!, 0))
+  return {
+    realizedCad: results.realizedCad,
+    realizedAfterTax: sum(results.lines.flatMap((l) => (l.realized ? [afterTax(l.realized.cad, l.account, taxPct)] : []))),
+    openCad: results.openCad,
+    openAfterTax: sum(results.lines.flatMap((l) => (l.open?.cad != null ? [afterTax(l.open.cad, l.account, taxPct)] : []))),
+  }
 }

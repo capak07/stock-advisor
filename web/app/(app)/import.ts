@@ -110,8 +110,9 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
         if (undoError) {
           revalidatePath('/')
           revalidatePath('/portfolio')
+          revalidatePath('/history')
           return failed(
-            `Only the buys went in: the sells failed (${error.message}) and the ${buyIds.length} buys couldn't be taken back. Delete them under Trades, then import the file again.`,
+            `Only the buys went in: the sells failed (${error.message}) and the ${buyIds.length} buys couldn't be taken back. Delete them under Trades on History, then import the file again.`,
           )
         }
       }
@@ -120,6 +121,7 @@ export async function importTrades(trades: ImportTrade[]): Promise<FormState> {
   }
   revalidatePath('/')
   revalidatePath('/portfolio')
+  revalidatePath('/history')
   const n = incoming.length
   const skipped = trades.length - n
   const note = skipped > 0 ? ` (${skipped} already recorded, skipped)` : ''

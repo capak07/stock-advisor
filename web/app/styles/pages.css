@@ -110,7 +110,8 @@
 #results .rs-part { display: block; }
 #results .rs-part + .rs-part { margin-top: 4px; }
 #results .rs-part .sub { font-size: 12px; }
-.rs-total { margin: 10px 0 0; }
+.rs-total { margin: 10px 0 0; display: flex; flex-direction: column; gap: 2px; }
+.rs-note { margin: 6px 0 0; font-size: 12px; }
 @media (max-width: 639px) {
   #results thead { display: none; }
   #results td { padding-left: 0; padding-right: 0; }

@@ -42,7 +42,7 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('heading', { name: 'My Portfolio', level: 1 })).toBeVisible()
     await expect(tabs.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page')
     await tabs.getByRole('button', { name: 'More' }).click()
-    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link')).toHaveText(['Picks', 'Invest', 'Watchlist', 'Sources', 'Settings'])
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link')).toHaveText(['History', 'Picks', 'Invest', 'Watchlist', 'Sources', 'Settings'])
     await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Watchlist' }).click()
     await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible()
     await expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
@@ -138,7 +138,7 @@ test.describe('on a phone', () => {
   test('More opens on its first page link, not on the theme switch', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('navigation', { name: 'Main' }).last().getByRole('button', { name: 'More' }).click()
-    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Picks' })).toBeFocused()
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'History' })).toBeFocused()
   })
 
   test('the tab bar, scrolled away, leaves the tab order', async ({ page }) => {
@@ -187,6 +187,7 @@ test.describe('on a phone', () => {
     const pages = [
       ['/', 'Today'],
       ['/portfolio', 'My Portfolio'],
+      ['/history', 'History'],
       ['/picks', "Today's Picks"],
       ['/watchlist', 'Watchlist'],
       ['/ticker/RY.TO', 'RY.TO'],

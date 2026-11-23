@@ -2,8 +2,6 @@ import type { Metadata } from 'next'
 import { OrderDisclaimer } from '@/components/OrderGuide'
 import { ActionsCard, BreakdownCard, HoldingsCard, WarningsCard, type HoldingGuides } from '@/components/portfolio/Cards'
 import { TradeButtons } from '@/components/portfolio/TradeForms'
-import { ResultsCard } from '@/components/portfolio/ResultsCard'
-import { TradeList } from '@/components/portfolio/TradeList'
 import { ValueCard } from '@/components/portfolio/ValueCard'
 import { ownerClient } from '@/lib/auth'
 import { loadHoldingActions } from '@/lib/data/actions'
@@ -12,14 +10,12 @@ import { loadPortfolio, portfolioViewOf } from '@/lib/data/portfolio'
 import { todayInToronto } from '@/lib/dates'
 import { holdingGuides } from '@/lib/guidance'
 import { assetKey } from '@/lib/portfolio/types'
-import { stockResults } from '@/lib/portfolio/results'
-import { tradeList } from '@/lib/portfolio/trade-list'
 
 export const metadata: Metadata = { title: 'My Portfolio' }
 
 /**
- * My Portfolio (spec §7.2): the value hero, then the holdings, the latest run's actions and the trades beside the
- * breakdown and warnings. The news is on Today.
+ * My Portfolio (spec §7.2): the value hero, then the holdings and the latest run's actions beside the breakdown and
+ * warnings. The news is on Today; Results by stock and the trades are on History.
  */
 export default async function PortfolioPage() {
   const supabase = await ownerClient()
@@ -61,10 +57,6 @@ export default async function PortfolioPage() {
           <HoldingsCard holdings={view.holdings} accounts={view.accounts.length} guides={guides} qtys={qtyOf} asOf={latest?.day ?? null} today={today} />
           <ActionsCard holdings={view.holdings} asOf={latest?.day ?? null} guides={guides} lowRanks={lowRanks} />
           {[...guides.values()].some((g) => (g.order?.steps.length ?? 0) + (g.stop?.steps.length ?? 0) > 0) && <OrderDisclaimer />}
-          <ResultsCard results={stockResults(data.trades, data.prices, data.fx)} />
-          {data.trades.length > 0 && (
-            <TradeList lines={tradeList(data.trades, data.fx)} rates={[...data.fx.rates]} today={today} />
-          )}
         </div>
         <aside className="portfolio-col">
           <BreakdownCard byRisk={view.byRisk} byMarket={view.byMarket} byAccount={view.byAccount} />

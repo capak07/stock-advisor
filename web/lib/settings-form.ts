@@ -10,9 +10,11 @@ export interface SettingsInput {
   daytrade_max_loss_cad: number
   /** The day trade tab's round-trip spread, in percent. */
   daytrade_spread_pct: number
+  /** The owner's combined federal and provincial marginal rate, in percent; null until set (no after-tax figures). */
+  marginal_tax_pct: number | null
 }
 
-/** The owner-editable settings (spec §3, §7.5, and the day trade tab's two), within the database's CHECK limits. */
+/** The owner-editable settings (spec §3, §7.5, the day trade tab's two and the tax rate), within the database's CHECK limits. */
 export function parseSettings(form: Record<string, string>): { input: SettingsInput } | { errors: FieldErrors } {
   const errors: FieldErrors = {}
   const fee = (name: string, label: string) => {
@@ -34,6 +36,9 @@ export function parseSettings(form: Record<string, string>): { input: SettingsIn
   }
   const spread = parseAmount(form.daytrade_spread_pct)
   if (spread === null || spread > 5) errors.daytrade_spread_pct = 'Enter a spread from 0 to 5%.'
+  const blank = (form.marginal_tax_pct ?? '').trim() === ''
+  const tax = blank ? null : parseAmount(form.marginal_tax_pct)
+  if (!blank && (tax === null || tax > 100)) errors.marginal_tax_pct = 'Enter a rate from 0 to 100%, or leave it blank.'
   if (Object.keys(errors).length > 0) return { errors }
   return {
     input: {
@@ -43,6 +48,7 @@ export function parseSettings(form: Record<string, string>): { input: SettingsIn
       tfsa_short_hold_share_warn: (share as number) / 100,
       daytrade_max_loss_cad: maxLoss as number,
       daytrade_spread_pct: spread as number,
+      marginal_tax_pct: tax,
     },
   }
 }

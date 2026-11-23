@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FxRates, PriceBook } from './lookup'
-import { resultDetail, resultParts, stockResults } from './results'
+import { afterTax, resultDetail, resultParts, resultTotals, stockResults } from './results'
 import type { Close, Trade } from './types'
 import { portfolioView } from './view'
 
@@ -187,18 +187,75 @@ describe('resultDetail', () => {
 
 describe('resultParts', () => {
   const only = (trades: Trade[]) => stockResults(trades, AAPL_220, FX).lines[0]
+  const taxable = (over: Partial<Trade>) => trade({ account: 'non_registered', ...over })
 
-  it('labels what the sales made and what the rest is up now', () => {
-    expect(resultParts(only([trade({}), sell({ qty: 4, price: 210, day: '2026-10-01' })]))).toEqual([
-      { label: 'sold', amount: '+C$56', pct: '+5.0%', tone: 'gain' },
-      { label: 'now', amount: '+C$168', pct: '+10.0%', tone: 'gain' },
+  it('shows two lines: what a stock sold in full made, then what is left after tax', () => {
+    // 10 bought at US$200 and sold at US$220, both at 1.4: +C$280. Half is taxed at 40%: C$56 of tax.
+    const line = only([taxable({}), sell({ account: 'non_registered', price: 220, day: '2026-10-01' })])
+    expect(resultParts(line, 40)).toEqual([
+      { label: 'made', amount: '+C$280', pct: '+10.0%', tone: 'gain' },
+      { label: 'after tax', amount: '+C$224', pct: '+8.0%', tone: 'gain' },
     ])
   })
 
-  it('shows a loss in the loss colour and a holding without a price as a dash', () => {
-    expect(resultParts(only([trade({}), sell({ price: 190, day: '2026-10-01' })]))).toEqual([
-      { label: 'sold', amount: '−C$140', pct: '−5.0%', tone: 'loss' },
+  it('totals a part-sold holding: what the sales made plus what the rest is up now', () => {
+    // 4 sold at US$210 (+C$56) and 6 left at US$220 (+C$168): +C$224 on C$2,800
+    const line = only([taxable({}), sell({ account: 'non_registered', qty: 4, price: 210, day: '2026-10-01' })])
+    expect(resultParts(line, 50)).toEqual([
+      { label: 'so far', amount: '+C$224', pct: '+8.0%', tone: 'gain' },
+      { label: 'after tax', amount: '+C$168', pct: '+6.0%', tone: 'gain' },
     ])
-    expect(resultParts(only([trade({ symbol: 'NEWCO', price: 10 })]))).toEqual([{ label: 'now', amount: '—', pct: null, tone: null }])
+  })
+
+  it('takes no tax in a TFSA, even before a rate is set', () => {
+    expect(resultParts(only([trade({})]), null)).toEqual([
+      { label: 'now', amount: '+C$280', pct: '+10.0%', tone: 'gain' },
+      { label: 'after tax', amount: '+C$280', pct: '+10.0%', tone: 'gain' },
+    ])
+  })
+
+  it('shows a dash after tax for a taxable account until the rate is set', () => {
+    expect(resultParts(only([taxable({})]), null)[1]).toEqual({ label: 'after tax', amount: '—', pct: null, tone: null })
+  })
+
+  it('reduces a loss after tax too, as it offsets gains', () => {
+    const line = only([taxable({}), sell({ account: 'non_registered', price: 190, day: '2026-10-01' })])
+    expect(resultParts(line, 40)).toEqual([
+      { label: 'made', amount: '−C$140', pct: '−5.0%', tone: 'loss' },
+      { label: 'after tax', amount: '−C$112', pct: '−4.0%', tone: 'loss' },
+    ])
+  })
+
+  it('shows a holding without a price as dashes', () => {
+    expect(resultParts(only([trade({ symbol: 'NEWCO', price: 10 })]), 40)).toEqual([
+      { label: 'now', amount: '—', pct: null, tone: null },
+      { label: 'after tax', amount: '—', pct: null, tone: null },
+    ])
+  })
+})
+
+describe('afterTax', () => {
+  it('taxes half of a gain at the rate in a taxable account, and nothing in a TFSA or RRSP', () => {
+    expect(afterTax(100, 'non_registered', 40)).toBe(80)
+    expect(afterTax(100, 'crypto', 50)).toBe(75)
+    expect(afterTax(-100, 'non_registered', 40)).toBe(-80)
+    expect(afterTax(100, 'tfsa', null)).toBe(100)
+    expect(afterTax(100, 'non_registered', null)).toBeNull()
+  })
+})
+
+describe('resultTotals', () => {
+  it('totals the sales and the holdings before and after tax', () => {
+    const results = stockResults(
+      [
+        trade({ account: 'non_registered' }), // AAPL held: +C$280
+        trade({ symbol: 'NVDA', price: 100 }),
+        sell({ symbol: 'NVDA', price: 90, day: '2026-09-20' }), // TFSA: −C$140
+      ],
+      AAPL_220,
+      FX,
+    )
+    expect(resultTotals(results, 40)).toEqual({ realizedCad: -140, realizedAfterTax: -140, openCad: 280, openAfterTax: 224 })
+    expect(resultTotals(results, null)).toEqual({ realizedCad: -140, realizedAfterTax: -140, openCad: 280, openAfterTax: null })
   })
 })

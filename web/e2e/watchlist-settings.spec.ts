@@ -7,6 +7,7 @@ import {
   seedFeatures,
   seedFx,
   seedHoldingAction,
+  seedLot,
   seedModel,
   seedPick,
   seedPrediction,
@@ -14,6 +15,7 @@ import {
   seedSymbols,
   seedVerdict,
   sql,
+  weekdays,
 } from './db'
 
 test.beforeEach(resetData)
@@ -302,6 +304,33 @@ test.describe('settings', () => {
     await page.reload()
     await expect(page.getByLabel(/USD conversion fee/)).toHaveValue('1.25')
     await expect(page.getByLabel(/Short holds/)).toHaveValue('40')
+  })
+
+  test('the marginal tax rate turns on the after-tax results on History, and blank turns them off', async ({ page }) => {
+    // 10 AAPL bought at US$200 in the non-registered account, now US$220, at 1.4: +C$280
+    const days = weekdays(daysAgo(30))
+    await seedFx(days, 1.4)
+    await seedCloses('AAPL', 'stock', 'USD', days, 220, 0)
+    await seedLot({ account: 'non_registered', symbol: 'AAPL', asset_type: 'stock', qty: 10, price: 200, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
+    await page.goto('/history')
+    await expect(page.locator('#results .rs-result')).toContainText('+C$280 +10.0% now— after tax')
+    await page.getByRole('link', { name: 'Set your marginal tax rate in Settings' }).click()
+
+    const rate = page.getByLabel(/Marginal tax rate/)
+    await expect(rate).toHaveValue('')
+    await rate.fill('40')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByRole('status')).toHaveText('Settings saved: they apply from the next run')
+    expect(await sql`select marginal_tax_pct::float as rate from settings`).toEqual([{ rate: 40 }])
+
+    await page.goto('/history')
+    await expect(page.locator('#results .rs-result')).toContainText('+C$280 +10.0% now+C$224 +8.0% after tax')
+
+    await page.goto('/settings')
+    await page.getByLabel(/Marginal tax rate/).fill('')
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByRole('status')).toHaveText('Settings saved: they apply from the next run')
+    expect(await sql`select marginal_tax_pct from settings`).toEqual([{ marginal_tax_pct: null }])
   })
 
   test('the theme choice sticks on this device', async ({ page }) => {

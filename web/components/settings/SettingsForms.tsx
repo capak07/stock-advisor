@@ -15,9 +15,10 @@ export interface SettingsValues {
   tfsa_short_hold_share_warn: string
   daytrade_max_loss_cad: string
   daytrade_spread_pct: string
+  marginal_tax_pct: string
 }
 
-const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: string; mode: 'decimal' | 'numeric'; section: 'costs' | 'tfsa' | 'daytrade' }[] = [
+const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: string; mode: 'decimal' | 'numeric'; section: 'costs' | 'tfsa' | 'daytrade' | 'tax' }[] = [
   {
     name: 'usd_fx_fee_pct',
     title: 'USD conversion fee',
@@ -66,6 +67,14 @@ const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: s
     mode: 'decimal',
     section: 'daytrade',
   },
+  {
+    name: 'marginal_tax_pct',
+    title: 'Marginal tax rate',
+    help: 'Your combined federal and provincial rate on your next dollar of income. History shows results after tax with it: half of a gain in a non-registered or crypto account is taxed at this rate. Leave it blank to hide them.',
+    unit: '%',
+    mode: 'decimal',
+    section: 'tax',
+  },
 ]
 
 export function CostsForm({ initial, changed }: { initial: SettingsValues; changed: string }) {
@@ -112,6 +121,11 @@ export function CostsForm({ initial, changed }: { initial: SettingsValues; chang
       {FIELDS.filter((f) => f.section === 'tfsa').map(field)}
       <h2 style={{ margin: '18px 0 4px' }}>Day trade</h2>
       {FIELDS.filter((f) => f.section === 'daytrade').map(field)}
+      <h2 style={{ margin: '18px 0 4px' }}>Taxes</h2>
+      <p className="sub" style={{ margin: '0 0 4px' }}>
+        An estimate, not tax advice.
+      </p>
+      {FIELDS.filter((f) => f.section === 'tax').map(field)}
       {state.message && !state.ok && <p className="sub loss">{state.message}</p>}
       <div className="flex items-center justify-between gap-3 flex-wrap" style={{ marginTop: 14 }}>
         <span className="sub">Last changed {changed}</span>

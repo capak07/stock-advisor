@@ -10,6 +10,7 @@ import {
   seedLot,
   seedPortfolio,
   seedRun,
+  seedSell,
   seedSymbols,
   today,
   weekdays,
@@ -64,8 +65,53 @@ test('holdings are valued in CAD, charted against both benchmarks, and warned ab
   await expect(breakdown).toContainText('TFSA')
 })
 
+/** AAPL still held (10 bought at US$200, now US$220) and NVDA sold in full (10 at US$100, sold at US$90), at 1.4. */
+async function seedResults() {
+  const days = weekdays(daysAgo(30))
+  await seedFx(days, 1.4)
+  await seedCloses('AAPL', 'stock', 'USD', days, 220, 0)
+  await seedCloses('NVDA', 'stock', 'USD', days, 90, 0)
+  await seedLot({ account: 'tfsa', symbol: 'AAPL', asset_type: 'stock', qty: 10, price: 200, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
+  await seedLot({ account: 'tfsa', symbol: 'NVDA', asset_type: 'stock', qty: 10, price: 100, currency: 'USD', fx_rate_cad: 1.4, bought_at: days[0] })
+  await seedSell({ account: 'tfsa', symbol: 'NVDA', asset_type: 'stock', qty: 10, price: 90, currency: 'USD', fx_rate_cad: 1.4, sold_at: days[5] })
+}
+
+const results = (page: Page) => page.locator('#results tbody tr')
+
+test('results by stock show what a sold stock made and what a holding is up right now', async ({ page }) => {
+  await seedResults()
+  await page.goto('/portfolio')
+  await expect(page.getByRole('heading', { name: /Results by stock/ })).toBeVisible()
+  await expect(results(page)).toHaveCount(2)
+  const aapl = results(page).nth(0)
+  await expect(aapl).toContainText('AAPL')
+  await expect(aapl).toContainText('Holding')
+  await expect(aapl).toContainText('10 @ US$200.00 avg · now US$220.00')
+  await expect(aapl.locator('.rs-result')).toContainText('+C$280 +10.0% now')
+  const nvda = results(page).nth(1)
+  await expect(nvda).toContainText('Sold')
+  await expect(nvda).toContainText('bought @ US$100.00 avg → sold @ US$90.00 avg')
+  await expect(nvda.locator('.rs-result')).toContainText('−C$140 −10.0% sold')
+  await expect(page.locator('.rs-total')).toHaveText('Made on sales: −C$140 · Open now: +C$280')
+  // the holdings table counts AAPL the same way
+  await expect(holdings(page).filter({ hasText: 'AAPL' }).locator('.h-pl')).toContainText('+C$280')
+})
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } })
+
+  test('results by stock fit the screen', async ({ page }) => {
+    await seedResults()
+    await page.goto('/portfolio')
+    await expect(results(page)).toHaveCount(2)
+    const widths = await page.evaluate(() => ({
+      page: document.documentElement.scrollWidth,
+      screen: window.innerWidth,
+      table: document.querySelector('#results')!.getBoundingClientRect().right,
+    }))
+    expect(widths.page, 'page scrolls sideways').toBeLessThanOrEqual(widths.screen)
+    expect(widths.table, 'results run past the screen').toBeLessThanOrEqual(widths.screen)
+  })
 
   test('the holdings become compact rows that never widen the page', async ({ page }) => {
     await seedPortfolio()

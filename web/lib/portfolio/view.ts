@@ -90,7 +90,7 @@ export interface PortfolioInputs {
  * The latest close in the currency the asset trades in. Coinbase closes are in USD, but coins
  * trade in CAD: a coin's close converts at the latest rate, or is null without one.
  */
-function lastClose(p: { assetType: AssetType; symbol: string }, prices: PriceBook, fx: FxRates): Close | null {
+export function lastClose(p: { assetType: AssetType; symbol: string }, prices: PriceBook, fx: FxRates): Close | null {
   const close = prices.latest(assetKey(p.assetType, p.symbol))
   if (close === null || p.assetType !== 'crypto' || close.currency === 'CAD') return close
   const rate = fx.latest()?.usdCad

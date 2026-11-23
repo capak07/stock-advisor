@@ -87,6 +87,8 @@ export async function seedSell(sell: {
   qty: number
   price: number
   currency: 'USD' | 'CAD'
+  /** Required for a USD sell. */
+  fx_rate_cad?: number
   sold_at: string
 }) {
   await sql`insert into sells ${sql({ fx_rate_cad: null, ...sell })}`

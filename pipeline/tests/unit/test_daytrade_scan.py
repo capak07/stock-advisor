@@ -63,9 +63,11 @@ def _wall():
 def test_skill_result_on_the_wall():
     client, listings = _wall()
     r = scan(client, listings, NOW, min_price=0, min_volume_x=0)
-    assert (r.scanned, r.usable) == (233, 231)
+    # 231 usable and 95 candidates under the old every-slot rule; PARA (4 post-range bars missing)
+    # now counts, as in the skill since 2026-11-23, and is a candidate but no signal.
+    assert (r.scanned, r.usable) == (233, 232)
     assert len(r.found) == 42
-    assert len(r.candidates) == 95
+    assert len(r.candidates) == 96
     assert r.errors == 1  # SQ has no data
     tsla = next(f for f in r.found if f.listing.symbol == "TSLA")
     assert tsla.trigger.at == datetime(2026, 10, 19, 10, 15, tzinfo=ET)
@@ -166,10 +168,27 @@ def test_empty_spark_answer_counts_errors():
     assert (r.scanned, r.usable, r.errors, r.found) == (0, 0, 4, [])
 
 
+def test_a_halt_after_the_range_keeps_the_chart_and_finds_the_signal():
+    # OTLY and CUE on 2026-11-23: Yahoo had no bar during a volatility halt (OTLY 9:55, CUE 10:55),
+    # and the old every-bar rule dropped the whole chart. A gap after the range is no trades, not bad data.
+    client, _ = _wall()
+    holey = [b for b in client.charts["TSLA"] if not (b.start.hour == 9 and b.start.minute == 55)]
+    r = scan(FakeClient({"TSLA": holey}), [Listing("TSLA", Market.US)], NOW, min_price=0, min_volume_x=0)
+    assert (r.usable, r.unusable) == (1, 0)
+    assert [(f.trigger.entry, f.trigger.at.astimezone(ET).strftime("%H:%M")) for f in r.found] == [(364.18, "10:15")]
+
+
+def test_a_range_with_no_bar_after_it_is_unusable():
+    client, _ = _wall()
+    rng = [b for b in client.charts["TSLA"] if b.start.astimezone(ET) < NOW.replace(hour=9, minute=45)]
+    r = scan(FakeClient({"TSLA": rng}), [Listing("TSLA", Market.US)], NOW, min_price=0, min_volume_x=0)
+    assert (r.scanned, r.usable, r.found) == (1, 0, [])
+
+
 def test_unusable_stage2_chart_is_not_an_error():
     client, _ = _wall()
     full = client.charts["TSLA"]
-    holey = [b for b in full if not (b.start.hour == 9 and b.start.minute == 50)]
+    holey = [b for b in full if not (b.start.hour == 9 and b.start.minute == 35)]  # a range bar
     fake = FakeClient({"TSLA": holey}, spark={"TSLA": SparkSeries([(b.start, b.close) for b in full], 5.0)})
     r = scan(fake, [Listing("TSLA", Market.US)], NOW, min_price=0, min_volume_x=0)
     assert (r.errors, r.unusable, r.found) == (0, 1, [])

@@ -69,19 +69,24 @@ class ScanResult:
     candidates: list[Listing]
     found: list[Found]
     errors: int
-    unusable: int = 0  # stage-2 charts with a missing bar
+    unusable: int = 0  # stage-2 charts missing an opening-range bar
     charted: dict[str, tuple[float, datetime]] = field(default_factory=dict)  # for the next cycle
     confirm: int = 0  # stage-2 charts wanted this cycle
     confirm_failed: int = 0  # of those, failed (or not tried after the bail-out)
 
 
-def _usable(bars: Sequence[Bar], s: Session, cutoff: datetime) -> bool:
-    """Every 5-minute slot from the open to the cutoff (or the close) is there, and the range at least."""
-    end = min(cutoff, s.close)
-    want = int((end - s.open).total_seconds() // (BAR_MIN * 60))
-    if want < RANGE_BARS or len(bars) != want:
+def _usable(bars: Sequence[Bar], s: Session) -> bool:
+    """Every opening-range slot is there, and at least one bar after it. A missing bar after the
+    range is a trading halt or a 5 minutes with no trades, not bad data: a stock halted for running
+    up is the breakout this scan is for (OTLY and CUE on 2026-11-23 were dropped by the old
+    every-slot rule). The rule (opening_range, find_trigger) and tracking place bars by their start
+    time, so a gap shifts nothing. `bars` comes from session_bars: sorted, one per slot, complete."""
+    if len(bars) <= RANGE_BARS:
         return False
-    return all(b.start.astimezone(ET) == s.open + timedelta(minutes=BAR_MIN * k) for k, b in enumerate(bars))
+    return all(
+        b.start.astimezone(ET) == s.open + timedelta(minutes=BAR_MIN * k)
+        for k, b in enumerate(bars[:RANGE_BARS])
+    )
 
 
 def _is_candidate(bars: Sequence[Bar]) -> bool:
@@ -151,7 +156,7 @@ def scan(
             continue
         scanned += 1
         bars = session_bars(_spark_bars(series.points), s.day, cutoff)
-        if not _usable(bars, s, cutoff):
+        if not _usable(bars, s):
             continue
         usable += 1
         last = bars[-1].close
@@ -201,7 +206,7 @@ def scan(
             streak += 1
             continue
         streak = 0
-        if not _usable(full, s, cutoff):
+        if not _usable(full, s):
             unusable_s2 += 1
             continue
         rng = opening_range(full, s)

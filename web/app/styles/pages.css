@@ -76,6 +76,31 @@
 .with-unit .input { padding-right: 96px !important; text-align: right; }
 .with-unit span.unit { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted-foreground); pointer-events: none; }
 
+/* ---------- Invest: watch list, not picks (grouped by how long to hold) ---------- */
+.watch-list { margin-top: 16px; }
+.watch-list .wl-note { margin: 0 0 8px; font-size: 12.5px; }
+.watch-list .wl-group { margin-top: 14px; }
+.watch-list .wl-group h3 { margin: 0 0 4px; }
+/* fixed columns, so every hold's table lines up with the others */
+.wl-table { width: 100%; table-layout: fixed; }
+.wl-table th:nth-child(2) { width: 90px; }
+.wl-table th:nth-child(3) { width: 220px; }
+.wl-table th:nth-child(4) { width: 120px; }
+.wl-table td.wl-what { white-space: normal; }
+.wl-table td.wl-what .chip { margin-left: 8px; }
+.wl-table .wl-about { display: block; font-size: 12px; }
+@media (max-width: 639px) {
+  .wl-table thead { display: none; }
+  .wl-table, .wl-table tbody { display: block; }
+  .wl-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "what chance" "mid costs"; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .wl-table tr:last-child { border-bottom: 0; }
+  .wl-table td { display: block; padding: 0; border: 0; white-space: normal; }
+  .wl-table td:nth-child(1) { grid-area: what; }
+  .wl-table td:nth-child(2) { grid-area: chance; }
+  .wl-table td:nth-child(3) { grid-area: mid; text-align: left; }
+  .wl-table td:nth-child(4) { grid-area: costs; }
+}
+
 /* ---------- Results by stock (one line per holding, above the trade list) ---------- */
 #results td { vertical-align: top; }
 #results td.rs-what { white-space: normal; }

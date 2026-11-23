@@ -4,6 +4,7 @@ import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { OrderDisclaimer, OrderGuide } from '@/components/OrderGuide'
 import { SplitForm } from '@/components/invest/SplitForm'
+import { WatchList } from '@/components/invest/WatchList'
 import { ownerClient } from '@/lib/auth'
 import { loadInvestData } from '@/lib/data/invest'
 import { loadFx } from '@/lib/data/portfolio'
@@ -12,6 +13,7 @@ import { fmtMoney, fmtPct, fmtQty } from '@/lib/format'
 import { investGuide, type OrderContext } from '@/lib/guidance'
 import { allocate, type Hold, type StockLine } from '@/lib/invest/allocate'
 import { addWeekdays, parseInvestInputs, type AssetChoice } from '@/lib/invest/inputs'
+import { watchList } from '@/lib/invest/watch'
 import type { OrderPlan, StopRules } from '@/lib/orders'
 import type { Market } from '@/lib/portfolio/types'
 import { KIND_LABEL, type Run } from '@/lib/runs'
@@ -91,6 +93,9 @@ export default async function InvestPage({ searchParams }: Props) {
           </section>
         )}
       </div>
+      {data !== null && (
+        <WatchList groups={watchList(data.stocks, data.heldStocks, data.usdFxFeePct)} runDay={shortDay(data.run.et_date)} />
+      )}
     </main>
   )
 }

@@ -54,6 +54,26 @@ test('Invest is in the navigation and starts with the form only', async ({ page 
   await expect(page.getByText('Type an amount and choose Split it. Where the money would go shows here.')).toBeVisible()
 })
 
+test('the watch list shows the best-ranked stocks by how long to hold, with no amount to type', async ({ page }) => {
+  await seedForecasts()
+  await page.goto('/invest')
+  const watch = page.locator('section.watch-list')
+  await expect(watch.getByRole('heading', { name: 'Watch list, not picks' })).toBeVisible()
+  // each stock once, under its best hold, shortest hold first; JNJ's 40-day forecast is no hold the list names
+  await expect(watch.locator('h3')).toHaveText(['Hold ~2 weeks', 'Hold ~1 month'])
+  const group = (label: string) => watch.locator('.wl-group').filter({ has: page.getByRole('heading', { name: label }) })
+  await expect(group('Hold ~2 weeks').locator('tbody tr .sym')).toHaveText(['AAPL', 'PFE'])
+  await expect(group('Hold ~1 month').locator('tbody tr .sym')).toHaveText(['RY.TO', 'SHOP.TO', 'XOM'])
+  const ry = group('Hold ~1 month').locator('tbody tr').filter({ hasText: 'RY.TO' })
+  await expect(ry).toContainText('passes the bar')
+  await expect(ry).toContainText('62%')
+  await expect(ry).toContainText('+3.0% (−2.0% to +8.0%)')
+  await expect(group('Hold ~2 weeks').locator('tbody tr').filter({ hasText: 'PFE' })).toContainText('below costs')
+  await expect(group('Hold ~1 month').locator('tbody tr').filter({ hasText: 'XOM' })).not.toContainText('passes the bar')
+  // research only: no amounts and no order steps
+  await expect(watch).not.toContainText('C$')
+})
+
 test('an amount is split only over stocks that pass the rule, and the rest stays uninvested', async ({ page }) => {
   await seedForecasts()
   await page.goto('/invest')

@@ -312,6 +312,7 @@ test('finished days without a signal in either list show dash rows with 0 trades
   const cells = (name: RegExp) => last20.getByRole('row', { name }).getByRole('cell')
   await expect(cells(/The skill's top 3/)).toHaveText(["The skill's top 3", '0', '—', '—', '—', '—'])
   await expect(cells(/Top 3 after your costs/)).toHaveText(['Top 3 after your costs', '0', '—', '—', '—', '—'])
+  await expect(cells(/Not picked/).nth(1)).toHaveText('1') // AMD, in neither list
 })
 
 test('a closed day says the market is closed', async ({ page }) => {
@@ -364,6 +365,9 @@ test('the track record counts each list of finished days, before and after costs
   await expect(cells(/The skill's top 3/)).toHaveText(["The skill's top 3", '3', '2 / 1 / 0', '+0.53R', '+0.43R', '+1.28R'])
   // after costs: 2.0, −1.0, 0.2, 1.0, −1.0 → average +0.24R, sum +1.20R; +0.34R before costs
   await expect(cells(/Top 3 after your costs/)).toHaveText(['Top 3 after your costs', '5', '2 / 2 / 1', '+0.34R', '+0.24R', '+1.20R'])
+  // not picked: DDD only (HHH never finished, FFF's day is not finished)
+  await expect(cells(/Not picked/)).toHaveText(['Not picked', '1', '0 / 1 / 0', '−1.00R', '−1.10R', '−1.10R'])
+  await expect(record.getByText(/Not picked: every other breakout/)).toBeVisible()
   await expect(record.getByTestId('track-60').getByRole('row', { name: /Top 3 after your costs/ }).getByRole('cell').nth(1)).toHaveText('5')
 })
 

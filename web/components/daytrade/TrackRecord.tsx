@@ -1,6 +1,8 @@
 import { TriangleAlert } from 'lucide-react'
 import {
   COSTS_TITLE,
+  PASSED_SUB,
+  PASSED_TITLE,
   SKILL_TITLE,
   TRACK_LABEL,
   fmtR,
@@ -31,6 +33,7 @@ function Row({ name, summary: t }: { name: string; summary: RecordSummary }) {
 function Window({ span, record }: { span: 20 | 60; record: TrackRecordData }) {
   const skill = span === 20 ? record.skill.last20 : record.skill.last60
   const costs = span === 20 ? record.costs.last20 : record.costs.last60
+  const passed = span === 20 ? record.passed.last20 : record.passed.last60
   const id = `dt-record-${span}`
   return (
     <div className="dt-record" data-testid={`track-${span}`}>
@@ -52,6 +55,7 @@ function Window({ span, record }: { span: 20 | 60; record: TrackRecordData }) {
           <tbody>
             <Row name={SKILL_TITLE} summary={skill} />
             <Row name={COSTS_TITLE} summary={costs} />
+            <Row name={PASSED_TITLE} summary={passed} />
           </tbody>
         </table>
       </div>
@@ -61,7 +65,7 @@ function Window({ span, record }: { span: 20 | 60; record: TrackRecordData }) {
 
 /**
  * Both lists' finished signals over the last 20 and 60 finished trading days, before and after costs,
- * saying plainly when the record is too short to judge (spec §7.3).
+ * beside the signals in neither list, saying plainly when the record is too short to judge (spec §7.3).
  */
 export function TrackRecord({ record }: { record: TrackRecordData }) {
   const empty = recordEmptyLine(record.costs.last60)
@@ -71,8 +75,11 @@ export function TrackRecord({ record }: { record: TrackRecordData }) {
       <div className="section-head" style={{ marginBottom: 4 }}>
         <h2 id="dt-record-h">Track record</h2>
       </div>
-      <p className="sub" style={{ margin: '0 0 12px' }}>
+      <p className="sub" style={{ margin: '0 0 4px' }}>
         {TRACK_LABEL}
+      </p>
+      <p className="sub" style={{ margin: '0 0 12px' }}>
+        {PASSED_SUB}
       </p>
       {empty !== null ? (
         <p className="sub" style={{ margin: 0 }}>

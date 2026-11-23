@@ -121,7 +121,8 @@ const toSignal = (r: SignalDb): Signal => ({
 /**
  * The Day trade page for `day` (New York's date): the day's row and signals, the track record of the
  * last 20 and 60 finished days for both lists (the skill's top 3, and any signal shown in the
- * after-costs top 3 that day, even if displaced later), the max loss per trade and the latest USD/CAD.
+ * after-costs top 3 that day, even if displaced later) and for the signals in neither, the max loss
+ * per trade and the latest USD/CAD.
  */
 export async function loadDaytrade(supabase: Supabase, day: string): Promise<DaytradeData> {
   const [dayRows, signalRows, doneRows, settings, fxRows] = await Promise.all([
@@ -146,13 +147,13 @@ export async function loadDaytrade(supabase: Supabase, day: string): Promise<Day
             supabase
               .from('daytrade_signals')
               .select('day, status, gross_r, net_r, skill_rank, best_rank')
-              .in('day', doneDays)
-              .or('skill_rank.not.is.null,best_rank.not.is.null')
+              .in('day', doneDays) // every signal: the ones in neither list are the "Not picked" row
               .order('day')
               .order('id')
               .range(from, to),
           )) as RecordDb[],
-        // migration 0014 not applied yet: the after-costs list only, every skill rank null
+        // migration 0014 not applied yet: the after-costs list only (a signal without a skill rank
+        // could be a skill pick, so "Not picked" stays empty)
         async () =>
           (await fetchAll((from, to) =>
             supabase

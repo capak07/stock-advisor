@@ -386,8 +386,41 @@ describe('trackRecord', () => {
     expect(onlySkill.skill.last60.count).toBe(1)
   })
 
+  it('counts the signals in neither list as not picked, so the picks can be compared with the rest', () => {
+    const t = trackRecord(
+      [
+        row(days[0], 'target', 2, 1.9, { skillRank: 1, bestRank: null }), // skill pick
+        row(days[0], 'stop', -1, -1.1), // after-costs pick
+        row(days[0], 'flat', 0.5, 0.2, { skillRank: null, bestRank: null }),
+        row(days[1], 'stop', -1, -1.3, { skillRank: null, bestRank: null }),
+        row(days[2], 'open', null, null, { skillRank: null, bestRank: null }), // never finalized
+        row(days[22], 'target', 2, 1.8, { skillRank: null, bestRank: null }), // only in the 60-day window
+      ],
+      days,
+    )
+    expect(t.passed.last20).toEqual({
+      days: 20,
+      count: 2,
+      target: 0,
+      stop: 1,
+      flat: 1,
+      avgGrossR: expect.closeTo(-0.25, 9),
+      avgNetR: expect.closeTo(-0.55, 9),
+      sumNetR: expect.closeTo(-1.1, 9),
+    })
+    expect(t.passed.last60.count).toBe(3)
+    expect(t.passed.last60.target).toBe(1)
+  })
+
+  it('leaves a row without the skill rank field out of the not-picked list: it may be a skill pick', () => {
+    const { skillRank: _gone, ...old } = row(days[0], 'target', 2, 1.5, { bestRank: null })
+    void _gone
+    expect(trackRecord([old as RecordRow], days).passed.last20.count).toBe(0)
+  })
+
   it('is empty without finished days', () => {
     const t = trackRecord([], [])
+    expect(t.passed.last60).toEqual({ days: 0, ...EMPTY })
     expect(t.skill.last60).toEqual({ days: 0, ...EMPTY })
     expect(t.costs.last20).toEqual({ days: 0, ...EMPTY })
   })

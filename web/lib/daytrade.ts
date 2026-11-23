@@ -99,6 +99,8 @@ export const SKILL_TITLE = "The skill's top 3"
 export const SKILL_SUB = 'The strongest volume-confirmed US breakouts at 10:00 AM ET, by how far the price is above the range high. Before your costs.'
 export const COSTS_TITLE = 'Top 3 after your costs'
 export const TRACK_LABEL = "Paper: what each list's trades would have done."
+export const PASSED_TITLE = 'Not picked'
+export const PASSED_SUB = 'Not picked: every other breakout the job followed on those days, in neither list. If it keeps beating the lists, the ranking is not helping.'
 export const NO_RECORD = 'No finished day-trade signals yet.'
 export const NO_SIGNALS = 'No signals yet today.'
 export const LATE_SHARES = "Shares are sized from the signal's entry and stop."
@@ -394,10 +396,14 @@ export interface ListRecord {
   last60: RecordSummary
 }
 
-/** Both lists' records: the skill's top 3 (`skill_rank` set) and the after-costs top 3 (`best_rank` set). */
+/**
+ * Both lists' records: the skill's top 3 (`skill_rank` set) and the after-costs top 3 (`best_rank` set),
+ * and every other signal followed on those days (`passed`: in neither list), to compare them with.
+ */
 export interface TrackRecordData {
   skill: ListRecord
   costs: ListRecord
+  passed: ListRecord
 }
 
 export interface RecordRow {
@@ -450,10 +456,15 @@ const windows = (rows: readonly RecordRow[], doneDays: readonly string[]): ListR
   last60: summarize(rows, doneDays.slice(0, 60)),
 })
 
-/** Each list's outcomes over the last 20 and 60 finished days (`doneDays` newest first); a signal in both lists counts in both. */
+/**
+ * Each list's outcomes over the last 20 and 60 finished days (`doneDays` newest first); a signal in both
+ * lists counts in both. A row without the skill rank field (migration 0014 not applied) may be a skill
+ * pick, so it never counts as not picked.
+ */
 export function trackRecord(rows: readonly RecordRow[], doneDays: readonly string[]): TrackRecordData {
   return {
     skill: windows(rows.filter((r) => r.skillRank != null), doneDays),
     costs: windows(rows.filter((r) => r.bestRank !== null), doneDays),
+    passed: windows(rows.filter((r) => r.skillRank === null && r.bestRank === null), doneDays),
   }
 }

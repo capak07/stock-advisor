@@ -18,7 +18,7 @@ const REQUEST_TIMEOUT_MS = 8000
 const MAX_COIN_QUOTE_AGE_MS = 24 * 60 * 60 * 1000
 /** Polygon's MATIC trades as POL (pipeline/src/advisor/collectors/coins.py RENAMED). */
 const RENAMED: Record<string, string> = { MATIC: 'POL' }
-const listedAs = (symbol: string) => RENAMED[symbol] ?? symbol
+export const listedAs = (symbol: string) => RENAMED[symbol] ?? symbol
 
 export interface LiveQuote {
   price: number
@@ -119,9 +119,9 @@ export function withLiveClose(closes: readonly Close[], quote: LiveQuote | undef
   return [...closes.filter((c) => c.day < day), { day, close: price, currency }]
 }
 
-type Fetch = (url: string, init?: RequestInit) => Promise<Response>
+export type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 
-async function getJson(fetchImpl: Fetch, url: string, init: RequestInit = {}): Promise<unknown | null> {
+export async function getJson(fetchImpl: Fetch, url: string, init: RequestInit = {}): Promise<unknown | null> {
   try {
     const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), cache: 'no-store' })
     return response.ok ? await response.json() : null

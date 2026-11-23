@@ -1,6 +1,6 @@
 'use client'
 
-import { Ellipsis, History, LogOut, Search } from 'lucide-react'
+import { Ellipsis, History, LogOut } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Fragment, useCallback, useState, type MouseEvent } from 'react'
@@ -9,7 +9,6 @@ import { deviceStorage, readRecent } from '@/lib/recent'
 import { tickerHref } from '@/lib/ticker'
 import { Drawer } from '../Drawer'
 import { ThemeToggle } from '../ThemeToggle'
-import { FindTicker } from './FindTicker'
 import { NAV, NAV_DIVIDER_BEFORE, isCurrent, type NavItem } from './nav'
 import { NavPill, TabPill } from './NavPill'
 import { useHideOnScroll } from './useHideOnScroll'
@@ -64,24 +63,20 @@ const TABS = NAV.filter((n) => n.tab)
 const MORE = NAV.filter((n) => n.group === 'more')
 
 /**
- * The phone's floating tab bar: Today, Portfolio and Day trade, then Search and More, each opening a sheet. The bar
+ * The phone's floating tab bar: Today, Portfolio, Day trade and Picks, then More, which opens a sheet with the other
+ * pages and the stocks opened lately. Search is the top bar's (owner request 2026-11-23: no second search). The bar
  * slips away while scrolling down and comes back on the way up.
  */
 export function BottomTabs() {
   const { pathname, target, onTap } = usePillTarget(TABS)
   const hidden = useHideOnScroll()
   const [more, setMore] = useState(false)
-  const [search, setSearch] = useState(false)
-  // Each opening gets a fresh, empty search box that takes the focus (and so the keyboard) straight away.
-  const [searchKey, setSearchKey] = useState(0)
   // The stocks opened lately on this device, read as the sheet opens (lib/recent.ts); empty without storage.
   const [recent, setRecent] = useState<string[]>([])
   const closeMore = useCallback(() => setMore(false), [])
-  const closeSearch = useCallback(() => setSearch(false), [])
-  const openSearch = () => {
-    setSearchKey((k) => k + 1)
+  const openMore = () => {
     setRecent(readRecent(deviceStorage()))
-    setSearch(true)
+    setMore(true)
   }
   return (
     <>
@@ -90,7 +85,7 @@ export function BottomTabs() {
         className={`bottom-tabs ${hidden ? 'hidden' : ''}`}
         aria-label="Main"
         inert={hidden}
-        style={{ gridTemplateColumns: `repeat(${TABS.length + 2}, 1fr)` }}
+        style={{ gridTemplateColumns: `repeat(${TABS.length + 1}, 1fr)` }}
       >
         <TabPill target={target} />
         {TABS.map(({ href, label, icon: Icon }) => (
@@ -105,47 +100,17 @@ export function BottomTabs() {
             {label}
           </Link>
         ))}
-        <button type="button" className="bottom-tab" aria-haspopup="dialog" onClick={openSearch}>
-          <Search />
-          Search
-        </button>
         <button
           type="button"
           className="bottom-tab"
           aria-haspopup="dialog"
           aria-current={MORE.some((n) => isCurrent(n.href, pathname)) ? 'page' : undefined}
-          onClick={() => setMore(true)}
+          onClick={openMore}
         >
           <Ellipsis />
           More
         </button>
       </nav>
-      <Drawer id="search-sheet" title="Search" open={search} onClose={closeSearch}>
-        <div className="drawer-body">
-          {/* The top bar's glass search pill, in a sheet of its own. */}
-          <div className="statusbar-search">
-            {searchKey > 0 && <FindTicker key={searchKey} onGo={closeSearch} autoFocus />}
-          </div>
-          {recent.length > 0 && (
-            <section className="recent" aria-labelledby="recent-label">
-              <h3 id="recent-label" className="label">
-                Recent
-              </h3>
-              <ul>
-                {recent.map((symbol) => (
-                  <li key={symbol}>
-                    {/* A symbol only: the Ticker page works out whether it's a stock or a coin. */}
-                    <Link className="nav-link" href={tickerHref(symbol, 'stock')} onClick={closeSearch}>
-                      <History aria-hidden="true" />
-                      <span className="sym">{symbol}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
-      </Drawer>
       <Drawer id="more-sheet" title="More" open={more} onClose={closeMore}>
         <div className="drawer-body">
           <div style={{ display: 'grid', gap: 2 }}>
@@ -164,6 +129,24 @@ export function BottomTabs() {
               </Link>
             ))}
           </div>
+          {recent.length > 0 && (
+            <section className="recent" aria-labelledby="recent-label">
+              <h3 id="recent-label" className="label">
+                Recent
+              </h3>
+              <ul>
+                {recent.map((symbol) => (
+                  <li key={symbol}>
+                    {/* A symbol only: the Ticker page works out whether it's a stock or a coin. */}
+                    <Link className="nav-link" href={tickerHref(symbol, 'stock')} onClick={closeMore}>
+                      <History aria-hidden="true" />
+                      <span className="sym">{symbol}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <div className="more-foot">
             <ThemeToggle />
             {/* Every market is in its paper period until picks are graded live (spec §6.6, Plan 4). */}

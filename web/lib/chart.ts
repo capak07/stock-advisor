@@ -24,6 +24,8 @@ export interface Geometry {
   plotH: number
   /** The width history is drawn over: all of the plot, or HISTORY_SHARE of it with a cone. */
   histW: number
+  /** The width the line is drawn over: all of histW, or a day in progress's share of its session. */
+  lineW: number
   lo: number
   hi: number
   /** Three grid lines: 15%, 50% and 85% of the way down. */
@@ -36,14 +38,29 @@ export function geometry(
   width: number,
   height: number,
   lines: readonly (readonly number[])[],
-  { cone }: { cone?: ConeQuantiles & { last: number } } = {},
+  {
+    cone,
+    reach = 1,
+    baseline,
+  }: {
+    cone?: ConeQuantiles & { last: number }
+    /** The share of the width the line reaches: a 1D chart ends where the session has got to. */
+    reach?: number
+    /** A level kept on the scale (the previous close of a 1D chart). */
+    baseline?: number
+  } = {},
 ): Geometry {
   const w = Math.max(MIN_WIDTH, Math.round(width))
   const plotW = w - PAD.l - PAD.r
   const plotH = height - PAD.t - PAD.b
   const histW = cone ? plotW * HISTORY_SHARE : plotW
   // the cone's ends must fit on the scale too
-  const values = [...lines.flat(), ...(cone ? [cone.last * (1 + cone.q10), cone.last * (1 + cone.q90)] : [])]
+  const values = [
+    ...lines.flat(),
+    ...(cone ? [cone.last * (1 + cone.q10), cone.last * (1 + cone.q90)] : []),
+    ...(baseline === undefined ? [] : [baseline]),
+  ]
+  const lineW = histW * Math.min(1, Math.max(0, reach))
   let lo = Math.min(...values)
   let hi = Math.max(...values)
   const pad = (hi - lo) * 0.1 || 1
@@ -55,10 +72,11 @@ export function geometry(
     plotW,
     plotH,
     histW,
+    lineW,
     lo,
     hi,
     ticks: [0.15, 0.5, 0.85].map((f) => lo + (hi - lo) * (1 - f)),
-    x: (i, n) => PAD.l + (n > 1 ? i / (n - 1) : 0) * histW,
+    x: (i, n) => PAD.l + (n > 1 ? i / (n - 1) : 0) * lineW,
     y: (v) => PAD.t + (1 - (v - lo) / (hi - lo)) * plotH,
   }
 }
@@ -80,7 +98,7 @@ export function resample(values: readonly number[], k: number): number[] {
 
 /** The data index under a pointer at `px` (in SVG units), or null outside the line. */
 export function indexAt(px: number, n: number, g: Geometry): number | null {
-  const i = Math.round(((px - PAD.l) / g.histW) * (n - 1))
+  const i = Math.round(((px - PAD.l) / g.lineW) * (n - 1))
   return i < 0 || i >= n ? null : i
 }
 

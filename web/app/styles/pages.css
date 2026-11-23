@@ -597,3 +597,6 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .src summary svg { width: 16px; height: 16px; flex: none; color: var(--muted-foreground); transition: transform 200ms; }
 .src[open] summary svg { transform: rotate(180deg); }
 .src .source-grid { margin-top: 12px; }
+
+/* A 1D chart while its 5-minute prices load: the chart's own height, so nothing jumps. */
+.chart-wait { display: grid; place-items: center; }

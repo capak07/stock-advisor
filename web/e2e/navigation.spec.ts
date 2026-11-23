@@ -32,17 +32,17 @@ test('on a desktop, "/" jumps to the search in the top bar', async ({ page }) =>
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 } })
 
-  test('Today, Portfolio and Day trade are tabs at the bottom, and the other pages are under More', async ({ page }) => {
+  test('Today, Portfolio, Day trade and Picks are tabs at the bottom, and the other pages are under More', async ({ page }) => {
     await page.goto('/')
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
     await expect(tabs.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page')
-    await expect(tabs.getByRole('link')).toHaveText(['Today', 'Portfolio', 'Day trade'])
-    await expect(tabs.getByRole('button')).toHaveText(['Search', 'More'])
+    await expect(tabs.getByRole('link')).toHaveText(['Today', 'Portfolio', 'Day trade', 'Picks'])
+    await expect(tabs.getByRole('button')).toHaveText(['More']) // the search is the top bar's
     await tabs.getByRole('link', { name: 'Portfolio' }).click()
     await expect(page.getByRole('heading', { name: 'My Portfolio', level: 1 })).toBeVisible()
     await expect(tabs.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page')
     await tabs.getByRole('button', { name: 'More' }).click()
-    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link')).toHaveText(['History', 'Picks', 'Invest', 'Watchlist', 'Sources', 'Settings'])
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link')).toHaveText(['History', 'Invest', 'Watchlist', 'Sources', 'Settings'])
     await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Watchlist' }).click()
     await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible()
     await expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
@@ -67,28 +67,23 @@ test.describe('on a phone', () => {
     await expect(page).toHaveURL(/\/ticker\/RY\.TO/)
   })
 
-  test('the Search tab opens a search sheet that goes to a stock', async ({ page }) => {
-    await seedSymbols([{ symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' }])
+  test('the Picks tab opens Picks', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('navigation', { name: 'Main' }).last().getByRole('button', { name: 'Search' }).click()
-    const sheet = page.getByRole('dialog', { name: 'Search' })
-    const search = sheet.getByRole('combobox', { name: 'Find a symbol' })
-    await expect(search).toBeFocused()
-    await search.fill('royal')
-    await sheet.getByRole('option', { name: /RY\.TO/ }).click()
-    await expect(page).toHaveURL(/\/ticker\/RY\.TO/)
-    await expect(sheet).toBeHidden()
+    const tabs = page.getByRole('navigation', { name: 'Main' }).last()
+    await tabs.getByRole('link', { name: 'Picks' }).click()
+    await expect(page.getByRole('heading', { name: "Today's Picks", level: 1 })).toBeVisible()
+    await expect(tabs.getByRole('link', { name: 'Picks' })).toHaveAttribute('aria-current', 'page')
   })
 
-  test('the Search sheet lists the stocks opened lately, newest first', async ({ page }) => {
+  test('the More sheet lists the stocks opened lately, newest first', async ({ page }) => {
     await seedSymbols([
       { symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' },
       { symbol: 'AAPL', market: 'US', name: 'Apple Inc.' },
     ])
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
-    const sheet = page.getByRole('dialog', { name: 'Search' })
+    const sheet = page.getByRole('dialog', { name: 'More' })
     await page.goto('/')
-    await tabs.getByRole('button', { name: 'Search' }).click()
+    await tabs.getByRole('button', { name: 'More' }).click()
     await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0) // nothing opened yet: no list at all
     await page.keyboard.press('Escape')
 
@@ -96,7 +91,7 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('heading', { name: 'AAPL', level: 1 })).toBeVisible()
     await page.goto('/ticker/RY.TO')
     await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
-    await tabs.getByRole('button', { name: 'Search' }).click()
+    await tabs.getByRole('button', { name: 'More' }).click()
     await expect(sheet.getByText('Recent', { exact: true })).toBeVisible()
     await expect(sheet.getByRole('listitem').getByRole('link')).toHaveText(['RY.TO', 'AAPL'])
     await sheet.getByRole('link', { name: 'AAPL' }).click()
@@ -104,7 +99,7 @@ test.describe('on a phone', () => {
     await expect(sheet).toBeHidden()
   })
 
-  test('a corrupt or blocked recent list leaves the Search sheet empty, without errors (Review Focus 4)', async ({ page }) => {
+  test('a corrupt or blocked recent list leaves the More sheet without it, without errors (Review Focus 4)', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await seedSymbols([{ symbol: 'RY.TO', market: 'TSX', name: 'Royal Bank of Canada' }])
@@ -113,10 +108,10 @@ test.describe('on a phone', () => {
       localStorage.setItem('advisor.recent-symbols', '[1, "<script>", {"a": 2}')
     })
     const tabs = page.getByRole('navigation', { name: 'Main' }).last()
-    const sheet = page.getByRole('dialog', { name: 'Search' })
+    const sheet = page.getByRole('dialog', { name: 'More' })
     await page.goto('/')
-    await tabs.getByRole('button', { name: 'Search' }).click()
-    await expect(sheet.getByRole('combobox', { name: 'Find a symbol' })).toBeFocused()
+    await tabs.getByRole('button', { name: 'More' }).click()
+    await expect(sheet.getByRole('link', { name: 'History' })).toBeFocused()
     await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0)
     await page.keyboard.press('Escape')
 
@@ -129,8 +124,8 @@ test.describe('on a phone', () => {
     })
     await page.goto('/ticker/RY.TO')
     await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
-    await tabs.getByRole('button', { name: 'Search' }).click()
-    await expect(sheet.getByRole('combobox', { name: 'Find a symbol' })).toBeFocused()
+    await tabs.getByRole('button', { name: 'More' }).click()
+    await expect(sheet.getByRole('link', { name: 'History' })).toBeFocused()
     await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0)
     expect(errors).toEqual([])
   })

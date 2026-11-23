@@ -28,7 +28,7 @@ test('an empty portfolio invites the first buy', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Sell' })).toHaveCount(0)
 })
 
-test('holdings are valued in CAD, charted against both benchmarks, and warned about', async ({ page }) => {
+test('holdings are valued in CAD, charted as one line, and warned about', async ({ page }) => {
   await seedPortfolio()
   await page.goto('/portfolio')
 
@@ -41,18 +41,23 @@ test('holdings are valued in CAD, charted against both benchmarks, and warned ab
   await expect(eth).toContainText(/Loss window to/)
   await expect(eth).toContainText(/Taxable: est\./)
 
-  const chart = page.getByRole('img', { name: 'Portfolio return against XIU.TO and SPY in CAD' })
+  const chart = page.getByRole('img', { name: /^Portfolio return since the first buy/ })
   await expect(chart).toBeVisible()
-  // the three lines draw in (.draw in ledger.css), each from its own length measured before the first paint
+  // only your line, no SPY or XIU.TO; it draws in (.draw in ledger.css) from its length measured before the first paint
   await expect(chart).toHaveClass(/draw/)
   const lengths = await chart
     .locator('path.line')
     .evaluateAll((paths) => paths.map((p) => Number((p as SVGPathElement).style.getPropertyValue('--len'))))
-  expect(lengths).toHaveLength(3)
-  for (const len of lengths) expect(len).toBeGreaterThan(0)
+  expect(lengths).toHaveLength(1)
+  expect(lengths[0]).toBeGreaterThan(0)
+  await expect(page.locator('.value-hero .legend')).not.toContainText(/SPY|XIU/)
   await expect(page.getByText(/since the first buy, /)).toBeVisible()
+  // 1D: the day every 5 minutes from Yahoo (e2e/yahoo-stub.mjs), against the previous close
   await page.getByRole('tab', { name: '1D' }).click()
-  await expect(page.getByText('over the last day')).toBeVisible()
+  const day = page.getByRole('img', { name: /^Portfolio return every 5 minutes .*, against the previous close$/ })
+  await expect(day).toBeVisible()
+  await expect(day.locator('line.baseline')).toHaveCount(1)
+  await expect(page.getByText(/^every 5 minutes (today|on [A-Z]|on [A-Z][a-z]{2} \d)/)).toBeVisible()
   await page.getByRole('tab', { name: '1W' }).click()
   await expect(page.getByText('over the last week')).toBeVisible()
   await page.getByRole('tab', { name: '1M' }).click()

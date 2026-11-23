@@ -65,8 +65,20 @@ test("a held stock's page shows its price, the position, the last two days of ne
     `All-time+C$${Math.round(gain).toLocaleString('en-CA')}+${((gain / 1700) * 100).toFixed(1)}%`,
   ])
   await expect(page.getByRole('img', { name: 'RY.TO closes over 6M' })).toBeVisible()
+  // 1D: the session every 5 minutes (e2e/yahoo-stub.mjs: 9:30 to 10:30, 100 → 112), the previous close dashed
   await page.getByRole('tab', { name: '1D' }).click()
-  await expect(page.getByRole('img', { name: 'RY.TO closes over 1D' })).toBeVisible()
+  const day = page.getByRole('img', { name: /^RY\.TO every 5 minutes over the day .*, against the previous close$/ })
+  await expect(day).toBeVisible()
+  await expect(day.locator('line.baseline')).toHaveCount(1)
+  await expect(page.getByText(/^Every 5 minutes .* in CAD; dashed: the previous close$/)).toBeVisible()
+  // the line stops where the session has got to: 1 hour of 6.5, about 15% of the way across
+  const reach = await day.evaluate((svg) => {
+    const line = svg.querySelector('path.main-line')!.getBoundingClientRect()
+    const grid = svg.querySelector('line.baseline')!.getBoundingClientRect()
+    return (line.right - grid.left) / grid.width
+  })
+  expect(reach).toBeGreaterThan(0.1)
+  expect(reach).toBeLessThan(0.25)
   await page.getByRole('tab', { name: '1W' }).click()
   await expect(page.getByRole('img', { name: 'RY.TO closes over 1W' })).toBeVisible()
   await page.getByRole('tab', { name: '1M' }).click()
@@ -282,7 +294,7 @@ test("a coin's page is in CAD, and the coin can be watched and unwatched from it
   await expect(position.locator('.stat').nth(1)).toHaveText('Avg costC$4,200.00') // one of two sold at average cost
   await expect(page.getByText('A forecast for ETH appears here when you hold or watch it and a run has scored it.')).toBeVisible()
   await page.getByRole('tab', { name: '1D' }).click()
-  await expect(page.getByRole('img', { name: 'ETH closes over 1D' })).toBeVisible()
+  await expect(page.getByRole('img', { name: /^ETH every 5 minutes over the day / })).toBeVisible()
   await page.getByRole('tab', { name: '1W' }).click()
   await expect(page.getByRole('img', { name: 'ETH closes over 1W' })).toBeVisible()
 

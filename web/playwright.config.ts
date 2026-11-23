@@ -3,6 +3,7 @@ import { OWNER_STATE, localStack } from './e2e/stack'
 
 const stack = localStack()
 const PORT = 3100
+const YAHOO_STUB = 'http://127.0.0.1:3101'
 
 /**
  * Browser tests against the local Supabase stack and a production build of the dashboard. The
@@ -31,12 +32,16 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: process.platform === 'win32' ? 'msedge' : undefined, storageState: OWNER_STATE },
     },
   ],
-  webServer: {
-    command: `npm run build && npx next start -p ${PORT}`,
-    // The icon is served before any page exists, and the proxy lets it through.
-    url: `http://127.0.0.1:${PORT}/icon.svg`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 240_000,
-    env: { SUPABASE_URL: stack.API_URL, SUPABASE_PUBLISHABLE_KEY: stack.PUBLISHABLE_KEY },
-  },
+  webServer: [
+    // Yahoo's chart endpoint for the 1D charts, so no test calls Yahoo (e2e/yahoo-stub.mjs)
+    { command: 'node e2e/yahoo-stub.mjs', url: `${YAHOO_STUB}/health`, reuseExistingServer: !process.env.CI },
+    {
+      command: `npm run build && npx next start -p ${PORT}`,
+      // The icon is served before any page exists, and the proxy lets it through.
+      url: `http://127.0.0.1:${PORT}/icon.svg`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 240_000,
+      env: { SUPABASE_URL: stack.API_URL, SUPABASE_PUBLISHABLE_KEY: stack.PUBLISHABLE_KEY, YAHOO_CHART_URL: YAHOO_STUB },
+    },
+  ],
 })

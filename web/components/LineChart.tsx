@@ -19,6 +19,9 @@ export interface Cone extends ConeQuantiles {
 /** Whether an axis label (10px mono, ~6 units a character) fits beside the centred "today" tick. */
 const fitsAxis = (text: string, room: number) => text.length * 6 + 24 <= room
 
+/** One empty list for every chart without benchmarks: a new `[]` each render would read as new data and morph. */
+const NO_BENCHMARKS: Benchmark[] = []
+
 interface Drawn {
   series: number[]
   benchmarks: Benchmark[]
@@ -35,11 +38,13 @@ interface Drawn {
 export function LineChart({
   series,
   dates,
-  benchmarks = [],
+  benchmarks = NO_BENCHMARKS,
   height = 240,
   format = (v) => v.toFixed(2),
   label,
   cone,
+  slots,
+  baseline,
 }: {
   series: number[]
   dates: string[]
@@ -48,6 +53,10 @@ export function LineChart({
   format?: (value: number) => string
   label: string
   cone?: Cone
+  /** A day in progress: the whole session's points, so the line ends part way across. */
+  slots?: number
+  /** A dashed line at this level: the previous close of a 1D chart. */
+  baseline?: number
 }) {
   const box = useRef<HTMLDivElement>(null)
   const svg = useRef<SVGSVGElement>(null)
@@ -157,6 +166,8 @@ export function LineChart({
       ? null
       : geometry(width, height, [drawn.series, ...drawn.benchmarks.map((b) => b.values)], {
           cone: shownCone ? { last, ...shownCone } : undefined,
+          reach: slots && slots > 1 && series.length > 1 ? (series.length - 1) / (slots - 1) : 1,
+          baseline,
         })
   const c = g && shownCone ? coneShape(g, last, shownCone) : null
 
@@ -199,6 +210,18 @@ export function LineChart({
               </g>
             ))}
           </g>
+          {baseline !== undefined && (
+            <line
+              className="baseline"
+              x1={PAD.l}
+              x2={PAD.l + g.plotW}
+              y1={g.y(baseline)}
+              y2={g.y(baseline)}
+              stroke="var(--muted-foreground)"
+              strokeDasharray="3 4"
+              opacity={0.6}
+            />
+          )}
           {drawn.benchmarks.map((b, j) => (
             <path
               key={j}

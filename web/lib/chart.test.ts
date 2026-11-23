@@ -78,3 +78,18 @@ describe('ease', () => {
     expect(ease(0.25)).toBeCloseTo(1 - ease(0.75))
   })
 })
+
+describe('a day in progress', () => {
+  it('ends the line part way across, at its share of the session, and the hover stops there', () => {
+    const g = geometry(500, 200, [[1, 2, 3]], { reach: 0.5 })
+    expect(g.x(0, 3)).toBe(PAD.l)
+    expect(g.x(2, 3)).toBe(PAD.l + g.plotW / 2)
+    expect(indexAt(PAD.l + g.plotW / 2, 3, g)).toBe(2)
+    expect(indexAt(PAD.l + g.plotW * 0.9, 3, g)).toBeNull()
+  })
+
+  it('keeps the previous close on the scale', () => {
+    const g = geometry(500, 200, [[110, 120]], { baseline: 100 })
+    expect(g.lo).toBeLessThan(100)
+  })
+})

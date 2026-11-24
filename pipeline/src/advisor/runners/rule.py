@@ -104,7 +104,7 @@ def _sums(x: np.ndarray) -> np.ndarray:
     return np.concatenate(([0.0], np.cumsum(x, dtype=float)))
 
 
-def _split_days(s: Series) -> np.ndarray:
+def split_days(s: Series) -> np.ndarray:
     """Sessions that open at twice the last close on less volume than usual.
 
     A reverse split shrinks the share count; a real spike multiplies volume.
@@ -149,7 +149,7 @@ def ignitions(s: Series, rule: Rule) -> Ignitions:
     if rule.min_close_pos is not None:
         candidate &= _close_pos(s.high, s.low, s.close) >= rule.min_close_pos
 
-    splits = _sums(_split_days(s))
+    splits = _sums(split_days(s))
     history_start = np.maximum(0, i - h)
     suspect = candidate & (splits[i] - splits[history_start] > 0)  # a split day in [i-h, i-1]
 

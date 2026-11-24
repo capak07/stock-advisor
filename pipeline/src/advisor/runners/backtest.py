@@ -4,7 +4,6 @@ Pure: prices in, a JSON-ready dict out. A signal on D uses only bars dated on or
 starts at D+1's open and settles as the live stage settles it. The pick reads the older two thirds only.
 """
 
-from bisect import bisect_left
 from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import replace
@@ -14,14 +13,14 @@ import numpy as np
 import pandas as pd
 
 from advisor.runners.cost import cost_r, spread_pct
-from advisor.runners.plan import gapped, plan_for, settle
+from advisor.runners.plan import plan_for
 from advisor.runners.rule import STARTING, Rule, Series, ignitions
+from advisor.runners.track import GAPPED, track
 
 MIN_TO_CHOOSE = 200  # older trades a variant needs before it can be picked
 WORST = 10
 COLUMNS = ["symbol", "signal_day", "entry_day", "status", "skip_reason", "gross_r", "cost_r", "net_r"]
 PRICES = ["open", "high", "low", "close", "volume"]
-GAPPED = "gapped up at the open"
 
 # The fields the ignition test reads; the rest only shape the trade plan.
 IGNITION_FIELDS = (
@@ -107,36 +106,29 @@ def _signals(symbol: str, s: Series, rule: Rule) -> tuple[np.ndarray, int]:
 
 
 def _trade(s: Series, i: int, sessions: Sequence[date], rule: Rule) -> dict | None:
-    """The signal on session i, settled as live does. None when it is incomplete or live would not store it."""
-    if i + 1 >= len(s.days):
+    """The signal on session i, tracked as live tracks it. None when it is incomplete or live would not store it."""
+    if i + 1 >= len(s.days):  # no bar after D
         return None
-    entry_day, entry = s.days[i + 1], float(s.open[i + 1])
-    last = bisect_left(sessions, entry_day) + rule.hold_sessions - 1  # the entry day is day 1
-    if last >= len(sessions):
-        return None
-    hold_by = sessions[last]
     signal_close, signal_low = float(s.close[i]), float(s.low[i])
-    if plan_for(signal_close, signal_low, hold_by, rule) is None:  # live stores no signal without a stop under D's close
+    if plan_for(signal_close, signal_low, s.days[i], rule) is None:  # live stores no signal without a stop under D's close
         return None
-    row = {"signal_day": s.days[i], "entry_day": entry_day, "skip_reason": None, "gross_r": None, "cost_r": None, "net_r": None}
-    if gapped(signal_close, entry, rule):
-        return row | {"status": "skipped", "skip_reason": GAPPED}
-    plan = plan_for(entry, signal_low, hold_by, rule)
-    if plan is None:
-        return row | {"status": "skipped", "skip_reason": "opened under the stop"}
-    end = min(len(s.days), bisect_left(s.days, hold_by) + 1)  # settling stops at the first bar on or after the hold-by
-    outcome = settle(s.bars(i + 1, end), plan)
-    if outcome.status == "open":  # its bars end before the hold-by
+    got = track(s, s.days[i], signal_close, signal_low, sessions, rule, sessions[-1])
+    if got.status in ("waiting", "open"):  # the data ends first
         return None
-    cost = cost_r(spread_pct(s, i), entry, plan.stop)
-    return row | {"status": outcome.status, "gross_r": outcome.gross_r, "cost_r": cost, "net_r": outcome.gross_r - cost}
+    row = {"signal_day": s.days[i], "entry_day": got.entry_day, "skip_reason": got.reason, "gross_r": None,
+           "cost_r": None, "net_r": None}
+    if got.outcome is None:
+        return row | {"status": "skipped"}
+    cost = cost_r(spread_pct(s, i), got.plan.entry, got.plan.stop)
+    gross = got.outcome.gross_r
+    return row | {"status": got.outcome.status, "gross_r": gross, "cost_r": cost, "net_r": gross - cost}
 
 
 def trades(series: Mapping[str, Series], sessions: Sequence[date], rule: Rule) -> pd.DataFrame:
     """One row per signal. Split-suspects are not rows; their count is in `attrs["split_suspect"]`.
 
     A signal with no bar after D, or whose hold-by is past the last session, is dropped, and so is a
-    trade still open at the end of the data.
+    trade still open at the end of the data. A signal with no bar for 5 sessions is skipped as live skips it.
     """
     rows, suspect = [], 0
     for symbol, s in series.items():

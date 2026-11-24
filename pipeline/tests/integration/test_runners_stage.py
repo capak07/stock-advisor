@@ -14,7 +14,7 @@ NOW = datetime(2026, 11, 16, 13, 15, tzinfo=UTC)  # Monday 8:15 a.m. in New York
 
 def test_an_ignition_yesterday_is_stored_waiting_with_a_preview_plan(db):
     got = runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
-    assert got == {"signals": 1, "split_suspect": 0, "entered": 0, "closed": 0, "open": 0, "unchecked": 1}
+    assert got == {"signals": 1, "split_suspect": 0, "entered": 0, "closed": 0, "open": 0, "unchecked": 1, "split_wait": 0}
     [row] = repo.unsettled_runner_signals(db)
     assert (row["symbol"], row["name"], row["status"], row["rule_version"]) == ("AKAN", info("AKAN").name, "waiting", 0)
     assert (float(row["stop"]), float(row["target"]), row["hold_by"]) == (1.02, 2.04, date(2026, 11, 30))
@@ -149,3 +149,33 @@ def test_a_split_while_waiting_is_not_taken_for_a_gap(db):
     row = db.execute("select status, skip_reason, entry from runner_signals").fetchone()
     assert (row["status"], row["skip_reason"]) == ("open", None)
     assert float(row["entry"]) == pytest.approx(7.14)
+
+
+def scaled(bars, ratio):
+    """The bars with prices x ratio and volume / ratio: a 1-for-ratio reverse split."""
+    return [
+        b.model_copy(update={"open": b.open * ratio, "high": b.high * ratio, "low": b.low * ratio,
+                             "close": b.close * ratio, "volume": b.volume / ratio})
+        for b in bars
+    ]
+
+
+def test_an_unadjusted_reverse_split_bar_does_not_book_a_fake_target(db):  # the probe: target at 19.10, 35.79R
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    day2 = [*akan(), daily("AKAN", AKAN_AFTER[0])]
+    runners_stage(db, {"AKAN": day2}, [info("AKAN")], NOW + timedelta(days=1))
+    # Tue 11-17 as traded after a 1-for-10 split, 10x the price on volume under the 50-session average,
+    # before Yahoo rescaled the history
+    unadjusted = [*day2, *scaled([daily("AKAN", AKAN_AFTER[1])], 10)]
+    got = runners_stage(db, {"AKAN": unadjusted}, [info("AKAN")], NOW + timedelta(days=2))
+    assert (got["split_wait"], got["open"], got["closed"]) == (1, 1, 0)
+    row = db.execute("select status, exit_day, exit_price, gross_r, last_day, last_close from runner_signals").fetchone()
+    assert (row["status"], row["exit_day"], row["exit_price"], row["gross_r"]) == ("open", None, None, None)
+    assert (row["last_day"], float(row["last_close"])) == (date(2026, 11, 16), 2.21)
+    # the next morning Yahoo has rescaled every bar: the trade settles on one price scale
+    adjusted = scaled([*day2, daily("AKAN", AKAN_AFTER[1]), daily("AKAN", AKAN_AFTER[2])], 10)
+    got = runners_stage(db, {"AKAN": adjusted}, [info("AKAN")], NOW + timedelta(days=3))
+    assert (got["split_wait"], got["closed"]) == (0, 1)
+    row = db.execute("select status, entry, stop, exit_price, gross_r from runner_signals").fetchone()
+    assert (row["status"], float(row["entry"]), float(row["stop"]), float(row["exit_price"])) == ("target", 19.2, 14.4, 28.8)
+    assert float(row["gross_r"]) == pytest.approx(2.0)

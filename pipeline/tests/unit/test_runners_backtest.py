@@ -1,6 +1,6 @@
 import json
 from dataclasses import astuple, replace
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import pytest
@@ -15,7 +15,7 @@ from advisor.runners.backtest import (
     trades,
     variants,
 )
-from advisor.runners.rule import STARTING, series_of
+from advisor.runners.rule import STARTING, Bar, series_of
 from runner_data import AKAN_AFTER, akan, daily, more_flat_days, weekdays
 
 NO_EVENTS = pd.DataFrame({"symbol": [], "day": [], "dividend": [], "split": []})
@@ -67,6 +67,47 @@ def test_a_gap_over_the_limit_is_a_skip_not_a_trade():
 def test_a_signal_too_close_to_the_end_of_the_data_is_dropped():
     series = {"AKAN": series_of([*akan(), daily("AKAN", AKAN_AFTER[0])])}
     assert trades(series, sessions_from(series), STARTING).empty
+
+
+def weekdays_from(start, n):
+    """n weekdays from `start` on: sessions that other stocks traded."""
+    out, day = [], start
+    while len(out) < n:
+        if day.weekday() < 5:
+            out.append(day)
+        day += timedelta(days=1)
+    return out
+
+
+def test_a_signal_whose_next_bar_comes_6_sessions_later_is_skipped():
+    after = weekdays_from(date(2026, 11, 16), 40)                # 11-16 is the first session after D
+    late = [Bar(day, 1.92, 2.38, 1.70, 2.21, 99_663_300.0) for day in after[5:7]]  # from 11-23, the 6th
+    series = {"AKAN": series_of(more_flat_days([*akan(), *(daily("AKAN", b) for b in late)], 20))}
+    sessions = sorted({*series["AKAN"].days, *after})
+    [row] = trades(series, sessions, STARTING).to_dict("records")
+    assert (row["status"], row["skip_reason"], row["entry_day"]) == ("skipped", "no prices after the signal", None)
+    assert report(trades(series, sessions, STARTING))["skipped_other"] == 1
+
+
+def test_an_open_under_the_stop_is_skipped():
+    under = Bar(date(2026, 11, 16), 0.70, 0.75, 0.68, 0.72, 5_000_000.0)  # under D's low of 0.726
+    series = {"AKAN": series_of(more_flat_days([*akan(), daily("AKAN", under)], 20))}
+    [row] = trades(series, sessions_from(series), replace(STARTING, stop_floor=None)).to_dict("records")
+    assert (row["status"], row["skip_reason"]) == ("skipped", "opened under the stop")
+
+
+def test_a_signal_with_no_bar_after_it_is_dropped_however_long_the_data_runs():
+    series = {"AKAN": series_of(akan())}
+    assert trades(series, sorted({*series["AKAN"].days, *weekdays_from(date(2026, 11, 16), 40)}), STARTING).empty
+
+
+def test_a_halt_across_the_hold_by_closes_at_the_last_close_before_it():
+    back = [Bar(day, 2.10, 2.20, 2.00, 2.05, 1_000_000.0) for day in weekdays_from(date(2026, 12, 7), 5)]
+    series = {"AKAN": series_of([*akan(), daily("AKAN", AKAN_AFTER[0]), *(daily("AKAN", b) for b in back)])}
+    sessions = sorted({*series["AKAN"].days, *weekdays_from(date(2026, 11, 16), 40)})
+    [row] = trades(series, sessions, STARTING).to_dict("records")
+    assert (row["status"], row["skip_reason"]) == ("held", "no prices: closed at the last close")
+    assert row["gross_r"] == pytest.approx((2.21 - 1.92) / 0.48)
 
 
 def test_fifteen_variants_each_change_one_setting():

@@ -86,6 +86,12 @@ def previous_sessions(end: date, count: int, market: Market = Market.US) -> list
     return [stamp.date() for stamp in schedule.index][-count:]
 
 
+def sessions_between(start: date, end: date, market: Market = Market.US) -> list[date]:
+    """Every `market` session from `start` to `end`, both included, ascending."""
+    days = _calendar(market).valid_days(start_date=start.isoformat(), end_date=end.isoformat())
+    return [stamp.date() for stamp in days]
+
+
 def sessions_after(market: Market, day: date, n: int) -> date:
     """The `n`-th `market` trading session after `day`, on that market's own calendar."""
     if n < 1:

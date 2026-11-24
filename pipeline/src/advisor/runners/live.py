@@ -12,14 +12,15 @@ import psycopg
 from advisor.collectors.sec import SecEdgar
 from advisor.models import ET, DailyBar, Market, SymbolInfo
 from advisor.runners.cost import cost_r, spread_pct
-from advisor.runners.plan import Plan, gapped, plan_for, settle
+from advisor.runners.plan import Outcome, Plan, plan_for
 from advisor.runners.rule import STARTING, Rule, Series, ignitions, series_of, stats_at
+from advisor.runners.track import NO_PRICES_HELD, held_at_last_close, track
 from advisor.runners.warnings import warnings_for
-from advisor.schedule import previous_sessions, sessions_after
+from advisor.schedule import previous_sessions, sessions_after, sessions_between
 from advisor.store import repo
 
 KEPT = timedelta(days=730)
-NO_PRICES = 5  # sessions without a bar before a signal is given up on
+AHEAD = timedelta(days=366)  # the sessions after D a hold-by and the 5 sessions after it can need
 CLOSED = {"target", "stop", "held"}
 
 Splits = Callable[[Sequence[str]], Mapping[str, list[tuple[date, float]]]]
@@ -79,17 +80,6 @@ def _add_warnings(rows: list[dict], as_of: date, sec: SecEdgar | None, splits: S
         row["warnings"], row["warnings_checked"] = warnings, checked and complete
 
 
-def _held_at_last_close(plan: Plan, cost: float, last_day: date, last_close: float, d: date) -> dict:
-    """An open runner with no bar for 5 sessions, 5 sessions past its hold-by, closes at its last close."""
-    if sessions_after(Market.US, last_day, NO_PRICES) > d or sessions_after(Market.US, plan.hold_by, NO_PRICES) > d:
-        return {}
-    gross = (last_close - plan.entry) / plan.r
-    return {
-        "status": "held", "skip_reason": "no prices: closed at the last close", "exit_day": last_day,
-        "exit_price": last_close, "gross_r": gross, "net_r": gross - cost,
-    }
-
-
 def _signal_bar(row: Mapping, s: Series | None) -> tuple[float, float]:
     """D's close and low on the same price scale as the entry.
 
@@ -102,42 +92,38 @@ def _signal_bar(row: Mapping, s: Series | None) -> tuple[float, float]:
     return float(row["signal_close"]), float(row["signal_low"])
 
 
-def _hold_by(entry_day: date, rule: Rule) -> date:
-    """The hold's last session, counting the entry day as day 1."""
-    n = rule.hold_sessions
-    return entry_day if n <= 1 else sessions_after(Market.US, entry_day, n - 1)
-
-
-def _track(row: Mapping, s: Series | None, rule: Rule, d: date) -> dict:
-    """The fields to store for one unsettled signal, recomputed from its bars up to D."""
-    after = s.bars(bisect_right(s.days, row["signal_day"])) if s is not None else []
-    if not after:
-        if row["status"] == "open":  # no bars this run: what was stored is all there is
-            plan = Plan(float(row["entry"]), float(row["stop"]), float(row["target"]), row["hold_by"])
-            return _held_at_last_close(plan, float(row["cost_r"]), row["last_day"], float(row["last_close"]), d)
-        if sessions_after(Market.US, row["signal_day"], NO_PRICES) <= d:
-            return {"status": "skipped", "skip_reason": "no prices after the signal"}
-        return {}
-    entry_bar = after[0]
-    entry = entry_bar.open
-    signal_close, signal_low = _signal_bar(row, s)
-    if gapped(signal_close, entry, rule):
-        return {"status": "skipped", "skip_reason": "gapped up at the open"}
-    plan = plan_for(entry, signal_low, _hold_by(entry_bar.day, rule), rule)
-    if plan is None:
-        return {"status": "skipped", "skip_reason": "opened under the stop"}
-    outcome = settle(after, plan)
-    cost = cost_r(float(row["spread_pct"]), entry, plan.stop)
-    fields = {
-        "status": outcome.status, "entry_day": entry_bar.day, "entry": entry, "stop": plan.stop,
-        "target": plan.target, "hold_by": plan.hold_by, "cost_r": cost, "last_day": outcome.last_day, "last_close": outcome.last_close,
-    }
-    if outcome.status == "open":
-        return fields | _held_at_last_close(plan, cost, outcome.last_day, outcome.last_close, d)
-    return fields | {
+def _closed(outcome: Outcome, cost: float) -> dict:
+    return {
         "exit_day": outcome.exit_day, "exit_price": outcome.exit_price, "gross_r": outcome.gross_r,
         "net_r": outcome.gross_r - cost,
     }
+
+
+def _track(row: Mapping, s: Series | None, rule: Rule, sessions: Sequence[date], d: date) -> tuple[dict, bool]:
+    """The fields to store for one unsettled signal, recomputed from its bars up to D.
+
+    Also whether a split-suspect bar is holding it back.
+    """
+    got = track(s, row["signal_day"], *_signal_bar(row, s), sessions, rule, d)
+    if got.entry_day is None and row["status"] == "open":  # no trusted bar this run: what was stored is all there is
+        plan = Plan(float(row["entry"]), float(row["stop"]), float(row["target"]), row["hold_by"])
+        held = held_at_last_close(plan, row["last_day"], float(row["last_close"]), sessions, d)
+        if held is None:
+            return {}, got.split_wait
+        return {"status": "held", "skip_reason": NO_PRICES_HELD, **_closed(held, float(row["cost_r"]))}, False
+    if got.outcome is None:
+        return ({} if got.reason is None else {"status": "skipped", "skip_reason": got.reason}), got.split_wait
+    plan, outcome = got.plan, got.outcome
+    cost = cost_r(float(row["spread_pct"]), plan.entry, plan.stop)
+    fields = {
+        "status": outcome.status, "entry_day": got.entry_day, "entry": plan.entry, "stop": plan.stop,
+        "target": plan.target, "hold_by": plan.hold_by, "cost_r": cost, "last_day": outcome.last_day,
+        "last_close": outcome.last_close,
+    }
+    if outcome.status == "open":
+        return fields, got.split_wait
+    reason = {} if got.reason is None else {"skip_reason": got.reason}
+    return fields | reason | _closed(outcome, cost), False
 
 
 def runners_stage(
@@ -161,19 +147,25 @@ def runners_stage(
     version, rule = (0, STARTING) if live is None else (live[0], Rule.from_settings(live[1]))
     found, suspect = _signals(series, universe, d, version, rule)
     _add_warnings(found, today, sec, splits)
-    counts = {"signals": 0, "split_suspect": suspect, "entered": 0, "closed": 0, "open": 0, "unchecked": 0}
+    counts = {
+        "signals": 0, "split_suspect": suspect, "entered": 0, "closed": 0, "open": 0, "unchecked": 0,
+        "split_wait": 0,
+    }
     with conn.transaction():
         for row in found:
             if repo.insert_runner_signal(conn, row):
                 counts["signals"] += 1
                 counts["unchecked"] += not row["warnings_checked"]
         settings = repo.runner_rule_settings(conn)
-        for row in repo.unsettled_runner_signals(conn):
-            fields = _track(row, series.get(row["symbol"]), _rule(row["rule_version"], settings), d)
+        unsettled = repo.unsettled_runner_signals(conn)
+        sessions = sessions_between(min((row["signal_day"] for row in unsettled), default=d), d + AHEAD)
+        for row in unsettled:
+            fields, split_wait = _track(row, series.get(row["symbol"]), _rule(row["rule_version"], settings), sessions, d)
             repo.update_runner_signal(conn, row["id"], **fields)
             status = fields.get("status", row["status"])
             counts["entered"] += row["status"] == "waiting" and "entry" in fields
             counts["closed"] += status in CLOSED
             counts["open"] += status == "open"
+            counts["split_wait"] += split_wait
         repo.prune_runner_signals(conn, today - KEPT)
     return counts

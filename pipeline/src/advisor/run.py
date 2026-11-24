@@ -646,6 +646,8 @@ def execute_run(
                 )
             except Exception as exc:  # display-only: recorded, never fails or degrades the run
                 runners_error = f"{type(exc).__name__}: {exc}"[:200]
+        elif kind is RunKind.PRE_OPEN:  # the page must not take a skipped check for one that found nothing
+            runners_error = "skipped: the universe did not load"
 
         passes = {
             m: check_market(m, universes[m], limits[m], priority, bars, floors[m]) for m in Market

@@ -61,3 +61,8 @@ def test_held_to_the_hold_by_date_sells_at_that_close():
     bars = [Bar(date(2026, 11, 16), 1.92, 2.00, 1.80, 1.95, 1), Bar(HOLD, 1.95, 2.10, 1.90, 2.04, 1)]
     out = settle(bars, plan_for(1.92, 0.726, HOLD, STARTING))
     assert (out.status, out.exit_day, out.exit_price, out.gross_r) == ("held", HOLD, 2.04, pytest.approx(0.25))
+
+
+def test_no_plan_when_the_stop_is_not_under_the_entry():                 # a zero R would divide by zero
+    assert plan_for(1.92, 0.726, HOLD, replace(STARTING, stop_floor=0.0)) is None
+    assert plan_for(1.92, 1.9199999999999, HOLD, replace(STARTING, stop_floor=None)) is None  # floors to 1.92

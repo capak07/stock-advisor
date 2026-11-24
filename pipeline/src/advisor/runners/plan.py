@@ -26,7 +26,10 @@ def _floor_cent(x: float) -> float:
 
 
 def plan_for(entry: float, signal_low: float, hold_by: date, rule: Rule) -> Plan | None:
-    """The stop is the closer of D's low and the floor under the entry. None when there is no stop."""
+    """The stop is the closer of D's low and the floor under the entry.
+
+    None when there is no stop, or no stop under the entry: a zero R would divide by zero.
+    """
     candidates = []
     if signal_low < entry:
         candidates.append(signal_low)
@@ -35,7 +38,7 @@ def plan_for(entry: float, signal_low: float, hold_by: date, rule: Rule) -> Plan
     if not candidates:
         return None
     stop = _floor_cent(max(candidates))
-    if stop <= 0:
+    if stop <= 0 or stop >= entry:
         return None
     return Plan(entry=entry, stop=stop, target=round(entry + rule.target_r * (entry - stop), 2), hold_by=hold_by)
 

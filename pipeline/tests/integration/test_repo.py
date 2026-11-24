@@ -1152,6 +1152,48 @@ def test_the_upsert_does_not_touch_skill_rank(db):
     assert _skill_ranks(db, day)["AAPL"] == 1
 
 
+def runner_row(**over):
+    row = {
+        "signal_day": date(2026, 11, 13), "symbol": "AKAN", "name": "Akanda Corp", "rule_version": 0,
+        "change_pct": 25.0, "volume_x": 12.0, "dollar_volume": 3_000_000.0, "close_pos": 0.9,
+        "signal_close": 2.5, "signal_low": 2.0, "spread_pct": 0.5, "warnings": [], "stop": 2.2,
+        "target": 3.1, "hold_by": date(2026, 11, 27), "cost_r": 0.05,
+    }
+    row.update(over)
+    return row
+
+
+def test_freezing_a_runner_rule_makes_it_the_only_live_one(db):
+    assert repo.live_runner_rule(db) is None
+    assert repo.freeze_runner_rule(db, {"volume_x": 10.0}, None) == 1
+    assert repo.freeze_runner_rule(db, {"volume_x": 20.0}, None) == 2
+    assert repo.live_runner_rule(db) == (2, {"volume_x": 20.0})
+    assert repo.runner_rule_settings(db) == {1: {"volume_x": 10.0}, 2: {"volume_x": 20.0}}
+
+
+def test_a_runner_signal_is_stored_once_and_updated_by_named_columns(db):
+    row = runner_row()
+    assert repo.insert_runner_signal(db, row) is True
+    assert repo.insert_runner_signal(db, row | {"change_pct": 999}) is False
+    [stored] = repo.unsettled_runner_signals(db)
+    assert float(stored["change_pct"]) == row["change_pct"]
+    repo.update_runner_signal(db, stored["id"], status="target", net_r=1.9)
+    assert repo.unsettled_runner_signals(db) == []
+    with pytest.raises(ValueError):
+        repo.update_runner_signal(db, stored["id"], symbol="X")
+    assert repo.prune_runner_signals(db, date(2026, 11, 14)) == 1
+
+
+def test_a_runner_backtest_round_trips_its_reports(db):
+    pick = {"name": "starting", "settings": {"volume_x": 10.0}, "older": {"n": 40}, "newer": {"n": 12}, "note": ""}
+    bid = repo.insert_runner_backtest(db, {
+        "data_from": date(2024, 11, 1), "data_to": date(2026, 11, 20), "cutoff": date(2026, 3, 1),
+        "variants_tried": 24, "rule_version": None, "frozen": None, "pick": pick, "split_suspect": 3,
+    })
+    row = db.execute("select * from runner_backtests where id = %s", (bid,)).fetchone()
+    assert (row["frozen"], row["pick"], row["rule_version"], row["split_suspect"]) == (None, pick, None, 3)
+
+
 def test_holding_actions_round_trip_their_exit_plan(db):
     run_id = repo.create_run(db, RunKind.PRE_OPEN, DAY)
     plan = {"version": 1, "basis": "volatility", "horizon": 21, "sell_at": [{"price": 25.5, "chance": 0.33}]}

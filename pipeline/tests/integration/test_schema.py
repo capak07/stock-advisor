@@ -671,6 +671,30 @@ def test_daytrade_skill_rank_is_1_to_3_and_unique_per_day(db):
         db.execute("update daytrade_signals set skill_rank = 3 where symbol = 'MSFT'")
 
 
+RUNNER_SIGNAL = (
+    "insert into runner_signals (signal_day, symbol, rule_version, change_pct, volume_x, dollar_volume,"
+    " close_pos, signal_close, signal_low, spread_pct, stop, target, hold_by, cost_r)"
+    " values ('2026-11-13', 'AKAN', 0, 25, 12, 3000000, 0.9, 2.5, 2.0, 0.5, 2.2, 3.1, '2026-11-27', 0.05)"
+)
+
+
+def test_runners_tables_are_owner_read_pipeline_write(owned_db):
+    with acting_as(owned_db, "pipeline_rw"):
+        owned_db.execute(RUNNER_SIGNAL)  # status defaults to 'waiting'
+        assert owned_db.execute("update runner_signals set status = 'open'").rowcount == 1
+    with acting_as(owned_db, "authenticated", OWNER):
+        assert owned_db.execute("select count(*) as n from runner_signals").fetchone()["n"] == 1
+        # no owner delete policy: row level security hides every row from the delete
+        assert owned_db.execute("delete from runner_signals").rowcount == 0
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            owned_db.execute(RUNNER_SIGNAL.replace("'AKAN'", "'MULN'"))
+    assert owned_db.execute("select count(*) as n from runner_signals").fetchone()["n"] == 1
+
+
+def test_runners_max_loss_defaults_to_50(owned_db):
+    assert float(owned_db.execute("select runners_max_loss_cad as v from settings").fetchone()["v"]) == 50
+
+
 def test_features_live_rows_are_kept_with_their_run(db):
     """News and option features are stored for a later test: nothing the run prunes may delete them.
 

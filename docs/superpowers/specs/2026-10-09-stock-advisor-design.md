@@ -75,7 +75,7 @@ A personal decision-support app for **real investing**. Twice each trading day i
 ### Non-goals
 
 - Automated trade execution or broker integration, including connecting to Wealthsimple with the owner's credentials.
-- Shorting, options trading and intraday/day-trading signals, apart from the display-only Day trade tab (see `docs/superpowers/specs/2026-11-10-day-trade-design.md`); it places no orders and sends no notifications.
+- Shorting, options trading and intraday/day-trading signals, apart from the display-only Day trade tab (see `docs/superpowers/specs/2026-11-10-day-trade-design.md`) and the display-only Runners list for stocks under $5 (see `docs/superpowers/specs/2026-11-24-runners-design.md`); they place no orders and send no notifications.
 - Notifications of any kind, apart from GitHub's built-in failure email for failed jobs.
 - Paid data sources, paid LLMs, and any data source that needs an API key or an account.
 - Multi-user support. This is a single owner app.

@@ -1269,3 +1269,96 @@ def assign_skill_ranks(conn: psycopg.Connection, day: date, ids: Sequence[int]) 
 def prune_daytrade(conn: psycopg.Connection, now: datetime) -> None:
     """Deleting a day cascades to its signals."""
     conn.execute("delete from daytrade_days where day < %s", ((now - DAYTRADE_KEPT).date(),))
+
+
+def live_runner_rule(conn: psycopg.Connection) -> tuple[int, dict] | None:
+    """The live runner rule's version and settings; None before a backtest froze one."""
+    r = conn.execute("select version, settings from runner_rules where live").fetchone()
+    return (r["version"], r["settings"]) if r else None
+
+
+def runner_rule_settings(conn: psycopg.Connection) -> dict[int, dict]:
+    rows = conn.execute("select version, settings from runner_rules order by version").fetchall()
+    return {r["version"]: r["settings"] for r in rows}
+
+
+def freeze_runner_rule(conn: psycopg.Connection, settings: Mapping[str, Any], backtest_id: int | None) -> int:
+    """Store the next rule version as the only live one, atomically. Returns the version."""
+    with conn.transaction():
+        conn.execute("update runner_rules set live = false where live")
+        r = conn.execute(
+            "insert into runner_rules (version, settings, backtest_id, live)"
+            " select coalesce(max(version), 0) + 1, %s, %s, true from runner_rules returning version",
+            (Jsonb(dict(settings)), backtest_id),
+        ).fetchone()
+        return r["version"]
+
+
+# Every column the pipeline may set when it stores a signal; the SQL names come only from here.
+_RUNNER_SIGNAL_COLUMNS = (
+    "signal_day", "symbol", "name", "rule_version", "change_pct", "volume_x", "dollar_volume", "close_pos",
+    "signal_close", "signal_low", "spread_pct", "warnings", "warnings_checked", "status", "skip_reason",
+    "entry_day", "entry", "stop", "target", "hold_by", "cost_r", "last_day", "last_close", "exit_day",
+    "exit_price", "gross_r", "net_r",
+)
+# The columns update_runner_signal may change; its SQL names come only from here.
+RUNNER_SIGNAL_FIELDS = (
+    "status", "skip_reason", "entry_day", "entry", "stop", "target", "cost_r", "last_day", "last_close",
+    "exit_day", "exit_price", "gross_r", "net_r",
+)
+
+
+def insert_runner_signal(conn: psycopg.Connection, row: Mapping[str, Any]) -> bool:
+    """Store a signal once: a second one for the same day and symbol is ignored. True when inserted."""
+    unknown = sorted(set(row) - set(_RUNNER_SIGNAL_COLUMNS))
+    if unknown:
+        raise ValueError(f"unknown runner_signals columns: {', '.join(unknown)}")
+    cols = [c for c in _RUNNER_SIGNAL_COLUMNS if c in row]
+    values = [Jsonb(row[c]) if c == "warnings" else row[c] for c in cols]
+    cur = conn.execute(
+        f"insert into runner_signals ({', '.join(cols)}) values ({', '.join(['%s'] * len(cols))})"
+        " on conflict (signal_day, symbol) do nothing",
+        values,
+    )
+    return cur.rowcount == 1
+
+
+def unsettled_runner_signals(conn: psycopg.Connection) -> list[dict]:
+    """Signals still waiting for their entry or still open, oldest first."""
+    return conn.execute(
+        "select * from runner_signals where status in ('waiting', 'open') order by signal_day, id"
+    ).fetchall()
+
+
+def update_runner_signal(conn: psycopg.Connection, id: int, **fields: Any) -> None:
+    unknown = sorted(set(fields) - set(RUNNER_SIGNAL_FIELDS))
+    if unknown:
+        raise ValueError(f"unknown runner_signals columns: {', '.join(unknown)}")
+    cols = [c for c in RUNNER_SIGNAL_FIELDS if c in fields]
+    if not cols:
+        return
+    sets = ", ".join(f"{c} = %s" for c in cols)
+    conn.execute(f"update runner_signals set {sets} where id = %s", (*(fields[c] for c in cols), id))
+
+
+_RUNNER_BACKTEST_COLUMNS = (
+    "data_from", "data_to", "cutoff", "variants_tried", "rule_version", "frozen", "pick", "split_suspect",
+)
+
+
+def insert_runner_backtest(conn: psycopg.Connection, row: Mapping[str, Any]) -> int:
+    values = [
+        Jsonb(row[c]) if c in ("frozen", "pick") and row[c] is not None else row[c]
+        for c in _RUNNER_BACKTEST_COLUMNS
+    ]
+    r = conn.execute(
+        f"insert into runner_backtests ({', '.join(_RUNNER_BACKTEST_COLUMNS)})"
+        f" values ({', '.join(['%s'] * len(_RUNNER_BACKTEST_COLUMNS))}) returning id",
+        values,
+    ).fetchone()
+    return r["id"]
+
+
+def prune_runner_signals(conn: psycopg.Connection, before: date) -> int:
+    """Delete signals from days before `before`. Returns how many went."""
+    return conn.execute("delete from runner_signals where signal_day < %s", (before,)).rowcount

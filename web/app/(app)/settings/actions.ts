@@ -21,5 +21,6 @@ export async function saveSettings(_: FormState, form: FormData): Promise<FormSt
   revalidatePath('/portfolio')
   revalidatePath('/history')
   revalidatePath('/daytrade')
+  revalidatePath('/runners')
   return { ok: true, message: 'Settings saved: they apply from the next run', at: Date.now() }
 }

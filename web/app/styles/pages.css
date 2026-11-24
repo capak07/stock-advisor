@@ -388,6 +388,8 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-table td.dt-wrap { white-space: normal; min-width: 160px; }
 /* The track record's long headers wrap, so its six columns fit the half-width card. */
 .dt-record .data-table th { white-space: normal; vertical-align: bottom; }
+/* Runners: the backtest's row labels wrap, so its two columns fit a phone. */
+.rn-backtest td:first-child { white-space: normal; }
 /* Notes: costs, rules, limits. */
 .dt-note-block { padding: 10px 0; border-top: 1px solid var(--border); }
 .section-head + .dt-note-block { border-top: 0; }

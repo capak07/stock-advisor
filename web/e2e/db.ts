@@ -1,6 +1,7 @@
 import postgres, { type JSONValue } from 'postgres'
 import { addDays, todayInToronto } from '../lib/dates'
 import { nyTime } from '../lib/daytrade'
+import type { Backtest, BacktestReport, Runner } from '../lib/runners'
 import { localStack } from './stack'
 
 const DB_URL = localStack().DB_URL
@@ -14,7 +15,8 @@ export const sql = postgres(DB_URL, { onnotice: () => {} })
 export async function resetData() {
   // runs cascades to source_health, features_live, predictions, picks, verdicts and screen ranks; models to model_files
   await sql`truncate lots, sells, watchlist, runs, daily_closes, fx_rates, symbols, news_items, sources, models,
-            filings, financial_quarters, earnings_reports, insider_trades, price_alerts, daytrade_days, daytrade_signals, screen_ranks
+            filings, financial_quarters, earnings_reports, insider_trades, price_alerts, daytrade_days, daytrade_signals, screen_ranks,
+            runner_signals, runner_backtests, runner_rules
             restart identity cascade`
   await sql`update settings set usd_fx_fee_pct = 1.5, crypto_fee_pct = 2.0, tfsa_round_trips_warn = 24,
             tfsa_short_hold_share_warn = 0.5,
@@ -487,5 +489,122 @@ export async function seedDaytradeSignal(s: {
     exit_price: s.exitPrice ?? null,
     gross_r: s.grossR !== undefined ? s.grossR : s.netR === undefined || s.netR === null ? null : s.netR + 0.1,
     net_r: s.netR ?? null,
+  })}`
+}
+
+/** The latest weekday before today. */
+export function lastWeekday(): string {
+  let day = daysAgo(1)
+  while ([0, 6].includes(new Date(`${day}T12:00:00Z`).getUTCDay())) day = addDays(day, -1)
+  return day
+}
+
+/** One `runner_signals` row. Defaults: AKAN's ignition, waiting for the open, on the latest weekday before today
+ * (close US$1.36, stop US$1.02, target US$2.04, spread 2% = 0.08R, filings checked, no warnings). */
+export async function seedRunner(over: Partial<Runner> = {}) {
+  const r: Runner = {
+    id: 0,
+    signalDay: lastWeekday(),
+    symbol: 'AKAN',
+    name: 'Akanda Corp.',
+    ruleVersion: 0,
+    changePct: 102.38,
+    volumeX: 77.2,
+    dollarVolume: 121_326_960,
+    closePos: 0.651,
+    signalClose: 1.36,
+    spreadPct: 2,
+    costR: 0.08,
+    warnings: [],
+    warningsChecked: true,
+    status: 'waiting',
+    skipReason: null,
+    entryDay: null,
+    entry: null,
+    stop: 1.02,
+    target: 2.04,
+    holdBy: addDays(over.signalDay ?? lastWeekday(), 17),
+    lastDay: null,
+    lastClose: null,
+    exitDay: null,
+    exitPrice: null,
+    grossR: null,
+    netR: null,
+    ...over,
+  }
+  await sql`insert into runner_signals ${sql({
+    signal_day: r.signalDay,
+    symbol: r.symbol,
+    name: r.name,
+    rule_version: r.ruleVersion,
+    change_pct: r.changePct,
+    volume_x: r.volumeX,
+    dollar_volume: r.dollarVolume,
+    close_pos: r.closePos,
+    signal_close: r.signalClose,
+    signal_low: 0.66,
+    spread_pct: r.spreadPct,
+    warnings: sql.json(r.warnings as unknown as JSONValue),
+    warnings_checked: r.warningsChecked,
+    status: r.status,
+    skip_reason: r.skipReason,
+    entry_day: r.entryDay,
+    entry: r.entry,
+    stop: r.stop,
+    target: r.target,
+    hold_by: r.holdBy,
+    cost_r: r.costR,
+    last_day: r.lastDay,
+    last_close: r.lastClose,
+    exit_day: r.exitDay,
+    exit_price: r.exitPrice,
+    gross_r: r.grossR,
+    net_r: r.netR,
+  })}`
+}
+
+/** A frozen rule, live, as the weekly backtest stores it. */
+export async function seedRunnerRule(version: number, settings: JSONValue = { min_change_pct: 40 }) {
+  await sql`insert into runner_rules (version, settings, live) values (${version}, ${sql.json(settings)}, true)`
+}
+
+/** One part of a backtest report, as the pipeline stores it. */
+export const runnerReport = (over: Partial<BacktestReport> = {}): BacktestReport => ({
+  signals: 300,
+  skipped_gap: 12,
+  skipped_other: 0,
+  target: 90,
+  stop: 160,
+  held: 50,
+  avg_net_r: 0.1,
+  median_net_r: -0.2,
+  lost_over_1r: 0.06,
+  worst: [],
+  ...over,
+})
+
+/** One weekly backtest. Defaults: rule version 1 frozen, the search picking the same rule, 15 variations tried. */
+export async function seedRunnerBacktest(over: Partial<Backtest> = {}) {
+  const frozen = { older: runnerReport(), newer: runnerReport({ signals: 120, avg_net_r: 0.2 }) }
+  const b: Backtest = {
+    ranAt: new Date().toISOString(),
+    dataFrom: '2018-11-01',
+    dataTo: daysAgo(3),
+    cutoff: '2024-03-01',
+    variantsTried: 15,
+    ruleVersion: 1,
+    frozen,
+    pick: { name: 'starting values', note: null, ...frozen },
+    ...over,
+  }
+  await sql`insert into runner_backtests ${sql({
+    ran_at: b.ranAt,
+    data_from: b.dataFrom,
+    data_to: b.dataTo,
+    cutoff: b.cutoff,
+    variants_tried: b.variantsTried,
+    rule_version: b.ruleVersion,
+    frozen: b.frozen === null ? null : sql.json(b.frozen as unknown as JSONValue),
+    pick: sql.json(b.pick as unknown as JSONValue),
   })}`
 }

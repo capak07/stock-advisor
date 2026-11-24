@@ -1,4 +1,4 @@
-import { Activity, ChartCandlestick, Eye, History, PiggyBank, Settings, Sparkles, Sun, Wallet, type LucideIcon } from 'lucide-react'
+import { Activity, ChartCandlestick, Eye, History, PiggyBank, Rocket, Settings, Sparkles, Sun, Wallet, type LucideIcon } from 'lucide-react'
 
 export interface NavItem {
   href: string
@@ -14,13 +14,15 @@ export interface NavItem {
  * Every page, in the sidebar's order (spec §6). On a phone the first four are tabs and the rest are under More
  * (owner request 2026-11-23: Picks took the Search tab's place, as the top bar has the search; this supersedes the
  * 2026-11-15 note that put Watchlist first under More). On a desktop, Sources and Settings sit under a divider.
- * History (results and trades, owner request 2026-11-23) follows Picks.
+ * History (results and trades, owner request 2026-11-23) follows Picks. Runners (swing trades under $5) follows
+ * Day trade and is the first page under More.
  * Track record joins with live grading (Plan 4c).
  */
 export const NAV: readonly NavItem[] = [
   { href: '/', label: 'Today', icon: Sun, tab: true, group: 'main' },
   { href: '/portfolio', label: 'Portfolio', icon: Wallet, tab: true, group: 'main' },
   { href: '/daytrade', label: 'Day trade', icon: ChartCandlestick, tab: true, group: 'main' },
+  { href: '/runners', label: 'Runners', icon: Rocket, tab: false, group: 'more' },
   { href: '/picks', label: 'Picks', icon: Sparkles, tab: true, group: 'main' },
   { href: '/history', label: 'History', icon: History, tab: false, group: 'more' },
   { href: '/invest', label: 'Invest', icon: PiggyBank, tab: false, group: 'more' },

@@ -42,7 +42,7 @@ test.describe('on a phone', () => {
     await expect(page.getByRole('heading', { name: 'My Portfolio', level: 1 })).toBeVisible()
     await expect(tabs.getByRole('link', { name: 'Portfolio' })).toHaveAttribute('aria-current', 'page')
     await tabs.getByRole('button', { name: 'More' }).click()
-    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link')).toHaveText(['History', 'Invest', 'Watchlist', 'Sources', 'Settings'])
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link')).toHaveText(['Runners', 'History', 'Invest', 'Watchlist', 'Sources', 'Settings'])
     await page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Watchlist' }).click()
     await expect(page.getByRole('heading', { name: 'Watchlist' })).toBeVisible()
     await expect(tabs.getByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page')
@@ -111,7 +111,7 @@ test.describe('on a phone', () => {
     const sheet = page.getByRole('dialog', { name: 'More' })
     await page.goto('/')
     await tabs.getByRole('button', { name: 'More' }).click()
-    await expect(sheet.getByRole('link', { name: 'History' })).toBeFocused()
+    await expect(sheet.getByRole('link', { name: 'Runners' })).toBeFocused()
     await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0)
     await page.keyboard.press('Escape')
 
@@ -125,7 +125,7 @@ test.describe('on a phone', () => {
     await page.goto('/ticker/RY.TO')
     await expect(page.getByRole('heading', { name: 'RY.TO', level: 1 })).toBeVisible()
     await tabs.getByRole('button', { name: 'More' }).click()
-    await expect(sheet.getByRole('link', { name: 'History' })).toBeFocused()
+    await expect(sheet.getByRole('link', { name: 'Runners' })).toBeFocused()
     await expect(sheet.getByText('Recent', { exact: true })).toHaveCount(0)
     expect(errors).toEqual([])
   })
@@ -133,7 +133,7 @@ test.describe('on a phone', () => {
   test('More opens on its first page link, not on the theme switch', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('navigation', { name: 'Main' }).last().getByRole('button', { name: 'More' }).click()
-    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'History' })).toBeFocused()
+    await expect(page.getByRole('dialog', { name: 'More' }).getByRole('link', { name: 'Runners' })).toBeFocused()
   })
 
   test('the tab bar, scrolled away, leaves the tab order', async ({ page }) => {

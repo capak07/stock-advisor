@@ -28,7 +28,8 @@ from advisor.collectors.base import (
 )
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.coingecko import CryptoQuote
-from advisor.collectors.registry import build_registry
+from advisor.collectors.registry import build_registry, make_sec
+from advisor.collectors.sec import SecEdgar
 from advisor.collectors.sec_xbrl import FinancialFact
 from advisor.collectors.tracker import SourceTracker
 from advisor.collectors.yfinance_bars import Downloader, yahoo_download
@@ -57,6 +58,7 @@ from advisor.policy import DEFAULT_POLICY, policy_of
 from advisor.portfolio.stage import advise_stage
 from advisor.prices import PriceFetch, fetch_daily_bars, group_bars
 from advisor.recommend.stage import recommend_stage
+from advisor.runners.live import Splits, runners_stage
 from advisor.schedule import freshness_floor, overdue_kinds, resolve_run_kind
 from advisor.screener import ScreenRow
 from advisor.store import repo
@@ -90,6 +92,8 @@ class RunDeps:
     http: httpx.Client | None = None
     # Yahoo's split events, for the US forecasts' fundamentals; tests leave it off (no events).
     split_download: Downloader | None = None
+    # The SEC client the collectors share, for the runners' warnings; tests leave it off (unchecked).
+    sec: SecEdgar | None = None
 
 
 @dataclass(frozen=True)
@@ -257,6 +261,21 @@ def news_stage(
     if items:  # with no stories at all a source outage must leave the values missing, not zero
         repo.merge_features_live(deps.conn, run_id, outcome.features, now_utc)
     return {**outcome.summary, "sentiment": sentiment}
+
+
+def runner_splits(download: Downloader | None, today: date) -> Splits | None:
+    """Yahoo's split events for the runners' warnings, as {symbol: [(day, ratio), ...]}."""
+    if download is None:
+        return None
+
+    def splits(symbols: Sequence[str]) -> dict[str, list[tuple[date, float]]]:
+        events = split_events(symbols, today, download=download)
+        found: dict[str, list[tuple[date, float]]] = {}
+        for row in events[events["split"] != 0].itertuples():
+            found.setdefault(str(row.symbol), []).append((row.day, float(row.split)))
+        return found
+
+    return splits
 
 
 def record_history(
@@ -617,6 +636,17 @@ def execute_run(
             bars = {**second.bars, **bars}
             flagged = {**second.flagged, **flagged}
 
+        # Runners: yesterday's ignitions and every unsettled signal, from the US bars just fetched.
+        runners_summary, runners_error = None, None
+        if kind is RunKind.PRE_OPEN and universe_ok:
+            try:
+                splits = runner_splits(deps.split_download, now_utc.astimezone(ET).date())
+                runners_summary = runners_stage(
+                    conn, bars, universes[Market.US], now_utc, sec=deps.sec, splits=splits
+                )
+            except Exception as exc:  # display-only: recorded, never fails or degrades the run
+                runners_error = f"{type(exc).__name__}: {exc}"[:200]
+
         passes = {
             m: check_market(m, universes[m], limits[m], priority, bars, floors[m]) for m in Market
         }
@@ -816,6 +846,10 @@ def execute_run(
             summary["holding_monitor_error"] = monitor_error
         if verdicts_failure is not None:
             summary["verdicts"] = verdicts_failure
+        if runners_summary is not None:
+            summary["runners"] = runners_summary
+        if runners_error is not None:
+            summary["runners_error"] = runners_error
         model_version = ",".join(m["version"] for m in model_summary.values() if "version" in m)
         held_crypto = {ref.symbol for ref in held if ref.asset_type is AssetType.CRYPTO}
         status = decide_status(
@@ -903,15 +937,17 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         with make_client() as client:
             names = CompanyNames()
+            sec = make_sec(settings, client)
             deps = RunDeps(
                 conn,
                 DiskCache(settings.cache_dir, clock=lambda: now),
-                build_registry(settings, client, names=names),
+                build_registry(settings, client, names=names, sec=sec),
                 names=names,
                 news_scorer=load_finbert,
                 download=yahoo_download,
                 http=client,
                 split_download=training_download,
+                sec=sec,
             )
             outcome = execute_run(deps, kind, now)
 

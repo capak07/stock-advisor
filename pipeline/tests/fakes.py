@@ -13,6 +13,7 @@ from advisor.collectors.sec import (
     COMPANYFACTS_URL,
     SUBMISSIONS_URL,
     TICKERS_URL,
+    Filing,
     SecEdgar,
     archive_url,
 )
@@ -119,6 +120,20 @@ def fake_price_collectors(
             records_for=lambda syms: [b for s in syms for b in history(s, 70, start=FRESH_START)],
         ),
     }
+
+
+class FakeSec:
+    """A stand-in SEC client for one company: its CIK and its filings."""
+
+    def __init__(self, cik: int, filings: Sequence[Filing] = ()) -> None:
+        self.cik = cik
+        self._filings = list(filings)
+
+    def cik_for(self, symbol: str) -> int | None:
+        return self.cik
+
+    def filings(self, cik: int) -> list[Filing]:
+        return self._filings
 
 
 SEC_CONTACT = "stock-advisor test@example.com"

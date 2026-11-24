@@ -45,21 +45,31 @@ from advisor.config import Settings
 FINRA_PER_MINUTE = 60
 
 
-def build_registry(
-    settings: Settings, client: httpx.Client, *, names: CompanyNames | None = None
-) -> dict[str, Collector]:
-    """`names` is filled by the run once the universes are loaded.
-
-    Google News queries by them, and the catalyst sources match sponsors' names to them.
-    """
-    finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
-    yahoo = RateLimiter(per_minute=YAHOO_PER_MINUTE, burst=2)  # shared by Yahoo's per-symbol collectors
-    sec = SecEdgar(  # shared by every SEC collector
+def make_sec(settings: Settings, client: httpx.Client) -> SecEdgar:
+    """The run's one SEC client, with its rate limit: every SEC collector and the runners stage share it."""
+    return SecEdgar(
         client,
         settings.sec_user_agent,
         RateLimiter(per_minute=SEC_PER_MINUTE, burst=5),
         documents=settings.cache_dir / "sec-documents",
     )
+
+
+def build_registry(
+    settings: Settings,
+    client: httpx.Client,
+    *,
+    names: CompanyNames | None = None,
+    sec: SecEdgar | None = None,
+) -> dict[str, Collector]:
+    """`names` is filled by the run once the universes are loaded.
+
+    Google News queries by them, and the catalyst sources match sponsors' names to them. Without
+    `sec`, the SEC collectors get a client of their own.
+    """
+    finra = RateLimiter(per_minute=FINRA_PER_MINUTE, burst=2)  # shared by FINRA's collectors
+    yahoo = RateLimiter(per_minute=YAHOO_PER_MINUTE, burst=2)  # shared by Yahoo's per-symbol collectors
+    sec = sec if sec is not None else make_sec(settings, client)  # shared by every SEC collector
     collectors: list[Collector] = [
         NasdaqSymbols(client),
         TmxSymbols(client),

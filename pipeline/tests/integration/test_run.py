@@ -6,6 +6,7 @@ import httpx
 import pandas as pd
 import pytest
 
+from advisor import run
 from advisor.collectors.base import Category, PartialFetch, Scope, check_deadline
 from advisor.collectors.cache import DiskCache
 from advisor.collectors.clinical_trials import TrialActivity
@@ -113,7 +114,9 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         "actions": {"written": 0, "by_action": {"sell": 0, "trim": 0, "add": 0, "hold": 0}},
         "graded": {"picks": 0, "exited_early": 0, "actions": 0},
         "holding_monitor": {"filings": 0, "quarters": 0, "earnings": 0, "insider_trades": 0, "alerts_hit": 0},
+        "runners": {"signals": 0, "split_suspect": 0, "entered": 0, "closed": 0, "open": 0, "unchecked": 0},
     }
+    assert outcome.summary["runners"]["signals"] == 0
     # The benchmarks and sector ETFs are priced with the holdings, then one call covers both markets.
     assert deps.collectors["yfinance_bars"].calls == [FUNDS, EVERYONE]
     assert health(db, outcome.run_id) == [
@@ -123,6 +126,21 @@ def test_successful_run_is_published_with_a_per_market_summary(db, tmp_path):
         "select market, count(*) as n from symbols where active group by market order by market"
     ).fetchall()
     assert [(r["market"], r["n"]) for r in markets] == [("TSX", 2), ("US", 3)]
+
+
+def test_a_runners_failure_is_recorded_and_the_run_still_succeeds(db, tmp_path, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(run, "runners_stage", boom)
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_OPEN, NOW, min_universe=SMALL)
+    assert outcome.summary["runners_error"] == "RuntimeError: boom"
+    assert outcome.status is RunStatus.SUCCESS and "runners" not in outcome.summary
+
+
+def test_only_the_pre_open_run_looks_for_runners(db, tmp_path):
+    outcome = execute_run(make_deps(db, tmp_path), RunKind.PRE_CLOSE, NOW, min_universe=SMALL)
+    assert "runners" not in outcome.summary and "runners_error" not in outcome.summary
 
 
 def test_holdings_of_both_markets_are_priced_first_and_get_features(db, tmp_path):

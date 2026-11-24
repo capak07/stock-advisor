@@ -6,9 +6,9 @@ import { RunnerCard } from '@/components/runners/RunnerCard'
 import { RunnersRecord } from '@/components/runners/RunnersRecord'
 import { ownerClient } from '@/lib/auth'
 import { loadRunners } from '@/lib/data/runners'
-import { addDays, shortDay, todayInToronto } from '@/lib/dates'
-import { fmtR, priceOf, rTone } from '@/lib/daytrade'
-import { NOTES, PAPER, TESTED, gate, rSoFar } from '@/lib/runners'
+import { addDays, shortDay } from '@/lib/dates'
+import { fmtR, nyTime, priceOf, rTone } from '@/lib/daytrade'
+import { NOTES, PAPER, TESTED, checkView, gate, rSoFar } from '@/lib/runners'
 import { tickerHref } from '@/lib/ticker'
 
 export const metadata: Metadata = { title: 'Runners' }
@@ -29,16 +29,17 @@ function weekdayBefore(day: string): string {
  * Runners: US stocks under $5 whose huge-volume up day ("ignition") the pre-open run found yesterday,
  * planned as swing trades from today's open; the open ones with their R so far; the paper record after
  * costs; the weekly backtest; and the standing notes. Rule matches, not recommendations. Display only:
- * nothing here places an order or links to a broker.
+ * nothing here places an order or links to a broker. When this morning's check has not run or failed, it
+ * says so and the cards are the last signals stored.
  */
 export default async function RunnersPage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
-  const today = todayInToronto()
+  const today = nyTime(new Date().toISOString()).day
   const data = await loadRunners(supabase)
   const { passed, reasons } = gate(data.version, data.backtest, data.closed, today)
   const signalDay = data.today[0]?.signalDay ?? weekdayBefore(today)
-  const check = data.lastCheck
+  const check = checkView(data.lastCheck, today)
 
   return (
     <main className="page">
@@ -59,28 +60,28 @@ export default async function RunnersPage() {
               ))}
             </ul>
           )}
-          {(check === null || check.error !== null) && (
-            <p className="dt-status">
-              <span className={`dot ${check === null ? 'skipped' : 'failed'}`} />
-              <span>{check === null ? 'No check has run yet.' : `This morning's check failed: ${check.error}`}</span>
+          {check.lines.map((line) => (
+            <p key={line.text} className="dt-status">
+              <span className={`dot ${line.failed ? 'failed' : 'skipped'}`} />
+              <span>{line.text}</span>
             </p>
-          )}
+          ))}
         </div>
       </div>
       <section className="dt-stack enter" aria-labelledby="rn-today-h">
         <div className="section-head">
-          <h2 id="rn-today-h">Today&apos;s signals</h2>
-          <span className="label">enter at the open</span>
+          <h2 id="rn-today-h">{check.current ? "Today's signals" : 'Last signals'}</h2>
+          {check.current && <span className="label">enter at the open</span>}
         </div>
         {data.today.length === 0 ? (
           <div className="banner info">
             <Info />
-            <div>No ignition yesterday.</div>
+            <div>{check.empty}</div>
           </div>
         ) : (
           <div className="dt-cards">
             {data.today.map((r) => (
-              <RunnerCard key={r.id} runner={r} maxLossCad={data.maxLossCad} usdCad={data.usdCad} />
+              <RunnerCard key={r.id} runner={r} maxLossCad={data.maxLossCad} usdCad={data.usdCad} paper={!passed} />
             ))}
           </div>
         )}
@@ -100,10 +101,10 @@ export default async function RunnersPage() {
               <thead>
                 <tr>
                   <th>Symbol</th>
+                  <th className="r">R so far</th>
                   <th className="r">Entry</th>
                   <th className="r">Stop</th>
                   <th className="r">Target</th>
-                  <th className="r">R so far</th>
                   <th>Hold by</th>
                 </tr>
               </thead>
@@ -117,10 +118,10 @@ export default async function RunnersPage() {
                           {r.symbol}
                         </Link>
                       </td>
+                      <td className={`r num ${rTone(now) ?? ''}`}>{now === null ? DASH : fmtR(now)}</td>
                       <td className="r num">{usd(r.entry)}</td>
                       <td className="r num">{usd(r.stop)}</td>
                       <td className="r num">{usd(r.target)}</td>
-                      <td className={`r num ${rTone(now) ?? ''}`}>{now === null ? DASH : fmtR(now)}</td>
                       <td className="num">{shortDay(r.holdBy)}</td>
                     </tr>
                   )

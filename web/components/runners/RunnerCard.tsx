@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { shortDay } from '@/lib/dates'
 import { priceOf, sharesLine } from '@/lib/daytrade'
-import { ignitionLine, type Runner, type RunnerWarning } from '@/lib/runners'
+import { PAPER, ignitionLine, type Runner, type RunnerWarning } from '@/lib/runners'
 import { tickerHref } from '@/lib/ticker'
 
 const WARNING_LABEL: Record<RunnerWarning['kind'], string> = {
@@ -15,10 +15,20 @@ const multiple = (r: Runner) => Number(((r.target - r.signalClose) / (r.signalCl
 
 /**
  * One of today's signals: the stock, its filing warnings, the ignition, the plan from the signal close
- * (the entry is the next open), shares sized to the max loss and the spread's cost. Display only:
- * nothing here places an order.
+ * (the entry is the next open), shares sized to the max loss and the spread's cost. `paper` labels it while
+ * the gate has not passed. Display only: nothing here places an order.
  */
-export function RunnerCard({ runner: r, maxLossCad, usdCad }: { runner: Runner; maxLossCad: number; usdCad: number | null }) {
+export function RunnerCard({
+  runner: r,
+  maxLossCad,
+  usdCad,
+  paper,
+}: {
+  runner: Runner
+  maxLossCad: number
+  usdCad: number | null
+  paper: boolean
+}) {
   const usd = (value: number) => priceOf(value, 'US')
   const risk = Number((r.signalClose - r.stop).toFixed(4))
   return (
@@ -28,6 +38,12 @@ export function RunnerCard({ runner: r, maxLossCad, usdCad }: { runner: Runner; 
           <Link className="sym" href={tickerHref(r.symbol, 'stock')}>
             {r.symbol}
           </Link>
+          {paper && (
+            <>
+              {' '}
+              <span className="chip neutral">{PAPER}</span>
+            </>
+          )}
         </span>
         {r.name && <span className="name">{r.name}</span>}
       </div>

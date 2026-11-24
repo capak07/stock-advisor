@@ -320,7 +320,8 @@ test('a buy whose symbol was changed is not linked to the pick', async ({ page }
 test('the nav links to Picks', async ({ page }) => {
   await page.goto('/')
   const sidebar = page.getByRole('complementary', { name: 'Main' })
-  await expect(sidebar.getByRole('link')).toContainText(['Today', 'Portfolio', 'Day trade', 'Runners', 'Picks', 'History', 'Invest', 'Watchlist', 'Sources', 'Settings'])
+  // the brand, then every page in order
+  await expect(sidebar.getByRole('link')).toHaveText([/ADVISOR/, 'Today', 'Portfolio', 'Day trade', 'Runners', 'Picks', 'History', 'Invest', 'Watchlist', 'Sources', 'Settings'])
   await sidebar.getByRole('link', { name: 'Picks' }).click()
   await expect(page.getByRole('heading', { name: "Today's Picks", level: 1 })).toBeVisible()
   await expect(sidebar.getByRole('link', { name: 'Picks' })).toHaveAttribute('aria-current', 'page')

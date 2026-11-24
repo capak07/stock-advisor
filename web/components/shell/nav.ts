@@ -11,8 +11,8 @@ export interface NavItem {
 }
 
 /**
- * Every page, in the sidebar's order (spec §6). On a phone the first four are tabs and the rest are under More
- * (owner request 2026-11-23: Picks took the Search tab's place, as the top bar has the search; this supersedes the
+ * Every page, in the sidebar's order (spec §6). On a phone the entries with `tab: true` are tabs and the rest are
+ * under More (owner request 2026-11-23: Picks took the Search tab's place, as the top bar has the search; this supersedes the
  * 2026-11-15 note that put Watchlist first under More). On a desktop, Sources and Settings sit under a divider.
  * History (results and trades, owner request 2026-11-23) follows Picks. Runners (swing trades under $5) follows
  * Day trade and is the first page under More.

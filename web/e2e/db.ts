@@ -564,7 +564,7 @@ export async function seedRunner(over: Partial<Runner> = {}) {
 }
 
 /** A frozen rule, live, as the weekly backtest stores it. */
-export async function seedRunnerRule(version: number, settings: JSONValue = { min_change_pct: 40 }) {
+export async function seedRunnerRule(version: number, settings: JSONValue = { volume_x: 10, min_change: 0.2 }) {
   await sql`insert into runner_rules (version, settings, live) values (${version}, ${sql.json(settings)}, true)`
 }
 

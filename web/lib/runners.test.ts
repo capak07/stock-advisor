@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { gate, ignitionLine, recordOf, rSoFar, type Backtest, type BacktestReport, type Runner } from './runners'
+import { checkView, gate, ignitionLine, recordOf, rSoFar, type Backtest, type BacktestReport, type Runner } from './runners'
 
 /** AKAN's 2026-11-13 ignition, entered at the 2026-11-16 open. */
 const runner = (over: Partial<Runner> = {}): Runner => ({
@@ -101,6 +101,39 @@ describe('runners', () => {
     ]
     const good = backtest({ ruleVersion: 1, newer: { signals: 120, avg_net_r: 0.2 } })
     expect(gate(1, good, rows, '2026-11-24').reasons).toEqual(['39 of 40 closed live signals so far.'])
+  })
+
+  it('fails closed on a missing average', () => {
+    const closed = Array.from({ length: 40 }, () => runner({ status: 'target', netR: 0.5, ruleVersion: 1, signalDay: '2026-09-01' }))
+    const good = backtest({ ruleVersion: 1, newer: { signals: 120, avg_net_r: 0.2 } })
+    expect(gate(1, backtest({ ruleVersion: 1, newer: { signals: 120, avg_net_r: null } }), closed, '2026-11-24').reasons).toEqual([
+      'The backtest lost money on the unseen third after costs.',
+    ])
+    const unpriced = closed.map((r) => ({ ...r, netR: null }))
+    expect(gate(1, good, unpriced, '2026-11-24').reasons).toEqual(['The live record is losing after costs.'])
+  })
+
+  it("says how the morning check went and what the signals section is", () => {
+    expect(checkView(null, '2026-11-24')).toEqual({
+      lines: [{ failed: false, text: 'No check has run yet.' }],
+      current: true,
+      empty: 'No ignition yesterday.',
+    })
+    expect(checkView({ day: '2026-11-24', error: null }, '2026-11-24')).toEqual({ lines: [], current: true, empty: 'No ignition yesterday.' })
+    expect(checkView({ day: '2026-11-24', error: 'RuntimeError: boom' }, '2026-11-24')).toEqual({
+      lines: [{ failed: true, text: "This morning's check failed: RuntimeError: boom" }],
+      current: false,
+      empty: 'No signals: the check failed.',
+    })
+    expect(checkView({ day: '2026-11-23', error: null }, '2026-11-24')).toEqual({
+      lines: [{ failed: false, text: "This morning's check has not run yet. Last check: Mon, Nov 23." }],
+      current: false,
+      empty: 'No ignition at the last check.',
+    })
+    expect(checkView({ day: '2026-11-20', error: 'RuntimeError: boom' }, '2026-11-24').lines).toEqual([
+      { failed: false, text: "This morning's check has not run yet. Last check: Fri, Nov 20." },
+      { failed: true, text: 'The check on Fri, Nov 20 failed: RuntimeError: boom' },
+    ])
   })
 
   it('says what the ignition day did', () => {

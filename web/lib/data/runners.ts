@@ -1,5 +1,5 @@
 import 'server-only'
-import type { Backtest, BacktestReport, Runner, RunnerWarning } from '../runners'
+import type { Backtest, BacktestReport, LastCheck, Runner, RunnerWarning } from '../runners'
 import type { Supabase } from '../supabase/server'
 import { must } from './fetch'
 import { loadSettings } from './settings'
@@ -20,8 +20,8 @@ export interface RunnersData {
   /** The latest stored USD/CAD; null before the first rate. */
   usdCad: number | null
   maxLossCad: number
-  /** The latest pre-open run's runners check: its day and its error, if it failed. Null before the first. */
-  lastCheck: { day: string; error: string | null } | null
+  /** The latest pre-open run's runners check: its New York day and its error, if it failed. Null before the first. */
+  lastCheck: LastCheck
 }
 
 const num = (value: unknown): number | null => {

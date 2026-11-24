@@ -47,7 +47,7 @@ const runner = (over: Partial<Runner> = {}): Runner => ({
 
 describe('RunnerCard', () => {
   it('shows the plan from the signal close, the shares and the warning', () => {
-    const text = render(<RunnerCard runner={runner({ warnings: [SALE], warningsChecked: true })} maxLossCad={50} usdCad={1.4} />)
+    const text = render(<RunnerCard runner={runner({ warnings: [SALE], warningsChecked: true })} maxLossCad={50} usdCad={1.4} paper={false} />)
     expect(text).toContain('Filed a F-1/A on Nov 20: a share sale may be pending.')
     expect(text).toContain('if it opens near US$1.36: stop US$1.02, target US$2.04 (2R)')
     expect(text).toContain('≈ 105 shares') // floor(50 / 1.4 / 0.34)
@@ -55,12 +55,17 @@ describe('RunnerCard', () => {
   })
 
   it('says when the filings were not checked', () => {
-    expect(render(<RunnerCard runner={runner({ warnings: [], warningsChecked: false })} maxLossCad={50} usdCad={1.4} />)).toContain('Filings not checked')
+    expect(render(<RunnerCard runner={runner({ warnings: [], warningsChecked: false })} maxLossCad={50} usdCad={1.4} paper={false} />)).toContain('Filings not checked')
+  })
+
+  it('carries the paper label while the gate has not passed', () => {
+    expect(render(<RunnerCard runner={runner()} maxLossCad={50} usdCad={1.4} paper />)).toContain('Paper: testing')
+    expect(render(<RunnerCard runner={runner()} maxLossCad={50} usdCad={1.4} paper={false} />)).not.toContain('Paper: testing')
   })
 
   it('says when one share already risks more than the max loss', () => {
     // C$1 at 1.40 = US$0.71, under the US$0.86 a share risks from US$1.36 to US$0.50
-    const text = render(<RunnerCard runner={runner({ stop: 0.5 })} maxLossCad={1} usdCad={1.4} />)
+    const text = render(<RunnerCard runner={runner({ stop: 0.5 })} maxLossCad={1} usdCad={1.4} paper={false} />)
     expect(text).toContain('Even one share risks more than your C$1 limit.')
     expect(text).not.toContain('Filings not checked')
   })

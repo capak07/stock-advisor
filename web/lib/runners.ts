@@ -138,8 +138,8 @@ export function gate(
     if (newer.signals < GATE.backtestSignals) {
       reasons.push(`${newer.signals} of ${GATE.backtestSignals} backtest signals in the unseen third.`)
     }
-    // no average means no trades, which the count above already says
-    if (newer.avg_net_r !== null && newer.avg_net_r <= 0) {
+    // a missing average fails closed; with too few signals the count above already says why
+    if (newer.avg_net_r === null ? newer.signals >= GATE.backtestSignals : newer.avg_net_r <= 0) {
       reasons.push('The backtest lost money on the unseen third after costs.')
     }
   }
@@ -148,7 +148,9 @@ export function gate(
   if (record.count < GATE.liveSignals) reasons.push(`${record.count} of ${GATE.liveSignals} closed live signals so far.`)
   const first = live.reduce<string | null>((min, r) => (min === null || r.signalDay < min ? r.signalDay : min), null)
   if (first === null || daysBetween(first, today) < GATE.liveDays) reasons.push('The live record is under 2 months old.')
-  if (record.avgNetR !== null && record.avgNetR <= 0) reasons.push('The live record is losing after costs.')
+  if (record.avgNetR === null ? record.count >= GATE.liveSignals : record.avgNetR <= 0) {
+    reasons.push('The live record is losing after costs.')
+  }
   return { passed: reasons.length === 0, reasons }
 }
 
@@ -156,6 +158,30 @@ export function gate(
 export function rSoFar(r: Runner): number | null {
   if (r.entry === null || r.lastClose === null || !(r.entry > r.stop)) return null
   return (r.lastClose - r.entry) / (r.entry - r.stop)
+}
+
+/** The latest pre-open run's runners check: its New York day and its error, if it failed. */
+export type LastCheck = { day: string; error: string | null } | null
+
+/** "Mon, Nov 23" */
+const checkDay = (day: string): string =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
+
+/**
+ * What the page says about the morning check on `today` (New York): its status lines, whether the signals
+ * shown are this morning's, and what to say when there are none.
+ */
+export function checkView(check: LastCheck, today: string): { lines: { failed: boolean; text: string }[]; current: boolean; empty: string } {
+  if (check === null) return { lines: [{ failed: false, text: 'No check has run yet.' }], current: true, empty: 'No ignition yesterday.' }
+  const stale = check.day < today
+  const lines: { failed: boolean; text: string }[] = []
+  if (stale) lines.push({ failed: false, text: `This morning's check has not run yet. Last check: ${checkDay(check.day)}.` })
+  if (check.error !== null) {
+    const which = stale ? `The check on ${checkDay(check.day)}` : "This morning's check"
+    lines.push({ failed: true, text: `${which} failed: ${check.error}` })
+  }
+  const empty = check.error !== null ? 'No signals: the check failed.' : stale ? 'No ignition at the last check.' : 'No ignition yesterday.'
+  return { lines, current: !stale && check.error === null, empty }
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const

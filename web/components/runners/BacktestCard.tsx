@@ -1,6 +1,6 @@
-import { TriangleAlert } from 'lucide-react'
+import { ChevronDown, TriangleAlert } from 'lucide-react'
 import { longDay } from '@/lib/dates'
-import { fmtR, fmtShare } from '@/lib/daytrade'
+import { fmtR, fmtShare, nyTime } from '@/lib/daytrade'
 import { BIAS_NOTE, type Backtest, type BacktestReport } from '@/lib/runners'
 
 const DASH = '—'
@@ -15,13 +15,19 @@ const ROWS: { label: string; value: (t: BacktestReport) => string }[] = [
   { label: 'Skipped for gaps', value: (t) => String(t.skipped_gap) },
 ]
 
+const PARTS = [
+  { key: 'older', label: 'Older 2/3' },
+  { key: 'newer', label: 'Newest 1/3, unseen' },
+] as const
+
 /** The same trades: the search's pick is the frozen rule (or acts exactly like it). */
 const sameTrades = (a: { older: BacktestReport; newer: BacktestReport }, b: { older: BacktestReport; newer: BacktestReport }) =>
   JSON.stringify([a.older, a.newer]) === JSON.stringify([b.older, b.newer])
 
 /**
  * The newest weekly backtest: the frozen rule's older two thirds (which chose it) beside the newest
- * third (unseen when it was chosen), what the search would pick now when that differs, and why the
+ * third (unseen when it was chosen), when it ran and on which prices (a failed weekly job sends no
+ * email), each part's worst trades, what the search would pick now when that differs, and why the
  * figures are optimistic.
  */
 export function BacktestCard({ backtest: b }: { backtest: Backtest | null }) {
@@ -59,8 +65,47 @@ export function BacktestCard({ backtest: b }: { backtest: Backtest | null }) {
             </table>
           </div>
           <p className="sub" style={{ margin: '12px 0 0' }}>
-            {`Chosen on data before ${longDay(b.cutoff)}; the newest third was unseen. ${b.variantsTried} variations tried.`}
+            {`Ran ${longDay(nyTime(b.ranAt).day)} on prices from ${longDay(b.dataFrom)} to ${longDay(b.dataTo)}.`}
           </p>
+          <p className="sub" style={{ margin: '6px 0 0' }}>
+            {`Split at ${longDay(b.cutoff)}: the rule was chosen on older data; the newest third was unseen. ${b.variantsTried} variations tried.`}
+          </p>
+          <details className="order-guide og-fold earn-fold">
+            <summary>
+              <span>Worst 10 trades</span>
+              <ChevronDown aria-hidden="true" />
+            </summary>
+            <div className="og-body">
+              {PARTS.map((part) => (
+                <div key={part.key} className="dt-scroll dt-record">
+                  <table className="data-table dt-table" aria-label={`Worst trades, ${part.label}`}>
+                    <thead>
+                      <tr>
+                        <th>{part.label}</th>
+                        <th>Signalled</th>
+                        <th className="r">Net R</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown[part.key].worst.length === 0 ? (
+                        <tr>
+                          <td colSpan={3}>No trades.</td>
+                        </tr>
+                      ) : (
+                        shown[part.key].worst.map((t) => (
+                          <tr key={`${t.symbol}-${t.signal_day}`}>
+                            <td className="sym">{t.symbol}</td>
+                            <td className="num">{longDay(t.signal_day)}</td>
+                            <td className="r num">{fmtR(t.net_r)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          </details>
           {b.frozen !== null && !sameTrades(b.frozen, b.pick) && (
             <p className="sub" style={{ margin: '6px 0 0' }}>
               {`The search would pick "${b.pick.name}" now: ${r(b.pick.newer.avg_net_r)} on the newest third over ` +

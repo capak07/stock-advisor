@@ -15,10 +15,11 @@ export interface SettingsValues {
   tfsa_short_hold_share_warn: string
   daytrade_max_loss_cad: string
   daytrade_spread_pct: string
+  runners_max_loss_cad: string
   marginal_tax_pct: string
 }
 
-const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: string; mode: 'decimal' | 'numeric'; section: 'costs' | 'tfsa' | 'daytrade' | 'tax' }[] = [
+const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: string; mode: 'decimal' | 'numeric'; section: 'costs' | 'tfsa' | 'daytrade' | 'runners' | 'tax' }[] = [
   {
     name: 'usd_fx_fee_pct',
     title: 'USD conversion fee',
@@ -66,6 +67,14 @@ const FIELDS: { name: keyof SettingsValues; title: string; help: string; unit: s
     unit: '% round trip',
     mode: 'decimal',
     section: 'daytrade',
+  },
+  {
+    name: 'runners_max_loss_cad',
+    title: 'Runners max loss per trade (C$)',
+    help: 'The Runners page sizes shares so the loss at the stop stays under this.',
+    unit: 'C$',
+    mode: 'decimal',
+    section: 'runners',
   },
   {
     name: 'marginal_tax_pct',
@@ -121,6 +130,8 @@ export function CostsForm({ initial, changed }: { initial: SettingsValues; chang
       {FIELDS.filter((f) => f.section === 'tfsa').map(field)}
       <h2 style={{ margin: '18px 0 4px' }}>Day trade</h2>
       {FIELDS.filter((f) => f.section === 'daytrade').map(field)}
+      <h2 style={{ margin: '18px 0 4px' }}>Runners</h2>
+      {FIELDS.filter((f) => f.section === 'runners').map(field)}
       <h2 style={{ margin: '18px 0 4px' }}>Taxes</h2>
       <p className="sub" style={{ margin: '0 0 4px' }}>
         An estimate, not tax advice.

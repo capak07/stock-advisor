@@ -45,10 +45,11 @@ describe('parseSettings', () => {
     tfsa_short_hold_share_warn: '50',
     daytrade_max_loss_cad: '50',
     daytrade_spread_pct: '0.1',
+    runners_max_loss_cad: '50',
     marginal_tax_pct: '43.41',
   }
 
-  it('reads the seven settings, the share as a fraction', () => {
+  it('reads the eight settings, the share as a fraction', () => {
     expect(parseSettings(form)).toEqual({
       input: {
         usd_fx_fee_pct: 1.5,
@@ -57,6 +58,7 @@ describe('parseSettings', () => {
         tfsa_short_hold_share_warn: 0.5,
         daytrade_max_loss_cad: 50,
         daytrade_spread_pct: 0.1,
+        runners_max_loss_cad: 50,
         marginal_tax_pct: 43.41,
       },
     })
@@ -64,6 +66,7 @@ describe('parseSettings', () => {
     expect(parseSettings({ ...form, daytrade_spread_pct: '0', daytrade_max_loss_cad: '100000' })).toMatchObject({
       input: { daytrade_spread_pct: 0, daytrade_max_loss_cad: 100000 },
     })
+    expect(parseSettings({ ...form, runners_max_loss_cad: '100000' })).toMatchObject({ input: { runners_max_loss_cad: 100000 } })
     expect(parseSettings({ ...form, usd_fx_fee_pct: '0' })).toMatchObject({ input: { usd_fx_fee_pct: 0 } })
   })
 
@@ -76,6 +79,7 @@ describe('parseSettings', () => {
         tfsa_short_hold_share_warn: '0',
         daytrade_max_loss_cad: '0',
         daytrade_spread_pct: '5.5',
+        runners_max_loss_cad: '0',
         marginal_tax_pct: '101',
       }),
     ).toEqual({
@@ -86,6 +90,7 @@ describe('parseSettings', () => {
         tfsa_short_hold_share_warn: 'Enter a share from 1 to 100%.',
         daytrade_max_loss_cad: 'Enter a max loss above C$0, up to C$100,000.',
         daytrade_spread_pct: 'Enter a spread from 0 to 5%.',
+        runners_max_loss_cad: 'Enter a max loss above C$0, up to C$100,000.',
         marginal_tax_pct: 'Enter a rate from 0 to 100%, or leave it blank.',
       },
     })
@@ -94,6 +99,9 @@ describe('parseSettings', () => {
         daytrade_max_loss_cad: 'Enter a max loss above C$0, up to C$100,000.',
         daytrade_spread_pct: 'Enter a spread from 0 to 5%.',
       },
+    })
+    expect(parseSettings({ ...form, runners_max_loss_cad: '100000.01' })).toEqual({
+      errors: { runners_max_loss_cad: 'Enter a max loss above C$0, up to C$100,000.' },
     })
   })
 })

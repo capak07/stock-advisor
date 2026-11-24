@@ -39,6 +39,11 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: uv run python -m advisor.training.build --out "$RUNNER_TEMP/training" --no-history-download --history-cache "$RUNNER_TEMP/history-cache" --groups accepted
+      - name: Runners backtest (never fails the training job)
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: uv run python -m advisor.runners.weekly --data "$RUNNER_TEMP/training"
       - name: Train, backtest and promote the stock models
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

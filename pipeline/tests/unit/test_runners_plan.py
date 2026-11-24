@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import date
 
+import numpy as np
 import pytest
 
 from advisor.runners.plan import gapped, plan_for, settle
@@ -66,3 +67,9 @@ def test_held_to_the_hold_by_date_sells_at_that_close():
 def test_no_plan_when_the_stop_is_not_under_the_entry():                 # a zero R would divide by zero
     assert plan_for(1.92, 0.726, HOLD, replace(STARTING, stop_floor=0.0)) is None
     assert plan_for(1.92, 1.9199999999999, HOLD, replace(STARTING, stop_floor=None)) is None  # floors to 1.92
+
+
+def test_a_float32_price_does_not_floor_a_cent_low():                    # the training build stores float32
+    low = float(np.float32(1.43))                                         # 1.4299999475479126
+    assert plan_for(2.00, low, HOLD, replace(STARTING, stop_floor=None)).stop == 1.43
+    assert plan_for(1.92, 0.726, HOLD, STARTING).stop == 1.44            # 1.92 x 0.75 = 1.4399999999999999

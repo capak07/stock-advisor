@@ -22,12 +22,6 @@ WORST = 10
 COLUMNS = ["symbol", "signal_day", "entry_day", "status", "skip_reason", "gross_r", "cost_r", "net_r"]
 PRICES = ["open", "high", "low", "close", "volume"]
 
-# The fields the ignition test reads; the rest only shape the trade plan.
-IGNITION_FIELDS = (
-    "volume_x", "min_change", "min_close_pos", "min_dollar_volume",
-    "price_min", "price_max", "quiet_sessions", "history_sessions",
-)
-
 # Each variant changes one setting of the base.
 CHANGES: list[tuple[str, str, float | int | None]] = [
     ("volume 5x", "volume_x", 5.0),
@@ -55,9 +49,11 @@ def load_series(prices: pd.DataFrame, events: pd.DataFrame) -> dict[str, Series]
     """Each symbol's adjusted bars, with the price it traded at rebuilt from its later splits.
 
     A row missing a price or its volume is dropped: one NaN would silence the running volume sums.
+    Prices are rounded to 6 decimals: the build stores float32, and 1.43 would read as 1.42999995.
     Only symbols that ever traded inside $0.50-$5 are kept.
     """
     prices = prices.dropna(subset=PRICES)
+    prices = prices.assign(**{c: prices[c].astype(float).round(6) for c in ("open", "high", "low", "close")})
     prices = prices.assign(stamp=pd.to_datetime(prices["day"])).sort_values(["symbol", "stamp"], kind="stable")
     splits = events[events["split"] > 0]  # dividend rows carry a zero ratio
     splits = splits.assign(stamp=pd.to_datetime(splits["day"])).sort_values("stamp", kind="stable")
@@ -95,7 +91,8 @@ def sessions_of(prices: pd.DataFrame) -> list[date]:
 def _signals(symbol: str, s: Series, rule: Rule) -> tuple[np.ndarray, int]:
     """The sessions that signal, and how many sessions were skipped as split-suspects."""
     cache = _found.get()
-    key = (symbol, *(getattr(rule, name) for name in IGNITION_FIELDS))
+    # the plan fields do not change the ignitions, so variants that differ only there share them
+    key = (symbol, replace(rule, gap_skip=None, stop_floor=None, target_r=0.0, hold_sessions=0))
     if cache is not None and key in cache:
         return cache[key]
     found = ignitions(s, rule)

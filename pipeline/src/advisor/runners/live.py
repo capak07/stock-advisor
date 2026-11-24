@@ -3,6 +3,7 @@
 Display only: nothing here feeds the model, Picks, Invest or the holdings advice.
 """
 
+import time
 from bisect import bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime, timedelta
@@ -22,6 +23,7 @@ from advisor.store import repo
 KEPT = timedelta(days=730)
 AHEAD = timedelta(days=366)  # the sessions after D a hold-by and the 5 sessions after it can need
 CLOSED = {"target", "stop", "held"}
+WARNINGS_BUDGET = 60.0  # seconds for the whole warnings step; later signals keep only the split warning
 
 Splits = Callable[[Sequence[str]], Mapping[str, list[tuple[date, float]]]]
 
@@ -64,20 +66,33 @@ def _signals(
     return rows, suspect
 
 
-def _add_warnings(rows: list[dict], as_of: date, sec: SecEdgar | None, splits: Splits | None) -> None:
-    """Each signal's warnings. Splits are fetched once for all of them; a failed fetch leaves them unchecked."""
+def _add_warnings(
+    rows: list[dict], as_of: date, sec: SecEdgar | None, splits: Splits | None,
+    clock: Callable[[], float] = time.monotonic,
+) -> str | None:
+    """Each signal's warnings, and the split fetch's error when it failed.
+
+    Splits are fetched once for all of them. A failed fetch, or one that names no signal's symbol, leaves
+    them unchecked. Signals reached after the time budget get only the split warning, unchecked.
+    """
     if not rows:
-        return
+        return None
+    started = clock()
     recorded: Mapping[str, list[tuple[date, float]]] = {}
-    complete = True
+    error = None
     if splits is not None:
         try:
             recorded = splits([row["symbol"] for row in rows])
-        except Exception:  # noqa: BLE001 - Yahoo throttling must not lose the day's signals
-            complete = False
+        except Exception as exc:  # noqa: BLE001 - Yahoo throttling must not lose the day's signals
+            error = f"{type(exc).__name__}: {exc}"[:200]
+    complete = splits is None or any(row["symbol"] in recorded for row in rows)
     for row in rows:
-        warnings, checked = warnings_for(row["symbol"], as_of, sec=sec, splits=recorded.get(row["symbol"], []))
+        late = clock() - started > WARNINGS_BUDGET
+        warnings, checked = warnings_for(
+            row["symbol"], as_of, sec=None if late else sec, splits=recorded.get(row["symbol"], [])
+        )
         row["warnings"], row["warnings_checked"] = warnings, checked and complete
+    return error
 
 
 def _signal_bar(row: Mapping, s: Series | None) -> tuple[float, float]:
@@ -134,11 +149,13 @@ def runners_stage(
     *,
     sec: SecEdgar | None = None,
     splits: Splits | None = None,
-) -> dict[str, int]:
+    clock: Callable[[], float] = time.monotonic,
+) -> dict[str, int | str]:
     """Store D's ignitions, then track every unsettled signal by its own rule version.
 
     D is the last US session before the run's New York date; no bar after D is read. The filings and
     splits are fetched first; every write happens in one transaction, so a failure changes nothing.
+    A failed split fetch is named under `splits_error`.
     """
     today = now_utc.astimezone(ET).date()
     d = previous_sessions(today - timedelta(days=1), 1)[0]
@@ -146,8 +163,8 @@ def runners_stage(
     live = repo.live_runner_rule(conn)
     version, rule = (0, STARTING) if live is None else (live[0], Rule.from_settings(live[1]))
     found, suspect = _signals(series, universe, d, version, rule)
-    _add_warnings(found, today, sec, splits)
-    counts = {
+    splits_error = _add_warnings(found, today, sec, splits, clock)
+    counts: dict[str, int | str] = {
         "signals": 0, "split_suspect": suspect, "entered": 0, "closed": 0, "open": 0, "unchecked": 0,
         "split_wait": 0,
     }
@@ -168,4 +185,6 @@ def runners_stage(
             counts["open"] += status == "open"
             counts["split_wait"] += split_wait
         repo.prune_runner_signals(conn, today - KEPT)
+    if splits_error is not None:
+        counts["splits_error"] = splits_error
     return counts

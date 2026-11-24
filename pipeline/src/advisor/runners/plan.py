@@ -22,7 +22,8 @@ class Plan:
 
 
 def _floor_cent(x: float) -> float:
-    return math.floor(x * 100 + 1e-9) / 100  # 1.92 * 0.75 gives 1.44, not 1.43
+    # rounded first: 1.92 * 0.75 gives 1.44, and a float32 1.43 (1.42999995) stays 1.43
+    return math.floor(round(x * 100, 4)) / 100
 
 
 def plan_for(entry: float, signal_low: float, hold_by: date, rule: Rule) -> Plan | None:

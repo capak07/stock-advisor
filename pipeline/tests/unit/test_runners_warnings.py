@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 from advisor.collectors.sec import SecUnavailable
@@ -60,6 +61,19 @@ def test_a_recorded_reverse_split_names_its_ratio():
 def test_reverse_split_wording():
     assert mentions_reverse_split(b"effected a 5-for-1 Reverse Stock Split of its common shares")
     assert mentions_reverse_split(b"a share consolidation") and not mentions_reverse_split(b"stock split dividend")
+
+
+def test_reverse_split_wording_across_a_line_break_or_a_non_breaking_space():
+    assert mentions_reverse_split(b"approved a reverse\r\n  stock split of 1-for-10")
+    assert mentions_reverse_split(b"a reverse&nbsp;share&nbsp;split") and mentions_reverse_split(b"a share&#160;consolidation")
+    assert mentions_reverse_split("a reverse\xa0split".encode())
+
+
+def test_a_6k_without_a_document_is_not_fetched():
+    empty = replace(filing("6-K", date(2026, 11, 18)), primary_document="")
+    sec = Sec([empty])
+    assert warnings_for("AKAN", AS_OF, sec=sec, splits=[]) == ([], True)
+    assert sec.fetched == []
 
 
 def test_without_sec_the_signal_keeps_only_the_split_warning_and_says_unchecked():   # Review Focus 5

@@ -44,7 +44,14 @@ from advisor.markets import BENCHMARKS, MARKETS, market_of
 from advisor.model.crypto import BTC, CRYPTO
 from advisor.model.crypto_live import coin_costs, forecast_coins
 from advisor.model.groups import GroupHistory
-from advisor.model.live import bars_frame, facts_frame, live_features, live_garch, split_events
+from advisor.model.live import (
+    SPLIT_REACH,
+    bars_frame,
+    facts_frame,
+    live_features,
+    live_garch,
+    split_events,
+)
 from advisor.model.live_groups import history_from_records
 from advisor.model.market_run import Forecast, MarketModel, feature_day, model_failure
 from advisor.model.predict import load_active, predict_rows, screen_scores
@@ -63,7 +70,7 @@ from advisor.schedule import freshness_floor, overdue_kinds, resolve_run_kind
 from advisor.screener import ScreenRow
 from advisor.store import repo
 from advisor.store.db import connect
-from advisor.training.prices import training_download
+from advisor.training.prices import download_history, training_download
 from advisor.training.sectors import SECTOR_ETFS, all_sector_etfs
 
 MIN_PRICED_FRACTION = 0.5
@@ -264,13 +271,17 @@ def news_stage(
 
 
 def runner_splits(download: Downloader | None, today: date) -> Splits | None:
-    """Yahoo's split events for the runners' warnings, as {symbol: [(day, ratio), ...]}."""
+    """Yahoo's split events for the runners' warnings, as {symbol: [(day, ratio), ...]}.
+
+    Every symbol Yahoo priced has a key, with no splits too: a missing symbol was not checked.
+    """
     if download is None:
         return None
 
     def splits(symbols: Sequence[str]) -> dict[str, list[tuple[date, float]]]:
-        events = split_events(symbols, today, download=download)
-        found: dict[str, list[tuple[date, float]]] = {}
+        history = download_history(list(symbols), today - SPLIT_REACH, today, download=download)
+        found: dict[str, list[tuple[date, float]]] = {s: [] for s in symbols if s not in history.missing}
+        events = history.events
         for row in events[events["split"] != 0].itertuples():
             found.setdefault(str(row.symbol), []).append((row.day, float(row.split)))
         return found

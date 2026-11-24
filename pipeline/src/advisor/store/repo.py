@@ -1294,6 +1294,11 @@ def freeze_runner_rule(conn: psycopg.Connection, settings: Mapping[str, Any], ba
         return r["version"]
 
 
+def set_runner_rule_backtest(conn: psycopg.Connection, version: int, backtest_id: int) -> None:
+    """Name the backtest that chose rule `version`."""
+    conn.execute("update runner_rules set backtest_id = %s where version = %s", (backtest_id, version))
+
+
 # Every column the pipeline may set when it stores a signal; the SQL names come only from here.
 _RUNNER_SIGNAL_COLUMNS = (
     "signal_day", "symbol", "name", "rule_version", "change_pct", "volume_x", "dollar_volume", "close_pos",

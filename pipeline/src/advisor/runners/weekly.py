@@ -1,7 +1,8 @@
 """The weekly runners backtest, run on the training build's files inside the training job.
 
 Run as `python -m advisor.runners.weekly --data DIR` after the training data is built. The first run
-freezes its pick as rule version 1; later runs only report, against the live rule. Only the owner
+freezes its pick as the next rule version (1 on a new database); later runs only report, against the
+live rule. Only the owner
 switches the live rule (supabase/manual/runners_switch_rule.sql). A failure is logged and exits 1; it
 never fails the training job.
 """
@@ -50,10 +51,12 @@ def run(conn: psycopg.Connection, data: Path) -> dict:
 
     pick = result["pick"]
     result["frozen"] = {key: pick[key] for key in ("settings", "older", "newer")}
-    # one transaction: a failed freeze leaves no backtest naming a version that does not exist
+    # one transaction: a failed freeze leaves no backtest naming a version that does not exist. The
+    # backtest names the version the freeze made: older rule rows may exist with none live.
     with conn.transaction():
-        backtest_id = repo.insert_runner_backtest(conn, row | {"rule_version": 1, "frozen": result["frozen"]})
-        repo.freeze_runner_rule(conn, pick["settings"], backtest_id)
+        version = repo.freeze_runner_rule(conn, pick["settings"], None)
+        backtest_id = repo.insert_runner_backtest(conn, row | {"rule_version": version, "frozen": result["frozen"]})
+        repo.set_runner_rule_backtest(conn, version, backtest_id)
     return result
 
 

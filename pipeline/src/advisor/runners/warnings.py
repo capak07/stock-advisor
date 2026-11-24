@@ -7,7 +7,8 @@ from datetime import date
 from advisor.collectors.sec import Filing, SecEdgar
 
 REGISTRATIONS = {"F-1", "S-1", "F-3", "S-3"}
-REVERSE_SPLIT = re.compile(r"reverse (stock |share )?split|share consolidation", re.IGNORECASE)
+REVERSE_SPLIT = re.compile(r"reverse\s+(stock\s+|share\s+)?split|share\s+consolidation", re.IGNORECASE)
+NBSP = re.compile(r"&(nbsp|#160|#xa0);", re.IGNORECASE)  # a non-breaking space as HTML writes it
 SIX_KS_READ = 3
 
 
@@ -77,12 +78,14 @@ def split_warning(splits: Sequence[tuple[date, float]], as_of: date) -> dict | N
 
 
 def mentions_reverse_split(document: bytes) -> bool:
-    return REVERSE_SPLIT.search(document.decode("utf-8", errors="replace")) is not None
+    """Across line breaks and non-breaking spaces too: the pattern's whitespace matches U+00A0."""
+    text = NBSP.sub(" ", document.decode("utf-8", errors="replace"))
+    return REVERSE_SPLIT.search(text) is not None
 
 
 def _six_k(sec: SecEdgar, cik: int, filings: Sequence[Filing], as_of: date) -> dict | None:
     """The newest of the 3 most recent 6-Ks in 90 days that mentions a reverse split. Best effort."""
-    six_ks = [f for f in filings if f.form == "6-K" and _within(f.filing_date, as_of, 90)]
+    six_ks = [f for f in filings if f.form == "6-K" and f.primary_document and _within(f.filing_date, as_of, 90)]
     for f in sorted(six_ks, key=lambda f: f.filing_date, reverse=True)[:SIX_KS_READ]:
         try:
             named = mentions_reverse_split(sec.document(cik, f))

@@ -684,8 +684,9 @@ def test_runners_tables_are_owner_read_pipeline_write(owned_db):
         assert owned_db.execute("update runner_signals set status = 'open'").rowcount == 1
     with acting_as(owned_db, "authenticated", OWNER):
         assert owned_db.execute("select count(*) as n from runner_signals").fetchone()["n"] == 1
-        # no owner delete policy: row level security hides every row from the delete
+        # no owner delete or update policy: row level security hides every row from both
         assert owned_db.execute("delete from runner_signals").rowcount == 0
+        assert owned_db.execute("update runner_signals set status = 'stop'").rowcount == 0
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             owned_db.execute(RUNNER_SIGNAL.replace("'AKAN'", "'MULN'"))
     assert owned_db.execute("select count(*) as n from runner_signals").fetchone()["n"] == 1

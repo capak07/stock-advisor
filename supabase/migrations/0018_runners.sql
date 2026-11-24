@@ -1,6 +1,8 @@
 -- Runners: a display-only list of US stocks under $5 that start to run. A weekly backtest freezes the
--- rule (runner_rules) and reports it (runner_backtests); each evening the pipeline stores the day's
--- signals and tracks each one to its target, stop or hold-by day (runner_signals).
+-- rule (runner_rules) and reports it (runner_backtests); each morning the pre-open run stores the
+-- previous session's signals and tracks each one to its target, stop or hold-by day (runner_signals).
+-- Apply this migration to the hosted database before deploying the code that reads
+-- `settings.runners_max_loss_cad`.
 create table runner_rules (
   version int primary key check (version >= 1),
   settings jsonb not null,

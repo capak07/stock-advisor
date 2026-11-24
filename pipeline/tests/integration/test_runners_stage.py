@@ -7,7 +7,7 @@ from advisor.runners.live import runners_stage
 from advisor.runners.rule import STARTING, Bar
 from advisor.store import repo
 from fakes import FakeSec, info
-from runner_data import AKAN_AFTER, akan, daily, filing
+from runner_data import AKAN, AKAN_AFTER, akan, daily, filing, quiet, then
 
 NOW = datetime(2026, 11, 16, 13, 15, tzinfo=UTC)  # Monday 8:15 a.m. in New York: D is Fri 2026-11-13
 
@@ -115,8 +115,53 @@ def test_a_failed_split_fetch_stores_the_signal_unchecked(db):
         raise RuntimeError("throttled")
 
     got = runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW, sec=FakeSec(cik=1888014), splits=throttled)
-    assert (got["signals"], got["unchecked"]) == (1, 1)
+    assert (got["signals"], got["unchecked"], got["splits_error"]) == (1, 1, "RuntimeError: throttled")
     assert repo.unsettled_runner_signals(db)[0]["warnings_checked"] is False
+
+
+def test_a_failed_write_inside_the_stage_changes_nothing(db, monkeypatch):
+    def boom(*args):
+        raise RuntimeError("the database went away")
+
+    real = repo.prune_runner_signals
+    monkeypatch.setattr(repo, "prune_runner_signals", boom)  # the last write, after the inserts and updates
+    with pytest.raises(RuntimeError):
+        runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    assert repo.unsettled_runner_signals(db) == []  # the insert went with it
+    monkeypatch.setattr(repo, "prune_runner_signals", real)
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    monkeypatch.setattr(repo, "prune_runner_signals", boom)
+    with pytest.raises(RuntimeError):
+        runners_stage(db, {"AKAN": [*akan(), daily("AKAN", AKAN_AFTER[0])]}, [info("AKAN")], NOW + timedelta(days=1))
+    [row] = repo.unsettled_runner_signals(db)
+    assert (row["status"], row["entry"]) == ("waiting", None)  # and so did the update
+
+
+def test_an_open_too_far_over_the_signal_close_is_skipped(db):
+    repo.freeze_runner_rule(db, replace(STARTING, gap_skip=0.15).settings(), None)
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    runners_stage(db, {"AKAN": [*akan(), daily("AKAN", AKAN_AFTER[0])]}, [info("AKAN")], NOW + timedelta(days=1))
+    row = db.execute("select status, skip_reason, entry from runner_signals").fetchone()
+    assert (row["status"], row["skip_reason"], row["entry"]) == ("skipped", "gapped up at the open", None)  # +41%
+
+
+def test_an_open_under_the_signal_days_low_with_no_stop_floor_is_skipped(db):
+    repo.freeze_runner_rule(db, replace(STARTING, stop_floor=None).settings(), None)
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    under = Bar(date(2026, 11, 16), 0.70, 0.75, 0.68, 0.72, 5_000_000.0)  # D's low was 0.726
+    runners_stage(db, {"AKAN": [*akan(), daily("AKAN", under)]}, [info("AKAN")], NOW + timedelta(days=1))
+    row = db.execute("select status, skip_reason from runner_signals").fetchone()
+    assert (row["status"], row["skip_reason"]) == ("skipped", "opened under the stop")
+
+
+def test_an_ignition_after_a_suspected_split_is_counted_not_stored(db):
+    # 30 sessions at half the price, then an open at twice the last close on half the usual volume
+    bars = quiet(price=0.672)
+    bars = [b.model_copy(update={"open": 0.336, "high": 0.336, "low": 0.336, "close": 0.336}) for b in bars[:30]] + [
+        bars[30].model_copy(update={"volume": 50_000.0}), *bars[31:]]
+    got = runners_stage(db, {"AKAN": then(bars, **AKAN)}, [info("AKAN")], NOW)
+    assert (got["signals"], got["split_suspect"]) == (0, 1)
+    assert repo.unsettled_runner_signals(db) == []
 
 
 def after_a_1_for_5_split(bars):

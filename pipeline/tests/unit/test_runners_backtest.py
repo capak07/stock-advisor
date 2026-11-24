@@ -2,6 +2,7 @@ import json
 from dataclasses import astuple, replace
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -15,7 +16,7 @@ from advisor.runners.backtest import (
     trades,
     variants,
 )
-from advisor.runners.rule import STARTING, Bar, series_of
+from advisor.runners.rule import STARTING, Bar, ignitions, series_of
 from runner_data import AKAN_AFTER, akan, daily, more_flat_days, weekdays
 
 NO_EVENTS = pd.DataFrame({"symbol": [], "day": [], "dividend": [], "split": []})
@@ -33,6 +34,15 @@ def test_prices_as_traded_are_rebuilt_from_later_splits():
     got = load_series(prices, events)             # X: a 1-for-10 reverse split on Jan 7, so it traded at 1.00 before
     assert list(got) == ["X"]                     # BIG never traded inside $0.50-$5
     assert got["X"].raw_close.tolist() == [1.0, 1.0, 10.0] and got["X"].close.tolist() == [10.0] * 3
+
+
+def test_float32_prices_are_rounded_to_6_decimals():                   # as the training build stores them
+    days = [date(2026, 1, 5), date(2026, 1, 6)]
+    price = np.array([1.43, 1.43], dtype=np.float32)
+    prices = pd.DataFrame({"symbol": ["X", "X"], "day": days, "open": price, "high": price, "low": price,
+                           "close": price, "volume": np.array([1.0, 1.0], dtype=np.float32)})
+    got = load_series(prices, NO_EVENTS)["X"]
+    assert got.low.tolist() == [1.43, 1.43] and got.raw_close.tolist() == [1.43, 1.43]
 
 
 def test_a_missing_volume_drops_that_day_and_keeps_later_signals():
@@ -157,3 +167,15 @@ def test_the_pick_is_the_best_older_average_among_variants_with_200_trades(monke
     assert (got["pick"]["name"], got["pick"]["note"]) == ("hold 20", None)
     assert got["pick"]["older"]["signals"] == 250 and got["pick"]["newer"]["signals"] == 0
     assert got["frozen"]["older"]["avg_net_r"] == pytest.approx(0.1) and got["cutoff"] == days[200].isoformat()
+
+
+def test_the_plan_fields_do_not_change_the_ignitions():                # why the cache leaves them out of its key
+    s = series_of(more_flat_days([*akan(), *(daily("AKAN", b) for b in AKAN_AFTER)], 12))
+    plan = replace(STARTING, gap_skip=0.15, stop_floor=None, target_r=3.0, hold_sessions=20)
+    assert ignitions(s, plan).signal.tolist() == ignitions(s, STARTING).signal.tolist()
+
+
+def test_a_frozen_rule_with_another_ignition_setting_finds_its_own_signals():
+    series = {"AKAN": series_of(more_flat_days([*akan(), *(daily("AKAN", b) for b in AKAN_AFTER)], 12))}
+    got = run_backtest(series, sessions_from(series), replace(STARTING, min_change=1.5))  # AKAN rose 102%
+    assert got["frozen"]["newer"]["signals"] == 0 and got["pick"]["newer"]["signals"] == 1

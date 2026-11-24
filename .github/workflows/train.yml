@@ -4,7 +4,8 @@ name: train
 # train, backtest and promote each market's model in this same job. Nothing is kept between
 # weeks except the stored models and the data groups' history, which history.yml downloads into
 # an actions cache earlier on Saturday and this job only restores. A failed build or market fails
-# the job (GitHub emails the owner) while that market's active model stays in use.
+# the job (GitHub emails the owner) while that market's active model stays in use. The Runners
+# backtest step cannot fail the job, so its failure sends no email: the Runners page shows its run date.
 on:
   schedule:
     - cron: "0 10 * * 6"  # Saturday 10:00 UTC
@@ -41,6 +42,7 @@ jobs:
         run: uv run python -m advisor.training.build --out "$RUNNER_TEMP/training" --no-history-download --history-cache "$RUNNER_TEMP/history-cache" --groups accepted
       - name: Runners backtest (never fails the training job)
         continue-on-error: true
+        timeout-minutes: 15
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: uv run python -m advisor.runners.weekly --data "$RUNNER_TEMP/training"

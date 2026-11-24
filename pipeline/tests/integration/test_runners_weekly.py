@@ -38,6 +38,16 @@ def test_the_first_backtest_freezes_version_1_and_later_ones_only_report(db, tmp
     assert db.execute("select count(*) as n from runner_backtests").fetchone()["n"] == 2
 
 
+def test_a_first_run_after_old_rules_names_the_version_it_froze(db, tmp_path):
+    write_training_files(tmp_path)
+    repo.freeze_runner_rule(db, {"volume_x": 20.0}, None)
+    db.execute("update runner_rules set live = false")  # a rule row with none live
+    weekly.run(db, tmp_path)
+    row = db.execute("select id, rule_version from runner_backtests").fetchone()
+    assert repo.live_runner_rule(db)[0] == row["rule_version"] == 2
+    assert db.execute("select backtest_id from runner_rules where version = 2").fetchone()["backtest_id"] == row["id"]
+
+
 def test_a_later_run_reports_the_live_rule(db, tmp_path):
     write_training_files(tmp_path)
     weekly.run(db, tmp_path)

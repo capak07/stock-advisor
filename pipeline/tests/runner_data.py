@@ -1,7 +1,9 @@
-"""Daily bars for the Runners tests: a quiet stock, then AKAN's real ignition day and the days after."""
+"""Daily bars and SEC filings for the Runners tests: a quiet stock, then AKAN's real ignition day and the days after."""
 
+import itertools
 from datetime import date, timedelta
 
+from advisor.collectors.sec import Filing
 from advisor.models import DailyBar
 from advisor.runners.rule import Bar
 
@@ -72,3 +74,13 @@ def more_flat_days(bars: list[DailyBar], n: int) -> list[DailyBar]:
         price = out[-1].close
         out = then(out, open=price, high=price, low=price, close=price, volume=FLAT_VOLUME)
     return out
+
+
+_accessions = itertools.count(1)
+
+
+def filing(form: str, day: date, items: tuple[str, ...] = ()) -> Filing:
+    """An SEC filing of this form filed on this day, with a document to fetch."""
+    return Filing(accession=f"0000000042-{day:%y}-{next(_accessions):06d}", form=form, filing_date=day,
+                  accepted_at=None, report_date=None, items=tuple(items), file_number="",
+                  primary_document="doc.htm")

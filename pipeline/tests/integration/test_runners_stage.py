@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from advisor.runners.live import runners_stage
-from advisor.runners.rule import STARTING
+from advisor.runners.rule import STARTING, Bar
 from advisor.store import repo
 from fakes import FakeSec, info
 from runner_data import AKAN_AFTER, akan, daily, filing
@@ -100,3 +100,35 @@ def test_a_failed_split_fetch_stores_the_signal_unchecked(db):
     got = runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW, sec=FakeSec(cik=1888014), splits=throttled)
     assert (got["signals"], got["unchecked"]) == (1, 1)
     assert repo.unsettled_runner_signals(db)[0]["warnings_checked"] is False
+
+
+def after_a_1_for_5_split(bars):
+    """The same bars as Yahoo returns them after a 1-for-5 reverse split: prices x5, volume /5."""
+    return [
+        b.model_copy(update={"open": b.open * 5, "high": b.high * 5, "low": b.low * 5, "close": b.close * 5,
+                             "volume": b.volume / 5})
+        for b in bars
+    ]
+
+
+def test_a_split_while_waiting_plans_the_entry_on_the_new_price_scale(db):
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    # D's adjusted low is 3.63, within 25% of the 4.50 open: the stop is D's low on the new scale, not 4.50 x 0.75
+    entry_day = Bar(date(2026, 11, 16), 0.90, 1.00, 0.80, 0.96, 1_000_000.0)
+    rescaled = after_a_1_for_5_split([*akan(), daily("AKAN", entry_day)])
+    runners_stage(db, {"AKAN": rescaled}, [info("AKAN")], NOW + timedelta(days=1))
+    [row] = repo.unsettled_runner_signals(db)
+    assert (row["status"], float(row["entry"]), float(row["stop"]), float(row["target"])) == ("open", 4.50, 3.63, 6.24)
+    assert (float(row["signal_close"]), float(row["signal_low"])) == (1.36, 0.726)  # stored as traded
+
+
+def test_a_split_while_waiting_is_not_taken_for_a_gap(db):
+    repo.freeze_runner_rule(db, replace(STARTING, gap_skip=0.15).settings(), None)
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    # the adjusted open is 5% above D's adjusted close of 6.80; against the stored 1.36 it would look like 425%
+    entry_day = Bar(date(2026, 11, 16), 1.428, 1.50, 1.38, 1.44, 1_000_000.0)
+    rescaled = after_a_1_for_5_split([*akan(), daily("AKAN", entry_day)])
+    runners_stage(db, {"AKAN": rescaled}, [info("AKAN")], NOW + timedelta(days=1))
+    row = db.execute("select status, skip_reason, entry from runner_signals").fetchone()
+    assert (row["status"], row["skip_reason"]) == ("open", None)
+    assert float(row["entry"]) == pytest.approx(7.14)

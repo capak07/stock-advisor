@@ -90,6 +90,18 @@ def _held_at_last_close(plan: Plan, cost: float, last_day: date, last_close: flo
     }
 
 
+def _signal_bar(row: Mapping, s: Series | None) -> tuple[float, float]:
+    """D's close and low on the same price scale as the entry.
+
+    After a split Yahoo rescales every bar, so D's bar in this run's series is used; the stored
+    as-traded prices only when that bar is missing.
+    """
+    i = bisect_right(s.days, row["signal_day"]) - 1 if s is not None else -1
+    if s is not None and i >= 0 and s.days[i] == row["signal_day"]:
+        return float(s.close[i]), float(s.low[i])
+    return float(row["signal_close"]), float(row["signal_low"])
+
+
 def _track(row: Mapping, s: Series | None, rule: Rule, d: date) -> dict:
     """The fields to store for one unsettled signal, recomputed from its bars up to D."""
     after = s.bars(bisect_right(s.days, row["signal_day"])) if s is not None else []
@@ -102,9 +114,10 @@ def _track(row: Mapping, s: Series | None, rule: Rule, d: date) -> dict:
         return {}
     entry_bar = after[0]
     entry = entry_bar.open
-    if gapped(float(row["signal_close"]), entry, rule):
+    signal_close, signal_low = _signal_bar(row, s)
+    if gapped(signal_close, entry, rule):
         return {"status": "skipped", "skip_reason": "gapped up at the open"}
-    plan = plan_for(entry, float(row["signal_low"]), row["hold_by"], rule)
+    plan = plan_for(entry, signal_low, row["hold_by"], rule)
     if plan is None:
         return {"status": "skipped", "skip_reason": "opened under the stop"}
     outcome = settle(after, plan)

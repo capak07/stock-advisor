@@ -1303,7 +1303,7 @@ _RUNNER_SIGNAL_COLUMNS = (
 )
 # The columns update_runner_signal may change; its SQL names come only from here.
 RUNNER_SIGNAL_FIELDS = (
-    "status", "skip_reason", "entry_day", "entry", "stop", "target", "cost_r", "last_day", "last_close",
+    "status", "skip_reason", "entry_day", "entry", "stop", "target", "hold_by", "cost_r", "last_day", "last_close",
     "exit_day", "exit_price", "gross_r", "net_r",
 )
 

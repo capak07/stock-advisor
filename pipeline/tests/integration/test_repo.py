@@ -1184,6 +1184,14 @@ def test_a_runner_signal_is_stored_once_and_updated_by_named_columns(db):
     assert repo.prune_runner_signals(db, date(2026, 11, 14)) == 1
 
 
+def test_a_runner_signals_hold_by_is_recounted_from_its_entry_day(db):
+    repo.insert_runner_signal(db, runner_row())
+    [stored] = repo.unsettled_runner_signals(db)
+    repo.update_runner_signal(db, stored["id"], entry_day=date(2026, 11, 17), hold_by=date(2026, 12, 1))
+    [stored] = repo.unsettled_runner_signals(db)
+    assert stored["hold_by"] == date(2026, 12, 1)
+
+
 def test_a_runner_backtest_round_trips_its_reports(db):
     pick = {"name": "starting", "settings": {"volume_x": 10.0}, "older": {"n": 40}, "newer": {"n": 12}, "note": ""}
     bid = repo.insert_runner_backtest(db, {

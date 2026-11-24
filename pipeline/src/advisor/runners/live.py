@@ -102,6 +102,12 @@ def _signal_bar(row: Mapping, s: Series | None) -> tuple[float, float]:
     return float(row["signal_close"]), float(row["signal_low"])
 
 
+def _hold_by(entry_day: date, rule: Rule) -> date:
+    """The hold's last session, counting the entry day as day 1."""
+    n = rule.hold_sessions
+    return entry_day if n <= 1 else sessions_after(Market.US, entry_day, n - 1)
+
+
 def _track(row: Mapping, s: Series | None, rule: Rule, d: date) -> dict:
     """The fields to store for one unsettled signal, recomputed from its bars up to D."""
     after = s.bars(bisect_right(s.days, row["signal_day"])) if s is not None else []
@@ -117,14 +123,14 @@ def _track(row: Mapping, s: Series | None, rule: Rule, d: date) -> dict:
     signal_close, signal_low = _signal_bar(row, s)
     if gapped(signal_close, entry, rule):
         return {"status": "skipped", "skip_reason": "gapped up at the open"}
-    plan = plan_for(entry, signal_low, row["hold_by"], rule)
+    plan = plan_for(entry, signal_low, _hold_by(entry_bar.day, rule), rule)
     if plan is None:
         return {"status": "skipped", "skip_reason": "opened under the stop"}
     outcome = settle(after, plan)
     cost = cost_r(float(row["spread_pct"]), entry, plan.stop)
     fields = {
         "status": outcome.status, "entry_day": entry_bar.day, "entry": entry, "stop": plan.stop,
-        "target": plan.target, "cost_r": cost, "last_day": outcome.last_day, "last_close": outcome.last_close,
+        "target": plan.target, "hold_by": plan.hold_by, "cost_r": cost, "last_day": outcome.last_day, "last_close": outcome.last_close,
     }
     if outcome.status == "open":
         return fields | _held_at_last_close(plan, cost, outcome.last_day, outcome.last_close, d)

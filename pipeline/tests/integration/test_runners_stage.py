@@ -40,6 +40,23 @@ def test_the_next_mornings_run_fills_the_entry_then_the_target_closes_it(db):
     assert float(row["net_r"]) == pytest.approx(2.0 - float(row["cost_r"]))
 
 
+def test_the_hold_is_counted_from_the_entry_day(db):
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    day2 = [*akan(), daily("AKAN", AKAN_AFTER[0])]
+    runners_stage(db, {"AKAN": day2}, [info("AKAN")], NOW + timedelta(days=1))
+    [row] = repo.unsettled_runner_signals(db)
+    assert (row["entry_day"], row["hold_by"]) == (date(2026, 11, 16), date(2026, 11, 30))  # D+1: as previewed
+
+
+def test_an_entry_after_a_halted_day_holds_10_sessions_from_its_own_day(db):
+    runners_stage(db, {"AKAN": akan()}, [info("AKAN")], NOW)
+    halted = [*akan(), daily("AKAN", AKAN_AFTER[1])]  # no bar on Mon 11-16; the first one after D is Tue 11-17
+    runners_stage(db, {"AKAN": halted}, [info("AKAN")], NOW + timedelta(days=2))
+    [row] = repo.unsettled_runner_signals(db)
+    # Tue 11-17 is day 1; Thanksgiving (11-26) is closed, so day 10 is Tue 12-01
+    assert (row["status"], row["entry_day"], row["hold_by"]) == ("open", date(2026, 11, 17), date(2026, 12, 1))
+
+
 def test_a_bar_dated_today_is_ignored(db):  # Review Focus 3
     late = [*akan(), daily("AKAN", AKAN_AFTER[0])]  # Monday's bar present in Monday's run
     runners_stage(db, {"AKAN": late}, [info("AKAN")], NOW)

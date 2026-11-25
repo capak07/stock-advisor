@@ -10,6 +10,7 @@ import { loadRunners } from '@/lib/data/runners'
 import { addDays } from '@/lib/dates'
 import { nyTime } from '@/lib/daytrade'
 import { NOTES, PAPER, TESTED, checkView, gate } from '@/lib/runners'
+import { fetchRunnerQuotes, liveRunners } from '@/lib/runners-live'
 
 export const metadata: Metadata = { title: 'Runners' }
 
@@ -27,7 +28,8 @@ function weekdayBefore(day: string): string {
  * planned as swing trades from today's open; the open ones as 100-share paper positions in US$ with their R so far;
  * the finished paper trades in US$; the paper record after costs; the weekly backtest; and the standing notes. Rule matches, not recommendations. Display only:
  * nothing here places an order or links to a broker. When this morning's check has not run or failed, it
- * says so and the cards are the last signals stored.
+ * says so and the cards are the last signals stored. Between the checks, the signal and open cards add Yahoo's
+ * prices (lib/runners-live): the paper trade bought at the open and what it is worth now or at the close.
  */
 export default async function RunnersPage() {
   const supabase = await ownerClient()
@@ -37,6 +39,10 @@ export default async function RunnersPage() {
   const { passed, reasons } = gate(data.version, data.backtest, data.closed, today)
   const signalDay = data.today[0]?.signalDay ?? weekdayBefore(today)
   const check = checkView(data.lastCheck, today)
+  const shown = [...data.today, ...data.open]
+  const live = liveRunners(shown, await fetchRunnerQuotes(shown.map((r) => r.symbol)), data.rules)
+  const boughtToday = data.today.some((r) => ['open', 'exited'].includes(live.get(r.id)?.kind ?? ''))
+  const openLive = data.open.some((r) => live.has(r.id))
 
   return (
     <main className="page">
@@ -68,7 +74,7 @@ export default async function RunnersPage() {
       <section className="dt-stack enter" aria-labelledby="rn-today-h">
         <div className="section-head">
           <h2 id="rn-today-h">{check.current ? "Today's signals" : 'Last signals'}</h2>
-          {check.current && <span className="label">enter at the open</span>}
+          {check.current && <span className="label">{boughtToday ? 'bought at the open' : 'enter at the open'}</span>}
         </div>
         {data.today.length === 0 ? (
           <div className="banner info">
@@ -78,7 +84,14 @@ export default async function RunnersPage() {
         ) : (
           <div className="dt-cards">
             {data.today.map((r) => (
-              <RunnerCard key={r.id} runner={r} maxLossCad={data.maxLossCad} usdCad={data.usdCad} paper={!passed} />
+              <RunnerCard
+                key={r.id}
+                runner={r}
+                maxLossCad={data.maxLossCad}
+                usdCad={data.usdCad}
+                paper={!passed}
+                live={live.get(r.id) ?? null}
+              />
             ))}
           </div>
         )}
@@ -86,7 +99,7 @@ export default async function RunnersPage() {
       <section className="dt-stack enter" aria-labelledby="rn-open-h">
         <div className="section-head">
           <h2 id="rn-open-h">Open runners</h2>
-          <span className="label">as of the last close</span>
+          <span className="label">{openLive ? 'latest prices from Yahoo' : 'as of the last close'}</span>
         </div>
         {data.open.length === 0 ? (
           <div className="banner info">
@@ -96,7 +109,7 @@ export default async function RunnersPage() {
         ) : (
           <div className="dt-cards">
             {data.open.map((r) => (
-              <OpenRunnerCard key={r.id} runner={r} />
+              <OpenRunnerCard key={r.id} runner={r} live={live.get(r.id) ?? null} />
             ))}
           </div>
         )}

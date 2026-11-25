@@ -1,5 +1,6 @@
 import 'server-only'
 import type { Backtest, BacktestReport, LastCheck, Runner, RunnerWarning } from '../runners'
+import { planRuleOf, type PlanRule } from '../runners-live'
 import type { Supabase } from '../supabase/server'
 import { must } from './fetch'
 import { loadSettings } from './settings'
@@ -15,6 +16,8 @@ export interface RunnersData {
   closed: Runner[]
   /** The live rule's version; 0 before a backtest froze one. */
   version: number
+  /** Each frozen rule's trade plan by version, for the live prices; version 0 is STARTING_PLAN. */
+  rules: Record<number, PlanRule>
   /** The newest weekly backtest; null before the first one. */
   backtest: Backtest | null
   /** The latest stored USD/CAD; null before the first rate. */
@@ -41,6 +44,7 @@ type SignalDb = {
   dollar_volume: unknown
   close_pos: unknown
   signal_close: unknown
+  signal_low: unknown
   spread_pct: unknown
   cost_r: unknown
   warnings: RunnerWarning[] | null
@@ -82,6 +86,7 @@ const toRunner = (r: SignalDb): Runner => ({
   dollarVolume: Number(r.dollar_volume),
   closePos: Number(r.close_pos),
   signalClose: Number(r.signal_close),
+  signalLow: Number(r.signal_low),
   spreadPct: Number(r.spread_pct),
   costR: Number(r.cost_r),
   warnings: Array.isArray(r.warnings) ? r.warnings : [],
@@ -129,7 +134,7 @@ export async function loadRunners(supabase: Supabase): Promise<RunnersData> {
         .order('signal_day', { ascending: false })
         .order('id', { ascending: false })
         .limit(CLOSED_ROWS),
-      supabase.from('runner_rules').select('version').eq('live', true).limit(1),
+      supabase.from('runner_rules').select('version, settings, live'),
       supabase
         .from('runner_backtests')
         .select('ran_at, data_from, data_to, cutoff, variants_tried, rule_version, frozen, pick')
@@ -147,7 +152,8 @@ export async function loadRunners(supabase: Supabase): Promise<RunnersData> {
         .limit(1),
     ])
   const latest = (must(latestRows) as { signal_day: string }[])[0]?.signal_day ?? null
-  const rule = (must(ruleRows) as { version: number }[])[0]
+  const rules = must(ruleRows) as { version: number; settings: Record<string, unknown> | null; live: boolean }[]
+  const rule = rules.find((r) => r.live)
   const backtest = (must(backtestRows) as BacktestDb[])[0]
   const fx = (must(fxRows) as { usd_cad: unknown }[])[0]
   const check = (must(checkRows) as { et_date: string; runners_error: string | null }[])[0]
@@ -156,6 +162,7 @@ export async function loadRunners(supabase: Supabase): Promise<RunnersData> {
     open: (must(openRows) as SignalDb[]).map(toRunner),
     closed: (must(closedRows) as SignalDb[]).map(toRunner),
     version: rule ? rule.version : 0,
+    rules: Object.fromEntries(rules.map((r) => [r.version, planRuleOf(r.settings)])),
     backtest: backtest ? toBacktest(backtest) : null,
     usdCad: fx ? num(fx.usd_cad) : null,
     maxLossCad: settings.runners_max_loss_cad,

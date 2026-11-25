@@ -18,6 +18,7 @@ const runner = (over: Partial<Runner> = {}): Runner => ({
   dollarVolume: 9_000_000,
   closePos: 0.8,
   signalClose: 1.9,
+  signalLow: 1.5,
   spreadPct: 2,
   costR: 0.08,
   warnings: [],

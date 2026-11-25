@@ -29,6 +29,8 @@ export interface Runner {
   /** Where the signal day closed in its high–low range, 0..1. */
   closePos: number
   signalClose: number
+  /** The signal day's low: the stop is the closer of it and the floor under the entry. */
+  signalLow: number
   spreadPct: number
   costR: number
   warnings: RunnerWarning[]

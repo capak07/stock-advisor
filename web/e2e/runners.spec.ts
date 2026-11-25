@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
+import { addDays, shortDay } from '../lib/dates'
 import { BIAS_NOTE, NOTES, type RunnerWarning } from '../lib/runners'
-import { daysAgo, resetData, runnerReport, seedFx, seedRun, seedRunner, seedRunnerBacktest, seedRunnerRule } from './db'
+import { LIVE_NOTE } from '../lib/runners-live'
+import { daysAgo, lastWeekday, resetData, runnerReport, seedFx, seedRun, seedRunner, seedRunnerBacktest, seedRunnerRule } from './db'
 
 const SALE: RunnerWarning = {
   kind: 'share_sale',
@@ -46,6 +48,49 @@ test('a signal shows its plan and warning under the paper label', async ({ page 
   for (const note of NOTES) await expect(page.getByText(note)).toBeVisible()
   // display only: nothing here places an order
   await expect(page.getByRole('button', { name: /buy|order|place/i })).toHaveCount(0)
+})
+
+test("Yahoo's prices show what the paper trades cost at the open and are worth at the close", async ({ page }) => {
+  // e2e/yahoo-stub.mjs: each weekday through the last one opens at 1.40 (high 1.50, low 1.30) and closes at 1.45
+  const weekdayBefore = (day: string) => {
+    let d = addDays(day, -1)
+    while ([0, 6].includes(new Date(`${d}T12:00:00Z`).getUTCDay())) d = addDays(d, -1)
+    return d
+  }
+  const last = lastWeekday()
+  const signal = weekdayBefore(last)
+  await seedFx([daysAgo(1)], 1.4)
+  // AKAN's signal (close 1.36, low 0.66) is bought at the last weekday's 1.40 open: stop 1.05, target 2.10
+  await seedRunner({ signalDay: signal })
+  // SNDL, stored open through the weekday before: the last weekday opens at 1.40, under its 1.44 stop
+  await seedRunner({
+    symbol: 'SNDL',
+    signalDay: weekdayBefore(weekdayBefore(signal)),
+    status: 'open',
+    entryDay: weekdayBefore(signal),
+    entry: 1.92,
+    stop: 1.44,
+    target: 2.88,
+    lastDay: signal,
+    lastClose: 2.4,
+  })
+  await page.goto('/runners')
+
+  const card = cards(page).first()
+  await expect(card).toContainText(`Bought at the open, US$1.40 on ${shortDay(last)}: stop US$1.05 (−25.0%), target US$2.10 (+50.0%, 2R)`)
+  await expect(card).toContainText('Paper trade: 100 shares, US$136.00 at the signal close, bought for US$140.00 at the open')
+  await expect(card).toContainText(`Closed US$1.45 on ${shortDay(last)}: worth US$145.00`)
+  await expect(card.getByTestId('runner-gain')).toHaveText('+US$5.00 (+3.6%) · +0.14R')
+  await expect(card.getByTestId('runner-gain')).toHaveClass(/gain/)
+  await expect(card).toContainText(LIVE_NOTE)
+  await expect(page.getByText('bought at the open', { exact: true })).toBeVisible()
+
+  const open = openCards(page).first()
+  await expect(open).toContainText(`Opened under the stop at US$1.40 on ${shortDay(last)}: got back US$140.00`)
+  await expect(open.getByTestId('open-runner-gain')).toHaveText('−US$52.00 (−27.1%)')
+  await expect(open).toContainText('R at the exit')
+  await expect(open.getByTestId('open-runner-r')).toHaveText('−1.08R')
+  await expect(page.getByText('latest prices from Yahoo', { exact: true })).toBeVisible()
 })
 
 test('no ignition yesterday and no finished runners say so', async ({ page }) => {

@@ -34,7 +34,7 @@ export interface DayChart {
 }
 
 /** Yahoo's chart endpoint; the browser tests point it at a stub (e2e/yahoo-stub.mjs). */
-const chartBase = () => process.env.YAHOO_CHART_URL ?? 'https://query1.finance.yahoo.com/v8/finance/chart'
+export const chartBase = () => process.env.YAHOO_CHART_URL ?? 'https://query1.finance.yahoo.com/v8/finance/chart'
 
 export const intradayUrl = (yahooSymbol: string): string =>
   `${chartBase()}/${encodeURIComponent(yahooSymbol)}?range=1d&interval=5m`

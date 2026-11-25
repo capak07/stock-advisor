@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { checkView, gate, ignitionLine, recordOf, rSoFar, type Backtest, type BacktestReport, type Runner } from './runners'
+import {
+  checkView,
+  gate,
+  ignitionLine,
+  paperTotal,
+  paperValue,
+  recordOf,
+  rSoFar,
+  type Backtest,
+  type BacktestReport,
+  type Runner,
+} from './runners'
 
 /** AKAN's 2026-11-13 ignition, entered at the 2026-11-16 open. */
 const runner = (over: Partial<Runner> = {}): Runner => ({
@@ -147,5 +158,25 @@ describe('runners', () => {
     expect(rSoFar(runner({ status: 'open', lastClose: 2.4 }))).toBeCloseTo(1.0)
     expect(rSoFar(runner({ status: 'waiting', entry: null }))).toBeNull()
     expect(rSoFar(runner({ status: 'open', lastClose: null }))).toBeNull()
+  })
+
+  it('values 100 paper shares in US$ to the cent', () => {
+    const cheap = paperValue(0.85, 0.93)
+    expect(cheap).toMatchObject({ cost: 85, value: 93, gain: 8 })
+    expect(cheap?.gainPct).toBeCloseTo(9.41, 2)
+    expect(paperValue(1.92, 2.4)).toEqual({ cost: 192, value: 240, gain: 48, gainPct: 25 })
+    expect(paperValue(null, 2)).toBeNull()
+    expect(paperValue(1, null)).toBeNull()
+  })
+
+  it('totals the finished paper trades, before and after the spread', () => {
+    const rows = [
+      runner({ symbol: 'MULN', status: 'target', entry: 2, exitPrice: 3, spreadPct: 2 }),
+      runner({ symbol: 'SNDL', status: 'stop', entry: 1.5, exitPrice: 1.2, spreadPct: 2 }),
+      runner({ symbol: 'SKIP', status: 'skipped', entry: null, exitPrice: null }),
+      runner({ symbol: 'OPEN', status: 'open', exitPrice: null }),
+    ]
+    expect(paperTotal(rows)).toEqual({ trades: 2, cost: 350, value: 420, gain: 70, gainPct: 20, spread: 7, gainAfterSpread: 63 })
+    expect(paperTotal([])).toEqual({ trades: 0, cost: 0, value: 0, gain: 0, gainPct: 0, spread: 0, gainAfterSpread: 0 })
   })
 })

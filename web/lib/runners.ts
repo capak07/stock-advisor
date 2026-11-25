@@ -3,6 +3,7 @@
  * The pipeline (advisor/runners) finds, plans and tracks the signals; this only shows them.
  */
 import { daysBetween } from './dates'
+import { fmtMoney } from './format'
 
 export type RunnerStatus = 'waiting' | 'open' | 'skipped' | 'target' | 'stop' | 'held'
 
@@ -158,6 +159,64 @@ export function gate(
 export function rSoFar(r: Runner): number | null {
   if (r.entry === null || r.lastClose === null || !(r.entry > r.stop)) return null
   return (r.lastClose - r.entry) / (r.entry - r.stop)
+}
+
+/** Every paper trade is this many shares, so it reads as plain money. The R figures are what the gate judges. */
+export const PAPER_SHARES = 100
+
+const cents = (value: number): number => Math.round(value * 100) / 100
+
+/** "US$85.00" */
+export const usdMoney = (value: number): string => fmtMoney(value, { prefix: 'US$', digits: 2 })
+
+/** "+US$8.00", "−US$5.00" */
+export const usdSigned = (value: number): string => fmtMoney(value, { prefix: 'US$', digits: 2, signed: true })
+
+export interface PaperValue {
+  cost: number
+  value: number
+  gain: number
+  gainPct: number
+}
+
+/** PAPER_SHARES bought at `entry` and valued at `price`, in US$ to the cent; null unless both prices are there. */
+export function paperValue(entry: number | null, price: number | null): PaperValue | null {
+  if (entry === null || price === null) return null
+  const cost = cents(entry * PAPER_SHARES)
+  const value = cents(price * PAPER_SHARES)
+  const gain = cents(value - cost)
+  return { cost, value, gain, gainPct: cost > 0 ? (gain * 100) / cost : 0 }
+}
+
+export interface PaperTotal extends PaperValue {
+  trades: number
+  /** The estimated spread paid in and out, PAPER_SHARES a trade. */
+  spread: number
+  gainAfterSpread: number
+}
+
+/** A finished paper trade: target, stop or held, with an entry and an exit price. */
+export const isFinishedPaper = (r: Runner): boolean => CLOSED.has(r.status) && r.entry !== null && r.exitPrice !== null
+
+/** The finished paper trades in `rows`, PAPER_SHARES each; the spread is `spreadPct`% of the entry a share. */
+export function paperTotal(rows: readonly Runner[]): PaperTotal {
+  let trades = 0
+  let cost = 0
+  let value = 0
+  let spread = 0
+  for (const r of rows) {
+    const paper = isFinishedPaper(r) ? paperValue(r.entry, r.exitPrice) : null
+    if (paper === null || r.entry === null) continue
+    trades += 1
+    cost += paper.cost
+    value += paper.value
+    spread += cents((r.spreadPct / 100) * r.entry * PAPER_SHARES)
+  }
+  cost = cents(cost)
+  value = cents(value)
+  spread = cents(spread)
+  const gain = cents(value - cost)
+  return { trades, cost, value, gain, gainPct: cost > 0 ? (gain * 100) / cost : 0, spread, gainAfterSpread: cents(gain - spread) }
 }
 
 /** The latest pre-open run's runners check: its New York day and its error, if it failed. */

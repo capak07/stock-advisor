@@ -17,7 +17,7 @@ const SPLIT: RunnerWarning = {
 
 const cards = (page: Page) => page.getByTestId('runner-card')
 const gateChip = (page: Page) => page.getByTestId('runners-gate')
-const openTable = (page: Page) => page.getByRole('table', { name: 'Open runners' })
+const openCards = (page: Page) => page.getByTestId('open-runner-card')
 const backtestCard = (page: Page) => page.getByRole('region', { name: 'Backtest' })
 // a minute ago: this morning's check, unless the test runs in the first minute after midnight
 const finished = () => new Date(Date.now() - 60_000).toISOString()
@@ -41,6 +41,7 @@ test('a signal shows its plan and warning under the paper label', async ({ page 
   await expect(card).toContainText(SALE.text)
   await expect(card).toContainText('stop US$1.02, target US$2.04 (2R)')
   await expect(card).toContainText('≈ 105 shares')
+  await expect(card).toContainText('Paper trade: 100 shares at the open (about US$136.00 at the signal close)')
   await expect(card.getByRole('link', { name: 'AKAN' })).toHaveAttribute('href', '/ticker/AKAN')
   for (const note of NOTES) await expect(page.getByText(note)).toBeVisible()
   // display only: nothing here places an order
@@ -51,6 +52,8 @@ test('no ignition yesterday and no finished runners say so', async ({ page }) =>
   await page.goto('/runners')
   await expect(page.getByText('No ignition yesterday.')).toBeVisible()
   await expect(page.getByText('No finished runners yet.')).toBeVisible()
+  await expect(page.getByText('No finished paper trades yet.')).toBeVisible()
+  await expect(page.getByText('No open runners.')).toBeVisible()
   await expect(backtestCard(page)).toContainText('not run yet')
   await expect(page.getByText('No check has run yet.')).toBeVisible()
 })
@@ -67,21 +70,28 @@ test('open runners show their R so far and closed ones fill the track record', a
     lastDay: daysAgo(1),
     lastClose: 2.4,
   })
-  await seedRunner({ symbol: 'MULN', signalDay: daysAgo(6), status: 'target', exitDay: daysAgo(1), grossR: 1.6, netR: 1.5 })
-  await seedRunner({ symbol: 'SNDL', signalDay: daysAgo(6), status: 'stop', exitDay: daysAgo(1), grossR: -0.4, netR: -0.5 })
+  await seedRunner({ symbol: 'MULN', signalDay: daysAgo(6), status: 'target', entry: 2, exitPrice: 3, exitDay: daysAgo(1), grossR: 1.6, netR: 1.5 })
+  await seedRunner({ symbol: 'SNDL', signalDay: daysAgo(6), status: 'stop', entry: 1.5, exitPrice: 1.2, exitDay: daysAgo(1), grossR: -0.4, netR: -0.5 })
   await page.goto('/runners')
 
-  const open = openTable(page)
-  await expect(open.getByRole('row')).toHaveCount(2) // header + 1
-  const row = open.getByRole('row', { name: /AKAN/ })
-  await expect(row).toContainText('US$1.92')
-  await expect(row).toContainText('US$1.44')
-  await expect(row).toContainText('US$2.88')
-  await expect(row.getByText('+1.00R')).toHaveClass(/gain/)
+  await expect(openCards(page)).toHaveCount(1)
+  const card = openCards(page).first()
+  await expect(card).toContainText('Bought 100 shares at US$1.92')
+  await expect(card).toContainText('= US$192.00')
+  await expect(card).toContainText('Now US$2.40')
+  await expect(card).toContainText('worth US$240.00')
+  await expect(card).toContainText('Stop US$1.44 · target US$2.88')
+  await expect(card.getByTestId('open-runner-gain')).toHaveText('+US$48.00 (+25.0%)')
+  await expect(card.getByTestId('open-runner-gain')).toHaveClass(/gain/)
+  await expect(card.getByTestId('open-runner-r')).toHaveText('+1.00R')
+  await expect(card.getByTestId('open-runner-r')).toHaveClass(/gain/)
 
   const last20 = page.getByTestId('runners-record-20')
   await expect(last20.getByRole('cell')).toHaveText(['Last 20 sessions', '+0.50R', '2', '1 / 1 / 0', '0', '+0.50R', '+1.00R'])
   await expect(page.getByText('No finished runners yet.')).toHaveCount(0)
+  await expect(page.getByTestId('runners-paper-total')).toHaveText(
+    '2 finished trades: put in US$350.00, got back US$420.00, +US$70.00 (+20.0%). After the estimated spread: +US$63.00.',
+  )
 })
 
 test('the label changes once the backtest and 40 live trades are positive', async ({ page }) => {
@@ -197,18 +207,31 @@ test.describe('on a phone', () => {
     await seedFx([daysAgo(1)], 1.4)
     await seedRunner({ warnings: [SALE, SPLIT], warningsChecked: true })
     await seedRunner({ symbol: 'MULN', signalDay: daysAgo(6), status: 'open', entryDay: daysAgo(5), entry: 1.92, stop: 1.44, target: 2.88, lastClose: 2.4, lastDay: daysAgo(1) })
-    await seedRunner({ symbol: 'SNDL', ruleVersion: 1, signalDay: daysAgo(6), status: 'target', exitDay: daysAgo(1), grossR: 2.1, netR: 2 })
+    await seedRunner({
+      symbol: 'SNDL',
+      ruleVersion: 1,
+      signalDay: daysAgo(6),
+      status: 'target',
+      entry: 1.5,
+      exitPrice: 2.5,
+      exitDay: daysAgo(1),
+      grossR: 2.1,
+      netR: 2,
+    })
     await seedRunnerRule(1)
     await seedRunnerBacktest()
     await page.goto('/runners')
     await expect(cards(page)).toHaveCount(1)
+    await expect(page.getByTestId('runners-paper-total')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
-    // "R so far" and "Average R" show without scrolling inside their cards: bring each row's first cell
-    // into view (that scrolls the page, not the table), then the value beside it must be on screen too
-    const open = openTable(page).getByRole('row', { name: /MULN/ }).getByRole('cell')
-    await open.first().scrollIntoViewIfNeeded()
-    await expect(open.nth(1)).toHaveText('+1.00R')
-    await expect(open.nth(1)).toBeInViewport({ ratio: 1 })
+    // the open card's money and R wrap inside it: on screen once the card is
+    const open = openCards(page).first()
+    await open.scrollIntoViewIfNeeded()
+    await expect(open.getByTestId('open-runner-gain')).toBeInViewport({ ratio: 1 })
+    await expect(open.getByTestId('open-runner-r')).toHaveText('+1.00R')
+    await expect(open.getByTestId('open-runner-r')).toBeInViewport({ ratio: 1 })
+    // "Average R" shows without scrolling inside its card: bring the row's first cell into view (that
+    // scrolls the page, not the table), then the value beside it must be on screen too
     const record = page.getByTestId('runners-record-20').getByRole('cell')
     await record.first().scrollIntoViewIfNeeded()
     await expect(record.nth(1)).toHaveText('+2.00R')

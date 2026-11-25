@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { shortDay } from '@/lib/dates'
 import { priceOf, sharesLine } from '@/lib/daytrade'
-import { PAPER, ignitionLine, type Runner, type RunnerWarning } from '@/lib/runners'
+import { PAPER, PAPER_SHARES, ignitionLine, usdMoney, type Runner, type RunnerWarning } from '@/lib/runners'
 import { tickerHref } from '@/lib/ticker'
 
 const WARNING_LABEL: Record<RunnerWarning['kind'], string> = {
@@ -69,6 +69,7 @@ export function RunnerCard({
       <ul className="dt-lines">
         <li>{sharesLine(maxLossCad, risk, 'US', usdCad)}</li>
         <li>{`Est. spread ${r.spreadPct.toFixed(1)}% = ${r.costR.toFixed(2)}R`}</li>
+        <li>{`Paper trade: ${PAPER_SHARES} shares at the open (about ${usdMoney(r.signalClose * PAPER_SHARES)} at the signal close)`}</li>
       </ul>
     </article>
   )

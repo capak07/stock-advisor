@@ -52,6 +52,7 @@ describe('RunnerCard', () => {
     expect(text).toContain('if it opens near US$1.36: stop US$1.02, target US$2.04 (2R)')
     expect(text).toContain('≈ 105 shares') // floor(50 / 1.4 / 0.34)
     expect(text).toContain('Est. spread 2.0% = 0.08R')
+    expect(text).toContain('Paper trade: 100 shares at the open (about US$136.00 at the signal close)')
   })
 
   it('says when the filings were not checked', () => {

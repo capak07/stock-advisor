@@ -1,20 +1,17 @@
 import { Info } from 'lucide-react'
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { BacktestCard } from '@/components/runners/BacktestCard'
+import { FinishedRunners } from '@/components/runners/FinishedRunners'
+import { OpenRunnerCard } from '@/components/runners/OpenRunnerCard'
 import { RunnerCard } from '@/components/runners/RunnerCard'
 import { RunnersRecord } from '@/components/runners/RunnersRecord'
 import { ownerClient } from '@/lib/auth'
 import { loadRunners } from '@/lib/data/runners'
-import { addDays, shortDay } from '@/lib/dates'
-import { fmtR, nyTime, priceOf, rTone } from '@/lib/daytrade'
-import { NOTES, PAPER, TESTED, checkView, gate, rSoFar } from '@/lib/runners'
-import { tickerHref } from '@/lib/ticker'
+import { addDays } from '@/lib/dates'
+import { nyTime } from '@/lib/daytrade'
+import { NOTES, PAPER, TESTED, checkView, gate } from '@/lib/runners'
 
 export const metadata: Metadata = { title: 'Runners' }
-
-const DASH = '—'
-const usd = (value: number | null) => (value === null ? DASH : priceOf(value, 'US'))
 
 const weekdayOf = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString('en-CA', { weekday: 'long', timeZone: 'UTC' })
 
@@ -27,8 +24,8 @@ function weekdayBefore(day: string): string {
 
 /**
  * Runners: US stocks under $5 whose huge-volume up day ("ignition") the pre-open run found yesterday,
- * planned as swing trades from today's open; the open ones with their R so far; the paper record after
- * costs; the weekly backtest; and the standing notes. Rule matches, not recommendations. Display only:
+ * planned as swing trades from today's open; the open ones as 100-share paper positions in US$ with their R so far;
+ * the finished paper trades in US$; the paper record after costs; the weekly backtest; and the standing notes. Rule matches, not recommendations. Display only:
  * nothing here places an order or links to a broker. When this morning's check has not run or failed, it
  * says so and the cards are the last signals stored.
  */
@@ -86,51 +83,25 @@ export default async function RunnersPage() {
           </div>
         )}
       </section>
-      <section className="card card-pad enter" aria-labelledby="rn-open-h">
-        <div className="section-head" style={{ marginBottom: 4 }}>
+      <section className="dt-stack enter" aria-labelledby="rn-open-h">
+        <div className="section-head">
           <h2 id="rn-open-h">Open runners</h2>
           <span className="label">as of the last close</span>
         </div>
         {data.open.length === 0 ? (
-          <p className="sub" style={{ margin: 0 }}>
-            No open runners.
-          </p>
+          <div className="banner info">
+            <Info />
+            <div>No open runners.</div>
+          </div>
         ) : (
-          <div className="dt-scroll">
-            <table className="data-table dt-table" aria-labelledby="rn-open-h">
-              <thead>
-                <tr>
-                  <th>Symbol</th>
-                  <th className="r">R so far</th>
-                  <th className="r">Entry</th>
-                  <th className="r">Stop</th>
-                  <th className="r">Target</th>
-                  <th>Hold by</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.open.map((r) => {
-                  const now = rSoFar(r)
-                  return (
-                    <tr key={r.id}>
-                      <td>
-                        <Link className="sym" href={tickerHref(r.symbol, 'stock')}>
-                          {r.symbol}
-                        </Link>
-                      </td>
-                      <td className={`r num ${rTone(now) ?? ''}`}>{now === null ? DASH : fmtR(now)}</td>
-                      <td className="r num">{usd(r.entry)}</td>
-                      <td className="r num">{usd(r.stop)}</td>
-                      <td className="r num">{usd(r.target)}</td>
-                      <td className="num">{shortDay(r.holdBy)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="dt-cards">
+            {data.open.map((r) => (
+              <OpenRunnerCard key={r.id} runner={r} />
+            ))}
           </div>
         )}
       </section>
+      <FinishedRunners closed={data.closed} version={data.version} />
       <div className="dt-two enter">
         <RunnersRecord closed={data.closed} version={data.version} today={today} />
         <BacktestCard backtest={data.backtest} />

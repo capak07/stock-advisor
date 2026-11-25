@@ -6,6 +6,7 @@ import pytest
 from advisor.daytrade.bars import Bar, YahooClient
 from advisor.daytrade.rule import (
     OpeningRange,
+    Session,
     Trigger,
     find_trigger,
     opening_range,
@@ -98,10 +99,57 @@ def test_close_at_range_high_is_not_trigger():
     assert find_trigger(flat, s, rng, min_volume_x=0) is None
 
 
-def test_missing_range_bar():
+def test_a_missing_range_bar_builds_the_range_from_the_bars_that_traded():
+    # No bar is a halt or 5 minutes with no trades, not a lost price: on 2026-11-25 BNAI was
+    # halted 9:40-9:50 and FCUV had no trade at 9:40, and both were dropped by the old every-slot rule.
     s, bars, _ = _setup()
     kept = [b for b in bars if b.start != datetime(2026, 10, 19, 9, 35, tzinfo=ET)]
-    assert opening_range(kept, s) is None
+    traded = [b for b in kept if s.open <= b.start < s.open + timedelta(minutes=15)]
+    assert len(traded) == 2
+    assert opening_range(kept, s) == OpeningRange(
+        high=max(b.high for b in traded),
+        low=min(b.low for b in traded),
+        avg_volume=sum(b.volume for b in traded) / 2,
+    )
+
+
+def test_no_range_bar_at_all_is_no_range():
+    s, bars, _ = _setup()
+    after = [b for b in bars if b.start >= s.open + timedelta(minutes=15)]
+    assert opening_range(after, s) is None
+
+
+def _cheap(price: float) -> tuple[Session, list[Bar]]:
+    """Range bars at `price` on 50K shares each, then a close above on 100K (250K so far) and one
+    more on 300K (550K so far)."""
+    s = session_for(DAY, Market.US)
+    assert s is not None
+    t = lambda k: s.open + timedelta(minutes=5 * k)  # noqa: E731
+    p = price
+    bars = [Bar(t(k), p, p * 1.01, p * 0.99, p, 50_000) for k in range(3)]
+    bars += [Bar(t(3), p, p * 1.1, p, p * 1.05, 100_000), Bar(t(4), p * 1.05, p * 1.12, p * 1.05, p * 1.1, 300_000)]
+    return s, bars
+
+
+def test_a_stock_under_5_triggers_only_once_500k_shares_have_traded_through_the_bar():
+    # FCUV on 2026-11-25 first closed above its range at 11:35 on about 25K shares for the day:
+    # an entry nobody could have filled.
+    s, bars = _cheap(3.0)
+    rng = opening_range(bars, s)
+    assert rng is not None
+    t = find_trigger(bars, s, rng)
+    assert t is not None
+    assert (t.bar.start, t.entry) == (s.open + timedelta(minutes=20), 3.3)
+    early = find_trigger(bars, s, rng, cheap_min_shares=0)
+    assert early is not None and early.bar.start == s.open + timedelta(minutes=15)
+
+
+def test_the_share_floor_is_only_for_stocks_under_5():
+    s, bars = _cheap(30.0)
+    rng = opening_range(bars, s)
+    assert rng is not None
+    t = find_trigger(bars, s, rng)
+    assert t is not None and t.bar.start == s.open + timedelta(minutes=15)
 
 
 def test_early_close_session():

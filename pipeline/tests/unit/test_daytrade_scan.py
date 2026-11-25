@@ -62,7 +62,7 @@ def _wall():
 
 def test_skill_result_on_the_wall():
     client, listings = _wall()
-    r = scan(client, listings, NOW, min_price=0, min_volume_x=0)
+    r = scan(client, listings, NOW, min_price=0, min_volume_x=0, cheap_min_shares=0)
     # 231 usable and 95 candidates under the old every-slot rule; PARA (4 post-range bars missing)
     # now counts, as in the skill since 2026-11-23, and is a candidate but no signal.
     assert (r.scanned, r.usable) == (233, 232)
@@ -75,10 +75,14 @@ def test_skill_result_on_the_wall():
     assert round(tsla.rng.high, 2) == 362.18
 
 
-def test_default_price_floor_gives_41():
+def test_default_floors_give_42():
+    # US$1, plus 500K shares under US$5 (owner 2026-11-25). The old US$5 floor gave 41: AMC
+    # (US$2.97, millions of shares) now counts, and PARA (US$0.56, 14K shares) is still out.
     client, listings = _wall()
     r = scan(client, listings, NOW, min_volume_x=0)
-    assert len(r.found) == 41
+    assert len(r.found) == 42
+    assert "AMC" in {f.listing.symbol for f in r.found}
+    assert "PARA" not in {c.symbol for c in r.candidates}
 
 
 def test_default_volume_filter():
@@ -143,11 +147,46 @@ def test_tsx_holiday_while_nyse_open_and_the_reverse():
         assert r.scanned == 1
 
 
-def test_incomplete_range_is_unusable_not_a_signal():
+def test_a_range_missing_a_bar_is_usable_and_built_from_the_bars_that_traded():
+    # BNAI (halted 9:40-9:50) and FCUV (no trade at 9:40) on 2026-11-25: no bar is no trades.
     client, _ = _wall()
     bars = [b for b in client.charts["TSLA"] if b.start.minute != 35 or b.start.hour != 9]
     r = scan(FakeClient({"TSLA": bars}), [Listing("TSLA", Market.US)], NOW, min_price=0, min_volume_x=0)
-    assert (r.scanned, r.usable, r.errors, r.found, r.candidates) == (1, 0, 0, [], [])
+    assert (r.scanned, r.usable, r.errors, r.unusable) == (1, 1, 0, 0)
+    traded = [b for b in bars if b.start.hour == 9 and b.start.minute in (30, 40)]
+    assert [f.rng.high for f in r.found] == [max(b.high for b in traded)]
+
+
+def test_a_chart_with_no_range_bar_is_unusable():
+    client, _ = _wall()
+    bars = [b for b in client.charts["TSLA"] if b.start.astimezone(ET) >= NOW.replace(hour=9, minute=45)]
+    r = scan(FakeClient({"TSLA": bars}), [Listing("TSLA", Market.US)], NOW, min_price=0, min_volume_x=0)
+    assert (r.scanned, r.usable, r.found, r.candidates) == (1, 0, [], [])
+
+
+def _cheap_day(price: float, volume: float) -> list[Bar]:
+    """9:30 to 10:10 at `price`: the range closes at it, later bars 5% above, `volume` shares each."""
+    return _flat(NOW.date(), [price] * 3 + [price * 1.05] * 6, volume)
+
+
+def test_the_price_floor_is_1():
+    charts = {"PENNY": _cheap_day(0.95, 1_000_000), "DOLLAR": _cheap_day(1.0, 1_000_000)}
+    r = scan(FakeClient(charts), [Listing(s, Market.US) for s in charts], NOW, min_volume_x=0)
+    assert [f.listing.symbol for f in r.found] == ["DOLLAR"]
+
+
+def test_a_stock_under_5_needs_500k_shares_traded_unless_it_closed_at_5_or_more():
+    # 9 bars: 50K shares each is 450K for the day, 60K each is 540K.
+    charts = {
+        "THIN": _cheap_day(3.0, 50_000),
+        "BUSY": _cheap_day(3.0, 60_000),
+        "FIVE": _cheap_day(5.0, 50_000),  # every bar at 5 or more: no share floor
+    }
+    r = scan(FakeClient(charts), [Listing(s, Market.US) for s in charts], NOW, min_volume_x=0)
+    assert sorted(c.symbol for c in r.candidates) == ["BUSY", "FIVE"]
+    found = {f.listing.symbol: f.trigger.bar.start.astimezone(ET).strftime("%H:%M") for f in r.found}
+    # BUSY passes 500K shares on its 9th bar (10:10), so that is its first bar to count
+    assert found == {"BUSY": "10:10", "FIVE": "09:45"}
 
 
 def test_spark_live_tick_and_in_progress_bar_are_ignored():
@@ -188,7 +227,7 @@ def test_a_range_with_no_bar_after_it_is_unusable():
 def test_unusable_stage2_chart_is_not_an_error():
     client, _ = _wall()
     full = client.charts["TSLA"]
-    holey = [b for b in full if not (b.start.hour == 9 and b.start.minute == 35)]  # a range bar
+    holey = [b for b in full if b.start.astimezone(ET) >= NOW.replace(hour=9, minute=45)]  # no range bar
     fake = FakeClient({"TSLA": holey}, spark={"TSLA": SparkSeries([(b.start, b.close) for b in full], 5.0)})
     r = scan(fake, [Listing("TSLA", Market.US)], NOW, min_price=0, min_volume_x=0)
     assert (r.errors, r.unusable, r.found) == (0, 1, [])

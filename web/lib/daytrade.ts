@@ -111,6 +111,7 @@ export const NOTE_COSTS = [
 ] as const
 export const NOTE_RULES = [
   "Long only. The opening range is the first 15 minutes; the entry is the first 5-minute bar that closes above its high on at least 1.5× the opening range's average volume.",
+  'A 5-minute bar with no trades (a halt or a quiet start) leaves the range to the bars that traded. Stocks from $1; under $5 the entry bar also needs 500,000 shares traded so far that day.',
   'The stop is the middle of the opening range; the target is 2R above the entry.',
   'No new entries in the last 30 minutes; flat 5 minutes before the close (3:55 PM, or 12:55 PM on a 1:00 PM close).',
   'Shares are sized so the loss at the stop fits your max loss per trade, set in Settings.',

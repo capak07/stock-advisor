@@ -16,11 +16,10 @@ binds, every candidate still takes its turn.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from advisor.collectors.yfinance_bars import to_yahoo
 from advisor.daytrade.bars import (
-    BAR_MIN,
     SPARK_MAX,
     Bar,
     SparkSeries,
@@ -29,7 +28,9 @@ from advisor.daytrade.bars import (
     session_bars,
 )
 from advisor.daytrade.rule import (
-    RANGE_BARS,
+    CHEAP_MIN_SHARES,
+    CHEAP_PRICE,
+    MIN_PRICE,
     OpeningRange,
     Plan,
     Session,
@@ -37,6 +38,7 @@ from advisor.daytrade.rule import (
     find_trigger,
     opening_range,
     plan_for,
+    range_bars,
     session_for,
 )
 from advisor.models import ET, Market
@@ -76,22 +78,26 @@ class ScanResult:
 
 
 def _usable(bars: Sequence[Bar], s: Session) -> bool:
-    """Every opening-range slot is there, and at least one bar after it. A missing bar after the
-    range is a trading halt or a 5 minutes with no trades, not bad data: a stock halted for running
-    up is the breakout this scan is for (OTLY and CUE on 2026-11-23 were dropped by the old
-    every-slot rule). The rule (opening_range, find_trigger) and tracking place bars by their start
-    time, so a gap shifts nothing. `bars` comes from session_bars: sorted, one per slot, complete."""
-    if len(bars) <= RANGE_BARS:
-        return False
-    return all(
-        b.start.astimezone(ET) == s.open + timedelta(minutes=BAR_MIN * k)
-        for k, b in enumerate(bars[:RANGE_BARS])
-    )
+    """At least one opening-range bar traded, and at least one bar after the range. A missing bar
+    is a trading halt or 5 minutes with no trades, not bad data: a halted or quiet stock that then
+    runs is the breakout this scan is for (after the range: OTLY and CUE on 2026-11-23; inside it:
+    BNAI and FCUV on 2026-11-25). The rule (opening_range, find_trigger) and tracking place bars by
+    their start time, so a gap shifts nothing. `bars` comes from session_bars: sorted, one per slot,
+    complete, so the range bars come first."""
+    n = len(range_bars(bars, s))
+    return 0 < n < len(bars)
 
 
-def _is_candidate(bars: Sequence[Bar]) -> bool:
-    top = max(b.close for b in bars[:RANGE_BARS])
-    return any(b.close >= top for b in bars[RANGE_BARS:])
+def _is_candidate(bars: Sequence[Bar], s: Session) -> bool:
+    n = len(range_bars(bars, s))
+    top = max(b.close for b in bars[:n])
+    return any(b.close >= top for b in bars[n:])
+
+
+def _too_thin(bars: Sequence[Bar], day_volume: float, cheap_min_shares: float) -> bool:
+    """No bar so far closed at CHEAP_PRICE or more and the day has not traded `cheap_min_shares`:
+    no bar can trigger yet (find_trigger's share floor), so the stock is not worth a chart."""
+    return day_volume < cheap_min_shares and all(b.close < CHEAP_PRICE for b in bars)
 
 
 def _spark_bars(points: Sequence[tuple[datetime, float]]) -> list[Bar]:
@@ -107,10 +113,11 @@ def scan(
     listings: Sequence[Listing],
     now: datetime,
     *,
-    min_price: float = 5.0,
+    min_price: float = MIN_PRICE,
     max_confirm: int | None = None,
     min_volume_x: float = 1.5,
     charted: Charted | None = None,
+    cheap_min_shares: float = CHEAP_MIN_SHARES,
 ) -> ScanResult:
     now_et = now.astimezone(ET)
     cutoff = now_et.replace(second=0, microsecond=0)
@@ -160,9 +167,9 @@ def scan(
             continue
         usable += 1
         last = bars[-1].close
-        if last < min_price:
+        if last < min_price or _too_thin(bars, series.volume, cheap_min_shares):
             continue
-        if _is_candidate(bars):
+        if _is_candidate(bars, s):
             cands.append((lst, y, s, last * series.volume, bars))
 
     cands.sort(key=lambda c: (-c[3], c[0].symbol))
@@ -213,7 +220,7 @@ def scan(
         if rng is None:
             continue
         memory[y] = (rng.high, full[-1].start)
-        trig = find_trigger(full, s, rng, min_volume_x)
+        trig = find_trigger(full, s, rng, min_volume_x, cheap_min_shares)
         if trig is None:
             continue
         plan = plan_for(trig, rng, s)

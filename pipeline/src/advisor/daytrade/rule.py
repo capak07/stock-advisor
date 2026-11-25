@@ -15,6 +15,9 @@ from advisor.models import ET, Market
 from advisor.schedule import market_close_et
 
 RANGE_BARS = 3
+MIN_PRICE = 1.0  # the scan's price floor (owner 2026-11-25; it was 5)
+CHEAP_PRICE = 5.0  # a trigger bar closing under this also needs CHEAP_MIN_SHARES traded
+CHEAP_MIN_SHARES = 500_000.0  # the session's shares through the trigger bar (owner 2026-11-25)
 TARGET_R = 2
 CENT = Decimal("0.01")
 MIN_RISK_PCT = Decimal("0.05")  # the skill: a stop tighter than 0.05% of the price is refused
@@ -69,31 +72,52 @@ def session_for(day: date, market: Market) -> Session | None:
     )
 
 
-def opening_range(bars: Sequence[Bar], s: Session) -> OpeningRange | None:
+def range_bars(bars: Sequence[Bar], s: Session) -> list[Bar]:
+    """The opening-range bars that traded, one per slot, in time order."""
+    end = s.open + timedelta(minutes=BAR_MIN * RANGE_BARS)
     by_start = {b.start.astimezone(ET): b for b in bars}
-    rng: list[Bar] = []
-    for i in range(RANGE_BARS):
-        b = by_start.get(s.open + timedelta(minutes=BAR_MIN * i))
-        if b is None:
-            return None
-        rng.append(b)
+    return [by_start[t] for t in sorted(by_start) if s.open <= t < end]
+
+
+def opening_range(bars: Sequence[Bar], s: Session) -> OpeningRange | None:
+    """The high, low and average volume of the range bars that traded; None when none did.
+
+    No bar is a halt or 5 minutes with no trades, so there is no price to miss (owner 2026-11-25:
+    BNAI was halted 9:40-9:50 and FCUV had no trade at 9:40, and the old every-slot rule dropped both).
+    The average is over the bars that traded, as the skill's entry.py takes it.
+    """
+    rng = range_bars(bars, s)
+    if not rng:
+        return None
     return OpeningRange(
         high=max(b.high for b in rng),
         low=min(b.low for b in rng),
-        avg_volume=sum(b.volume for b in rng) / RANGE_BARS,
+        avg_volume=sum(b.volume for b in rng) / len(rng),
     )
 
 
 def find_trigger(
-    bars: Sequence[Bar], s: Session, rng: OpeningRange, min_volume_x: float = 1.5
+    bars: Sequence[Bar],
+    s: Session,
+    rng: OpeningRange,
+    min_volume_x: float = 1.5,
+    cheap_min_shares: float = CHEAP_MIN_SHARES,
 ) -> Trigger | None:
+    """The first bar after the range to close above its high on `min_volume_x` times the range's
+    average volume. A bar closing under CHEAP_PRICE counts only once the session has traded
+    `cheap_min_shares` through it: FCUV first closed above its range on about 25K shares for the day."""
     first = s.open + timedelta(minutes=BAR_MIN * RANGE_BARS)
+    traded = 0.0
     for b in sorted(bars, key=lambda x: x.start):
         start = b.start.astimezone(ET)
         end = start + timedelta(minutes=BAR_MIN)
+        if start >= s.open:
+            traded += b.volume
         if start < first or end > s.no_entries_after:
             continue
         if b.close <= rng.high:
+            continue
+        if b.close < CHEAP_PRICE and traded < cheap_min_shares:
             continue
         if rng.avg_volume > 0:
             vx = b.volume / rng.avg_volume

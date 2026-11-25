@@ -48,6 +48,20 @@ const render = (s: Signal, props: { compact?: boolean; list?: 'skill' | 'costs';
 const text = (html: string) => html.replace(/<[^>]+>/g, '')
 
 describe('SignalCard', () => {
+  it('leads with the answer, the tiles and the shares; the rest waits under Details', () => {
+    const html = render(signal({ status: 'flat', exitAt: at('15:55'), exitPrice: 68.12, grossR: 0.29, netR: -1.02 }))
+    const [shown, folded = ''] = html.split('<details')
+    expect(shown).toContain('<b class="answer-big num loss">−1.02R after costs</b><span class="answer-note">Sold US$68.12 at 3:55 PM</span>')
+    expect(text(shown)).toContain('Entry US$67.6510:10 AM') // the trigger time under the entry
+    expect(text(shown)).toContain('Target US$70.85+4.7%')
+    expect(text(shown)).toContain('≈ 22 shares (risking ≈ C$49 at the stop)')
+    for (const line of [VERDICT, 'Cost1.31R', 'Opening range US$64.60–US$67.50', 'last 55 sessions: fired 37 times', 'volume 2.1×', 'TG Therapeutics beats estimates']) {
+      expect(text(shown)).not.toContain(line)
+      expect(text(folded)).toContain(line)
+    }
+    expect(text(folded)).toContain('Flat at close 3:55 PM (US$68.12) · +0.29R before costs, −1.02R after')
+  })
+
   it('the full card: entry, target and stop tiles, the cost in R, the net R values and the verdict line', () => {
     const html = render(signal())
     // the currency in the label, the figure whole: "Entry US$" over "67.65"

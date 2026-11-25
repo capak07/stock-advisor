@@ -1,14 +1,14 @@
 import { Newspaper, Scale, TriangleAlert } from 'lucide-react'
 import { LowRankChip } from '@/components/LowRankChip'
-import { MovePct } from '@/components/daytrade/MovePct'
+import { More } from '@/components/More'
+import { LevelTiles } from '@/components/daytrade/LevelTiles'
 import { StatusChip } from '@/components/daytrade/StatusChip'
 import { shortDay } from '@/lib/dates'
 import {
   LATE_LINE,
   LATE_SHARES,
-  barePrice,
+  answerOf,
   costLine,
-  curOf,
   etClock,
   fmtR,
   historyLine,
@@ -73,10 +73,11 @@ const Verdict = ({ s }: { s: Signal }) => (
 )
 
 /**
- * One of today's top 3 (the skill's, or the after-costs one). The full card: the signal, the late
- * warning, entry / target / stop tiles, the cost in R and the net history and replay R, the verdict
- * line (the replays), the opening range and flat-by time, shares sized to the max loss, the rule's
- * history, where it stands now and the top headline; a skill card also shows the breakout's strength.
+ * One of today's top 3 (the skill's, or the after-costs one). The full card leads with its answer (owner
+ * request 2026-11-25): the result after costs and the exit, or the R so far and the last price; then the late
+ * warning, entry / target / stop tiles and shares sized to the max loss. Under Details: the signal's volume, the
+ * cost in R and the net history and replay R, the replays, the opening range and flat-by time, the breakout's
+ * strength (a skill card), the rule's history, the cost, the full outcome line and the top headline.
  * `compact` (the skill's top 3): entry → target / stop, the strength, its result, the verdict and the
  * cost, without tiles. Display only: nothing here places an order.
  */
@@ -129,14 +130,14 @@ export function SignalCard({
   const risk = Number((s.entry - s.stop).toFixed(4))
   const top = s.headlines[0]
   const link = top ? safeLink(top.url) : null
-  const cur = curOf(s.market)
+  const answer = answerOf(s)
   return (
     <article className="card pick dt-card" data-testid="daytrade-card" aria-label={`${s.symbol} signal`}>
       {head}
-      <p className="dt-line">
-        Entry signal {etClock(s.triggerAt)} at <b className="num">{priceOf(s.entry, s.market)}</b>{' '}
-        <span className="sub">· volume {s.volumeX.toFixed(1)}× the opening range</span>
-      </p>
+      <div className="answer" data-testid="daytrade-answer">
+        <b className={`answer-big num ${answer.tone ?? ''}`.trim()}>{answer.big}</b>
+        {answer.note && <span className="answer-note">{answer.note}</span>}
+      </div>
       {late && (
         <div className="banner warn">
           <TriangleAlert />
@@ -150,67 +151,56 @@ export function SignalCard({
           </div>
         </div>
       )}
-      {/* the tiles are narrow three across, so the currency sits in the label: "Entry US$" over "68.12" */}
-      <div className="dt-levels">
-        <div className="stat">
-          <span className="label">Entry {cur}</span>
-          <b>{barePrice(s.entry, s.market)}</b>
-          <MovePct from={s.entry} />
+      <LevelTiles entry={s.entry} target={s.target} stop={s.stop} market={s.market} entryNote={etClock(s.triggerAt)} />
+      <p className="dt-line sub">
+        {sharesLine(maxLossCad, risk, s.market, usdCad)}
+        {late && <> {LATE_SHARES}</>}
+      </p>
+      <More testId="daytrade-details">
+        <p className="dt-line">
+          Entry signal {etClock(s.triggerAt)} at <b className="num">{priceOf(s.entry, s.market)}</b>{' '}
+          <span className="sub">· volume {s.volumeX.toFixed(1)}× the opening range</span>
+        </p>
+        <div className="dt-facts">
+          <div>
+            <span className="label">Cost</span>
+            <b className="num">{s.costR.toFixed(2)}R</b>
+          </div>
+          <div>
+            <span className="label">History, net</span>
+            <b className={`num ${toneClass(s.netHistoryR)}`}>{rOf(s.netHistoryR)}</b>
+          </div>
+          <div>
+            <span className="label">Replays, net</span>
+            <b className={`num ${toneClass(s.netReplayR)}`}>{rOf(s.netReplayR)}</b>
+          </div>
         </div>
-        <div className="stat">
-          <span className="label">Target {cur}</span>
-          <b className="gain">{barePrice(s.target, s.market)}</b>
-          <MovePct from={s.entry} to={s.target} tone="gain" />
-        </div>
-        <div className="stat">
-          <span className="label">Stop {cur}</span>
-          <b className="loss">{barePrice(s.stop, s.market)}</b>
-          <MovePct from={s.entry} to={s.stop} tone="loss" />
-        </div>
-      </div>
-      <div className="dt-facts">
-        <div>
-          <span className="label">Cost</span>
-          <b className="num">{s.costR.toFixed(2)}R</b>
-        </div>
-        <div>
-          <span className="label">History, net</span>
-          <b className={`num ${toneClass(s.netHistoryR)}`}>{rOf(s.netHistoryR)}</b>
-        </div>
-        <div>
-          <span className="label">Replays, net</span>
-          <b className={`num ${toneClass(s.netReplayR)}`}>{rOf(s.netReplayR)}</b>
-        </div>
-      </div>
-      <Verdict s={s} />
-      <div className="dt-fine num">{rangeLine(s)}</div>
-      <ul className="dt-lines">
-        {skill && <li>{strengthLine(s)}</li>}
-        <li>
-          {sharesLine(maxLossCad, risk, s.market, usdCad)}
-          {late && <> {LATE_SHARES}</>}
-        </li>
-        <li>{historyLine(s.symbol, s.history)}</li>
-        <li>{costLine(s.costPct, s.costR)}</li>
-        {!late && <li className="dt-outcome">{outcomeLine(s)}</li>}
-      </ul>
-      {top && (
-        <div className="dt-news">
-          <Newspaper aria-hidden />
-          <span>
-            {link ? (
-              <a href={link} target="_blank" rel="noopener noreferrer">
-                {top.title}
-              </a>
-            ) : (
-              top.title
-            )}{' '}
-            <span className="sub">
-              · {top.outlet} {headlineTime(top.published_at, s.day)}
+        <Verdict s={s} />
+        <div className="dt-fine num">{rangeLine(s)}</div>
+        <ul className="dt-lines">
+          {skill && <li>{strengthLine(s)}</li>}
+          <li>{historyLine(s.symbol, s.history)}</li>
+          <li>{costLine(s.costPct, s.costR)}</li>
+          {!late && <li className="dt-outcome">{outcomeLine(s)}</li>}
+        </ul>
+        {top && (
+          <div className="dt-news">
+            <Newspaper aria-hidden />
+            <span>
+              {link ? (
+                <a href={link} target="_blank" rel="noopener noreferrer">
+                  {top.title}
+                </a>
+              ) : (
+                top.title
+              )}{' '}
+              <span className="sub">
+                · {top.outlet} {headlineTime(top.published_at, s.day)}
+              </span>
             </span>
-          </span>
-        </div>
-      )}
+          </div>
+        )}
+      </More>
     </article>
   )
 }

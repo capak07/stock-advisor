@@ -65,6 +65,11 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   const first = cards(page).nth(0)
   await expect(first).toContainText('TGTX')
   await expect(first).toContainText('TG Therapeutics')
+  // the card leads with its answer; the supporting lines wait under Details
+  await expect(first.getByTestId('daytrade-answer')).toHaveText('OpenNo price since the signal yet')
+  await expect(first.getByText('Cost 3.10% round trip = 1.31R')).toBeHidden()
+  await first.getByTestId('daytrade-details').locator('summary').click()
+  await expect(first.getByText('Cost 3.10% round trip = 1.31R')).toBeVisible()
   await expect(first).toContainText(/Entry signal \d{1,2}:\d{2} [AP]M at US\$67\.65/)
   await expect(first.getByText('Fresh', { exact: true })).toBeVisible()
   await expect(first).toContainText('Stop US$66.05−2.4%')

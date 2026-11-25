@@ -154,6 +154,8 @@ const usd = (value: number) => priceOf(value, 'US')
 export interface LiveValue {
   /** "Closed US$0.8998 on Nov 25: worth US$89.98", "Hit the stop at US$0.62 on Nov 25: got back US$62.00" */
   text: string
+  /** The text before the value: "Closed US$0.8998 on Nov 25", "Hit the stop at US$0.62 on Nov 25" */
+  lead: string
   paper: PaperValue
   r: number
 }
@@ -168,12 +170,12 @@ export function liveValue(live: LiveRunner): LiveValue | null {
   let lead: string
   if (live.kind === 'open') {
     lead = live.closed ? `Closed ${usd(live.price)} on ${day}` : `Now ${usd(live.price)} at ${etClock(live.at)} ET`
-    return { text: `${lead}: worth ${usdMoney(paper.value)}`, paper, r }
+    return { text: `${lead}: worth ${usdMoney(paper.value)}`, lead, paper, r }
   }
   if (live.status === 'held') lead = `Held to ${day}: sold at the close, ${usd(live.price)}`
   else if (live.atOpen) lead = `Opened ${live.status === 'stop' ? 'under the stop' : 'over the target'} at ${usd(live.price)} on ${day}`
   else lead = `Hit the ${live.status} at ${usd(live.price)} on ${day}`
-  return { text: `${lead}: got back ${usdMoney(paper.value)}`, paper, r }
+  return { text: `${lead}: got back ${usdMoney(paper.value)}`, lead, paper, r }
 }
 
 /** "+US$6.22 (+7.4%)" */

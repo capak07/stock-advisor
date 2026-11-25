@@ -15,6 +15,7 @@ import {
   oddsLine,
   orderSignals,
   outcomeLine,
+  answerOf,
   netResult,
   rangeLine,
   recordEmptyLine,
@@ -239,6 +240,23 @@ describe('formatters', () => {
     expect(costLine(3.1, 0.534)).toBe('Cost 3.10% round trip = 0.53R')
     expect(oddsLine(signal().replay)).toBe('10,000 replays: target first 34% · stop first 52% · neither 14% · green at close 48%')
     expect(oddsLine({ skipped: 'no bars left to replay after the entry' })).toBe('No replay: no bars left to replay after the entry')
+  })
+
+  it("the card's answer: R after costs and the exit, or R so far and the last price", () => {
+    expect(answerOf(signal())).toEqual({ big: 'Open', tone: null, note: 'No price since the signal yet' })
+    // (68.45 − 67.65) / (67.65 − 66.05) = 0.5R
+    expect(answerOf(signal({ lastPrice: 68.45, lastAt: at('10:35') }))).toEqual({ big: '+0.50R so far', tone: 'gain', note: 'Last US$68.45 at 10:35 AM' })
+    expect(answerOf(signal({ status: 'target', exitAt: at('10:50'), exitPrice: 70.85, grossR: 2, netR: 0.64 }))).toEqual({
+      big: '+0.64R after costs',
+      tone: 'gain',
+      note: 'Sold US$70.85 at 10:50 AM',
+    })
+    expect(answerOf(signal({ status: 'flat', exitAt: at('15:55'), exitPrice: 68, grossR: 0.22, netR: -1.09 }))).toMatchObject({
+      big: '−1.09R after costs',
+      tone: 'loss',
+    })
+    expect(answerOf(signal({ status: 'stop', grossR: -1 }))).toEqual({ big: '−1.00R before costs', tone: 'loss', note: '' })
+    expect(answerOf(signal({ status: 'stop' }))).toEqual({ big: 'Stopped out', tone: null, note: '' })
   })
 
   it('the live outcome', () => {

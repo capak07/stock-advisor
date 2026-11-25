@@ -440,6 +440,8 @@ test("a holding's exit plan shows in the table, the cards and the hold list, and
   await page.getByRole('button', { name: /1 holding · MSFT/ }).click()
   await expect(page.locator('#hold-list')).toContainText(`hold ~21 trading days · range US$400.00–455.00 · sell at US$440.12 · re-check ${by}`)
 
+  await expect(msft.getByRole('link', { name: 'Alert me at US$440.12' })).toHaveCount(0) // folded under Plan
+  await msft.getByTestId('holding-plan').locator('summary').click()
   const alert = msft.getByRole('link', { name: 'Alert me at US$440.12' })
   await expect(alert).toHaveAttribute('href', '/ticker/MSFT?alertLevel=440.12&alertDir=above&alertNote=exit+plan+sell-at#alerts')
   await alert.click()

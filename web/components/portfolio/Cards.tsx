@@ -3,6 +3,7 @@ import Link from 'next/link'
 import type { CSSProperties } from 'react'
 import { shortDay } from '@/lib/dates'
 import { LowRankChip } from '@/components/LowRankChip'
+import { More } from '@/components/More'
 import { OrderGuide } from '@/components/OrderGuide'
 import { fmtMoney, fmtPct, fmtPrice, fmtQty } from '@/lib/format'
 import { joinPlans } from '@/lib/guidance'
@@ -166,14 +167,15 @@ const dash = <span className="sub">—</span>
 const hasRange = (a: HoldingAction) => a.q10 !== null && a.q50 !== null && a.q90 !== null
 /** A row stored before exit plans existed shows its exit-by date instead. */
 const exitByOf = (a: HoldingAction) => (a.exitPlan === null ? a.exitBy : null)
-const hasFacts = (a: HoldingAction) => hasRange(a) || a.trailingStop !== null || a.riskLevel !== null || exitByOf(a) !== null
+/** The model's facts besides the trailing stop, which the row shows outside the Plan fold. */
+const hasPlanFacts = (a: HoldingAction) => hasRange(a) || a.riskLevel !== null || exitByOf(a) !== null
 
 /**
- * The model's facts under a holding's name: the likely range, the trailing stop, the risk level and the exit-by
- * date of a row without a plan. Each only when the run gave it.
+ * The model's facts in a holding's Plan fold: the likely range, the risk level and the exit-by date of a row without
+ * a plan. Each only when the run gave it. The trailing stop sits on the row itself.
  */
-function ModelFacts({ h, a }: { h: HoldingRow; a: HoldingAction }) {
-  if (!hasFacts(a)) return null
+function ModelFacts({ a }: { a: HoldingAction }) {
+  if (!hasPlanFacts(a)) return null
   const range = hasRange(a)
   const exitBy = exitByOf(a)
   return (
@@ -182,11 +184,6 @@ function ModelFacts({ h, a }: { h: HoldingRow; a: HoldingAction }) {
         <span className="h-range">
           <RangeBar q10={a.q10 as number} q50={a.q50 as number} q90={a.q90 as number} />
           {a.horizonDays !== null && <span className="num">{a.horizonDays}d</span>}
-        </span>
-      )}
-      {a.trailingStop !== null && (
-        <span className="h-stop">
-          Trailing stop <span className="num">{fmtPrice(a.trailingStop, stopCurrency(h))}</span>
         </span>
       )}
       {a.riskLevel !== null && (
@@ -393,8 +390,11 @@ export function HoldingsCard({
                 const qty = qtys.get(h.key)
                 const weight = weightOf(h)
                 const about = [h.name, h.market].filter(Boolean).join(' · ')
-                const noted = stop !== null || h.notes.length > 0
-                const detailed = noted || (a !== null && (a.exitPlan !== null || hasFacts(a)))
+                const warns = h.notes.filter((n) => n.warn)
+                const plain = h.notes.filter((n) => !n.warn)
+                const trailing = a?.trailingStop ?? null
+                // the row keeps the trailing stop and the warnings; the rest folds under Plan (owner request 2026-11-25)
+                const planned = stop !== null || plain.length > 0 || (a !== null && (a.exitPlan !== null || hasPlanFacts(a)))
                 return (
                   <tr key={h.key}>
                     <td className="h-sym">
@@ -404,26 +404,38 @@ export function HoldingsCard({
                         </Link>
                         {about && <span className="sub">{about}</span>}
                       </div>
-                      {detailed && (
+                      {(trailing !== null || warns.length > 0 || planned) && (
                         <div className="h-detail">
-                          {a && <ModelFacts h={h} a={a} />}
-                          {a && <ExitPlanLines a={a} />}
-                          {noted && (
+                          {(trailing !== null || warns.length > 0) && (
                             <div className="h-note">
-                              {stop && <span className="sub order-note">{stop}</span>}
-                              {h.notes.map((n) =>
-                                n.warn ? (
-                                  <span key={n.text} className="warn-cell">
-                                    <TriangleAlert />
-                                    {n.text}
-                                  </span>
-                                ) : (
-                                  <span key={n.text} className="sub">
-                                    {n.text}
-                                  </span>
-                                ),
+                              {trailing !== null && (
+                                <span className="h-stop">
+                                  Trailing stop <span className="num">{fmtPrice(trailing, stopCurrency(h))}</span>
+                                </span>
                               )}
+                              {warns.map((n) => (
+                                <span key={n.text} className="warn-cell">
+                                  <TriangleAlert />
+                                  {n.text}
+                                </span>
+                              ))}
                             </div>
+                          )}
+                          {planned && (
+                            <More label="Plan" bare testId="holding-plan">
+                              {a && <ModelFacts a={a} />}
+                              {a && <ExitPlanLines a={a} />}
+                              {(stop !== null || plain.length > 0) && (
+                                <div className="h-note">
+                                  {stop && <span className="sub order-note">{stop}</span>}
+                                  {plain.map((n) => (
+                                    <span key={n.text} className="sub">
+                                      {n.text}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </More>
                           )}
                         </div>
                       )}

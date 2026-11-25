@@ -6,6 +6,11 @@ import type { Runner } from '@/lib/runners'
 import { LIVE_NOTE, type LiveRunner } from '@/lib/runners-live'
 
 const render = (element: ReactElement) => renderToStaticMarkup(element)
+/** The card's markup split at its Details fold: what shows, and what waits for a tap. */
+const parts = (element: ReactElement) => {
+  const [shown, folded = ''] = render(element).split('<details')
+  return { shown, folded }
+}
 
 /** A sub-dollar runner entered at the 2026-11-17 open, priced at the next close. */
 const runner = (over: Partial<Runner> = {}): Runner => ({
@@ -41,47 +46,56 @@ const runner = (over: Partial<Runner> = {}): Runner => ({
 })
 
 describe('OpenRunnerCard', () => {
-  it('shows 100 paper shares bought, what they are worth now and the plan', () => {
-    const text = render(<OpenRunnerCard runner={runner()} />)
-    expect(text).toContain('Bought 100 shares at US$0.8500 on Nov 17 = US$85.00')
-    expect(text).toContain('Now US$0.9300 (Nov 18 close) · worth US$93.00 · ')
-    expect(text).toMatch(/class="num gain"[^>]*>\+US\$8\.00 \(\+9\.4%\)</)
-    expect(text).toContain('Stop US$0.6500 (−23.5%) · target US$1.25 (+47.1%) · hold by Nov 28')
-    expect(text).toContain('+0.40R')
+  it('leads with the 100 paper shares\' gain and R at the last close, then the bought / target / stop tiles', () => {
+    const { shown, folded } = parts(<OpenRunnerCard runner={runner()} />)
+    expect(shown).toContain('<b class="answer-big num gain" data-testid="open-runner-gain">+US$8.00 +9.4%</b>')
+    expect(shown).toContain('<b class="answer-r num gain" data-testid="open-runner-r">+0.40R</b>')
+    expect(shown).toContain('100 shares: paid US$85.00 · worth US$93.00')
+    expect(shown).toContain('<span class="label">Bought US$</span><b>0.8500</b><span class="lvl-pct lvl-note">Nov 17 open</span>')
+    expect(shown).toMatch(/<b class="gain">1\.25<\/b><span class="lvl-pct num gain">\+47\.1%/)
+    expect(shown).toMatch(/<b class="loss">0\.6500<\/b><span class="lvl-pct num loss">−23\.5%/)
+    expect(shown).toContain('Nov 18 close US$0.9300 · hold until Nov 28')
+    expect(folded).toContain('Bought 100 shares at US$0.8500 on Nov 17 = US$85.00')
+    expect(folded).toContain('Nov 18 close US$0.9300 (the last morning check): worth US$93.00')
+    expect(folded).toContain('R so far +0.40R')
   })
 
   it('shows a loss as a loss', () => {
-    expect(render(<OpenRunnerCard runner={runner({ lastClose: 0.8 })} />)).toMatch(/class="num loss"[^>]*>−US\$5\.00 \(−5\.9%\)</)
+    expect(render(<OpenRunnerCard runner={runner({ lastClose: 0.8 })} />)).toContain(
+      '<b class="answer-big num loss" data-testid="open-runner-gain">−US$5.00 −5.9%</b>',
+    )
   })
 
   it('says when there is no close yet', () => {
     const text = render(<OpenRunnerCard runner={runner({ lastClose: null, lastDay: null })} />)
-    expect(text).toContain('No close yet.')
+    expect(text).toContain('<b class="answer-big">No close yet</b>')
     expect(text).not.toContain('worth')
   })
 
   describe("with Yahoo's prices past the stored close", () => {
     const plan = { entry: 0.85, stop: 0.65, target: 1.25 }
 
-    it('shows the latest price in place of the stored close, with its R', () => {
+    it('leads with the latest price in place of the stored close, with its R', () => {
       const live: LiveRunner = { kind: 'open', entryDay: '2026-11-17', plan, day: '2026-11-19', price: 0.95, closed: false, at: '2026-11-19T19:05:00Z' }
-      const text = render(<OpenRunnerCard runner={runner()} live={live} />)
-      expect(text).toContain('Bought 100 shares at US$0.8500 on Nov 17 = US$85.00')
-      expect(text).toContain('Now US$0.9500 at 2:05 PM ET: worth US$95.00 · ')
-      expect(text).not.toContain('Nov 18 close')
-      expect(text).toMatch(/class="num gain" data-testid="open-runner-gain">\+US\$10\.00 \(\+11\.8%\)</)
-      expect(text).toContain('R so far ')
-      expect(text).toContain('+0.50R')
-      expect(text).toContain(LIVE_NOTE)
+      const { shown, folded } = parts(<OpenRunnerCard runner={runner()} live={live} />)
+      expect(shown).toContain('<b class="answer-big num gain" data-testid="open-runner-gain">+US$10.00 +11.8%</b>')
+      expect(shown).toContain('<b class="answer-r num gain" data-testid="open-runner-r">+0.50R</b>')
+      expect(shown).toContain('100 shares: paid US$85.00 · worth US$95.00')
+      expect(shown).toContain('Now US$0.9500 at 2:05 PM ET · hold until Nov 28')
+      expect(folded).toContain('Now US$0.9500 at 2:05 PM ET: worth US$95.00')
+      expect(folded).toContain('Nov 18 close US$0.9300 (the last morning check): worth US$93.00')
+      expect(folded).toContain(LIVE_NOTE)
     })
 
     it('shows a target hit since the stored close, with its R at the exit', () => {
       const live: LiveRunner = { kind: 'exited', entryDay: '2026-11-17', plan, status: 'target', day: '2026-11-19', price: 1.25, atOpen: false }
-      const text = render(<OpenRunnerCard runner={runner()} live={live} />)
-      expect(text).toContain('Hit the target at US$1.25 on Nov 19: got back US$125.00 · ')
-      expect(text).toMatch(/\+US\$40\.00 \(\+47\.1%\)/)
-      expect(text).toContain('R at the exit ')
-      expect(text).toContain('+2.00R')
+      const { shown, folded } = parts(<OpenRunnerCard runner={runner()} live={live} />)
+      expect(shown).toContain('<b class="answer-big num gain" data-testid="open-runner-gain">+US$40.00 +47.1%</b>')
+      expect(shown).toContain('+2.00R')
+      expect(shown).toContain('100 shares: paid US$85.00 · got back US$125.00')
+      expect(shown).toContain('Hit the target at US$1.25 on Nov 19</p>')
+      expect(shown).not.toContain('hold until')
+      expect(folded).toContain('R at the exit +2.00R')
     })
 
     it('has no live note without live prices', () => {

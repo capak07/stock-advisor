@@ -100,6 +100,37 @@ describe('HoldingsCard', () => {
     expect(rowOf(html, 'A.TO')).toContain('width:50%')
   })
 
+  it('keeps the trailing stop and the warnings on the row and folds the range, risk and notes under Plan', () => {
+    const powl: HoldingRow = {
+      ...holding('POWL', 2216, 'hold'),
+      market: 'US',
+      action: { ...action('POWL', 'hold'), trailingStop: 132.7, q10: -0.05, q50: 0.01, q90: 0.08, horizonDays: 10, riskLevel: 'very_high' } as HoldingAction,
+      notes: [
+        { text: 'Taxable: est. +C$8', warn: false },
+        { text: '71% of the portfolio; Very High risk allows 0.5%', warn: true },
+      ],
+    }
+    const row = rowOf(render([powl]), 'POWL')
+    const [shown, folded = ''] = row.split('<details')
+    expect(shown).toContain('Trailing stop <span class="num">US$132.70</span>')
+    expect(shown).toContain('71% of the portfolio; Very High risk allows 0.5%')
+    expect(shown).not.toContain('Taxable')
+    expect(shown).not.toContain('Very High risk</span>')
+    expect(folded).toContain('<span>Plan</span>')
+    expect(folded).toContain('Taxable: est. +C$8')
+    expect(folded).toContain('class="range"')
+    expect(folded).toContain('10d')
+    expect(folded).toContain('Very high risk')
+    expect(folded).not.toContain('Trailing stop')
+  })
+
+  it('has no Plan fold for a row with nothing to fold', () => {
+    const plain = { ...holding('ABC', 100, 'hold'), notes: [{ text: 'Too small to trim', warn: true }] }
+    const row = rowOf(render([plain]), 'ABC')
+    expect(row).toContain('Too small to trim')
+    expect(row).not.toContain('<details')
+  })
+
   it('leaves out the Action column before the model has run', () => {
     const html = render([holding('RY.TO', 100, null)])
     expect(html).not.toContain('>Action</th>')

@@ -296,6 +296,28 @@ export function outcomeLine(s: Signal): string {
   }
 }
 
+/** What a card leads with: a finished signal's R after costs and its exit, or an open one's R so far and last price. */
+export interface Answer {
+  /** "+0.77R after costs", "+0.52R so far", "Open" */
+  big: string
+  tone: 'gain' | 'loss' | null
+  /** "Sold US$14.28 at 3:55 PM", "Last US$14.20 at 1:05 PM" */
+  note: string
+}
+
+/** The card's answer for a signal (owner request 2026-11-25: lead with the result, the rest under Details). */
+export function answerOf(s: Signal): Answer {
+  if (s.status === 'open') {
+    if (s.lastPrice === null || s.lastAt === null) return { big: 'Open', tone: null, note: 'No price since the signal yet' }
+    const r = s.entry > s.stop ? (s.lastPrice - s.entry) / (s.entry - s.stop) : 0
+    return { big: `${fmtR(r)} so far`, tone: rTone(r), note: `Last ${priceOf(s.lastPrice, s.market)} at ${etClock(s.lastAt)}` }
+  }
+  const r = s.netR ?? s.grossR
+  const big = r === null ? statusChip(s, false).label : `${fmtR(r)} ${s.netR === null ? 'before' : 'after'} costs`
+  const sold = s.exitPrice === null ? null : `Sold ${priceOf(s.exitPrice, s.market)}${s.exitAt === null ? '' : ` at ${etClock(s.exitAt)}`}`
+  return { big, tone: rTone(r), note: sold ?? '' }
+}
+
 /** Breakout strength: how far the trigger bar closed above the opening-range high, in percent. */
 export const strengthPct = (s: Signal): number => (s.entry / s.orHigh - 1) * 100
 

@@ -51,7 +51,7 @@ describe('OpenRunnerCard', () => {
     expect(shown).toContain('<b class="answer-big num gain" data-testid="open-runner-gain">+US$8.00 +9.4%</b>')
     expect(shown).toContain('<b class="answer-r num gain" data-testid="open-runner-r">+0.40R</b>')
     expect(shown).toContain('100 shares: paid US$85.00 · worth US$93.00')
-    expect(shown).toContain('<span class="label">Bought US$</span><b>0.8500</b><span class="lvl-pct lvl-note">Nov 17 open</span>')
+    expect(shown).toContain('<span class="label">Bought US$</span><b>0.8500</b><span class="lvl-pct lvl-note">Nov 17</span>')
     expect(shown).toMatch(/<b class="gain">1\.25<\/b><span class="lvl-pct num gain">\+47\.1%/)
     expect(shown).toMatch(/<b class="loss">0\.6500<\/b><span class="lvl-pct num loss">−23\.5%/)
     expect(shown).toContain('Nov 18 close US$0.9300 · hold until Nov 28')

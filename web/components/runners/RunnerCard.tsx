@@ -93,7 +93,7 @@ export function RunnerCard({
           stop={plan.stop}
           market="US"
           entryLabel={bought === null ? 'Entry ≈' : 'Bought'}
-          entryNote={bought === null ? 'signal close' : `${shortDay(bought.entryDay)} open`}
+          entryNote={bought === null ? undefined : shortDay(bought.entryDay)}
         />
       )}
       {live?.kind !== 'skipped' && (

@@ -42,7 +42,8 @@ test('a signal shows its plan and warning under the paper label', async ({ page 
   await expect(card).toContainText('Akanda Corp.')
   await expect(card).toContainText(SALE.text)
   await expect(card.getByTestId('runner-answer')).toHaveText('Buy at the openAbout US$136.00 for 100 shares at the signal close')
-  await expect(card).toContainText('Entry ≈ US$1.36signal closeTarget US$2.04+50.0%Stop US$1.02−25.0%')
+  await expect(card).toContainText('Entry ≈ US$1.36')
+  await expect(card).toContainText('Target US$2.04+50.0%Stop US$1.02−25.0%')
   await expect(card.getByText('≈ 105 shares (risking ≈ C$50 at the stop)')).toBeHidden() // under Details
   await expect(card).toContainText('≈ 105 shares')
   await expect(card).toContainText('Paper trade: 100 shares at the open (about US$136.00 at the signal close)')
@@ -79,7 +80,7 @@ test("Yahoo's prices show what the paper trades cost at the open and are worth a
   await page.goto('/runners')
 
   const card = cards(page).first()
-  await expect(card).toContainText(`Bought US$1.40${shortDay(last)} openTarget US$2.10+50.0%Stop US$1.05−25.0%`)
+  await expect(card).toContainText(`Bought US$1.40${shortDay(last)}Target US$2.10+50.0%Stop US$1.05−25.0%`)
   await expect(card).toContainText('100 shares: paid US$140.00 · worth US$145.00')
   await expect(card).toContainText('Paper trade: 100 shares, US$136.00 at the signal close, bought for US$140.00 at the open')
   await expect(card).toContainText(`Closed US$1.45 on ${shortDay(last)}: worth US$145.00`)

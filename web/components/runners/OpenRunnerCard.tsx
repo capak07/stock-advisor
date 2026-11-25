@@ -65,7 +65,7 @@ export function OpenRunnerCard({ runner: r, live = null }: { runner: Runner; liv
           stop={r.stop}
           market="US"
           entryLabel="Bought"
-          entryNote={r.entryDay === null ? undefined : `${shortDay(r.entryDay)} open`}
+          entryNote={r.entryDay === null ? undefined : shortDay(r.entryDay)}
         />
       )}
       <p className="dt-line sub">{exited ? where : `${where} · hold until ${shortDay(r.holdBy)}`}</p>

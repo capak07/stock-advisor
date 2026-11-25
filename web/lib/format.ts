@@ -9,6 +9,9 @@ export const fmtPct = (value: number, digits = 1): string => {
   return `${sign}${rounded.toFixed(digits)}%`
 }
 
+/** How far `to` is from `from`, in percent: "+4.7%", "−2.4%"; "0.0%" without a base price. */
+export const fmtMove = (from: number, to: number): string => fmtPct(from > 0 ? (to / from - 1) * 100 : 0)
+
 const grouped = (value: number, digits: number): string =>
   Math.abs(value).toLocaleString('en-CA', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 

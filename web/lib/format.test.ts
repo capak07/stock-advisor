@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addDays, daysBetween, longDay, shortDay, todayInToronto } from './dates'
-import { fmtAmount, fmtMoney, fmtPct, fmtPrice, fmtQty, plainNumber } from './format'
+import { fmtAmount, fmtMoney, fmtMove, fmtPct, fmtPrice, fmtQty, plainNumber } from './format'
 
 describe('formats', () => {
   it('writes percentages with a sign and a real minus', () => {
@@ -48,6 +48,15 @@ describe('dates', () => {
   })
 })
 
+
+describe('fmtMove', () => {
+  it('says how far a price is from another, in percent', () => {
+    expect(fmtMove(67.65, 70.85)).toBe('+4.7%')
+    expect(fmtMove(67.65, 66.05)).toBe('−2.4%')
+    expect(fmtMove(1.36, 1.02)).toBe('−25.0%')
+    expect(fmtMove(0, 1)).toBe('0.0%') // no base price: no move
+  })
+})
 
 describe('plainNumber', () => {
   it('writes a number for an input box: no exponent, no grouping, every digit kept', () => {

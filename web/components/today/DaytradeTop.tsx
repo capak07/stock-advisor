@@ -1,5 +1,6 @@
 import { ChevronRight, Scale } from 'lucide-react'
 import Link from 'next/link'
+import { MovePct } from '@/components/daytrade/MovePct'
 import { StatusChip } from '@/components/daytrade/StatusChip'
 import {
   MARKET_CLOSED,
@@ -81,14 +82,17 @@ export function DaytradeTop({
                   <div className="stat">
                     <span className="label">Entry {curOf(s.market)}</span>
                     <b>{barePrice(s.entry, s.market)}</b>
+                    <MovePct from={s.entry} />
                   </div>
                   <div className="stat">
                     <span className="label">Target {curOf(s.market)}</span>
                     <b className="gain">{barePrice(s.target, s.market)}</b>
+                    <MovePct from={s.entry} to={s.target} tone="gain" />
                   </div>
                   <div className="stat">
                     <span className="label">Stop {curOf(s.market)}</span>
                     <b className="loss">{barePrice(s.stop, s.market)}</b>
+                    <MovePct from={s.entry} to={s.stop} tone="loss" />
                   </div>
                 </div>
               )}

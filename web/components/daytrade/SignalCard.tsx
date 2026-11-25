@@ -1,5 +1,6 @@
 import { Newspaper, Scale, TriangleAlert } from 'lucide-react'
 import { LowRankChip } from '@/components/LowRankChip'
+import { MovePct } from '@/components/daytrade/MovePct'
 import { StatusChip } from '@/components/daytrade/StatusChip'
 import { shortDay } from '@/lib/dates'
 import {
@@ -23,6 +24,7 @@ import {
   strengthLine,
   type Signal,
 } from '@/lib/daytrade'
+import { fmtMove } from '@/lib/format'
 import { safeLink } from '@/lib/ticker'
 
 /** "11:10 AM" on the signal's day, "Nov 9, 4:05 PM" before it (New York time). */
@@ -109,8 +111,9 @@ export function SignalCard({
       <article className="card pick dt-card dt-sm" data-testid="daytrade-card" aria-label={`${s.symbol} signal`}>
         {head}
         <div className="dt-sm-line num">
-          Entry {priceOf(s.entry, s.market)} <span className="sub">→</span> <span className="gain">{priceOf(s.target, s.market)}</span>{' '}
-          <span className="sub">/</span> <span className="loss">{priceOf(s.stop, s.market)}</span>
+          Entry {priceOf(s.entry, s.market)} <span className="sub">→</span>{' '}
+          <span className="gain">{`${priceOf(s.target, s.market)} (${fmtMove(s.entry, s.target)})`}</span>{' '}
+          <span className="sub">/</span> <span className="loss">{`${priceOf(s.stop, s.market)} (${fmtMove(s.entry, s.stop)})`}</span>
         </div>
         <div className="dt-sm-meta">
           <span className="num">{strengthLine(s)}</span>
@@ -152,14 +155,17 @@ export function SignalCard({
         <div className="stat">
           <span className="label">Entry {cur}</span>
           <b>{barePrice(s.entry, s.market)}</b>
+          <MovePct from={s.entry} />
         </div>
         <div className="stat">
           <span className="label">Target {cur}</span>
           <b className="gain">{barePrice(s.target, s.market)}</b>
+          <MovePct from={s.entry} to={s.target} tone="gain" />
         </div>
         <div className="stat">
           <span className="label">Stop {cur}</span>
           <b className="loss">{barePrice(s.stop, s.market)}</b>
+          <MovePct from={s.entry} to={s.stop} tone="loss" />
         </div>
       </div>
       <div className="dt-facts">

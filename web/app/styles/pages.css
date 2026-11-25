@@ -357,6 +357,8 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
    beside the sidebar leave each box narrow, so the figure shrinks with its box, up to its usual 15px. */
 /* A narrow box wraps a long label ("Target US$") onto two lines: the figures keep to the bottom, so the three line up. */
 .dt-levels .stat { container-type: inline-size; padding-left: 8px; padding-right: 8px; display: grid; align-content: space-between; }
+/* Under the target's and the stop's figure, how far each is from the entry; the entry holds the line empty. */
+.lvl-pct { display: block; margin-top: 2px; font: 500 11.5px/1.2 var(--font-mono); }
 .dt-levels b { overflow-wrap: normal; white-space: nowrap; font-size: clamp(12px, 19cqi, 15px); }
 @media (max-width: 480px) { .dt-levels .stat { padding: 8px 9px; } .dt-levels b { font-size: 13px; } }
 .dt-facts > div { display: grid; gap: 4px; align-content: start; }

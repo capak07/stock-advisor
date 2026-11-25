@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { shortDay } from '@/lib/dates'
 import { fmtR, priceOf, rTone } from '@/lib/daytrade'
-import { fmtPct } from '@/lib/format'
+import { fmtMove, fmtPct } from '@/lib/format'
 import { PAPER_SHARES, paperValue, rSoFar, usdMoney, usdSigned, type Runner } from '@/lib/runners'
 import { tickerHref } from '@/lib/ticker'
 
@@ -42,7 +42,12 @@ export function OpenRunnerCard({ runner: r }: { runner: Runner }) {
         </p>
       )}
       <ul className="dt-lines">
-        <li>{`Stop ${usd(r.stop)} · target ${usd(r.target)} · hold by ${shortDay(r.holdBy)}`}</li>
+        <li>
+          {r.entry === null
+            ? `Stop ${usd(r.stop)} · target ${usd(r.target)} · hold by ${shortDay(r.holdBy)}`
+            : `Stop ${usd(r.stop)} (${fmtMove(r.entry, r.stop)}) · target ${usd(r.target)} (${fmtMove(r.entry, r.target)}) · ` +
+              `hold by ${shortDay(r.holdBy)}`}
+        </li>
         <li>
           {'R so far '}
           <span className={`num ${rTone(rNow) ?? ''}`} data-testid="open-runner-r">

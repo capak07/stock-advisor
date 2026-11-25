@@ -67,7 +67,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(first).toContainText('TG Therapeutics')
   await expect(first).toContainText(/Entry signal \d{1,2}:\d{2} [AP]M at US\$67\.65/)
   await expect(first.getByText('Fresh', { exact: true })).toBeVisible()
-  await expect(first).toContainText('Stop US$66.05')
+  await expect(first).toContainText('Stop US$66.05−2.4%')
   await expect(first).toContainText('Target US$70.85')
   await expect(first).toContainText('Opening range US$64.45–US$67.55 · flat by 12:55 PM')
   await expect(first).toContainText('Cost1.31R')
@@ -150,7 +150,7 @@ test("the top 3 after costs come first, then the skill's top 3 in compact cards 
   const fis = skillCards(page).nth(0)
   await expect(fis).toContainText('Fidelity National Information Services')
   // compact: entry → target / stop, the strength, the result after costs, the verdict and the cost; no tiles
-  await expect(fis).toContainText('Entry US$68.12 → US$70.36 / US$67.00')
+  await expect(fis).toContainText('Entry US$68.12 → US$70.36 (+3.3%) / US$67.00 (−1.6%)')
   await expect(fis.getByText('+0.92% above the range high', { exact: true })).toBeVisible()
   await expect(fis.getByText('+0.64R after costs', { exact: true })).toBeVisible()
   await expect(fis).toContainText('10,000 replays: target first 34%')

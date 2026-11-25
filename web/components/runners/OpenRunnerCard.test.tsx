@@ -44,7 +44,7 @@ describe('OpenRunnerCard', () => {
     expect(text).toContain('Bought 100 shares at US$0.8500 on Nov 17 = US$85.00')
     expect(text).toContain('Now US$0.9300 (Nov 18 close) · worth US$93.00 · ')
     expect(text).toMatch(/class="num gain"[^>]*>\+US\$8\.00 \(\+9\.4%\)</)
-    expect(text).toContain('Stop US$0.6500 · target US$1.25 · hold by Nov 28')
+    expect(text).toContain('Stop US$0.6500 (−23.5%) · target US$1.25 (+47.1%) · hold by Nov 28')
     expect(text).toContain('+0.40R')
   })
 

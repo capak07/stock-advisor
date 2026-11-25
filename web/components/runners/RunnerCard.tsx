@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { shortDay } from '@/lib/dates'
 import { priceOf, sharesLine } from '@/lib/daytrade'
+import { fmtMove } from '@/lib/format'
 import { PAPER, PAPER_SHARES, ignitionLine, usdMoney, type Runner, type RunnerWarning } from '@/lib/runners'
 import { tickerHref } from '@/lib/ticker'
 
@@ -63,8 +64,8 @@ export function RunnerCard({
       )}
       <p className="dt-line">{ignitionLine(r)}</p>
       <p className="dt-line">
-        {`Enter at the open · if it opens near ${usd(r.signalClose)}: stop ${usd(r.stop)}, target ${usd(r.target)} ` +
-          `(${multiple(r)}R) · hold by ${shortDay(r.holdBy)}`}
+        {`Enter at the open · if it opens near ${usd(r.signalClose)}: stop ${usd(r.stop)} (${fmtMove(r.signalClose, r.stop)}), ` +
+          `target ${usd(r.target)} (${fmtMove(r.signalClose, r.target)}, ${multiple(r)}R) · hold by ${shortDay(r.holdBy)}`}
       </p>
       <ul className="dt-lines">
         <li>{sharesLine(maxLossCad, risk, 'US', usdCad)}</li>

@@ -94,6 +94,9 @@ describe('DaytradeTop', () => {
     expect(html).toContain('<b class="loss">99.00</b>')
     expect(html).toContain('>Target US$<')
     expect(html).toContain('>Stop US$<')
+    // how far each level is from the entry
+    expect(html).toContain('<span class="lvl-pct num gain">+2.0%</span>')
+    expect(html).toContain('<span class="lvl-pct num loss">−1.0%</span>')
     expect(html).toContain('Target hit')
     expect(html).toContain('10,000 replays: target first 34%')
     expect(html).toContain('history +0.12R after costs')

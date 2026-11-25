@@ -59,6 +59,9 @@ describe('SignalCard', () => {
     expect(t).toContain('Entry US$67.65')
     expect(t).toContain('Target US$70.85')
     expect(t).toContain('Stop US$66.05')
+    // how far each level is from the entry, under its figure
+    expect(t).toContain('Target US$70.85+4.7%')
+    expect(t).toContain('Stop US$66.05−2.4%')
     expect(t).toContain('Cost1.31R')
     expect(t).toContain('History, net+0.30R')
     expect(t).toContain('Replays, net+0.20R')
@@ -73,7 +76,7 @@ describe('SignalCard', () => {
     const html = render(signal({ status: 'target', grossR: 2, netR: 0.64 }), { compact: true, list: 'skill' })
     const t = text(html)
     expect(t).toContain(VERDICT)
-    expect(t).toMatch(/Entry US\$67\.65\s*→\s*US\$70\.85\s*\/\s*US\$66\.05/)
+    expect(t).toMatch(/Entry US\$67\.65\s*→\s*US\$70\.85 \(\+4\.7%\)\s*\/\s*US\$66\.05 \(−2\.4%\)/)
     expect(t).toContain('+0.22% above the range high')
     expect(t).toContain('+0.64R after costs')
     expect(t).toContain('Target hit')

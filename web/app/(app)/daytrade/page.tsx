@@ -6,6 +6,7 @@ import { loadLowRanks } from '@/lib/data/low-rank'
 import { SignalTable } from '@/components/daytrade/SignalTable'
 import { TrackRecord } from '@/components/daytrade/TrackRecord'
 import { ownerClient } from '@/lib/auth'
+import { serverNow } from '@/lib/data/clock'
 import { loadDaytrade } from '@/lib/data/daytrade'
 import {
   COSTS_TITLE,
@@ -43,7 +44,7 @@ const NOTE_BLOCKS = [
 export default async function DaytradePage() {
   const supabase = await ownerClient()
   if (!supabase) return null // the layout is showing the not-the-owner notice
-  const now = new Date().toISOString()
+  const now = await serverNow()
   const today = nyTime(now).day
   const data = await loadDaytrade(supabase, today)
   const { day, signals } = data

@@ -1,9 +1,15 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { E2E_NOW_COOKIE } from '../lib/clock'
 import { nyTime } from '../lib/daytrade'
 import { daysAgo, nyAt, resetData, seedDaytradeDay, seedDaytradeSignal, seedFx, sql, today } from './db'
 
 const MIN = 60_000
 const ago = (minutes: number) => new Date(Date.now() - minutes * MIN)
+/** Pins the server's clock for this page to `at` (honoured only under these tests: lib/clock.ts). The page
+ * stops being live at 4:05 PM ET, so a test of the live page pins a time before that and runs at any hour. */
+const pinServerClock = (page: Page, at: Date) =>
+  page.context().addCookies([{ name: E2E_NOW_COOKIE, value: at.toISOString(), url: 'http://127.0.0.1:3100' }])
+const before = (at: Date, minutes: number) => new Date(at.getTime() - minutes * MIN)
 const skillSection = (page: Page) => page.getByRole('region', { name: "The skill's top 3" })
 const costSection = (page: Page) => page.getByRole('region', { name: 'Top 3 after your costs' })
 /** The after-costs top 3's cards. */
@@ -380,8 +386,10 @@ test('the track record counts each list of finished days, before and after costs
 })
 
 test('the page refreshes itself while the day is scanning', async ({ page }) => {
+  const noon = nyAt(today(), '12:00')
+  await pinServerClock(page, noon)
   await page.clock.install()
-  await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
+  await seedDaytradeDay({ status: 'scanning', lastUpdate: before(noon, 1) })
   await page.goto('/daytrade')
   await expect(page.getByTestId('daytrade-status')).toHaveText(/^Scanning/)
   await expect(page.getByTestId('daytrade-live')).toHaveText('Live · updates every minute')
@@ -391,9 +399,11 @@ test('the page refreshes itself while the day is scanning', async ({ page }) => 
 })
 
 test('a status chip flips when its status changes on a refresh, not on the first render', async ({ page }) => {
+  const noon = nyAt(today(), '12:00')
+  await pinServerClock(page, noon)
   await page.clock.install()
-  await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
-  await seedDaytradeSignal({ symbol: 'TGTX', triggerAt: ago(2), entry: 67.65, stop: 66.05, rank: 1 })
+  await seedDaytradeDay({ status: 'scanning', lastUpdate: before(noon, 1) })
+  await seedDaytradeSignal({ symbol: 'TGTX', triggerAt: before(noon, 2), entry: 67.65, stop: 66.05, rank: 1 })
   await page.goto('/daytrade')
   const chip = cards(page).first().locator('.dt-head > .chip')
   await expect(chip).toHaveText('Fresh')
@@ -402,6 +412,16 @@ test('a status chip flips when its status changes on a refresh, not on the first
   await page.clock.runFor(61_000)
   await expect(chip).toHaveText('Target hit')
   await expect(chip).toHaveClass('chip target flip')
+})
+
+test('a scanning day stops being live at 4:05 PM ET', async ({ page }) => {
+  // a job that died leaves the day scanning: the page must not refresh all evening
+  const evening = nyAt(today(), '16:30')
+  await pinServerClock(page, evening)
+  await seedDaytradeDay({ status: 'scanning', lastUpdate: before(evening, 40) })
+  await page.goto('/daytrade')
+  await expect(page.getByTestId('daytrade-status')).toHaveText(/^Scanning/)
+  await expect(page.getByTestId('daytrade-live')).toHaveCount(0)
 })
 
 test('a done day shows no live pill', async ({ page }) => {

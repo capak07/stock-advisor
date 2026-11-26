@@ -41,7 +41,8 @@ export default defineConfig({
       url: `http://127.0.0.1:${PORT}/icon.svg`,
       reuseExistingServer: !process.env.CI,
       timeout: 240_000,
-      env: { SUPABASE_URL: stack.API_URL, SUPABASE_PUBLISHABLE_KEY: stack.PUBLISHABLE_KEY, YAHOO_CHART_URL: YAHOO_STUB },
+      // E2E_CLOCK lets a test pin the server's clock with a cookie (lib/clock.ts), so time-of-day pages test at any hour.
+      env: { SUPABASE_URL: stack.API_URL, SUPABASE_PUBLISHABLE_KEY: stack.PUBLISHABLE_KEY, YAHOO_CHART_URL: YAHOO_STUB, E2E_CLOCK: '1' },
     },
   ],
 })

@@ -12,7 +12,6 @@ import {
   etClock,
   fmtR,
   historyLine,
-  netResult,
   nyTime,
   oddsLine,
   outcomeLine,
@@ -24,7 +23,6 @@ import {
   strengthLine,
   type Signal,
 } from '@/lib/daytrade'
-import { fmtMove } from '@/lib/format'
 import { safeLink } from '@/lib/ticker'
 
 /** "11:10 AM" on the signal's day, "Nov 9, 4:05 PM" before it (New York time). */
@@ -77,14 +75,12 @@ const Verdict = ({ s }: { s: Signal }) => (
  * request 2026-11-25): the result after costs and the exit, or the R so far and the last price; then the late
  * warning, entry / target / stop tiles and shares sized to the max loss. Under Details: the signal's volume, the
  * cost in R and the net history and replay R, the replays, the opening range and flat-by time, the breakout's
- * strength (a skill card), the rule's history, the cost, the full outcome line and the top headline.
- * `compact` (the skill's top 3): entry → target / stop, the strength, its result, the verdict and the
- * cost, without tiles. Display only: nothing here places an order.
+ * strength (a skill card), the rule's history, the cost, the full outcome line and the top headline. Both
+ * lists use this one card (owner request 2026-11-25). Display only: nothing here places an order.
  */
 export function SignalCard({
   signal: s,
   list = 'costs',
-  compact = false,
   fresh,
   maxLossCad,
   usdCad,
@@ -93,8 +89,6 @@ export function SignalCard({
   signal: Signal
   /** Which top 3 the card is in: its place and extra lines follow it. */
   list?: 'skill' | 'costs'
-  /** The smaller card of the skill's top 3. */
-  compact?: boolean
   fresh: boolean
   maxLossCad: number
   usdCad: number | null
@@ -105,27 +99,6 @@ export function SignalCard({
   const place = skill ? s.skillRank : s.rank
   const chip = statusChip(s, fresh)
   const head = <Head s={s} place={place} chip={chip} lowRank={lowRank} />
-
-  if (compact) {
-    const result = netResult(s)
-    return (
-      <article className="card pick dt-card dt-sm" data-testid="daytrade-card" aria-label={`${s.symbol} signal`}>
-        {head}
-        <div className="dt-sm-line num">
-          Entry {priceOf(s.entry, s.market)} <span className="sub">→</span>{' '}
-          <span className="gain">{`${priceOf(s.target, s.market)} (${fmtMove(s.entry, s.target)})`}</span>{' '}
-          <span className="sub">/</span> <span className="loss">{`${priceOf(s.stop, s.market)} (${fmtMove(s.entry, s.stop)})`}</span>
-        </div>
-        <div className="dt-sm-meta">
-          <span className="num">{strengthLine(s)}</span>
-          <span className={`num ${result.tone ?? 'sub'}`}>{result.text}</span>
-        </div>
-        <Verdict s={s} />
-        <div className="dt-fine num">{costLine(s.costPct, s.costR)}</div>
-      </article>
-    )
-  }
-
   const late = s.status === 'open' && !fresh
   const risk = Number((s.entry - s.stop).toFixed(4))
   const top = s.headlines[0]

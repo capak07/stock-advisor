@@ -118,7 +118,6 @@ export default async function DaytradePage() {
                 key={s.id}
                 signal={s}
                 list="skill"
-                compact
                 fresh={isFresh(s.triggerAt, now)}
                 maxLossCad={data.maxLossCad}
                 usdCad={data.usdCad}

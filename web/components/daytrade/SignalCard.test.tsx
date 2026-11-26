@@ -42,8 +42,8 @@ const signal = (over: Partial<Signal> = {}): Signal => ({
 })
 
 const VERDICT = '10,000 replays: target first 34% · stop first 52% · neither 14% · green at close 48%'
-const render = (s: Signal, props: { compact?: boolean; list?: 'skill' | 'costs'; fresh?: boolean } = {}) =>
-  renderToStaticMarkup(<SignalCard signal={s} fresh={props.fresh ?? true} maxLossCad={50} usdCad={1.4} list={props.list} compact={props.compact} />)
+const render = (s: Signal, props: { list?: 'skill' | 'costs'; fresh?: boolean } = {}) =>
+  renderToStaticMarkup(<SignalCard signal={s} fresh={props.fresh ?? true} maxLossCad={50} usdCad={1.4} list={props.list} />)
 /** The text of the markup, tags dropped. */
 const text = (html: string) => html.replace(/<[^>]+>/g, '')
 
@@ -86,20 +86,15 @@ describe('SignalCard', () => {
     expect(t).toContain('Fresh')
   })
 
-  it('compact: entry → target / stop, the strength, the result and the verdict, without tiles', () => {
-    const html = render(signal({ status: 'target', grossR: 2, netR: 0.64 }), { compact: true, list: 'skill' })
-    const t = text(html)
-    expect(t).toContain(VERDICT)
-    expect(t).toMatch(/Entry US\$67\.65\s*→\s*US\$70\.85 \(\+4\.7%\)\s*\/\s*US\$66\.05 \(−2\.4%\)/)
-    expect(t).toContain('+0.22% above the range high')
-    expect(t).toContain('+0.64R after costs')
-    expect(t).toContain('Target hit')
-    expect(t).toContain('2') // the skill's rank
-    expect(html).not.toMatch(/>Target( US\$)?</) // no tile labels
-    expect(html).not.toMatch(/>Stop( US\$)?</)
-    expect(html).not.toContain('class="stat"')
-    expect(t).not.toContain('shares')
-    expect(t).not.toContain('TG Therapeutics beats estimates')
+  it("a skill card is the same full card, its strength under Details", () => {
+    const html = render(signal({ status: 'target', exitAt: at('10:50'), exitPrice: 70.85, grossR: 2, netR: 0.64 }), { list: 'skill' })
+    const [shown, folded = ''] = html.split('<details')
+    expect(shown).toContain('<b class="answer-big num gain">+0.64R after costs</b><span class="answer-note">Sold US$70.85 at 10:50 AM</span>')
+    expect(shown).toContain('<span class="rank">2</span>') // its place in the skill's list
+    expect(shown.match(/class="stat"/g)).toHaveLength(3)
+    expect(text(shown)).toContain('≈ 22 shares (risking ≈ C$49 at the stop)')
+    expect(text(folded)).toContain('+0.22% above the range high')
+    expect(text(render(signal()))).not.toContain('above the range high') // only a skill card has the strength
   })
 
   it('a late open signal says so with the last price, and its chip reads Late', () => {

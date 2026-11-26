@@ -105,7 +105,7 @@ test('the top 3 show the plan, odds, history, cost, shares and headlines; the re
   await expect(page.getByRole('button', { name: /buy|order|place/i })).toHaveCount(0)
 })
 
-test("the top 3 after costs come first, then the skill's top 3 in compact cards with their strength, result and cost", async ({ page }) => {
+test("the top 3 after costs come first, then the skill's top 3 in the same full cards, their strength under Details", async ({ page }) => {
   await seedFx([daysAgo(1)], 1.4)
   await seedDaytradeDay({ status: 'scanning', lastUpdate: ago(1) })
   // the skill's three, seeded out of rank order: none of them is eligible after costs
@@ -154,17 +154,20 @@ test("the top 3 after costs come first, then the skill's top 3 in compact cards 
 
   const fis = skillCards(page).nth(0)
   await expect(fis).toContainText('Fidelity National Information Services')
-  // compact: entry → target / stop, the strength, the result after costs, the verdict and the cost; no tiles
-  await expect(fis).toContainText('Entry US$68.12 → US$70.36 (+3.3%) / US$67.00 (−1.6%)')
+  // the same full card as the after-costs list: the answer, the tiles and the shares; the strength under Details
+  await expect(fis.getByTestId('daytrade-answer')).toHaveText(/^\+0\.64R after costsSold US\$70\.36 at \d{1,2}:\d{2} [AP]M$/)
+  await expect(fis.locator('.stat')).toHaveCount(3)
+  await expect(fis).toContainText('Target US$70.36+3.3%')
+  await expect(fis).toContainText('Stop US$67.00−1.6%')
+  await expect(fis.getByText('Target hit', { exact: true })).toBeVisible() // the outcome chip
+  await expect(fis).toContainText('shares (risking')
+  await expect(fis.getByText('+0.92% above the range high', { exact: true })).toBeHidden()
+  await fis.getByTestId('daytrade-details').locator('summary').click()
   await expect(fis.getByText('+0.92% above the range high', { exact: true })).toBeVisible()
-  await expect(fis.getByText('+0.64R after costs', { exact: true })).toBeVisible()
   await expect(fis).toContainText('10,000 replays: target first 34%')
   await expect(fis).toContainText('Cost 3.10% round trip = 1.36R')
-  await expect(fis.getByText('Target hit', { exact: true })).toBeVisible() // the outcome chip
-  await expect(fis.locator('.stat')).toHaveCount(0)
-  await expect(fis).not.toContainText('shares')
-  await expect(skillCards(page).nth(1).getByText('+1.67% above the range high', { exact: true })).toBeVisible()
-  await expect(skillCards(page).nth(1).getByText('Open', { exact: true })).toBeVisible()
+  await expect(skillCards(page).nth(1).getByTestId('daytrade-answer')).toHaveText('OpenNo price since the signal yet')
+  await expect(skillCards(page).nth(1)).toContainText('+1.67% above the range high')
   await expect(skillCards(page).nth(2)).toContainText('Cost 3.10% round trip = 2.26R')
 
   // the after-costs top 3 is a full card, without the strength line

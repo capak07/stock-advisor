@@ -362,14 +362,6 @@ export const rTone = (r: number | null): 'gain' | 'loss' | null => {
   return shown > 0 ? 'gain' : shown < 0 ? 'loss' : null
 }
 
-/** A compact card's result: "Open", its R after costs (before costs when that is all there is), or how it ended. */
-export function netResult(s: Signal): { text: string; tone: 'gain' | 'loss' | null } {
-  if (s.status === 'open') return { text: 'Open', tone: null }
-  if (s.netR !== null) return { text: `${fmtR(s.netR)} after costs`, tone: rTone(s.netR) }
-  if (s.grossR !== null) return { text: `${fmtR(s.grossR)} before costs`, tone: rTone(s.grossR) }
-  return { text: ENDED[s.status].label, tone: null }
-}
-
 /** The skill's top 3 in rank order (any eligibility, any after-costs place); a missing rank (before migration 0014) is no rank. */
 export const skillSignals = (list: readonly Signal[]): Signal[] =>
   list.filter((s) => s.skillRank != null).sort((a, b) => a.skillRank! - b.skillRank!)

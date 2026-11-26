@@ -16,7 +16,6 @@ import {
   orderSignals,
   outcomeLine,
   answerOf,
-  netResult,
   rangeLine,
   recordEmptyLine,
   shares,
@@ -219,15 +218,6 @@ describe('formatters', () => {
   it("the opening range and the flat-by time, in the stock's currency", () => {
     expect(rangeLine(signal())).toBe('Opening range US$64.60–US$67.50 · flat by 3:55 PM')
     expect(rangeLine(signal({ market: 'TSX', orLow: 5.2, orHigh: 5.45, flatBy: at('12:55') }))).toBe('Opening range C$5.20–C$5.45 · flat by 12:55 PM')
-  })
-
-  it("a signal's result for its compact card: open, or R after costs (before costs when that is all there is)", () => {
-    expect(netResult(signal())).toEqual({ text: 'Open', tone: null })
-    expect(netResult(signal({ status: 'target', grossR: 2, netR: 0.64 }))).toEqual({ text: '+0.64R after costs', tone: 'gain' })
-    expect(netResult(signal({ status: 'stop', grossR: -1, netR: -1.36 }))).toEqual({ text: '−1.36R after costs', tone: 'loss' })
-    expect(netResult(signal({ status: 'flat', grossR: 0.1, netR: null }))).toEqual({ text: '+0.10R before costs', tone: 'gain' })
-    expect(netResult(signal({ status: 'flat', netR: 0 }))).toEqual({ text: '0.00R after costs', tone: null })
-    expect(netResult(signal({ status: 'flat' }))).toEqual({ text: 'Flat at close', tone: null })
   })
 
   it('history, cost and odds lines', () => {

@@ -395,10 +395,6 @@ a.sym:hover, .sym a:hover { text-decoration: underline !important; }
 .dt-news svg { width: 14px; height: 14px; flex: none; margin-top: 2px; color: var(--muted-foreground); }
 .dt-news > span { min-width: 0; }
 .dt-news a { text-decoration: underline !important; text-underline-offset: 2px; }
-/* The skill's compact cards. */
-.dt-sm { gap: 10px; }
-.dt-sm-line { font-size: 13px; }
-.dt-sm-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; }
 /* All signals: a collapsed table. */
 .dt-all summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; }
 .dt-all summary::-webkit-details-marker { display: none; }
